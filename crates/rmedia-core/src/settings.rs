@@ -24,7 +24,11 @@ pub fn cache_dir() -> Option<PathBuf> {
     project_dirs().map(|d| d.cache_dir().join("preview"))
 }
 
+/// `RMEDIA_CONFIG_DIR` overrides the config folder (used by tests).
 fn settings_path() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("RMEDIA_CONFIG_DIR").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(p).join("settings.json"));
+    }
     project_dirs().map(|d| d.config_dir().join("settings.json"))
 }
 

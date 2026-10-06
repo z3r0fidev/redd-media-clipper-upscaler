@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Least privilege: core IPC and events only. File dialogs run in Rust; the page has no fs, shell or dialog permissions.",
+  "description": "Least privilege: the page only listens for the drop event. App commands and channels need no core permissions; dialogs run in Rust.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

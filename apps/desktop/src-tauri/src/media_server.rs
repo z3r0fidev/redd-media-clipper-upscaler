@@ -37,7 +37,6 @@ fn allowed_origin(origin: &str) -> bool {
         || (cfg!(debug_assertions) && origin == "http://localhost:1420")
 }
 
-#[derive(Debug)]
 pub struct MediaServer {
     port: u16,
     token: String,
@@ -49,6 +48,16 @@ pub struct MediaServer {
 struct Registry {
     by_id: HashMap<String, PathBuf>,
     by_path: HashMap<PathBuf, String>,
+}
+
+/// The session token is never printed (R8 #9).
+impl std::fmt::Debug for MediaServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MediaServer")
+            .field("port", &self.port)
+            .field("token", &"<redacted>")
+            .finish_non_exhaustive()
+    }
 }
 
 impl Drop for MediaServer {
@@ -84,6 +93,13 @@ impl MediaServer {
 
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Forgets every registered file: existing URLs stop working (window close).
+    pub fn revoke_all(&self) {
+        let mut reg = self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        reg.by_id.clear();
+        reg.by_path.clear();
     }
 
     /// Registers a regular file and returns its URL. Re-registering a path returns the same URL.

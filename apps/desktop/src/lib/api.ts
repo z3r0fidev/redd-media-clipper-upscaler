@@ -67,6 +67,8 @@ export const api = {
     return new Blob([bytes], { type: "image/jpeg" });
   },
   thumbnails: (path: string, n: number) => invoke<string[]>("thumbnails", { path, n }),
+  /** Choose ffmpeg with the native dialog (reset = back to automatic). */
+  pickEngine: (reset: boolean) => invoke<DoctorReport>("pick_engine", { reset }),
   getSettings: () => invoke<Settings>("get_settings"),
   setSettings: (settings: Settings) => invoke<void>("set_settings", { settings }),
   onDropped: (f: (paths: string[]) => void): Promise<UnlistenFn> =>

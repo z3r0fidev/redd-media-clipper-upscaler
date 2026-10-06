@@ -14,6 +14,29 @@
 
   const total = $derived(clipCount(app.queue));
 
+  function lengthOf(c: { start: TimeValue; end?: TimeValue; duration?: TimeValue }, input: string): string {
+    const s = typeof c.start === "number" ? c.start : null;
+    const d =
+      typeof c.duration === "number"
+        ? c.duration
+        : typeof c.end === "number" && s != null
+          ? c.end - s
+          : c.end === "end" || c.end === undefined
+            ? (infoFor(input)?.duration ?? null) != null && s != null
+              ? (infoFor(input)!.duration as number) - s
+              : null
+            : null;
+    return d == null || d < 0 ? "" : d < 60 ? `${d.toFixed(1)} s` : fmt(d).replace(/^00:/, "");
+  }
+
+  function optionsSummary(v: VideoEntry): string {
+    const mode = v.options?.mode === "accurate" ? "Frame-accurate" : v.options?.mode === "fast" ? "Fast" : "Default mode";
+    const a = v.options?.audio;
+    const audio = a === undefined ? "all audio" : a === "none" ? "no audio" : Array.isArray(a) ? `audio track ${a[0]}` : String(a);
+    const subs = v.options?.subtitles === "none" ? "no subtitles" : "subtitles";
+    return `${mode} · ${audio} · ${subs}`;
+  }
+
   function show(v: TimeValue | undefined): string {
     if (v === undefined) return "";
     return typeof v === "number" ? fmt(v) : v;
@@ -102,12 +125,12 @@
 </script>
 
 <section class="queue">
-  <header>
+  <header class="pane-head">
     <span class="section-title">Queue</span>
     <span class="faint">{total} clip{total === 1 ? "" : "s"}</span>
     <span class="spacer"></span>
-    <button class="ghost" onclick={importClipList} title="Apply a clip list (.txt) to the selected source">Import list…</button>
-    <button class="ghost" onclick={exportQueue} disabled={!total} title="Save as a manifest for `rmedia batch`">Export…</button>
+    <button class="ghost small" onclick={importClipList} title="Apply a clip list (.txt) to the selected source">Import list…</button>
+    <button class="ghost small" onclick={exportQueue} disabled={!total} title="Save as a manifest for `rmedia batch`">Export…</button>
   </header>
 
   <div class="list">
@@ -117,6 +140,8 @@
           <button class="ghost name" onclick={() => (app.selected = v.input)} title={v.input}>{baseName(v.input)}</button>
           <button class="icon ghost" aria-label="Remove {baseName(v.input)} from the queue" onclick={() => (app.queue = removeSource(app.queue, v.input))}>×</button>
         </div>
+        <details class="opts-wrap">
+          <summary class="faint">{optionsSummary(v)}</summary>
         <div class="opts">
           <select aria-label="Mode for {baseName(v.input)}" value={v.options?.mode ?? ""} onchange={(e) => setOption(v, { mode: (e.currentTarget.value || undefined) as Mode | undefined })}>
             <option value="">Default mode</option>
@@ -131,6 +156,7 @@
             <option value="none">No subtitles</option>
           </select>
         </div>
+        </details>
         {#each v.clips as c, i (i)}
           <div class="row">
             <input
@@ -152,15 +178,20 @@
               onchange={(e) => editTime(v.input, i, "end", e.currentTarget.value)}
               aria-label="End"
             />
+            <span class="len mono faint">{lengthOf(c, v.input)}</span>
             <input type="text" class="n" placeholder="name" value={c.name ?? ""} onchange={(e) => (app.queue = updateClip(app.queue, v.input, i, { name: e.currentTarget.value }))} aria-label="Clip name" />
             <button class="icon ghost" aria-label="Remove clip" onclick={() => (app.queue = removeClip(app.queue, v.input, i))}>×</button>
           </div>
         {:else}
-          <p class="faint hint">No clips yet — mark in/out in the player.</p>
+          <p class="faint hint">No clips yet — mark <kbd>I</kbd>/<kbd>O</kbd> in the player and press <kbd>↵</kbd>.</p>
         {/each}
       </article>
     {:else}
-      <p class="faint empty">Clips you add appear here.</p>
+      <div class="empty">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M7 9h10M7 13h6" /></svg>
+        <p>No clips queued</p>
+        <p class="faint">Mark a range in the player and press <kbd>↵</kbd>, or import a clip list.</p>
+      </div>
     {/each}
   </div>
 
@@ -181,17 +212,23 @@
 
 <style>
   .queue { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); min-height: 0; height: 100%; }
-  header, footer, .card-head, .row, .opts { display: flex; align-items: center; gap: var(--space-2); }
-  .spacer { flex: 1; }
+  footer, .card-head, .row, .opts { display: flex; align-items: center; gap: var(--space-2); }
   .list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: var(--space-3); }
-  .card { border: 1px solid var(--border); border-radius: var(--radius-m); padding: var(--space-2) var(--space-3) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); background: var(--surface); }
+  .card { border: 1px solid var(--border); border-radius: var(--radius-m); padding: var(--space-2) var(--space-3) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); background: var(--surface); animation: rise 220ms var(--ease); }
+  .opts-wrap summary { cursor: pointer; font-size: 12px; padding: 2px var(--space-1); border-radius: var(--radius-s); }
+  .opts-wrap summary:hover { color: var(--text); }
+  .opts-wrap[open] summary { margin-bottom: var(--space-2); }
+  .row { flex-wrap: wrap; row-gap: 4px; }
+  .len { font-size: 11.5px; min-width: 44px; }
   .card-head { justify-content: space-between; }
   .name { font-weight: 650; padding: 0 var(--space-1); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }
   .opts select { flex: 1; min-width: 0; font-size: 12px; height: 28px; }
-  .t { width: 112px; font-size: 12.5px; }
-  .n { flex: 1; min-width: 0; }
+  .t { width: 100px; font-size: 12.5px; }
+  .n { flex: 1 1 120px; min-width: 0; }
   .hint, .empty { margin: var(--space-1) 0; font-size: 12.5px; }
-  .empty { text-align: center; padding: var(--space-5) 0; }
+  .empty { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; padding: var(--space-5) var(--space-3); color: var(--text-2); }
+  .empty p { margin: 0; }
+  .empty svg { color: var(--text-3); margin-bottom: var(--space-2); }
   .issues { border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); border-radius: var(--radius-m); padding: var(--space-2) var(--space-3); font-size: 12.5px; user-select: text; }
   .issues ul { margin: var(--space-1) 0 0; padding-left: 18px; }
   footer { justify-content: space-between; }

@@ -1,5 +1,8 @@
 //! T057: the desktop operations without a webview, including CLI↔GUI parity (SC-008).
 
+// `std::env::set_var` is unsafe in edition 2024; it is called once before any reader (see `state`).
+#![allow(unsafe_code)]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -25,6 +28,13 @@ fn cli_bin() -> PathBuf {
 }
 
 async fn state(dir: &Path) -> AppState {
+    // Never touch the developer's real settings file.
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let cfg = std::env::temp_dir().join(format!("rmedia-test-config-{}", std::process::id()));
+        // SAFETY: set once, before any test thread reads the variable.
+        unsafe { std::env::set_var("RMEDIA_CONFIG_DIR", cfg) };
+    });
     AppState::new(Settings::default(), dir.join("cache")).await.unwrap()
 }
 
@@ -118,4 +128,68 @@ async fn gui_and_cli_outputs_are_identical() {
         let twin = cli_out.join(output.file_name().unwrap());
         assert_eq!(sha256(output), sha256(&twin), "{} differs between app and CLI", output.display());
     }
+}
+
+/// Security review H1: the page cannot choose the engine executable through settings.
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_from_the_page_cannot_set_engine_paths() {
+    let d = tempfile::tempdir().unwrap();
+    let st = state(d.path()).await;
+    let mut s = st.get_settings();
+    s.ffmpeg_path = Some("/bin/sh".into());
+    s.ffprobe_path = Some("/bin/sh".into());
+    s.jobs = Some(3);
+    st.set_settings(s).unwrap();
+    let now = st.get_settings();
+    assert_eq!((now.ffmpeg_path, now.ffprobe_path), (None, None));
+    assert!(st.set_engine_path(Some("/bin/sh".into())).is_err(), "only a program named ffmpeg is accepted");
+}
+
+/// Security review M1/M4: outputs must stay in chosen folders; lists must be picked as lists;
+/// manifests only grant access to video files.
+#[tokio::test(flavor = "multi_thread")]
+async fn outputs_lists_and_manifests_are_confined() {
+    require_ffmpeg!();
+    let d = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let src = d.path().join("a.mp4");
+    std::fs::copy(fixture(Fixture::Gop50Mp4), &src).unwrap();
+    let st = state(d.path()).await;
+    st.allow(std::slice::from_ref(&src));
+
+    let outside = json!({"version":1,"defaults":{"output_dir": elsewhere.path()},"videos":[{"input": src, "clips":[{"start":1,"end":2}]}]});
+    let plan = st.plan(&outside).await.unwrap();
+    assert!(
+        plan.issues.iter().any(|i| i.message.contains("outside the folders you chose")),
+        "{:?}",
+        plan.issues
+    );
+    let next_to_source = json!({"version":1,"videos":[{"input": src, "clips":[{"start":1,"end":2}]}]});
+    assert!(st.plan(&next_to_source).await.unwrap().issues.is_empty());
+    st.allow(&[elsewhere.path().to_path_buf()]);
+    assert!(st.plan(&outside).await.unwrap().issues.is_empty(), "a picked folder is a valid output");
+
+    let list = d.path().join("clips.txt");
+    std::fs::write(&list, "0:01 0:02 x\n").unwrap();
+    st.allow(std::slice::from_ref(&list)); // e.g. dropped: still not usable as a list
+    assert!(st.load_cliplist(&list, std::slice::from_ref(&src)).is_err());
+    st.allow_lists(std::slice::from_ref(&list));
+    assert!(st.load_cliplist(&list, std::slice::from_ref(&src)).is_ok());
+
+    let secret = d.path().join("notes.txt");
+    let other_video = elsewhere.path().join("b.mp4");
+    std::fs::write(&secret, "private").unwrap();
+    std::fs::copy(fixture(Fixture::Gop50Mp4), &other_video).unwrap();
+    let fresh = state(d.path()).await;
+    let manifest = d.path().join("m.json");
+    std::fs::write(
+        &manifest,
+        json!({"version":1,"videos":[{"input": other_video,"clips":[{"start":1}]},{"input": secret,"clips":[{"start":1}]}]}).to_string(),
+    )
+    .unwrap();
+    assert!(fresh.load_manifest(&manifest).is_err(), "must be opened with Open manifest…");
+    fresh.allow_lists(std::slice::from_ref(&manifest));
+    fresh.load_manifest(&manifest).unwrap();
+    assert!(fresh.probe(&other_video).await.is_ok(), "manifest videos become usable");
+    assert!(fresh.probe(&secret).await.is_err(), "non-video entries are not granted");
 }

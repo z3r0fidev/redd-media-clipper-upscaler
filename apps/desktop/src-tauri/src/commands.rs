@@ -43,7 +43,11 @@ pub async fn pick_files(app: AppHandle, state: State<'_, AppState>, kind: String
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
     let paths: Vec<PathBuf> = picked.into_iter().filter_map(|p| p.into_path().ok()).collect();
-    state.allow(&paths);
+    if kind == "video" {
+        state.allow(&paths);
+    } else {
+        state.allow_lists(&paths);
+    }
     Ok(paths.iter().map(|p| p.to_string_lossy().into_owned()).collect())
 }
 
@@ -170,6 +174,23 @@ pub async fn frame_at(state: State<'_, AppState>, path: PathBuf, t: f64, height:
 #[tauri::command]
 pub async fn thumbnails(state: State<'_, AppState>, path: PathBuf, n: usize) -> OpResult<Vec<String>> {
     state.thumbnails(&path, n).await
+}
+
+/// Choose the ffmpeg program with the native dialog (ffprobe must sit next to it), or reset to
+/// automatic (bundled, then PATH) with `reset = true`.
+#[tauri::command]
+pub async fn pick_engine(app: AppHandle, state: State<'_, AppState>, reset: bool) -> OpResult<DoctorReport> {
+    if reset {
+        state.set_engine_path(None)?;
+    } else {
+        let dialog = app.dialog().file().set_title("Choose the ffmpeg program");
+        let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
+            .await
+            .map_err(|e| e.to_string())?;
+        let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(state.doctor()) };
+        state.set_engine_path(Some(path))?;
+    }
+    Ok(state.doctor())
 }
 
 #[tauri::command]

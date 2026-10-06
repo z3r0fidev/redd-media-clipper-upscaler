@@ -137,6 +137,16 @@ either re-checked locally on 2026-10-06 (marked **verified**) or carried as test
       webview-supplied path and widen a scope with it (arbitrary-file-read primitive).
   12. Tests: missing/wrong token, `../` and encoded traversal, symlink swap mid-session, bad
       `Host`/`Origin`, multi-range/oversized ranges, no ID enumeration, shutdown on last window.
+- **Implementation status (security-auditor, 2026-10-06, after fixes)**: #1, #3, #5–#8, #10 met;
+  #2 met (token revoked with all ids on window close); #9 met (token redacted from Debug); #12
+  met (`apps/desktop/src-tauri/tests/media_server.rs`). Residual, accepted for v1: #4 re-checks
+  the canonical path + `O_NOFOLLOW` but not dev/inode against registration (needs a local
+  attacker racing a parent-directory swap); #11 CSP is static (`media-src http://127.0.0.1:*`,
+  `style-src 'unsafe-inline'` for Svelte style attributes) — no script injection and no exfil
+  channel (`connect-src` is IPC only). Also fixed from that audit: the page can no longer set
+  engine paths (native picker in Rust only), outputs must be inside user-picked folders or next
+  to the source, clip lists/manifests must be picked as such and manifests only grant video files,
+  capabilities reduced to `core:event:allow-listen/unlisten`.
 - Untrusted media metadata (titles, tags, chapter names) is rendered as text only — never
   `innerHTML`; the CLI strips control characters/ANSI escapes before printing it.
 

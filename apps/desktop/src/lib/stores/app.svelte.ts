@@ -25,10 +25,11 @@ export const app = $state({
 });
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+/** Info toasts fade; errors stay until dismissed. */
 export function toast(text: string, kind: "info" | "error" = "info") {
   app.toast = { kind, text };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (app.toast = null), kind === "error" ? 7000 : 3500);
+  if (kind === "info") toastTimer = setTimeout(() => (app.toast = null), 3500);
 }
 
 export function infoFor(path: string): MediaInfo | undefined {

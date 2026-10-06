@@ -14,6 +14,14 @@
     }
   }
 
+  async function chooseEngine(reset: boolean) {
+    try {
+      app.engine = await api.pickEngine(reset);
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  }
+
   async function save() {
     if (!draft) return;
     try {
@@ -28,6 +36,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={(e) => e.key === "Escape" && (app.showSettings = false)} />
 
 <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && (app.showSettings = false)}>
   <div class="dialog panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -73,6 +83,10 @@
       <legend class="section-title">Video engine</legend>
       {#if app.engine}
         <p class="mono small">{app.engine.ffmpeg?.path ?? "not found"} <span class="pill">{app.engine.ffmpeg?.source ?? "—"}</span></p>
+        <span class="row">
+          <button class="small" onclick={() => chooseEngine(false)}>Choose ffmpeg…</button>
+          {#if app.engine.ffmpeg?.source === "config"}<button class="ghost small" onclick={() => chooseEngine(true)}>Use automatic</button>{/if}
+        </span>
         <p class="small">Version {app.engine.version ?? "?"} · accurate mode writes {app.engine.accurate_containers.join(", ") || "nothing"}</p>
         {#each app.engine.problems as p, i (i)}<p class="small bad">{p}</p>{/each}
       {/if}
@@ -85,8 +99,8 @@
 </div>
 
 <style>
-  .backdrop { position: fixed; inset: 0; background: rgba(8, 10, 16, 0.45); display: grid; place-items: center; z-index: 10; }
-  .dialog { width: min(560px, 92vw); max-height: 88vh; overflow: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+  .backdrop { position: fixed; inset: 0; background: rgba(8, 10, 16, 0.5); backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 10; }
+  .dialog { width: min(560px, 92vw); max-height: 88vh; overflow: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); animation: rise 180ms var(--ease); }
   h2 { margin: 0; font-size: 17px; }
   fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
   legend { margin-bottom: var(--space-2); }

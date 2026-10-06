@@ -36,6 +36,8 @@ pub struct Allowed {
     files: HashSet<OsString>,
     dirs: Vec<PathBuf>,
     save_targets: HashSet<OsString>,
+    /// Clip lists and manifests picked as such (only these may be parsed).
+    lists: HashSet<OsString>,
 }
 
 impl Allowed {
@@ -53,6 +55,25 @@ impl Allowed {
                 self.files.insert(k);
             }
         }
+    }
+
+    pub fn allow_list(&mut self, p: &Path) {
+        if let Some((_, k)) = Self::key(p) {
+            self.lists.insert(k);
+        }
+    }
+
+    fn is_list(&self, p: &Path) -> bool {
+        Self::key(p).is_some_and(|(_, k)| self.lists.contains(&k))
+    }
+
+    /// Where a clip may be written: inside a folder the user picked, or next to its source
+    /// (the default `clips/` folder and template sub-folders).
+    fn may_write(&self, output: &Path, source: &Path) -> bool {
+        let resolved = resolve_existing(output);
+        let source_dir = source.parent().and_then(|d| std::fs::canonicalize(d).ok());
+        self.dirs.iter().any(|d| resolved.starts_with(d))
+            || source_dir.is_some_and(|d| resolved.starts_with(d))
     }
 
     pub fn allow_save(&mut self, p: &Path) {
@@ -122,12 +143,52 @@ impl AppState {
         std::mem::take(&mut *lock(&self.opened))
     }
 
-    fn require_allowed(&self, p: &Path) -> OpResult<()> {
+    /// Returns the canonical path, which is what callers then use (no check/use race on links).
+    fn require_allowed(&self, p: &Path) -> OpResult<PathBuf> {
         if lock(&self.allowed).is_allowed(p) {
-            Ok(())
+            std::fs::canonicalize(p).map_err(|e| e.to_string())
         } else {
             Err(format!("{} was not opened in rmedia (use Add files/folder or drag it in)", p.display()))
         }
+    }
+
+    pub fn allow_lists(&self, paths: &[PathBuf]) {
+        let mut a = lock(&self.allowed);
+        for p in paths {
+            a.allow_list(p);
+        }
+    }
+
+    /// Engine paths can only be set here — from the native file dialog in Rust — never by the page.
+    pub fn set_engine_path(&self, ffmpeg: Option<PathBuf>) -> OpResult<()> {
+        let mut s = lock(&self.settings).clone();
+        match ffmpeg {
+            Some(p) => {
+                let name =
+                    p.file_stem().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+                if !name.ends_with("ffmpeg") {
+                    return Err("choose the ffmpeg program (ffprobe must be in the same folder)".into());
+                }
+                let probe = p.with_file_name(format!(
+                    "{}{}",
+                    name.replace("ffmpeg", "ffprobe"),
+                    std::env::consts::EXE_SUFFIX
+                ));
+                if !probe.is_file() {
+                    return Err(format!("{} was not found next to ffmpeg", probe.display()));
+                }
+                s.ffmpeg_path = Some(p);
+                s.ffprobe_path = Some(probe);
+            }
+            None => {
+                s.ffmpeg_path = None;
+                s.ffprobe_path = None;
+            }
+        }
+        s.save().map_err(|e| e.to_string())?;
+        *lock(&self.settings) = s;
+        *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        Ok(())
     }
 
     fn cache(&self) -> PreviewCache {
@@ -157,9 +218,9 @@ impl AppState {
     }
 
     pub async fn probe(&self, path: &Path) -> OpResult<MediaInfo> {
-        self.require_allowed(path)?;
+        let path = self.require_allowed(path)?;
         let (tools, _) = self.engine()?;
-        probe::probe(&tools, path, &CancellationToken::new()).await.map_err(|e| e.to_string())
+        probe::probe(&tools, &path, &CancellationToken::new()).await.map_err(|e| e.to_string())
     }
 
     pub async fn scan(
@@ -169,9 +230,7 @@ impl AppState {
         opts: ScanOptions,
         on_event: &(dyn Fn(ScanEvent) + Send + Sync),
     ) -> OpResult<ScanResult> {
-        for r in &roots {
-            self.require_allowed(r)?;
-        }
+        let roots = roots.iter().map(|r| self.require_allowed(r)).collect::<OpResult<Vec<_>>>()?;
         let (tools, _) = self.engine()?;
         let cancel = CancellationToken::new();
         lock(&self.scans).insert(scan_id.clone(), cancel.clone());
@@ -188,7 +247,9 @@ impl AppState {
 
     /// A clip list applied to `sources`, returned as a manifest (the queue format).
     pub fn load_cliplist(&self, list: &Path, sources: &[PathBuf]) -> OpResult<Value> {
-        self.require_allowed(list)?;
+        if !lock(&self.allowed).is_list(list) {
+            return Err("open the clip list with Import list…".into());
+        }
         for s in sources {
             self.require_allowed(s)?;
         }
@@ -210,14 +271,19 @@ impl AppState {
 
     /// Opens a manifest; its videos become allowed sources (the user chose the manifest).
     pub fn load_manifest(&self, path: &Path) -> OpResult<Value> {
-        self.require_allowed(path)?;
+        if !lock(&self.allowed).is_list(path) {
+            return Err("open the manifest with Open manifest…".into());
+        }
         let req = match ext(path).as_str() {
             "json" => manifest_json::load(path, &Options::default()),
             "csv" => manifest_csv::load(path, &Options::default()),
             _ => return Err("choose a .json or .csv manifest".into()),
         }
         .map_err(issues_text)?;
-        self.allow(&req.sources.iter().map(|s| s.path.clone()).collect::<Vec<_>>());
+        // A manifest may only grant access to video files it names (not arbitrary files).
+        let videos: Vec<PathBuf> =
+            req.sources.iter().map(|s| s.path.clone()).filter(|p| is_video_name(p) && p.is_file()).collect();
+        self.allow(&videos);
         // Keep the manifest's own defaults (e.g. output folder) in the queue.
         manifest_value(&req, &PartialOptions::diff(&req.defaults, &Options::default()))
     }
@@ -250,7 +316,23 @@ impl AppState {
     pub async fn plan(&self, manifest: &Value) -> OpResult<Plan> {
         let req = self.queue_request(manifest)?;
         let (tools, caps) = self.engine()?;
-        let plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
+        let mut plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
+        {
+            let allowed = lock(&self.allowed);
+            for job in &plan.jobs {
+                if !allowed.may_write(&job.output, &job.source) {
+                    plan.issues.push(Issue {
+                        severity: rmedia_core::plan::Severity::Error,
+                        code: "INVALID_INPUT",
+                        origin: rmedia_core::request::Origin::Gui,
+                        message: format!(
+                            "{} is outside the folders you chose; pick the output folder in Settings",
+                            job.output.display()
+                        ),
+                    });
+                }
+            }
+        }
         lock(&self.plans).insert(plan.run_id.clone(), plan.clone());
         Ok(plan)
     }
@@ -355,11 +437,23 @@ impl AppState {
         lock(&self.settings).clone()
     }
 
-    pub fn set_settings(&self, s: Settings) -> OpResult<()> {
+    /// Saves settings from the page. Engine paths are never taken from the page (they would let
+    /// it choose an executable); they change only through `set_engine_path`.
+    pub fn set_settings(&self, mut s: Settings) -> OpResult<()> {
+        {
+            let current = lock(&self.settings);
+            s.ffmpeg_path = current.ffmpeg_path.clone();
+            s.ffprobe_path = current.ffprobe_path.clone();
+        }
         s.save().map_err(|e| e.to_string())?;
         *lock(&self.settings) = s;
-        *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         Ok(())
+    }
+
+    /// Window closing: stop work and revoke every media URL.
+    pub fn shutdown(&self) {
+        self.cancel_all();
+        self.media.revoke_all();
     }
 }
 
@@ -390,6 +484,30 @@ fn direct_playable(m: &MediaInfo) -> bool {
         }
         _ => false,
     }
+}
+
+fn is_video_name(p: &Path) -> bool {
+    rmedia_core::discover::VIDEO_EXTENSIONS.contains(&ext(p).as_str())
+}
+
+/// Canonicalizes the nearest existing ancestor and re-appends the rest.
+fn resolve_existing(p: &Path) -> PathBuf {
+    let mut existing = p.to_path_buf();
+    let mut rest = Vec::new();
+    while !existing.exists() {
+        match (existing.file_name().map(ToOwned::to_owned), existing.parent()) {
+            (Some(n), Some(parent)) => {
+                rest.push(n);
+                existing = parent.to_path_buf();
+            }
+            _ => break,
+        }
+    }
+    let mut out = std::fs::canonicalize(&existing).unwrap_or(existing);
+    for part in rest.iter().rev() {
+        out.push(part);
+    }
+    out
 }
 
 fn ext(p: &Path) -> String {

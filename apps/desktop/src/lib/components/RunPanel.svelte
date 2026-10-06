@@ -5,6 +5,11 @@
   import { baseName } from "../time";
 
   const run = $derived(app.run);
+  let expanded = $state(false);
+  // Open the details automatically when something fails.
+  $effect(() => {
+    if (run?.jobs.some((j) => j.status === "failed")) expanded = true;
+  });
   const eta = (ms?: number) => (ms == null ? "" : ms < 60_000 ? `${Math.ceil(ms / 1000)} s left` : `${Math.ceil(ms / 60_000)} min left`);
   const label: Record<JobView["status"], string> = {
     queued: "Waiting",
@@ -26,11 +31,14 @@
 </script>
 
 {#if run}
-  <section class="run panel" aria-live="polite">
+  <section class="run panel" aria-label="Run">
     <header>
+      <button class="icon ghost" aria-expanded={expanded} aria-controls="run-jobs" onclick={() => (expanded = !expanded)} title={expanded ? "Hide clips" : "Show clips"}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="transform: rotate({expanded ? 180 : 0}deg); transition: transform 200ms var(--ease)"><path d="M6 15l6-6 6 6" /></svg>
+      </button>
       <strong>{run.finished ? "Finished" : "Running"}</strong>
       <span class="muted">{run.done} / {run.total} clips</span>
-      <div class="bar grow"><div style="width: {Math.round(run.fraction * 100)}%"></div></div>
+      <div class="bar grow" role="progressbar" aria-label="Overall progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(run.fraction * 100)}><div style="width: {Math.round(run.fraction * 100)}%"></div></div>
       <span class="faint">{run.finished ? "" : eta(run.etaMs)}</span>
       {#if !run.finished}
         <button class="danger" onclick={() => api.cancelRun(run.runId)}>Cancel all</button>
@@ -39,14 +47,15 @@
       {/if}
     </header>
     {#if run.summary}
-      <p class="summary">
+      <p class="summary" aria-live="polite">
         <span class="ok">{run.summary.succeeded} succeeded</span>
         {#if run.summary.skipped}<span>· {run.summary.skipped} skipped</span>{/if}
         {#if run.summary.failed}<span class="bad">· {run.summary.failed} failed</span>{/if}
         {#if run.summary.cancelled}<span>· {run.summary.cancelled} cancelled</span>{/if}
       </p>
     {/if}
-    <ul>
+    {#if expanded}
+    <ul id="run-jobs">
       {#each run.jobs as j (j.id)}
         <li class={j.status}>
           <span class="status">{label[j.status]}</span>
@@ -61,11 +70,12 @@
         </li>
       {/each}
     </ul>
+    {/if}
   </section>
 {/if}
 
 <style>
-  .run { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); max-height: 36vh; }
+  .run { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-4); max-height: min(36vh, 280px); flex-shrink: 0; animation: rise 200ms var(--ease); }
   header { display: flex; align-items: center; gap: var(--space-3); }
   .grow { flex: 1; }
   .summary { margin: 0; display: flex; gap: var(--space-2); font-size: 12.5px; }

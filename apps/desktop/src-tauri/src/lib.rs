@@ -33,7 +33,7 @@ pub fn run() {
             }
             WindowEvent::CloseRequested { .. } => {
                 if let Some(state) = window.try_state::<ops::AppState>() {
-                    state.cancel_all();
+                    state.shutdown();
                 }
             }
             _ => {}
@@ -59,6 +59,7 @@ pub fn run() {
             commands::ensure_proxy,
             commands::frame_at,
             commands::thumbnails,
+            commands::pick_engine,
             commands::get_settings,
             commands::set_settings,
         ])

@@ -2,6 +2,7 @@
   import { api, errorText, type PreviewInfo } from "../api";
   import { app, toast } from "../stores/app.svelte";
   import { addClip } from "../stores/queue";
+  import { pickFolder, pickVideos } from "../stores/sources.svelte";
   import { baseName, fmt } from "../time";
 
   type Mode = "empty" | "loading" | "direct" | "proxy-h264" | "proxy-vp8" | "still" | "error";
@@ -59,7 +60,8 @@
       } else {
         await useProxy(p, "h264", token);
       }
-      api.thumbnails(p, 12).then((t) => token === loadToken && (thumbs = t)).catch(() => {});
+      const n = Math.min(30, Math.max(6, Math.ceil((timelineEl?.clientWidth ?? 600) / 96)));
+      api.thumbnails(p, n).then((t) => token === loadToken && (thumbs = t)).catch(() => {});
     } catch (e) {
       if (token !== loadToken) return;
       mode = "error";
@@ -188,10 +190,29 @@
     e.preventDefault();
   }
 
-  function timelineClick(e: MouseEvent) {
-    const el = e.currentTarget as HTMLElement;
-    const r = el.getBoundingClientRect();
-    seek(((e.clientX - r.left) / r.width) * duration);
+  // Timeline: pointer drag scrubs; hover shows the time under the pointer.
+  let timelineEl = $state<HTMLElement | null>(null);
+  let hoverT = $state<number | null>(null);
+  let hoverX = $state(0);
+  function timeAt(clientX: number): number {
+    if (!timelineEl) return 0;
+    const r = timelineEl.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * duration;
+  }
+  function onPointerDown(e: PointerEvent) {
+    timelineEl?.setPointerCapture(e.pointerId);
+    seek(timeAt(e.clientX));
+  }
+  function onPointerMove(e: PointerEvent) {
+    if (!timelineEl) return;
+    hoverX = e.clientX - timelineEl.getBoundingClientRect().left;
+    hoverT = timeAt(e.clientX);
+    if (timelineEl.hasPointerCapture(e.pointerId)) seek(hoverT);
+  }
+
+  async function retry() {
+    message = "";
+    await load(path);
   }
 
   const pct = (t: number | null) => (t == null || !duration ? 0 : (t / duration) * 100);
@@ -199,27 +220,47 @@
 
 <svelte:window onkeydown={onKey} />
 
-<section class="player">
+<section class="player" aria-label="Player">
   {#if mode === "empty"}
     <div class="placeholder">
-      <div class="logo" aria-hidden="true">▶</div>
+      <div class="logo" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z" /></svg>
+      </div>
       <h2>Pick a source to start clipping</h2>
-      <p class="muted">Mark <kbd>I</kbd> in and <kbd>O</kbd> out, then <kbd>Enter</kbd> to add the clip.</p>
+      <ol class="steps">
+        <li><b>1</b> Add a video</li>
+        <li><b>2</b> Mark <kbd>I</kbd> in and <kbd>O</kbd> out</li>
+        <li><b>3</b> Press <kbd>↵</kbd> to queue the clip</li>
+      </ol>
+      <div class="row">
+        <button class="primary" onclick={pickVideos}>Add videos</button>
+        <button onclick={pickFolder}>Add folder</button>
+      </div>
+      <p class="faint">…or drop files and folders anywhere in the window.</p>
     </div>
   {:else}
-    <header>
+    <header class="pane-head">
       <h2 title={path}>{path ? baseName(path) : ""}</h2>
-      <span class="pill">
-        {#if mode === "direct"}Original{:else if mode === "proxy-h264" || mode === "proxy-vp8"}Preview copy{:else if mode === "still"}Still frames{:else if mode === "loading"}Loading…{:else}Unavailable{/if}
-      </span>
+      {#if mode === "direct"}
+        <span class="pill" title="Playing the original file">Original</span>
+      {:else if mode === "proxy-h264" || mode === "proxy-vp8"}
+        <span class="pill" title="Playing a lightweight copy for this format; clips are always cut from the original">Preview copy</span>
+      {:else if mode === "still"}
+        <span class="pill" title="This format can't play here; scrub with exact still frames">Still frames</span>
+      {/if}
     </header>
 
     <div class="stage">
+      {#if mode === "loading"}
+        <div class="overlay"><div class="spinner" aria-hidden="true"></div><p>Opening…</p></div>
+      {/if}
       {#if (mode === "proxy-h264" || mode === "proxy-vp8") && !src}
         <div class="overlay">
-          <p>Preparing a preview copy for this format…</p>
-          <div class="bar" style="width: 220px"><div style="width: {Math.round(proxyProgress * 100)}%"></div></div>
-          <button class="ghost" onclick={() => fallback()}>Use still frames instead</button>
+          <p>Preparing a preview copy for this format… {Math.round(proxyProgress * 100)}%</p>
+          <div class="bar" style="width: 220px" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(proxyProgress * 100)}>
+            <div style="width: {Math.round(proxyProgress * 100)}%"></div>
+          </div>
+          <button class="ghost small" onclick={() => fallback()}>Use still frames instead</button>
         </div>
       {/if}
       {#if mode === "still"}
@@ -239,39 +280,73 @@
         ></video>
       {/if}
       {#if mode === "error"}
-        <div class="overlay"><p class="err">{message}</p></div>
+        <div class="overlay">
+          <p class="title">Can't open this video</p>
+          <p class="err">{message}</p>
+          <button onclick={retry}>Retry</button>
+        </div>
       {/if}
     </div>
 
     <div class="transport">
-      <button class="icon" onclick={togglePlay} disabled={mode === "still" || !src} aria-label={playing ? "Pause" : "Play"}>
-        {playing ? "❚❚" : "▶"}
+      <button class="icon" onclick={togglePlay} disabled={mode === "still" || !src} aria-label={playing ? "Pause (Space)" : "Play (Space)"} title={playing ? "Pause (Space)" : "Play (Space)"}>
+        {#if playing}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+        {:else}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z" /></svg>
+        {/if}
       </button>
-      <button class="icon ghost" onclick={() => seek(current - frame)} aria-label="Previous frame">‹</button>
-      <button class="icon ghost" onclick={() => seek(current + frame)} aria-label="Next frame">›</button>
+      <button class="icon ghost" onclick={() => seek(current - frame)} aria-label="Previous frame" title="Previous frame (←)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 6l-6 6 6 6" /></svg>
+      </button>
+      <button class="icon ghost" onclick={() => seek(current + frame)} aria-label="Next frame" title="Next frame (→)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
+      </button>
       <span class="mono time">{fmt(current)} <span class="faint">/ {fmt(duration)}</span></span>
       <span class="spacer"></span>
-      <button onclick={() => (inPt = current)} title="Set in point (I)">In <kbd>I</kbd></button>
-      <button onclick={() => (inPt == null || current > inPt) && (outPt = current)} title="Set out point (O)">Out <kbd>O</kbd></button>
+      <button class="mark" class:set={inPt != null} onclick={() => { inPt = current; if (outPt != null && outPt <= current) outPt = null; }} title="Set in point (I)">
+        In <span class="mono">{inPt == null ? "—" : fmt(inPt)}</span>
+      </button>
+      <button class="mark" class:set={outPt != null} onclick={() => (inPt == null || current > inPt) && (outPt = current)} title="Set out point (O)">
+        Out <span class="mono">{outPt == null ? "end" : fmt(outPt)}</span>
+      </button>
     </div>
 
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="timeline" role="slider" tabindex="-1" aria-label="Timeline" aria-valuemin={0} aria-valuemax={duration} aria-valuenow={current} onclick={timelineClick}>
-      <div class="thumbs">
+    <div
+      class="timeline"
+      bind:this={timelineEl}
+      role="slider"
+      tabindex="0"
+      aria-label="Timeline"
+      aria-valuemin={0}
+      aria-valuemax={duration}
+      aria-valuenow={current}
+      aria-valuetext={fmt(current)}
+      onpointerdown={onPointerDown}
+      onpointermove={onPointerMove}
+      onpointerleave={() => (hoverT = null)}
+    >
+      <div class="thumbs" class:loading={thumbs.length === 0}>
         {#each thumbs as t, i (i)}<img src={t} alt="" />{/each}
       </div>
       {#if inPt != null}
-        <div class="range" style="left: {pct(inPt)}%; width: {pct(outPt ?? duration) - pct(inPt)}%"></div>
+        <div class="dim" style="left: 0; width: {pct(inPt)}%"></div>
+        <div class="dim" style="left: {pct(outPt ?? duration)}%; right: 0"></div>
+        <div class="range" class:open={outPt == null} style="left: {pct(inPt)}%; width: {pct(outPt ?? duration) - pct(inPt)}%"></div>
       {/if}
       <div class="playhead" style="left: {pct(current)}%"></div>
+      {#if hoverT != null}
+        <div class="tip mono" style="left: {hoverX}px">{fmt(hoverT)}</div>
+      {/if}
     </div>
 
     <div class="clipbar">
-      <span class="mono">In {fmt(inPt)}</span>
-      <span class="mono">Out {outPt == null ? "end" : fmt(outPt)}</span>
       <input type="text" placeholder="Clip name (optional)" bind:value={clipName} onkeydown={(e) => e.key === "Enter" && addCurrentClip()} />
       <button class="primary" disabled={!canAdd} onclick={addCurrentClip}>Add clip <kbd>↵</kbd></button>
     </div>
+    <p class="hints faint">
+      <kbd>Space</kbd> play · <kbd>I</kbd>/<kbd>O</kbd> mark · <kbd>←</kbd>/<kbd>→</kbd> frame · <kbd>⇧</kbd>+arrows 1 s · <kbd>↵</kbd> add
+    </p>
     {#if message && mode === "still"}<p class="faint note">Playback isn't available for this file here; showing exact still frames. {message}</p>{/if}
   {/if}
 </section>
@@ -280,23 +355,39 @@
   .player { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); min-height: 0; height: 100%; }
   header { display: flex; align-items: center; gap: var(--space-3); }
   h2 { margin: 0; font-size: 16px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .stage { position: relative; flex: 1; min-height: 200px; border-radius: var(--radius-l); background: #07080c; overflow: hidden; display: grid; place-items: center; }
+  .stage { position: relative; flex: 1; min-height: 160px; border-radius: var(--radius-l); background: var(--stage-bg); overflow: hidden; display: grid; place-items: center; }
   .stage video, .stage img { width: 100%; height: 100%; object-fit: contain; }
   .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); color: #d9dbe5; background: rgba(7, 8, 12, 0.7); }
   .overlay .ghost { color: #d9dbe5; }
-  .err { color: #ff8f8f; max-width: 80%; text-align: center; }
+  .err { color: var(--danger); max-width: 80%; text-align: center; margin: 0; user-select: text; }
+  .overlay .title { font-weight: 650; margin: 0; }
   .transport, .clipbar { display: flex; align-items: center; gap: var(--space-2); }
   .time { margin-left: var(--space-2); font-size: 13px; }
   .spacer { flex: 1; }
-  .timeline { position: relative; height: 54px; border-radius: var(--radius-m); background: var(--surface-2); overflow: hidden; cursor: pointer; }
-  .thumbs { position: absolute; inset: 0; display: flex; opacity: 0.85; }
-  .thumbs img { flex: 1; min-width: 0; height: 100%; object-fit: cover; }
-  .range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 35%, transparent); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); }
-  .playhead { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); transform: translateX(-1px); }
-  .clipbar input { flex: 1 1 80px; min-width: 0; }
-  .clipbar .mono { font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+  .timeline { position: relative; height: 54px; border-radius: var(--radius-m); background: var(--surface-2); cursor: pointer; touch-action: none; flex-shrink: 0; }
+  .thumbs { position: absolute; inset: 0; display: flex; border-radius: var(--radius-m); overflow: hidden; }
+  .thumbs img { flex: 1; min-width: 0; height: 100%; object-fit: cover; animation: fade 200ms var(--ease); }
+  .thumbs.loading { background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  @keyframes fade { from { opacity: 0; } }
+  .dim { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.45); }
+  .range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 22%, transparent); border-left: 3px solid var(--accent); border-right: 3px solid var(--accent); }
+  .range.open { border-right-style: dashed; }
+  .playhead { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45); transform: translateX(-1px); z-index: 2; pointer-events: none; }
+  .playhead::before { content: ""; position: absolute; top: -5px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45); }
+  .tip { position: absolute; bottom: calc(100% + 6px); transform: translateX(-50%); padding: 2px 6px; border-radius: 5px; font-size: 11px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); pointer-events: none; white-space: nowrap; z-index: 3; }
+  .clipbar { flex-wrap: wrap; }
+  .clipbar input { flex: 1 1 140px; min-width: 0; }
+  .mark { gap: 6px; }
+  .mark .mono { font-size: 12px; color: var(--text-2); }
+  .mark.set { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .mark.set .mono { color: var(--text); }
+  .hints { margin: 0; font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: var(--space-2); }
   .placeholder h2 { font-size: 18px; }
-  .logo { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; font-size: 22px; color: white; background: linear-gradient(135deg, var(--accent-2), var(--accent)); box-shadow: var(--shadow); }
+  .placeholder .row { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+  .steps { list-style: none; padding: 0; margin: var(--space-2) 0; display: flex; gap: var(--space-4); color: var(--text-2); }
+  .steps b { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 6px; border-radius: 50%; font-size: 11px; background: var(--accent-soft); color: var(--accent); }
+  .logo { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; color: var(--accent-fg); background: linear-gradient(135deg, var(--accent-2), var(--accent)); box-shadow: var(--shadow); }
   .note { margin: 0; font-size: 12px; }
 </style>

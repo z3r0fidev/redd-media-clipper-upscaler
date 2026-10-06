@@ -16,10 +16,10 @@
   --bg: #f6f7fb;
   --surface: #ffffff;
   --surface-2: #f0f2f8;
-  --border: #e2e5ef;
+  --border: #d5d9e6;
   --text: #171a24;
   --text-2: #5b6275;
-  --text-3: #8a91a5;
+  --text-3: #6b7287;
   --accent: #5b5bf0;
   --accent-2: #7a6cff;
   --accent-soft: rgba(91, 91, 240, 0.12);
@@ -27,6 +27,8 @@
   --warn: #d18a00;
   --danger: #d64545;
   --shadow: 0 1px 2px rgba(16, 20, 40, 0.06), 0 8px 24px rgba(16, 20, 40, 0.06);
+  --accent-fg: #ffffff;
+  --stage-bg: #07080c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -34,14 +36,15 @@
     --bg: #0e1016;
     --surface: #161922;
     --surface-2: #1d212d;
-    --border: #2a2f3d;
+    --border: #343a4b;
     --text: #e9ebf2;
     --text-2: #a3a9ba;
-    --text-3: #6f768a;
+    --text-3: #8a91a8;
     --accent: #8b87ff;
     --accent-2: #a99bff;
     --accent-soft: rgba(139, 135, 255, 0.16);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.35);
+    --accent-fg: #12131c;
   }
 }
 
@@ -71,10 +74,15 @@ button {
 button:hover:not(:disabled) { background: var(--surface-2); }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:disabled { opacity: 0.45; cursor: default; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-button.primary { background: linear-gradient(180deg, var(--accent-2), var(--accent)); border-color: transparent; color: white; font-weight: 600; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: 0 0 0 4px var(--accent-soft); }
+button.primary { background: linear-gradient(180deg, var(--accent-2), var(--accent)); border-color: transparent; color: var(--accent-fg); font-weight: 600; }
 button.primary:hover:not(:disabled) { filter: brightness(1.06); background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
-button.ghost { border-color: transparent; background: transparent; }
+button.primary:disabled { background: var(--surface-2); color: var(--text-3); border-color: var(--border); opacity: 1; }
+/* Ghost buttons keep a faint outline so they read as buttons. */
+button.ghost { border-color: color-mix(in srgb, var(--border) 60%, transparent); background: transparent; color: var(--text-2); }
+button.ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+button.small { height: 28px; padding: 0 var(--space-2); font-size: 12.5px; }
+button.icon.ghost { border-color: transparent; width: 28px; height: 28px; }
 button.danger { color: var(--danger); }
 button.icon { width: 32px; padding: 0; justify-content: center; }
 
@@ -92,8 +100,13 @@ input.invalid { border-color: var(--danger); background: color-mix(in srgb, var(
 .pill.bad { color: var(--danger); }
 .bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 200ms var(--ease); }
-kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-2); }
+kbd { font-family: var(--mono); font-size: 11px; min-width: 18px; text-align: center; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-2); box-shadow: 0 1px 0 var(--border); }
+.pane-head { display: flex; align-items: center; gap: var(--space-2); min-height: 32px; }
+.spacer { flex: 1; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
