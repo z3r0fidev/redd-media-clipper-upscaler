@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { api, errorText, type PreviewInfo } from "../api";
   import { app, toast } from "../stores/app.svelte";
   import { addClip } from "../stores/queue";
@@ -31,9 +32,11 @@
   });
   const canAdd = $derived(!!path && inPt != null && (outPt == null || outPt > inPt));
 
+  // Only a change of source reloads: load() reads and writes state, which must not become
+  // dependencies of this effect (setting a still frame would otherwise restart loading).
   $effect(() => {
     const p = path;
-    void load(p);
+    untrack(() => void load(p));
   });
 
   async function load(p: string | null) {

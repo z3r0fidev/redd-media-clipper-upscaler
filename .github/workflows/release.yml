@@ -1,0 +1,71 @@
+name: Release
+
+# Builds installers and standalone CLI archives for a version tag. Publishing (GitHub release,
+# signing) is a separate, manual step — see README › Releasing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+            exe: ""
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+            exe: ".exe"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+      - name: Stage bundled programs (pinned FFmpeg, release CLI)
+        run: |
+          cargo xtask fetch-tools --target ${{ matrix.triple }}
+          cargo xtask stage-cli --target ${{ matrix.triple }}
+      - name: Third-party notices are current
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          cd ../.. && cargo xtask notices && git diff --exit-code -- THIRD_PARTY_NOTICES.md
+      - name: Build installers
+        working-directory: apps/desktop
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+      - name: Standalone CLI archive
+        shell: bash
+        run: |
+          name=rmedia-cli-${GITHUB_REF_NAME}-${{ matrix.triple }}
+          mkdir -p "dist/$name/licenses"
+          cp binaries/rmedia-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia${{ matrix.exe }}"
+          cp binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffmpeg${{ matrix.exe }}"
+          cp binaries/rmedia-ffprobe-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffprobe${{ matrix.exe }}"
+          cp THIRD_PARTY_NOTICES.md licenses/FFMPEG-NOTICE.md licenses/FFMPEG-LICENSE.txt "dist/$name/licenses/"
+          cp README.md "dist/$name/"
+          cd dist && if [ "${{ runner.os }}" = "Windows" ]; then 7z a "$name.zip" "$name" >/dev/null; else tar -czf "$name.tar.gz" "$name"; fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rmedia-${{ matrix.triple }}
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/**/*.deb
+            apps/desktop/src-tauri/target/release/bundle/**/*.AppImage
+            apps/desktop/src-tauri/target/release/bundle/**/*.exe
+            apps/desktop/src-tauri/target/release/bundle/**/*.msi
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error

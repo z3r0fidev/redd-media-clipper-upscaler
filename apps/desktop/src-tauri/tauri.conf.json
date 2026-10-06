@@ -24,8 +24,57 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src http://127.0.0.1:*; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-      "assetProtocol": { "enable": false }
+      "assetProtocol": {
+        "enable": false
+      }
     }
   },
-  "bundle": { "active": false, "icon": ["icons/icon.png"] }
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb",
+      "appimage",
+      "nsis",
+      "msi"
+    ],
+    "publisher": "OpenLogic Distribution Ltd",
+    "category": "Video",
+    "shortDescription": "Cut video clips \u2014 fast or frame-accurate",
+    "longDescription": "rmedia cuts clips from videos by timestamps, clip lists and batch manifests, on Linux and Windows. Includes the rmedia command-line tool.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "../../../binaries/rmedia-ffmpeg",
+      "../../../binaries/rmedia-ffprobe",
+      "../../../binaries/rmedia"
+    ],
+    "resources": {
+      "../../../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
+      "../../../licenses/FFMPEG-NOTICE.md": "licenses/FFMPEG-NOTICE.md",
+      "../../../licenses/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt"
+    },
+    "linux": {
+      "deb": {
+        "section": "video",
+        "depends": [
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-libav"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
 }

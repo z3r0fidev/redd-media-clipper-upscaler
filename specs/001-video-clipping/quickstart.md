@@ -6,8 +6,8 @@ equivalents (CI runs the automated parts on both).
 ## Prerequisites
 - Rust 1.94 (`rust-toolchain.toml`), Node 24, FFmpeg ≥ 6.0 on PATH **or** `cargo xtask fetch-tools`
   (downloads the pinned bundled build into `binaries/`).
-- Linux GUI deps: webkit2gtk-4.1, librsvg2, libayatana-appindicator3 (`*-dev`).
-- `cargo install tauri-cli --version "^2" --locked` (GUI only).
+- Linux GUI deps: webkit2gtk-4.1, librsvg2, libayatana-appindicator3 (`*-dev`), `patchelf`
+  (AppImage bundling). The Tauri CLI comes from `apps/desktop/package.json` (`npx tauri …`).
 
 ## 1. Automated suite
 ```bash
@@ -41,7 +41,7 @@ Start an accurate clip of a long 1080p source, press Ctrl-C once: summary printe
 
 ## 4. Desktop (US5)
 ```bash
-cd apps/desktop && npm ci && cargo tauri dev
+cd apps/desktop && npm ci && npx tauri dev     # or: npx tauri dev -- -- /path/video.mp4
 ```
 Add `/tmp/t.mp4` by drag-and-drop → mark in/out with I/O keys → add 2 clips → Run → verify
 progress and outputs; start a long run and Cancel all → nothing partial left. Export queue as
