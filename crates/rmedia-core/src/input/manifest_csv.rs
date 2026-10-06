@@ -12,7 +12,14 @@ const COLUMNS: [&str; 7] = ["input", "start", "end", "duration", "name", "mode",
 
 pub fn load(path: &Path, cli: &Options) -> Result<BatchRequest, Vec<Issue>> {
     match std::fs::read(path) {
-        Ok(bytes) => parse(path, &String::from_utf8_lossy(&bytes), cli),
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(text) => parse(path, &text, cli),
+            Err(e) => Err(vec![issue(
+                path,
+                crate::input::cliplist::utf8_error_line(e.as_bytes(), &e),
+                "not valid UTF-8 text".into(),
+            )]),
+        },
         Err(e) => Err(vec![issue(path, 0, format!("cannot read manifest: {e}"))]),
     }
 }
@@ -30,7 +37,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
         Ok(h) => h.iter().map(|s| s.to_ascii_lowercase()).collect(),
         Err(e) => return Err(vec![issue(path, 1, format!("cannot read the header row: {e}"))]),
     };
-    let header_line = rdr.position().line().max(1) as usize;
+    let header_line = line_at(text, 0);
     for h in &headers {
         if !COLUMNS.contains(&h.as_str()) {
             issues.push(issue(
@@ -38,6 +45,11 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
                 header_line,
                 format!("unknown column \"{h}\" (allowed: {})", COLUMNS.join(", ")),
             ));
+        }
+    }
+    for (i, h) in headers.iter().enumerate() {
+        if headers[..i].contains(h) {
+            issues.push(issue(path, header_line, format!("column \"{h}\" appears more than once")));
         }
     }
     for required in ["input", "start"] {
@@ -67,7 +79,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
         let get = |c: Option<usize>| c.and_then(|i| record.get(i)).filter(|v| !v.is_empty());
         let mut row_issues = Vec::new();
         let input = match get(Some(c_input)) {
-            Some(i) => resolve(&base, Path::new(i)),
+            Some(i) => normalize(&resolve(&base, Path::new(i))),
             None => {
                 row_issues.push("input is empty".to_owned());
                 PathBuf::new()
@@ -163,6 +175,11 @@ fn issue(file: &Path, line: usize, message: String) -> Issue {
     }
 }
 
+/// Drops `.` components so `a.mp4` and `./a.mp4` group as the same source.
+fn normalize(p: &Path) -> PathBuf {
+    p.components().filter(|c| !matches!(c, std::path::Component::CurDir)).collect()
+}
+
 fn resolve(base: &Path, p: &Path) -> PathBuf {
     if p.is_absolute() { p.to_path_buf() } else { base.join(p) }
 }
@@ -256,6 +273,30 @@ mod tests {
             })
             .collect();
         assert_eq!(lines, [3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn comments_above_header_quoting_and_duplicates() {
+        let text = "# jobs\n\n# more\ninput,start,end,name\n# c\na.mp4,1,2,\"a, \"\"quoted\"\"\nname\"\nb.mp4,1:7x,2,\n";
+        let err = parse(Path::new("j.csv"), text, &Options::default()).unwrap_err();
+        assert_eq!(err.len(), 1);
+        assert!(matches!(err[0].origin, Origin::Line { line: 8, .. }), "{:?}", err[0]);
+        let ok = parse(Path::new("j.csv"), &text.replace("1:7x", "3"), &Options::default()).unwrap();
+        assert_eq!(ok.sources[0].clips[0].name.as_deref(), Some("a, \"quoted\"\nname"));
+        assert!(matches!(ok.sources[0].clips[0].origin, Origin::Line { line: 6, .. }));
+        let err =
+            parse(Path::new("j.csv"), "# x\ninput,start,input\na,1,b\n", &Options::default()).unwrap_err();
+        assert!(err[0].message.contains("more than once"));
+        assert!(matches!(err[0].origin, Origin::Line { line: 2, .. }), "{:?}", err[0]);
+    }
+
+    #[test]
+    fn invalid_utf8_is_an_error_with_a_line() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("j.csv");
+        std::fs::write(&p, b"input,start\na.mp4,1\nb\xff.mp4,2\n").unwrap();
+        let err = load(&p, &Options::default()).unwrap_err();
+        assert!(err[0].message.contains("UTF-8") && matches!(err[0].origin, Origin::Line { line: 3, .. }));
     }
 
     #[test]

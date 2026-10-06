@@ -166,3 +166,23 @@ fn hostile_file_names() {
     assert!(!stdout.contains("injected"));
     assert!(String::from_utf8_lossy(&o.stderr).contains("skipping a path"));
 }
+
+#[test]
+fn the_same_video_reached_twice_is_clipped_once() {
+    require_ffmpeg!();
+    let d = library();
+    let lib = d.path().join("lib");
+    let o = rmedia(d.path())
+        .arg("clip")
+        .arg(lib.join("ep2.mp4"))
+        .arg(&lib)
+        .args(["-s", "1", "-e", "2", "-q"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(
+        String::from_utf8_lossy(&o.stdout).contains("2 succeeded"),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+}

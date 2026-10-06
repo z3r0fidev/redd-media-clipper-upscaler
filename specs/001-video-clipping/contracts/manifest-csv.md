@@ -7,13 +7,14 @@ columns are an error. Lines starting with `#` are comments.
 |---|---|---|
 | `input` | yes | video path (relative → manifest directory) |
 | `start` | yes | time |
-| `end` | one of end/duration | time or `end` |
-| `duration` | one of end/duration | time (no `+` needed) |
+| `end` | no | time, `end`, or `+DURATION` |
+| `duration` | no | time (`+` optional); not together with `end` |
 | `name` | no | clip name |
 | `mode` | no | `fast` \| `accurate` |
 | `output` | no | output directory for this clip |
 
-Rows sharing an `input` are grouped into one source in order of first appearance. CLI flags act as
+Without `end` and `duration` a clip runs to the end of the video (as in JSON and `clip -s`).
+`start` never takes a `+`. Rows sharing an `input` are grouped into one source in order of first appearance. CLI flags act as
 defaults. Equivalent JSON and CSV manifests MUST produce identical plans (FR-007).
 
 ```csv

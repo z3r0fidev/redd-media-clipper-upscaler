@@ -50,19 +50,27 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
     if args.continue_on_missing {
         let (present, missing): (Vec<_>, Vec<_>) = req.sources.into_iter().partition(|s| s.path.exists());
         for s in &missing {
-            if !out.json {
-                eprintln!(
-                    "warning: {}: {} not found; skipping its {} clip(s)",
-                    s.origin,
-                    s.path.display(),
-                    s.clips.len()
-                );
-            }
+            // stderr even with --json: stdout stays machine-readable, the skip is never silent.
+            eprintln!(
+                "warning: {}: {} not found; skipping its {} clip(s)",
+                s.origin,
+                s.path.display(),
+                s.clips.len()
+            );
         }
         req.sources = present;
         if req.sources.is_empty() {
             return out.input_error("none of the manifest's videos exist");
         }
+    }
+
+    // Same rule as `clip`: many sources into one shared output folder → one sub-folder each.
+    if req.sources.len() > 1
+        && args.output_dir.is_some()
+        && args.name.is_none()
+        && req.defaults.name_template == rmedia_core::request::DEFAULT_NAME_TEMPLATE
+    {
+        req.defaults.name_template = rmedia_core::request::MULTI_SOURCE_NAME_TEMPLATE.to_owned();
     }
 
     let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };

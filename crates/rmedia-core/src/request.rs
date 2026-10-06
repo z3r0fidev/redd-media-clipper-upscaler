@@ -139,7 +139,9 @@ impl std::fmt::Display for Origin {
         match self {
             Origin::Cli => f.write_str("command line"),
             Origin::Gui => f.write_str("queue"),
+            Origin::Line { file, line: 0 } => write!(f, "{}", file.display()),
             Origin::Line { file, line } => write!(f, "{}:{line}", file.display()),
+            Origin::JsonPath { file, path } if path.is_empty() => write!(f, "{}", file.display()),
             Origin::JsonPath { file, path } => write!(f, "{}:{path}", file.display()),
         }
     }

@@ -55,7 +55,7 @@
         "name_template": { "type": "string" },
         "container": { "type": "string" },
         "on_exists": { "enum": ["skip", "overwrite", "rename"] },
-        "audio": { "oneOf": [ { "enum": ["all", "none"] }, { "type": "array", "items": { "type": "integer", "minimum": 0 } } ] },
+        "audio": { "oneOf": [ { "enum": ["all", "none"] }, { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "1-based audio track numbers" } ] },
         "subtitles": { "enum": ["all", "none"] }
       }
     }

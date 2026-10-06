@@ -71,11 +71,12 @@ async fn equivalent_json_and_csv_produce_identical_plans() {
     std::fs::write(
         &json,
         r#"{"version":1,"videos":[
-            {"input":"v1.mp4","clips":[{"start":"0:01","end":"0:02","name":"x"},{"start":5,"duration":2}]},
+            {"input":"v1.mp4","clips":[{"start":"0:01","end":"0:02","name":"x"},{"start":5,"duration":2},
+                                       {"start":"0:10","end":"+3"},{"start":20,"duration":"+1.5"},{"start":"50","end":"end"}]},
             {"input":"v2.mp4","options":{"mode":"accurate","output_dir":"o"},"clips":[{"start":3,"end":"end"}]}]}"#,
     )
     .unwrap();
-    std::fs::write(&csv, "input,start,end,duration,name,mode,output\nv1.mp4,0:01,0:02,,x,,\nv1.mp4,5,,2,,,\nv2.mp4,3,end,,,accurate,o\n").unwrap();
+    std::fs::write(&csv, "input,start,end,duration,name,mode,output\nv1.mp4,0:01,0:02,,x,,\nv1.mp4,5,,2,,,\n./v1.mp4,0:10,+3,,,,\nv1.mp4,20,,+1.5,,,\nv1.mp4,50,end,,,,\nv2.mp4,3,end,,,accurate,o\n").unwrap();
     let (tools, caps) = engine();
     let a = make_plan(&manifest_json::load(&json, &Options::default()).unwrap(), &tools, &caps).await;
     let b = make_plan(&manifest_csv::load(&csv, &Options::default()).unwrap(), &tools, &caps).await;

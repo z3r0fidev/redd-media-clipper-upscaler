@@ -9,7 +9,12 @@ use crate::time::{EndSpec, Ts};
 /// Reads and parses a clip list file.
 pub fn load(path: &Path) -> Result<Vec<ClipRequest>, Vec<Issue>> {
     match std::fs::read(path) {
-        Ok(bytes) => parse(path, &String::from_utf8_lossy(&bytes)),
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(text) => parse(path, &text),
+            Err(e) => {
+                Err(vec![issue(path, utf8_error_line(e.as_bytes(), &e), "not valid UTF-8 text".into())])
+            }
+        },
         Err(e) => Err(vec![issue(path, 0, format!("cannot read clip list: {e}"))]),
     }
 }
@@ -40,6 +45,12 @@ pub fn parse(path: &Path, text: &str) -> Result<Vec<ClipRequest>, Vec<Issue>> {
         issues.push(issue(path, 0, "the clip list contains no clips".into()));
     }
     if issues.is_empty() { Ok(clips) } else { Err(issues) }
+}
+
+/// 1-based line containing the first invalid UTF-8 byte.
+pub(crate) fn utf8_error_line(bytes: &[u8], e: &std::string::FromUtf8Error) -> usize {
+    let valid = e.utf8_error().valid_up_to();
+    bytes[..valid].iter().filter(|&&b| b == b'\n').count() + 1
 }
 
 fn issue(path: &Path, line: usize, message: String) -> Issue {

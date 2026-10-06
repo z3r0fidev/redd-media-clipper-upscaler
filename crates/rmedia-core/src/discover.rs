@@ -80,6 +80,9 @@ pub struct ScanResult {
     pub videos: Vec<MediaInfo>,
     pub rejected: Vec<Rejected>,
     pub skipped: Skipped,
+    /// Folders skipped because of `ScanOptions::exclude_dir_names`.
+    #[serde(serialize_with = "crate::pathser::paths")]
+    pub excluded_named: Vec<PathBuf>,
     pub elapsed_ms: u64,
 }
 
@@ -113,7 +116,7 @@ pub async fn scan(
     if cancel.is_cancelled() {
         return Err(Error::Cancelled);
     }
-    let Walk { candidates, mut rejected, skipped, visited } = walk;
+    let Walk { candidates, mut rejected, skipped, visited, excluded_named } = walk;
     on_event(ScanEvent::Progress { visited, candidates: candidates.len(), probed: 0 });
 
     // Probe with a fixed-size pool: at most `workers` tasks exist at any time, however large the
@@ -137,6 +140,7 @@ pub async fn scan(
                     reason: RejectReason::Inaccessible,
                     detail: "replaced by a symbolic link during the scan".into(),
                 });
+                probed += 1;
                 continue;
             }
             let (tools, cancel, p) = (tools.clone(), cancel.clone(), path.clone());
@@ -193,6 +197,7 @@ pub async fn scan(
         videos,
         rejected,
         skipped,
+        excluded_named,
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
 }
@@ -219,6 +224,7 @@ fn is_image_format(format_name: &str) -> bool {
 }
 
 struct Walk {
+    excluded_named: Vec<PathBuf>,
     candidates: Vec<PathBuf>,
     rejected: Vec<Rejected>,
     skipped: Skipped,
@@ -232,8 +238,13 @@ fn walk(
     exclude: Option<&GlobSet>,
     cancel: &CancellationToken,
 ) -> Walk {
-    let mut out =
-        Walk { candidates: Vec::new(), rejected: Vec::new(), skipped: Skipped::default(), visited: 0 };
+    let mut out = Walk {
+        excluded_named: Vec::new(),
+        candidates: Vec::new(),
+        rejected: Vec::new(),
+        skipped: Skipped::default(),
+        visited: 0,
+    };
     let mut seen = std::collections::HashSet::new();
     let excluded_dirs: Vec<std::ffi::OsString> = opts
         .exclude_dirs
@@ -281,8 +292,12 @@ fn walk(
                 let skip_hidden = !opts.hidden && is_hidden(&entry);
                 let skip_system =
                     SKIP_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name)) || name.starts_with(".Trash-");
+                let by_name = opts.exclude_dir_names.iter().any(|n| n.eq_ignore_ascii_case(&name));
+                if by_name {
+                    out.excluded_named.push(entry.path().to_path_buf());
+                }
                 let skip_excluded = exclude.is_some_and(|g| g.is_match(rel) || g.is_match(rel.join("x")))
-                    || opts.exclude_dir_names.iter().any(|n| n.eq_ignore_ascii_case(&name))
+                    || by_name
                     || (!excluded_dirs.is_empty()
                         && excluded_dirs.contains(&path_key(
                             &std::fs::canonicalize(entry.path())
@@ -323,9 +338,9 @@ fn walk(
             if !is_root && !VIDEO_EXTENSIONS.contains(&ext.as_str()) {
                 continue;
             }
-            let rel_for_globs = if is_root { Path::new(entry.file_name()) } else { rel };
-            if include.is_some_and(|g| !g.is_match(rel_for_globs))
-                || exclude.is_some_and(|g| g.is_match(rel_for_globs))
+            // A file given explicitly as a root is always considered (like the extension check).
+            if !is_root
+                && (include.is_some_and(|g| !g.is_match(rel)) || exclude.is_some_and(|g| g.is_match(rel)))
             {
                 out.skipped.excluded += 1;
                 continue;
@@ -341,7 +356,7 @@ fn walk(
 
 /// Identity key for a path: exact bytes on Unix (non-UTF-8 names stay distinct), case-insensitive
 /// on Windows.
-pub(crate) fn path_key(p: &Path) -> std::ffi::OsString {
+pub fn path_key(p: &Path) -> std::ffi::OsString {
     if cfg!(windows) { p.to_string_lossy().to_lowercase().into() } else { p.as_os_str().to_owned() }
 }
 

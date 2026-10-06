@@ -190,8 +190,20 @@ pub async fn expand_inputs(
                 }
             );
         }
+        if !found.excluded_named.is_empty() && !out.quiet && !out.json {
+            eprintln!(
+                "note: skipped {} folder(s) named \"clips\" (rmedia's default output folder); \
+                 pass such a folder directly to use its videos as sources",
+                found.excluded_named.len()
+            );
+        }
         sources.extend(found.videos.into_iter().map(|v| v.path));
     }
+    // The same video reached twice (file + folder, list + folder) is clipped once.
+    let mut seen = std::collections::HashSet::new();
+    sources.retain(|p| {
+        seen.insert(rmedia_core::discover::path_key(&std::fs::canonicalize(p).unwrap_or_else(|_| p.clone())))
+    });
     if sources.is_empty() {
         return Err(out.input_error("no input videos (folders contained no videos)"));
     }

@@ -105,11 +105,10 @@ fn clip(file: &Path, jpath: &str, c: RawClip, base: &Path) -> Result<ClipRequest
             issues.push(issue(file, jpath, "give either end or duration, not both".into()));
             None
         }
-        (Some(Value::String(s)), None) if s.trim().eq_ignore_ascii_case("end") => Some(EndSpec::EndOfMedia),
         (Some(e), None) => {
-            time(e).map(EndSpec::At).map_err(|m| issues.push(issue(file, &format!("{jpath}.end"), m))).ok()
+            end_value(e).map_err(|m| issues.push(issue(file, &format!("{jpath}.end"), m))).ok()
         }
-        (None, Some(d)) => time(d)
+        (None, Some(d)) => duration_value(d)
             .map(EndSpec::Duration)
             .map_err(|m| issues.push(issue(file, &format!("{jpath}.duration"), m)))
             .ok(),
@@ -127,14 +126,31 @@ fn clip(file: &Path, jpath: &str, c: RawClip, base: &Path) -> Result<ClipRequest
     }
 }
 
+/// A position: seconds (number) or the time grammar (string). No `+` (that means a duration).
 fn time(v: &Value) -> Result<Ts, String> {
     match v {
         Value::Number(n) => match n.as_f64() {
             Some(f) if f.is_finite() && f >= 0.0 => Ok(Ts::from_secs_f64(f)),
             _ => Err(format!("invalid time {n}")),
         },
-        Value::String(s) => Ts::parse(s.trim_start_matches('+')).map_err(|e| e.to_string()),
+        Value::String(s) => Ts::parse(s).map_err(|e| e.to_string()),
         other => Err(format!("expected a time (number of seconds or string), got {other}")),
+    }
+}
+
+/// `end`: a number is a position; a string follows the CLI/CSV grammar (`end`, `+DURATION`, time).
+fn end_value(v: &Value) -> Result<EndSpec, String> {
+    match v {
+        Value::String(s) => EndSpec::parse(s).map_err(|e| e.to_string()),
+        other => time(other).map(EndSpec::At),
+    }
+}
+
+/// `duration`: a length; a leading `+` is optional (as in CSV).
+fn duration_value(v: &Value) -> Result<Ts, String> {
+    match v {
+        Value::String(s) => Ts::parse(s.strip_prefix('+').unwrap_or(s)).map_err(|e| e.to_string()),
+        other => time(other),
     }
 }
 
