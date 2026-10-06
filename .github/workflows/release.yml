@@ -33,24 +33,41 @@ jobs:
       - run: rustup show active-toolchain || rustup toolchain install
       - name: Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+        # GStreamer is bundled into the AppImage (WebKitGTK needs it for <video>).
+        run: >-
+          sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev
+          libayatana-appindicator3-dev patchelf libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            . -> target
+            apps/desktop/src-tauri -> target
       - name: Stage bundled programs (pinned FFmpeg, release CLI)
         run: |
           cargo xtask fetch-tools --target ${{ matrix.triple }}
           cargo xtask stage-cli --target ${{ matrix.triple }}
-      - name: Third-party notices are current
+      - name: Tests must pass before packaging
         shell: bash
+        env:
+          RMEDIA_REQUIRE_FFMPEG: "1"
+          RMEDIA_FFMPEG: ${{ github.workspace }}/binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }}
+          RMEDIA_FFPROBE: ${{ github.workspace }}/binaries/rmedia-ffprobe-${{ matrix.triple }}${{ matrix.exe }}
+        run: cargo test --workspace
+      - name: Frontend dependencies
         working-directory: apps/desktop
-        run: |
-          npm ci
-          cd ../.. && cargo xtask notices && git diff --exit-code -- THIRD_PARTY_NOTICES.md
+        run: npm ci
+      - name: Third-party notices are current (covers both platforms)
+        if: runner.os == 'Linux'
+        run: cargo xtask notices && git diff --exit-code -- THIRD_PARTY_NOTICES.md
       - name: Build installers
         working-directory: apps/desktop
         run: npx tauri build --bundles ${{ matrix.bundles }}
       - name: Standalone CLI archive
         shell: bash
         run: |
-          name=rmedia-cli-${GITHUB_REF_NAME}-${{ matrix.triple }}
+          ref=$(echo "${GITHUB_REF_NAME}" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-*$//')
+          name=rmedia-cli-${ref}-${{ matrix.triple }}
           mkdir -p "dist/$name/licenses"
           cp binaries/rmedia-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia${{ matrix.exe }}"
           cp binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffmpeg${{ matrix.exe }}"

@@ -60,6 +60,15 @@ Found and fixed during this run: the AppImage could not play any video (GStreame
 not bundled — `bundleMediaFramework`), and a player effect re-ran loading in a loop when falling
 back to still frames.
 
+## Final review (T073)
+
+The release-readiness review found, and this commit fixes: a Windows-only bug that would have
+failed every clip at commit time (`sync_all` on a read-only handle — FlushFileBuffers needs write
+access), the desktop CI job not staging sidecars, notices generated for the host platform only
+(now the union of Linux + Windows), missing GStreamer packages on the release runner, `\\?\`
+verbatim prefixes in user-visible Windows paths, and contract/README drift. Windows fixes are
+type-checked here and first exercised by CI on `windows-latest`.
+
 ## Open items
 
 - ⏳ Windows: installers, Job Object cancellation, long paths and cloud placeholders run only in CI

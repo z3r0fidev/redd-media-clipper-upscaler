@@ -6,6 +6,7 @@ pub mod error;
 pub mod event;
 pub mod exec;
 pub mod input;
+pub mod paths;
 pub mod pathser;
 pub mod plan;
 pub mod preview;

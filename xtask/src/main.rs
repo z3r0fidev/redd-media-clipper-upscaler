@@ -108,7 +108,13 @@ fn fetch_tools(target: &str) -> Result<()> {
     let extract = work.join("x");
     std::fs::create_dir_all(&extract)?;
     // bsdtar (Windows 10+) and GNU tar both handle these formats.
-    run(Command::new("tar").arg("-xf").arg(&archive).arg("-C").arg(&extract))?;
+    // On Windows use the system bsdtar (reads .zip); a GNU tar earlier on PATH (Git Bash) cannot.
+    let tar = if cfg!(windows) {
+        std::env::var("SystemRoot").map(|r| format!(r"{r}\System32\tar.exe")).unwrap_or_else(|_| "tar".into())
+    } else {
+        "tar".into()
+    };
+    run(Command::new(tar).arg("-xf").arg(&archive).arg("-C").arg(&extract))?;
 
     let find = |name: &str| -> Result<PathBuf> {
         walk(&extract)
@@ -238,10 +244,23 @@ fn notices() -> Result<()> {
         texts: Vec<String>,
     }
     let mut crates: BTreeMap<String, Entry> = BTreeMap::new();
-    for manifest in ["Cargo.toml", "apps/desktop/src-tauri/Cargo.toml"] {
+    // Union over every release platform, so the file is identical wherever it is generated and
+    // the Windows installers list their Windows-only crates too.
+    let platforms = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"];
+    for (manifest, platform) in ["Cargo.toml", "apps/desktop/src-tauri/Cargo.toml"]
+        .iter()
+        .flat_map(|m| platforms.iter().map(move |p| (*m, *p)))
+    {
         let out = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
-            .args(["metadata", "--format-version", "1", "--manifest-path", manifest, "--filter-platform"])
-            .arg(host_triple())
+            .args([
+                "metadata",
+                "--format-version",
+                "1",
+                "--manifest-path",
+                manifest,
+                "--filter-platform",
+                platform,
+            ])
             .current_dir(root())
             .output()?;
         if !out.status.success() {
@@ -250,8 +269,12 @@ fn notices() -> Result<()> {
         let meta: serde_json::Value = serde_json::from_slice(&out.stdout)?;
         // Only packages actually reachable through normal (non-dev, non-build) dependencies.
         let resolve = &meta["resolve"]["nodes"];
-        let members: Vec<String> =
-            meta["workspace_members"].as_array().into_iter().flatten().filter_map(|m| m.as_str().map(String::from)).collect();
+        let members: Vec<String> = meta["workspace_members"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m.as_str().map(String::from))
+            .collect();
         let mut keep = std::collections::HashSet::new();
         let mut stack: Vec<String> = members.clone();
         while let Some(id) = stack.pop() {
@@ -260,7 +283,8 @@ fn notices() -> Result<()> {
             }
             if let Some(node) = resolve.as_array().into_iter().flatten().find(|n| n["id"] == id.as_str()) {
                 for dep in node["deps"].as_array().into_iter().flatten() {
-                    let normal = dep["dep_kinds"].as_array().into_iter().flatten().any(|k| k["kind"].is_null());
+                    let normal =
+                        dep["dep_kinds"].as_array().into_iter().flatten().any(|k| k["kind"].is_null());
                     if normal && let Some(d) = dep["pkg"].as_str() {
                         stack.push(d.to_owned());
                     }
@@ -272,8 +296,12 @@ fn notices() -> Result<()> {
             if !keep.contains(id) || members.iter().any(|m| m == id) || p["source"].is_null() {
                 continue;
             }
-            let key = format!("{} {}", p["name"].as_str().unwrap_or("?"), p["version"].as_str().unwrap_or("?"));
-            let dir = Path::new(p["manifest_path"].as_str().unwrap_or("")).parent().map(Path::to_path_buf).unwrap_or_default();
+            let key =
+                format!("{} {}", p["name"].as_str().unwrap_or("?"), p["version"].as_str().unwrap_or("?"));
+            let dir = Path::new(p["manifest_path"].as_str().unwrap_or(""))
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
             let entry = crates.entry(key).or_default();
             entry.license = p["license"].as_str().unwrap_or("see license file").to_owned();
             entry.texts = license_texts(&dir);
@@ -297,7 +325,10 @@ fn notices() -> Result<()> {
         let key = format!("{} {}", name, pkg["version"].as_str().unwrap_or("?"));
         npm.insert(
             key,
-            Entry { license: pkg["license"].as_str().unwrap_or("see license file").to_owned(), texts: license_texts(&dir) },
+            Entry {
+                license: pkg["license"].as_str().unwrap_or("see license file").to_owned(),
+                texts: license_texts(&dir),
+            },
         );
     }
     let mut out = String::from(
@@ -318,7 +349,10 @@ fn notices() -> Result<()> {
                     .filter(|t| !t.is_empty() && !matches!(*t, "OR" | "AND" | "WITH"))
                     .map(String::from)
                     .collect();
-                out.push_str(&format!("No license file is shipped; see the appendix for {}.\n\n", ids.join(", ")));
+                out.push_str(&format!(
+                    "No license file is shipped; see the appendix for {}.\n\n",
+                    ids.join(", ")
+                ));
                 needed.extend(ids);
             }
             for t in &e.texts {
@@ -357,7 +391,11 @@ fn license_texts(dir: &Path) -> Vec<String> {
         .map(|e| e.path())
         .filter(|p| {
             let n = p.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
-            p.is_file() && (n.starts_with("LICENSE") || n.starts_with("LICENCE") || n.starts_with("COPYING") || n.starts_with("NOTICE"))
+            p.is_file()
+                && (n.starts_with("LICENSE")
+                    || n.starts_with("LICENCE")
+                    || n.starts_with("COPYING")
+                    || n.starts_with("NOTICE"))
         })
         .collect();
     files.sort();

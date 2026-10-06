@@ -18,7 +18,10 @@ pub fn temp_path(output: &Path, run_id: &str, job: JobId) -> PathBuf {
 /// Returns the path actually written (may differ for `Rename`).
 pub fn commit(temp: &Path, output: &Path, policy: OnExists) -> Result<PathBuf> {
     // Flush the encoded data to disk so a power loss cannot leave an empty "finished" clip.
-    std::fs::File::open(temp)
+    // Opened for writing: on Windows FlushFileBuffers needs write access (read-only fails).
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(temp)
         .and_then(|f| f.sync_all())
         .map_err(|e| Error::OutputUnwritable { path: output.to_path_buf(), message: e.to_string() })?;
     let result = match policy {

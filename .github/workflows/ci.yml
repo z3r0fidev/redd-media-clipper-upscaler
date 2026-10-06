@@ -79,7 +79,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        include:
+          - os: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -94,6 +98,10 @@ jobs:
           workspaces: |
             . -> target
             apps/desktop/src-tauri -> target
+      - name: Stage sidecars (tauri-build requires the bundled programs to exist)
+        run: |
+          cargo xtask fetch-tools --target ${{ matrix.triple }}
+          cargo xtask stage-cli --target ${{ matrix.triple }}
       - name: Generated TypeScript bindings are up to date
         shell: bash
         run: |
@@ -111,6 +119,11 @@ jobs:
         run: |
           cargo build -p rmedia-cli
           cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: Third-party notices are up to date
+        if: runner.os == 'Linux'
+        run: |
+          cargo xtask notices
+          git diff --exit-code -- THIRD_PARTY_NOTICES.md
       - name: Desktop backend builds on Windows
         if: runner.os == 'Windows'
         run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml

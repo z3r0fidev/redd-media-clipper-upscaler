@@ -12,10 +12,12 @@ tested).
 
 ## Path policy (security)
 The page may only name files the user chose: native dialogs (run in Rust — the page has no fs,
-shell or dialog permissions; capability `core:default` only), drag-and-drop (registered in Rust
+shell or dialog permissions; its only capabilities are `core:event:allow-listen/unlisten`), drag-and-drop (registered in Rust
 before the page sees it), files/folders given on the command line, a picked folder and what
 scanning it found, and the sources of a manifest the user opened. Exports may only write to the
-path chosen in the Save dialog. Everything else is refused.
+path chosen in the Save dialog; clips may only be written inside a picked folder or next to their
+source; clip lists and manifests must be opened as such, and a manifest only grants its video files.
+Everything else is refused.
 
 | Command | Args | Returns |
 |---|---|---|
@@ -39,7 +41,8 @@ path chosen in the Save dialog. Everything else is refused.
 | `ensure_proxy` | `path, codec: "h264" \| "vp8", onProgress: Channel<number>` | media URL |
 | `frame_at` | `path, t, height` | JPEG bytes (`ipc::Response`) |
 | `thumbnails` | `path, n` | `data:` URLs |
-| `get_settings` / `set_settings` | `Settings` | |
+| `pick_engine` | `reset` | `DoctorReport` — chooses ffmpeg with the native dialog (ffprobe beside it), or back to automatic |
+| `get_settings` / `set_settings` | `Settings` | engine paths in `set_settings` are ignored (only `pick_engine` changes them) |
 
 ## Media playback
 `<video>` sources are `http://127.0.0.1:<port>/<token>/<id>` URLs from the in-process media server

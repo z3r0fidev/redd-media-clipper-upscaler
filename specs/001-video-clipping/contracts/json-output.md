@@ -15,8 +15,8 @@ round-tripped through JSON — JSON output never fails because of them).
 
 ## `doctor --json`
 ```json
-{"schema":1,"type":"doctor","ffmpeg":{"path":"...","source":"bundled","version":"7.1"},
- "ffprobe":{"path":"...","source":"bundled","version":"7.1"},
+{"schema":1,"type":"doctor","ffmpeg":{"path":"...","source":"bundled"},
+ "ffprobe":{"path":"...","source":"bundled"},"version":"n9.0.2-22-g46d8f462ee-20261005",
  "encoders":{"libx264":true,"aac":true,"libvpx-vp9":true,"libopus":true},
  "accurate_containers":["mp4","mov","m4v","mkv","ts","webm"],"ok":true,"problems":[]}
 ```
@@ -48,4 +48,5 @@ only), `image` (still image with a video extension), `inaccessible` (permission 
 loop).
 
 Error codes (stable): `INVALID_INPUT`, `SOURCE_MISSING`, `PROBE_FAILED`, `OUTPUT_EXISTS`,
-`OUTPUT_UNWRITABLE`, `DISK_FULL`, `ENGINE_FAILED`, `VERIFY_FAILED`, `CANCELLED`.
+`OUTPUT_UNWRITABLE`, `DISK_FULL`, `ENGINE_FAILED`, `ENGINE_MISSING`, `VERIFY_FAILED`, `CANCELLED`,
+`IO_ERROR`, and `INTERNAL` (a job crashed; reported as a failed job, never silently dropped).

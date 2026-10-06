@@ -146,7 +146,7 @@ impl AppState {
     /// Returns the canonical path, which is what callers then use (no check/use race on links).
     fn require_allowed(&self, p: &Path) -> OpResult<PathBuf> {
         if lock(&self.allowed).is_allowed(p) {
-            std::fs::canonicalize(p).map_err(|e| e.to_string())
+            rmedia_core::paths::canonicalize(p).map_err(|e| e.to_string())
         } else {
             Err(format!("{} was not opened in rmedia (use Add files/folder or drag it in)", p.display()))
         }

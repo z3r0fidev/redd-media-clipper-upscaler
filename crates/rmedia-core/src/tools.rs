@@ -139,7 +139,7 @@ fn find_tool(
 fn existing(p: &Path, source: ToolSource) -> Result<Tool> {
     if p.is_file() {
         // Absolute, resolved path: never depends on the working directory at spawn time.
-        let path = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        let path = crate::paths::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
         Ok(Tool { path, source })
     } else {
         Err(Error::EngineMissing(format!("{} does not exist", p.display())))

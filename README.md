@@ -22,7 +22,15 @@ export for Reddit (feature 003) — see `specs/` and `research/`.
 | CLI only | `rmedia-cli-<version>-<platform>` archive: unpack anywhere |
 
 Every package includes the `rmedia` command-line tool and its own FFmpeg (installed as
-`rmedia-ffmpeg` / `rmedia-ffprobe`, so it never conflicts with a system FFmpeg). Check with:
+`rmedia-ffmpeg` / `rmedia-ffprobe`, so it never conflicts with a system FFmpeg):
+
+- **deb**: `rmedia` is on your PATH (`/usr/bin`).
+- **Windows**: it is in the install folder (`%LOCALAPPDATA%\rmedia\` for the per-user setup);
+  add that folder to PATH, or use the CLI archive. The setup downloads Microsoft WebView2 if it is
+  missing (preinstalled on Windows 11 and current Windows 10).
+- **AppImage**: the CLI stays inside the image — use the CLI archive for command-line use.
+
+Check with:
 
 ```console
 $ rmedia doctor
