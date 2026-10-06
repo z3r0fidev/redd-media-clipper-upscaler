@@ -64,11 +64,17 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
 
     let cancel = CancellationToken::new();
     let plan = plan::plan(&req, &tools, &caps, &cancel).await;
-    execute(plan, tools, &args.common, &out).await
+    execute(plan, tools, args.common.dry_run, args.common.jobs, &out).await
 }
 
 /// Shared by clip/batch: report issues, dry-run, or run with live rendering and Ctrl-C.
-pub async fn execute(plan: Plan, tools: rmedia_core::tools::Tools, common: &CommonArgs, out: &Output) -> u8 {
+pub async fn execute(
+    plan: Plan,
+    tools: rmedia_core::tools::Tools,
+    dry_run: bool,
+    jobs: Option<u16>,
+    out: &Output,
+) -> u8 {
     if plan.cancelled {
         return exit::CANCELLED;
     }
@@ -76,7 +82,7 @@ pub async fn execute(plan: Plan, tools: rmedia_core::tools::Tools, common: &Comm
         out.plan_issues(&plan);
         return if plan.engine_errors_only() { exit::ENGINE } else { exit::INVALID_INPUT };
     }
-    if common.dry_run {
+    if dry_run {
         out.plan(&plan);
         return exit::OK;
     }
@@ -84,8 +90,7 @@ pub async fn execute(plan: Plan, tools: rmedia_core::tools::Tools, common: &Comm
 
     let temps: Vec<std::path::PathBuf> = plan.jobs.iter().map(|j| j.temp.clone()).collect();
     let sink = render::sink(out, &plan);
-    let cfg =
-        RunConfig { jobs: common.jobs.map_or_else(exec::default_jobs, usize::from), ..RunConfig::default() };
+    let cfg = RunConfig { jobs: jobs.map_or_else(exec::default_jobs, usize::from), ..RunConfig::default() };
     let handle = exec::start(plan, tools, cfg, sink.clone());
     let cancel = handle.cancel_token();
     let ctrl_c = tokio::spawn(async move {
@@ -150,6 +155,6 @@ fn options(c: &CommonArgs, multi_source: bool) -> Options {
     o
 }
 
-fn absolute(p: &Path) -> PathBuf {
+pub fn absolute(p: &Path) -> PathBuf {
     std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf())
 }

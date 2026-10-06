@@ -17,6 +17,7 @@ rmedia-testkit = { path = "crates/rmedia-testkit" }
 anyhow = "1"
 assert_cmd = "2"
 clap = { version = "4.6", features = ["derive"] }
+csv = "1.4"
 directories = "6"
 globset = "0.4"
 indicatif = "0.18"

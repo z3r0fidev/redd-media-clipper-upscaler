@@ -41,6 +41,8 @@ pub struct Cli {
 pub enum Command {
     /// Cut clips from each input video: one with -s/-e/-d, or many with -l LIST.
     Clip(Box<ClipArgs>),
+    /// Run a batch manifest (.json or .csv) listing many videos and their clips.
+    Batch(BatchArgs),
     /// Find the videos in folders (recursively) and list them.
     Scan(ScanArgs),
     /// Show the video engine in use and its capabilities.
@@ -112,6 +114,40 @@ pub struct CommonArgs {
     #[arg(long)]
     pub dry_run: bool,
     /// Machine-readable output on stdout (NDJSON events, or one document for --dry-run).
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct BatchArgs {
+    /// Manifest file: .json (structured) or .csv (one row per clip).
+    #[arg(value_name = "MANIFEST")]
+    pub manifest: PathBuf,
+    /// Skip videos that do not exist instead of stopping before anything runs.
+    #[arg(long)]
+    pub continue_on_missing: bool,
+    /// Default mode for clips the manifest does not specify.
+    #[arg(long, value_enum)]
+    pub mode: Option<ModeArg>,
+    /// Default output folder for clips the manifest does not specify.
+    #[arg(short = 'o', long, value_name = "DIR")]
+    pub output_dir: Option<PathBuf>,
+    /// Default name template.
+    #[arg(long, value_name = "TEMPLATE")]
+    pub name: Option<String>,
+    /// Default output container/extension.
+    #[arg(long, value_name = "EXT")]
+    pub container: Option<String>,
+    /// What to do when an output file already exists (default: skip).
+    #[arg(long, value_enum)]
+    pub on_exists: Option<OnExistsArg>,
+    /// How many clips to process at once.
+    #[arg(short = 'j', long, value_name = "N", value_parser = clap::value_parser!(u16).range(1..=64))]
+    pub jobs: Option<u16>,
+    /// Show what would be done without writing anything.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Machine-readable output on stdout.
     #[arg(long)]
     pub json: bool,
 }
@@ -216,6 +252,7 @@ fn main() -> ExitCode {
     let code = runtime.block_on(async {
         match &cli.command {
             Command::Clip(args) => commands::clip::run(&cli, args).await,
+            Command::Batch(args) => commands::batch::run(&cli, args).await,
             Command::Scan(args) => commands::scan::run(&cli, args).await,
             Command::Doctor(args) => commands::doctor::run(&cli, args),
         }

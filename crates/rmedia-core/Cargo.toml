@@ -10,6 +10,7 @@ license.workspace = true
 ts = []
 
 [dependencies]
+csv.workspace = true
 directories.workspace = true
 globset.workspace = true
 process-wrap.workspace = true

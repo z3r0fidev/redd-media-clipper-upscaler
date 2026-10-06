@@ -140,14 +140,14 @@ hidden and `.part` files gives exactly the 4 videos and the right reject reasons
 CSV give equal `Plan`s.
 
 ### Tests for US3
-- [ ] T051 [P] [US3] JSON manifest tests (schema conformance with contracts/manifest.schema.json, `deny_unknown_fields`, syntax error reported by line:col, semantic errors by JSON path, override layering defaults < video < clip, relative paths) in `crates/rmedia-core/src/input/manifest_json.rs`
-- [ ] T052 [P] [US3] CSV manifest tests (header required, unknown column error, grouping by input in first-appearance order, comments, errors by line) in `crates/rmedia-core/src/input/manifest_csv.rs`
-- [ ] T053 [P] [US3] Integration tests for US3 scenarios 1–4 and SC-004 (100 clips over 20 videos with 1 injected failure → 99 succeed, exit 1) in `crates/rmedia-core/tests/us3_batch.rs`
+- [X] T051 [P] [US3] JSON manifest tests (schema conformance with contracts/manifest.schema.json, `deny_unknown_fields`, syntax error reported by line:col, semantic errors by JSON path, override layering defaults < video < clip, relative paths) in `crates/rmedia-core/src/input/manifest_json.rs`
+- [X] T052 [P] [US3] CSV manifest tests (header required, unknown column error, grouping by input in first-appearance order, comments, errors by line) in `crates/rmedia-core/src/input/manifest_csv.rs`
+- [X] T053 [P] [US3] Integration tests for US3 scenarios 1–4 and SC-004 (100 clips over 20 videos with 1 injected failure → 99 succeed, exit 1) in `crates/rmedia-core/tests/us3_batch.rs`
 
 ### Implementation for US3
-- [ ] T054 [P] [US3] Implement the JSON manifest parser and writer in `crates/rmedia-core/src/input/manifest_json.rs`
-- [ ] T055 [P] [US3] Implement the CSV manifest parser and writer in `crates/rmedia-core/src/input/manifest_csv.rs`
-- [ ] T056 [US3] Implement CLI `batch` with `--continue-on-missing` in `crates/rmedia-cli/src/commands/batch.rs`
+- [X] T054 [P] [US3] Implement the JSON manifest parser and writer in `crates/rmedia-core/src/input/manifest_json.rs`
+- [X] T055 [P] [US3] Implement the CSV manifest parser and writer in `crates/rmedia-core/src/input/manifest_csv.rs`
+- [X] T056 [US3] Implement CLI `batch` with `--continue-on-missing` in `crates/rmedia-cli/src/commands/batch.rs`
 
 ---
 
