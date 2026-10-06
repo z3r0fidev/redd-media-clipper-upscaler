@@ -41,15 +41,22 @@ pub struct Cli {
 pub enum Command {
     /// Cut clips from each input video: one with -s/-e/-d, or many with -l LIST.
     Clip(Box<ClipArgs>),
+    /// Find the videos in folders (recursively) and list them.
+    Scan(ScanArgs),
     /// Show the video engine in use and its capabilities.
     Doctor(DoctorArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct ClipArgs {
-    /// Input video file(s).
-    #[arg(required = true, value_name = "INPUT")]
+    /// Input video files and/or folders (folders are scanned for videos).
+    #[arg(value_name = "INPUT", required_unless_present = "inputs_from")]
     pub inputs: Vec<PathBuf>,
+    /// Read more inputs from a file (one path per line), or "-" for stdin.
+    #[arg(long, value_name = "FILE")]
+    pub inputs_from: Option<String>,
+    #[command(flatten)]
+    pub scan: ScanFlags,
     /// Clip start: 90, 1:30, 00:01:30.500, 1m30s …
     #[arg(
         short = 's',
@@ -110,6 +117,57 @@ pub struct CommonArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ScanArgs {
+    /// Folders (or files) to scan.
+    #[arg(required = true, value_name = "PATH")]
+    pub roots: Vec<PathBuf>,
+    #[command(flatten)]
+    pub flags: ScanFlags,
+    /// Print only the paths of found videos, one per line (pipe into `clip --inputs-from -`).
+    #[arg(long, conflicts_with = "json")]
+    pub paths: bool,
+    /// Print the result as one JSON document.
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// Options controlling how folders are walked (shared by `scan` and folder inputs of `clip`).
+#[derive(Debug, Args, Clone)]
+pub struct ScanFlags {
+    /// Only look at the top level of each folder.
+    #[arg(long)]
+    pub no_recursive: bool,
+    /// Maximum folder depth (1 = top level only).
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u16).range(1..))]
+    pub max_depth: Option<u16>,
+    /// Only include matching paths (glob, relative to the folder; repeatable), e.g. "*.mp4".
+    #[arg(long, value_name = "GLOB")]
+    pub include: Vec<String>,
+    /// Exclude matching paths (glob; repeatable), e.g. "**/drafts/**".
+    #[arg(long, value_name = "GLOB")]
+    pub exclude: Vec<String>,
+    /// Include hidden files and folders.
+    #[arg(long)]
+    pub hidden: bool,
+    /// Follow symbolic links (loops are detected).
+    #[arg(long)]
+    pub follow_symlinks: bool,
+}
+
+impl ScanFlags {
+    pub fn options(&self) -> rmedia_core::discover::ScanOptions {
+        rmedia_core::discover::ScanOptions {
+            no_recursive: self.no_recursive,
+            max_depth: self.max_depth.map(usize::from),
+            include: self.include.clone(),
+            exclude: self.exclude.clone(),
+            hidden: self.hidden,
+            follow_symlinks: self.follow_symlinks,
+        }
+    }
+}
+
+#[derive(Debug, Args)]
 pub struct DoctorArgs {
     /// Print the report as JSON.
     #[arg(long)]
@@ -157,6 +215,7 @@ fn main() -> ExitCode {
     let code = runtime.block_on(async {
         match &cli.command {
             Command::Clip(args) => commands::clip::run(&cli, args).await,
+            Command::Scan(args) => commands::scan::run(&cli, args).await,
             Command::Doctor(args) => commands::doctor::run(&cli, args),
         }
     });

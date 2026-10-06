@@ -11,6 +11,7 @@ ts = []
 
 [dependencies]
 directories.workspace = true
+globset.workspace = true
 process-wrap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -18,6 +19,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+walkdir.workspace = true
 which.workspace = true
 
 [target.'cfg(unix)'.dependencies]

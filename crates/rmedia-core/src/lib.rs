@@ -1,5 +1,6 @@
 //! rmedia core: all media logic shared by the CLI and the desktop app.
 
+pub mod discover;
 pub mod doctor;
 pub mod error;
 pub mod event;

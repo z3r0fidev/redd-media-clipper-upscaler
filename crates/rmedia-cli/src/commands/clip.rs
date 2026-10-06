@@ -30,25 +30,28 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
             Err(msg) => return out.input_error(&msg),
         },
     };
-    for input in &args.inputs {
-        if input.is_dir() {
-            return out.input_error(&format!(
-                "{} is a folder; folder inputs arrive with `rmedia scan` support",
-                input.display()
-            ));
-        }
-    }
-
     let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
     let (report, engine) = doctor::run(&opts);
     let Some((tools, caps)) = engine else {
         return out.engine_error(&report.problems.join("; "));
     };
+    let inputs = match super::scan::expand_inputs(
+        &tools,
+        &args.inputs,
+        args.inputs_from.as_deref(),
+        &args.scan,
+        args.common.output_dir.as_deref(),
+        &out,
+    )
+    .await
+    {
+        Ok(i) => i,
+        Err(code) => return code,
+    };
 
     let req = BatchRequest {
-        defaults: options(&args.common, args.inputs.len() > 1),
-        sources: args
-            .inputs
+        defaults: options(&args.common, inputs.len() > 1),
+        sources: inputs
             .iter()
             .map(|p| SourceRequest {
                 path: absolute(p),

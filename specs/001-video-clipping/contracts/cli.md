@@ -12,7 +12,9 @@ rmedia clip --inputs-from <FILE|-> (-s ... | -l ...) [OPTIONS]
 ```
 - One clip (`-s/-e/-d`) or a clip list (`-l`, see [cliplist-format.md](./cliplist-format.md))
   applied to every input. Directories are scanned with the scan flags below (FR-009).
-- With > 1 source the default template becomes `{source}/{source}_{index:03}_{name-or-range}.{ext}`.
+- With > 1 source and `-o`, the default template becomes `{source}/{source}_{index:03}_{name-or-range}.{ext}`.
+- When folders are scanned for `clip`, rmedia's own output location is excluded so re-runs never
+  clip previous clips: the `-o` folder if given, otherwise every `clips/` folder.
 
 ### `rmedia batch <MANIFEST>`
 - `MANIFEST` is `.json` ([manifest.schema.json](./manifest.schema.json)) or `.csv`

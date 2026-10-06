@@ -119,14 +119,14 @@ two succeed.
 hidden and `.part` files gives exactly the 4 videos and the right reject reasons.
 
 ### Tests for US4
-- [ ] T045 [P] [US4] Discovery integration tests (US4 scenarios 1–5: rejects, zip ignored, non-recursive, include/exclude, hidden, symlink loop not followed on Unix, cancellation mid-scan) in `crates/rmedia-core/tests/us4_discover.rs`
-- [ ] T046 [P] [US4] CLI tests for `scan --json` (schema per contracts/json-output.md), `--paths`, and `clip DIR -l` / `--inputs-from -` (per-source subfolders); Windows-only: scan of a UNC path `\\localhost\C$\...` when available in `crates/rmedia-cli/tests/scan.rs`
-- [ ] T047 [P] [US4] SC-003 benchmark (10k files incl. 1,000 hard-linked videos < 60 s) as `#[ignore]` in `crates/rmedia-core/tests/bench.rs`
+- [X] T045 [P] [US4] Discovery integration tests (US4 scenarios 1–5: rejects, zip ignored, non-recursive, include/exclude, hidden, symlink loop not followed on Unix, cancellation mid-scan) in `crates/rmedia-core/tests/us4_discover.rs`
+- [X] T046 [P] [US4] CLI tests for `scan --json` (schema per contracts/json-output.md), `--paths`, and `clip DIR -l` / `--inputs-from -` (per-source subfolders); Windows-only: scan of a UNC path `\\localhost\C$\...` when available in `crates/rmedia-cli/tests/scan.rs`
+- [X] T047 [P] [US4] SC-003 benchmark (10k files incl. 1,000 hard-linked videos < 60 s) as `#[ignore]` in `crates/rmedia-core/tests/bench.rs` — *result: 6.3 s on a local SSD*
 
 ### Implementation for US4
-- [ ] T048 [US4] Implement `discover::scan(roots, ScanOptions, sink, cancel) -> ScanResult` (walkdir, skip rules from research.md R6, extension allowlist, `buffer_unordered(ncpu)` probing, natural sort, `ScanEvent` stream) in `crates/rmedia-core/src/discover.rs`
-- [ ] T049 [P] [US4] Implement `input::pathlist` (one path per line, `#` comments, relative to the file) in `crates/rmedia-core/src/input/pathlist.rs`
-- [ ] T050 [US4] Implement CLI `scan` (human table, `--json`, `--paths`, scan flags) in `crates/rmedia-cli/src/commands/scan.rs`, and accept DIR / `--inputs-from` in `crates/rmedia-cli/src/commands/clip.rs`
+- [X] T048 [US4] Implement `discover::scan(roots, ScanOptions, sink, cancel) -> ScanResult` (walkdir, skip rules from research.md R6, extension allowlist, `buffer_unordered(ncpu)` probing, natural sort, `ScanEvent` stream) in `crates/rmedia-core/src/discover.rs`
+- [X] T049 [P] [US4] Implement `input::pathlist` (one path per line, `#` comments, relative to the file) in `crates/rmedia-core/src/input/pathlist.rs`
+- [X] T050 [US4] Implement CLI `scan` (human table, `--json`, `--paths`, scan flags) in `crates/rmedia-cli/src/commands/scan.rs`, and accept DIR / `--inputs-from` in `crates/rmedia-cli/src/commands/clip.rs`
 
 **Checkpoint**: Run security-auditor on the discovery path handling (symlinks, long/UNC paths, non-UTF-8 names).
 

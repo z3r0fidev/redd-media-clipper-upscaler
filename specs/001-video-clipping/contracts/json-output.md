@@ -42,5 +42,9 @@ strings (lossy UTF-8 on Linux for non-UTF-8 names, flagged `"path_lossy": true`)
 The final line is always `type: "summary"` (also on cancel). Failed outcome:
 `{"status":"failed","error":{"code":"ENGINE_FAILED","message":"…","stderr_tail":"…"}}`.
 
+Scan `rejected[].reason`: `unreadable` (ffprobe failed), `no_video_stream` (audio / cover art
+only), `image` (still image with a video extension), `inaccessible` (permission error, symlink
+loop).
+
 Error codes (stable): `INVALID_INPUT`, `SOURCE_MISSING`, `PROBE_FAILED`, `OUTPUT_EXISTS`,
 `OUTPUT_UNWRITABLE`, `DISK_FULL`, `ENGINE_FAILED`, `VERIFY_FAILED`, `CANCELLED`.

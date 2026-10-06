@@ -150,6 +150,11 @@ impl Output {
     }
 }
 
+/// Replaces control characters (incl. ANSI escapes) in untrusted text before printing it.
+pub fn clean(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() { '?' } else { c }).collect()
+}
+
 fn file_name(p: &std::path::Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }

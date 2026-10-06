@@ -152,30 +152,33 @@ pub fn parse_probe_json(path: &Path, size: u64, json: &str) -> Result<MediaInfo>
     let format = raw
         .format
         .ok_or_else(|| Error::ProbeFailed { path: path.to_path_buf(), message: "not a media file".into() })?;
-    let streams = raw
-        .streams
-        .into_iter()
-        .map(|s| StreamInfo {
-            index: s.index,
-            kind: match s.codec_type.as_deref() {
-                Some("video") => StreamKind::Video,
-                Some("audio") => StreamKind::Audio,
-                Some("subtitle") => StreamKind::Subtitle,
-                Some("data") => StreamKind::Data,
-                Some("attachment") => StreamKind::Attachment,
-                _ => StreamKind::Unknown,
-            },
-            codec: s.codec_name.unwrap_or_default(),
-            width: s.width,
-            height: s.height,
-            frame_rate: s.avg_frame_rate.as_deref().and_then(parse_rational),
-            pix_fmt: s.pix_fmt,
-            is_attached_pic: s.disposition.is_some_and(|d| d.attached_pic == 1),
-            language: s.tags.and_then(|t| t.language),
-            start_time: s.start_time.as_deref().and_then(parse_secs),
-            duration: s.duration.as_deref().and_then(parse_secs),
-        })
-        .collect();
+    let streams =
+        raw.streams
+            .into_iter()
+            .map(|s| StreamInfo {
+                index: s.index,
+                kind: match s.codec_type.as_deref() {
+                    Some("video") => StreamKind::Video,
+                    Some("audio") => StreamKind::Audio,
+                    Some("subtitle") => StreamKind::Subtitle,
+                    Some("data") => StreamKind::Data,
+                    Some("attachment") => StreamKind::Attachment,
+                    _ => StreamKind::Unknown,
+                },
+                codec: s.codec_name.unwrap_or_default(),
+                width: s.width,
+                height: s.height,
+                frame_rate: s.avg_frame_rate.as_deref().and_then(parse_rational),
+                pix_fmt: s.pix_fmt,
+                is_attached_pic: s.disposition.is_some_and(|d| d.attached_pic == 1),
+                language: s.tags.as_ref().and_then(|t| t.language.clone()),
+                start_time: s.start_time.as_deref().and_then(parse_secs),
+                // Matroska/WebM streams have no duration field; ffmpeg writes a DURATION tag instead.
+                duration: s.duration.as_deref().and_then(parse_secs).or_else(|| {
+                    s.tags.as_ref().and_then(|t| t.duration.as_deref()).and_then(parse_clock_tag)
+                }),
+            })
+            .collect();
     Ok(MediaInfo {
         path: path.to_path_buf(),
         size,
@@ -328,6 +331,17 @@ struct RawDisposition {
 #[derive(Deserialize)]
 struct RawTags {
     language: Option<String>,
+    #[serde(rename = "DURATION")]
+    duration: Option<String>,
+}
+
+/// `HH:MM:SS.nnnnnnnnn` (Matroska DURATION tag) → Ts.
+fn parse_clock_tag(v: &str) -> Option<Ts> {
+    let mut parts = v.trim().splitn(3, ':');
+    let h: u64 = parts.next()?.parse().ok()?;
+    let m: u64 = parts.next()?.parse().ok()?;
+    let s: f64 = parts.next()?.parse().ok()?;
+    (s.is_finite() && s >= 0.0).then(|| Ts::from_secs_f64((h * 3600 + m * 60) as f64 + s))
 }
 
 #[derive(Deserialize)]
@@ -380,6 +394,14 @@ mod tests {
             {"index":1,"codec_type":"video","codec_name":"mjpeg","disposition":{"attached_pic":1}}],
             "format":{"format_name":"mov","duration":"3.0"}}"#;
         assert!(!parse_probe_json(Path::new("a.m4a"), 1, json).unwrap().is_video());
+    }
+
+    #[test]
+    fn matroska_duration_tags() {
+        let json = r#"{"streams":[{"index":0,"codec_type":"video","codec_name":"h264","tags":{"DURATION":"00:00:02.280000000"}}],
+            "format":{"format_name":"matroska,webm","duration":"4.08"}}"#;
+        let m = parse_probe_json(Path::new("a.mkv"), 1, json).unwrap();
+        assert_eq!(m.streams[0].duration, Some(Ts::from_micros(2_280_000)));
     }
 
     #[test]
