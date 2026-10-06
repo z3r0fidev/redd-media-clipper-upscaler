@@ -1,0 +1,15 @@
+{
+  "comment": "Pinned FFmpeg builds bundled with rmedia. Refresh with `cargo xtask pin-tools`. Source: BtbN/FFmpeg-Builds (GPL; see licenses/FFMPEG-NOTICE.md).",
+  "release": "autobuild-2026-10-05-13-07",
+  "version": "n9.0.2-22-g46d8f462ee",
+  "targets": {
+    "x86_64-unknown-linux-gnu": {
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-05-13-07/ffmpeg-n9.0.2-22-g46d8f462ee-linux64-gpl-9.0.tar.xz",
+      "sha256": "31674015a97489288add11e2a944d18eb1dbff14f23b0d69a7d78a731ff61314"
+    },
+    "x86_64-pc-windows-msvc": {
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-05-13-07/ffmpeg-n9.0.2-22-g46d8f462ee-win64-gpl-9.0.zip",
+      "sha256": "1385d57bd30c009fca25655f056680317dc9db3724cf082443bf8830223877cf"
+    }
+  }
+}

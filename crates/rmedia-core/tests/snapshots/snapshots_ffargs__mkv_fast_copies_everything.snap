@@ -1,0 +1,41 @@
+---
+source: crates/rmedia-core/tests/snapshots_ffargs.rs
+expression: "args(&m, Mode::Fast, Container::Mkv, Default::default(),\n(None, Some(1.84), None))"
+---
+[
+  "-hide_banner",
+  "-nostdin",
+  "-n",
+  "-loglevel",
+  "warning",
+  "-progress",
+  "pipe:1",
+  "-nostats",
+  "-stats_period",
+  "0.25",
+  "-protocol_whitelist",
+  "file,pipe",
+  "-i",
+  "file:IN.mkv",
+  "-ss",
+  "1.840000",
+  "-map",
+  "0:0",
+  "-map",
+  "0:1",
+  "-map",
+  "0:2",
+  "-map",
+  "0:3",
+  "-map_metadata",
+  "0",
+  "-map_chapters",
+  "-1",
+  "-c",
+  "copy",
+  "-avoid_negative_ts",
+  "make_zero",
+  "-f",
+  "matroska",
+  "file:OUT.part"
+]

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "rmedia",
+  "version": "0.1.0",
+  "identifier": "com.openlogic.rmedia",
+  "build": {
+    "frontendDist": "../spike-ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{ "title": "rmedia preview spike", "width": 800, "height": 500 }],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; media-src 'self' asset: http://asset.localhost blob: http://127.0.0.1:*; connect-src ipc: http://ipc.localhost asset: http://asset.localhost http://127.0.0.1:*",
+      "assetProtocol": { "enable": true, "scope": [] }
+    }
+  },
+  "bundle": { "active": false, "icon": ["icons/icon.png"] }
+}

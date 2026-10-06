@@ -1,0 +1,20 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pending-snap
+*.snap.new
+# Bundled engine binaries (fetched by `cargo xtask fetch-tools`, never committed)
+/binaries/
+# Node / desktop
+node_modules/
+/apps/desktop/dist/
+/apps/desktop/src-tauri/target/
+/apps/desktop/src-tauri/gen/
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+*.log
+.env*

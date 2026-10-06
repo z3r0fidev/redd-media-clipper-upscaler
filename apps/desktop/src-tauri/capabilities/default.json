@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Spike: core IPC only; no fs/shell plugins.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

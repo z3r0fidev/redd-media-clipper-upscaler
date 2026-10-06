@@ -1,0 +1,41 @@
+---
+source: crates/rmedia-core/tests/snapshots_ffargs.rs
+expression: "args(&m, Mode::Fast, Container::Mp4, Default::default(),\n(None, Some(9.84), Some(10.16)))"
+---
+[
+  "-hide_banner",
+  "-nostdin",
+  "-n",
+  "-loglevel",
+  "warning",
+  "-progress",
+  "pipe:1",
+  "-nostats",
+  "-stats_period",
+  "0.25",
+  "-protocol_whitelist",
+  "file,pipe",
+  "-i",
+  "file:IN.mp4",
+  "-ss",
+  "9.840000",
+  "-t",
+  "10.160000",
+  "-map",
+  "0:0",
+  "-map",
+  "0:1",
+  "-map_metadata",
+  "0",
+  "-map_chapters",
+  "-1",
+  "-c",
+  "copy",
+  "-avoid_negative_ts",
+  "make_zero",
+  "-movflags",
+  "+faststart",
+  "-f",
+  "mp4",
+  "file:OUT.part"
+]

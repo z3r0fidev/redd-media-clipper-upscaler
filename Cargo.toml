@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = ["crates/rmedia-core", "crates/rmedia-cli", "crates/rmedia-testkit", "xtask"]
+# The desktop app joins the workspace in US5; until then it builds on its own (needs webkit2gtk).
+exclude = ["apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/openlogic/rmedia"
+
+[workspace.dependencies]
+rmedia-core = { path = "crates/rmedia-core" }
+rmedia-testkit = { path = "crates/rmedia-testkit" }
+anyhow = "1"
+assert_cmd = "2"
+clap = { version = "4.6", features = ["derive"] }
+directories = "6"
+indicatif = "0.18"
+insta = { version = "1.49", features = ["json"] }
+libc = "0.2"
+predicates = "3"
+process-wrap = { version = "10", default-features = false, features = ["tokio1", "process-group", "job-object", "kill-on-drop", "creation-flags"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sysinfo = "0.38"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util", "fs", "signal"] }
+tokio-util = "0.7"
+tracing = "0.1"
+which = "8"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+strip = true

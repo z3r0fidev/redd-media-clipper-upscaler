@@ -1,0 +1,36 @@
+[package]
+name = "rmedia-core"
+description = "Core media logic for rmedia: timestamps, probing, planning and executing clip jobs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+ts = []
+
+[dependencies]
+directories.workspace = true
+process-wrap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+which.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+rmedia-testkit.workspace = true
+sysinfo.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_System_Threading"] }
