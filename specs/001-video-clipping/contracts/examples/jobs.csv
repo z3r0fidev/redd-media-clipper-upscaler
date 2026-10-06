@@ -1,0 +1,3 @@
+input,start,end,duration,name,mode,output
+/tmp/t.mp4,0:05,0:10,,intro,,
+/tmp/t.mp4,30,,12.5,,accurate,

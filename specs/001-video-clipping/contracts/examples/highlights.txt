@@ -1,0 +1,3 @@
+# example clip list
+0:05      0:10       intro
+00:00:20.250  +3     b

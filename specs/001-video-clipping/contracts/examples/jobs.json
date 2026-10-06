@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "defaults": { "mode": "fast" },
+  "videos": [
+    { "input": "/tmp/t.mp4",
+      "clips": [
+        { "start": "0:05", "end": "0:10", "name": "intro" },
+        { "start": 30, "duration": 12.5, "options": { "mode": "accurate" } }
+      ] }
+  ]
+}

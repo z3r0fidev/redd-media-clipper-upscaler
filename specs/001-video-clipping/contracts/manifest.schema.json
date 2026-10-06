@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rmedia.local/schema/manifest-v1.json",
+  "title": "rmedia batch manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "videos"],
+  "properties": {
+    "version": { "const": 1 },
+    "defaults": { "$ref": "#/$defs/options" },
+    "videos": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["input", "clips"],
+        "properties": {
+          "input": { "type": "string", "description": "Path; relative paths resolve against the manifest's directory" },
+          "options": { "$ref": "#/$defs/options" },
+          "clips": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["start"],
+              "properties": {
+                "start": { "$ref": "#/$defs/time" },
+                "end": { "$ref": "#/$defs/time", "description": "Time or \"end\"; mutually exclusive with duration" },
+                "duration": { "$ref": "#/$defs/time" },
+                "name": { "type": "string" },
+                "options": { "$ref": "#/$defs/options" }
+              },
+              "not": { "required": ["end", "duration"] }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "time": {
+      "oneOf": [
+        { "type": "string", "description": "Time grammar from data-model.md (e.g. \"1:30\", \"00:01:30.500\", \"1m30s\", \"end\")" },
+        { "type": "number", "minimum": 0, "description": "Seconds" }
+      ]
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["fast", "accurate"] },
+        "output_dir": { "type": "string" },
+        "name_template": { "type": "string" },
+        "container": { "type": "string" },
+        "on_exists": { "enum": ["skip", "overwrite", "rename"] },
+        "audio": { "oneOf": [ { "enum": ["all", "none"] }, { "type": "array", "items": { "type": "integer", "minimum": 0 } } ] },
+        "subtitles": { "enum": ["all", "none"] }
+      }
+    }
+  },
+  "examples": [
+    {
+      "version": 1,
+      "defaults": { "mode": "fast", "output_dir": "clips" },
+      "videos": [
+        { "input": "match12.mkv", "clips": [ { "start": "0:45", "end": "1:10", "name": "opening goal" } ] },
+        { "input": "match13.mp4", "options": { "mode": "accurate" },
+          "clips": [ { "start": 30, "duration": 12.5 }, { "start": "12:00", "end": "end" } ] }
+      ]
+    }
+  ]
+}
