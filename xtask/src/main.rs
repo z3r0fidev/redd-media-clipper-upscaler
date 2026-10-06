@@ -45,8 +45,9 @@ fn main() -> Result<()> {
             fetch_tools(&target)
         }
         Some("pin-tools") => pin_tools(),
+        Some("gen-bindings") => gen_bindings(),
         _ => {
-            eprintln!("usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools>");
+            eprintln!("usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings>");
             std::process::exit(2);
         }
     }
@@ -174,6 +175,21 @@ fn pin_tools() -> Result<()> {
     lock.release = tag;
     std::fs::write(root().join("xtask/tools.lock.json"), serde_json::to_string_pretty(&lock)? + "\n")?;
     println!("pinned {} ({})", lock.version, lock.release);
+    Ok(())
+}
+
+/// Regenerates the desktop app's TypeScript types from rmedia-core (ts-rs). CI fails if the
+/// committed bindings differ from the generated ones.
+fn gen_bindings() -> Result<()> {
+    let out = root().join("apps/desktop/src/lib/bindings");
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out)?;
+    run(Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+        .args(["test", "-q", "-p", "rmedia-core", "--features", "ts", "--lib", "export_bindings"])
+        .env("TS_RS_EXPORT_DIR", &out)
+        .env("TS_RS_LARGE_INT", "number")
+        .current_dir(root()))?;
+    println!("bindings written to {}", out.display());
     Ok(())
 }
 

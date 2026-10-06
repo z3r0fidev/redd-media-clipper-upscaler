@@ -66,9 +66,11 @@ impl Error {
 
 /// Serializable error summary for events and reports.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct ErrorInfo {
     pub code: String,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub stderr_tail: Option<String>,
 }

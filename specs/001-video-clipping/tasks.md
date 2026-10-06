@@ -160,20 +160,20 @@ hash) to the CLI run of the exported manifest. Cancelling all jobs takes < 2 s a
 files.
 
 ### Tests for US5
-- [ ] T057 [P] [US5] Bridge tests that call the command fns without a webview (plan/run/cancel; parity: export manifest → `rmedia batch` → equal sha256s, SC-008) in `apps/desktop/src-tauri/tests/bridge.rs`
-- [ ] T058 [P] [US5] Vitest tests for the queue store and the event→UI-state reducer in `apps/desktop/src/lib/stores/*.test.ts`
+- [X] T057 [P] [US5] Bridge tests that call the command fns without a webview (plan/run/cancel; parity: export manifest → `rmedia batch` → equal sha256s, SC-008) in `apps/desktop/src-tauri/tests/bridge.rs`
+- [X] T058 [P] [US5] Vitest tests for the queue store and the event→UI-state reducer in `apps/desktop/src/lib/stores/*.test.ts`
 
 ### Implementation for US5
-- [ ] T059 [US5] Implement `preview` in core (`frame_at` MJPEG pipe, `ensure_proxy` 480p H.264/VP8 with passthrough timestamps cached by sha256 with an LRU cap, `thumbnails`) with tests in `crates/rmedia-core/src/preview.rs`
-- [ ] T060 [US5] Set up Tauri 2 (pinned 2.x): `apps/desktop/src-tauri/tauri.conf.json` (asset protocol scope = cache dir, CSP, `externalBin` for rmedia-ffmpeg/ffprobe), `capabilities/default.json` (dialog only), Vite + Svelte 5 + TS frontend
-- [ ] T061 [US5] Implement the Tauri commands from contracts/tauri-commands.md as thin adapters (Channels for scan/run/proxy; cancel on window close) in `apps/desktop/src-tauri/src/commands.rs`
-- [ ] T062 [US5] Generate ts-rs bindings with `cargo xtask gen-bindings` → `apps/desktop/src/lib/bindings/`, and add a CI diff check in `.github/workflows/ci.yml`
-- [ ] T063 [P] [US5] Sources view (file/folder pickers, drag-drop, scan table with progress and cancel, export selected results as a path list or manifest for batch use per FR-012) in `apps/desktop/src/lib/components/Sources.svelte`
-- [ ] T064 [P] [US5] Player view (direct play / proxy / still-frame fallback, timeline + thumbnail strip, I/O keys, frame step, times entered via `parse_time`) in `apps/desktop/src/lib/components/Player.svelte`
-- [ ] T065 [P] [US5] Queue view (editable rows, predicted snap display, per-source audio/subtitle track selection per FR-015, import clip list or manifest, export manifest) in `apps/desktop/src/lib/components/Queue.svelte`
-- [ ] T066 [P] [US5] Run panel (per-job and overall progress, ETA, cancel job/all, summary with reasons) in `apps/desktop/src/lib/components/RunPanel.svelte`
-- [ ] T067 [P] [US5] Settings & Diagnostics (doctor report, defaults, jobs, proxy cache size) in `apps/desktop/src/lib/components/Settings.svelte`
-- [ ] T068 [US5] App shell, navigation, design tokens, and light/dark themes in `apps/desktop/src/App.svelte` (premium-ui-designer review)
+- [X] T059 [US5] Implement `preview` in core (`frame_at` MJPEG pipe, `ensure_proxy` 480p H.264/VP8 with passthrough timestamps cached by sha256 with an LRU cap, `thumbnails`) with tests in `crates/rmedia-core/src/preview.rs`
+- [X] T060 [US5] Set up Tauri 2 (pinned 2.x): `apps/desktop/src-tauri/tauri.conf.json` (asset protocol scope = cache dir, CSP, `externalBin` for rmedia-ffmpeg/ffprobe), `capabilities/default.json` (dialog only), Vite + Svelte 5 + TS frontend — *note: asset protocol disabled (R8 spike); media via localhost server; dialogs run in Rust so capabilities are `core:default` only; `externalBin` moves to packaging (T069)*
+- [X] T061 [US5] Implement the Tauri commands from contracts/tauri-commands.md as thin adapters (Channels for scan/run/proxy; cancel on window close) in `apps/desktop/src-tauri/src/commands.rs`
+- [X] T062 [US5] Generate ts-rs bindings with `cargo xtask gen-bindings` → `apps/desktop/src/lib/bindings/`, and add a CI diff check in `.github/workflows/ci.yml`
+- [X] T063 [P] [US5] Sources view (file/folder pickers, drag-drop, scan table with progress and cancel, export selected results as a path list or manifest for batch use per FR-012) in `apps/desktop/src/lib/components/Sources.svelte`
+- [X] T064 [P] [US5] Player view (direct play / proxy / still-frame fallback, timeline + thumbnail strip, I/O keys, frame step, times entered via `parse_time`) in `apps/desktop/src/lib/components/Player.svelte`
+- [X] T065 [P] [US5] Queue view (editable rows, predicted snap display, per-source audio/subtitle track selection per FR-015, import clip list or manifest, export manifest) in `apps/desktop/src/lib/components/Queue.svelte`
+- [X] T066 [P] [US5] Run panel (per-job and overall progress, ETA, cancel job/all, summary with reasons) in `apps/desktop/src/lib/components/RunPanel.svelte`
+- [X] T067 [P] [US5] Settings & Diagnostics (doctor report, defaults, jobs, proxy cache size) in `apps/desktop/src/lib/components/Settings.svelte`
+- [X] T068 [US5] App shell, navigation, design tokens, and light/dark themes in `apps/desktop/src/App.svelte` (premium-ui-designer review)
 
 **Checkpoint**: Manual check per quickstart §4 on Linux X11 and Wayland, and on the Windows CI artifact. Run security-auditor on the Tauri command surface (paths from the webview, asset-protocol scope, CSP).
 

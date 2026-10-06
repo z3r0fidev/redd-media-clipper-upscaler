@@ -32,12 +32,14 @@ pub struct Caps {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Severity {
     Error,
     Warning,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Issue {
     pub severity: Severity,
     pub code: &'static str,
@@ -53,6 +55,7 @@ impl std::fmt::Display for Issue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Disposition {
     Run,
     Skip { reason: String },
@@ -66,6 +69,7 @@ pub enum JobSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct PlannedJob {
     pub id: JobId,
     #[serde(serialize_with = "crate::pathser::path")]
@@ -79,6 +83,7 @@ pub struct PlannedJob {
     pub mode: Mode,
     pub requested: Span,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub predicted: Option<Span>,
     pub warnings: Vec<String>,
     #[serde(skip)]
@@ -100,6 +105,7 @@ impl PlannedJob {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Plan {
     pub run_id: String,
     pub jobs: Vec<PlannedJob>,

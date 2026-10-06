@@ -11,6 +11,7 @@ pub type JobId = u32;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Event {
     RunStarted {
         run_id: String,
@@ -25,8 +26,10 @@ pub enum Event {
         fraction: f64,
         out_time: Ts,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
         speed: Option<f32>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
         eta_ms: Option<u64>,
     },
     JobWarning {
@@ -42,6 +45,7 @@ pub enum Event {
         total: usize,
         fraction: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
         eta_ms: Option<u64>,
     },
     RunFinished {
@@ -50,6 +54,7 @@ pub enum Event {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Span {
     pub start: Ts,
     pub end: Ts,
@@ -57,6 +62,7 @@ pub struct Span {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum JobOutcome {
     Succeeded {
         #[serde(serialize_with = "crate::pathser::path")]
@@ -75,6 +81,7 @@ pub enum JobOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct JobResult {
     pub id: JobId,
     #[serde(serialize_with = "crate::pathser::path")]
@@ -87,6 +94,7 @@ pub struct JobResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct RunSummary {
     pub succeeded: usize,
     pub skipped: usize,

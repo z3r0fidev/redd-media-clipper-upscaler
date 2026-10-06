@@ -22,6 +22,7 @@ const ACCURATE_CONTAINERS: [(&str, Container); 6] = [
 ];
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct DoctorReport {
     pub schema: u32,
     #[serde(rename = "type")]

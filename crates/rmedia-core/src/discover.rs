@@ -26,17 +26,22 @@ pub const VIDEO_EXTENSIONS: [&str; 22] = [
 const SKIP_DIRS: [&str; 7] =
     ["$RECYCLE.BIN", "System Volume Information", "@eaDir", ".git", ".Trashes", ".thumbnails", "lost+found"];
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(default, deny_unknown_fields)]
 pub struct ScanOptions {
-    /// Descend into sub-folders (default true).
+    /// Only look at the top level of each root (default: descend into sub-folders).
     pub no_recursive: bool,
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub max_depth: Option<usize>,
-    /// Globs matched against the path relative to the root (e.g. `*.mp4`, `**/2024/**`).
+    /// Globs matched against the path relative to the root, e.g. `*.mp4`; `**` spans folders.
     pub include: Vec<String>,
     pub exclude: Vec<String>,
     pub hidden: bool,
     pub follow_symlinks: bool,
     /// Folders never descended into, compared as real paths (not globs).
+    #[cfg_attr(feature = "ts", ts(skip))]
+    #[serde(skip)]
     pub exclude_dirs: Vec<PathBuf>,
     /// Folder names never descended into (exact, case-insensitive), e.g. `clips`.
     pub exclude_dir_names: Vec<String>,
@@ -44,6 +49,7 @@ pub struct ScanOptions {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum RejectReason {
     /// ffprobe could not read it (corrupt, truncated, not media).
     Unreadable,
@@ -56,6 +62,7 @@ pub enum RejectReason {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Rejected {
     #[serde(serialize_with = "crate::pathser::path")]
     pub path: PathBuf,
@@ -64,6 +71,7 @@ pub struct Rejected {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Skipped {
     pub hidden: usize,
     pub temp: usize,
@@ -74,6 +82,7 @@ pub struct Skipped {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct ScanResult {
     #[serde(serialize_with = "crate::pathser::paths")]
     pub roots: Vec<PathBuf>,
@@ -88,6 +97,7 @@ pub struct ScanResult {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum ScanEvent {
     Progress { visited: usize, candidates: usize, probed: usize },
     Found { video: MediaInfo },

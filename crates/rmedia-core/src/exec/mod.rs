@@ -49,6 +49,25 @@ pub fn default_jobs() -> usize {
     (cpus / 2).clamp(1, 4)
 }
 
+/// Cancels a run or individual jobs; cheap to clone.
+#[derive(Debug, Clone)]
+pub struct RunControl {
+    cancel: CancellationToken,
+    job_tokens: HashMap<JobId, CancellationToken>,
+}
+
+impl RunControl {
+    pub fn cancel(&self) {
+        self.cancel.cancel();
+    }
+
+    pub fn cancel_job(&self, id: JobId) {
+        if let Some(t) = self.job_tokens.get(&id) {
+            t.cancel();
+        }
+    }
+}
+
 /// Handle to a running batch.
 #[derive(Debug)]
 pub struct RunHandle {
@@ -70,6 +89,11 @@ impl RunHandle {
 
     pub fn cancel_token(&self) -> CancellationToken {
         self.cancel.clone()
+    }
+
+    /// A cloneable handle for cancelling the run or single jobs while `wait()` is pending.
+    pub fn control(&self) -> RunControl {
+        RunControl { cancel: self.cancel.clone(), job_tokens: self.job_tokens.clone() }
     }
 
     pub async fn wait(self) -> RunSummary {

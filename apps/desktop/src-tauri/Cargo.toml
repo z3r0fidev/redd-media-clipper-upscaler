@@ -2,14 +2,42 @@
 name = "rmedia-desktop"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
 publish = false
-description = "rmedia desktop app (US5). Currently: T038 preview spike."
+description = "rmedia desktop app (Tauri 2): thin adapters over rmedia-core"
+
+[lib]
+name = "rmedia_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rmedia-desktop"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+base64 = "0.22"
+getrandom = "0.3"
+rmedia-core = { path = "../../../crates/rmedia-core" }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "io-util", "fs", "time", "sync"] }
+tokio-util = "0.7"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+rmedia-testkit = { path = "../../../crates/rmedia-testkit" }
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "deny"
+
+# Standalone crate (needs webkit2gtk to build); not part of the root workspace.
 [workspace]

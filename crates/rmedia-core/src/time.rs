@@ -11,6 +11,7 @@ const US_PER_SEC: i64 = 1_000_000;
 
 /// A non-negative time value in microseconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, type = "number"))]
 pub struct Ts(i64);
 
 impl Ts {

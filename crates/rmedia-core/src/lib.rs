@@ -8,6 +8,7 @@ pub mod exec;
 pub mod input;
 pub mod pathser;
 pub mod plan;
+pub mod preview;
 pub mod probe;
 pub mod request;
 pub mod settings;

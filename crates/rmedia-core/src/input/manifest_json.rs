@@ -50,6 +50,11 @@ pub fn load(path: &Path, cli: &Options) -> Result<BatchRequest, Vec<Issue>> {
     }
 }
 
+/// Parses an in-memory manifest (the desktop app's queue). Relative paths resolve against `base`.
+pub fn from_value(base: &Path, value: &Value, defaults: &Options) -> Result<BatchRequest, Vec<Issue>> {
+    parse(&base.join("queue.json"), &value.to_string(), defaults)
+}
+
 pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec<Issue>> {
     let text = text.trim_start_matches('\u{feff}');
     let raw: RawManifest = serde_json::from_str(text).map_err(|e| {

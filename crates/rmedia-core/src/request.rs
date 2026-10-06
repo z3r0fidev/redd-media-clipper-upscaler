@@ -11,6 +11,7 @@ pub const MULTI_SOURCE_NAME_TEMPLATE: &str = "{source}/{source}_{index:03}_{name
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Mode {
     /// Stream copy; start snaps to the preceding keyframe.
     #[default]
@@ -21,6 +22,7 @@ pub enum Mode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum OnExists {
     #[default]
     Skip,
@@ -31,6 +33,7 @@ pub enum OnExists {
 /// Audio selection. Track numbers are 1-based, in source order of audio streams.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum AudioSel {
     #[default]
     All,
@@ -41,6 +44,7 @@ pub enum AudioSel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum SubSel {
     #[default]
     All,
@@ -48,6 +52,7 @@ pub enum SubSel {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct StreamSelection {
     pub audio: AudioSel,
     pub subtitles: SubSel,
@@ -55,6 +60,7 @@ pub struct StreamSelection {
 
 /// Fully resolved options for a clip.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Options {
     pub mode: Mode,
     /// `None` = `<source dir>/clips`.
@@ -83,24 +89,47 @@ impl Default for Options {
 /// Overrides layered as defaults < source < clip.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct PartialOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub mode: Option<Mode>,
     #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "crate::pathser::opt_path")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub output_dir: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub name_template: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub container: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub on_exists: Option<OnExists>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub audio: Option<AudioSel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub subtitles: Option<SubSel>,
 }
 
 impl PartialOptions {
+    /// The overrides that turn `base` into `opts` (fields equal to `base` are left unset).
+    pub fn diff(opts: &Options, base: &Options) -> PartialOptions {
+        let pick = |same: bool| !same;
+        PartialOptions {
+            mode: pick(opts.mode == base.mode).then_some(opts.mode),
+            output_dir: pick(opts.output_dir == base.output_dir).then(|| opts.output_dir.clone()).flatten(),
+            name_template: pick(opts.name_template == base.name_template).then(|| opts.name_template.clone()),
+            container: pick(opts.container == base.container).then(|| opts.container.clone()).flatten(),
+            on_exists: pick(opts.on_exists == base.on_exists).then_some(opts.on_exists),
+            audio: pick(opts.streams.audio == base.streams.audio).then(|| opts.streams.audio.clone()),
+            subtitles: pick(opts.streams.subtitles == base.streams.subtitles)
+                .then_some(opts.streams.subtitles),
+        }
+    }
+
     pub fn apply(&self, base: &Options) -> Options {
         Options {
             mode: self.mode.unwrap_or(base.mode),
@@ -119,6 +148,7 @@ impl PartialOptions {
 /// Where a request came from, for error messages.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Origin {
     Cli,
     Gui,
@@ -188,6 +218,18 @@ mod tests {
         assert_eq!(resolved.mode, Mode::Accurate);
         assert_eq!(resolved.container.as_deref(), Some("mp4"));
         assert_eq!(resolved.on_exists, OnExists::Skip);
+    }
+
+    #[test]
+    fn diff_inverts_apply() {
+        let base = Options::default();
+        let p = PartialOptions {
+            mode: Some(Mode::Accurate),
+            container: Some("mkv".into()),
+            ..Default::default()
+        };
+        assert_eq!(PartialOptions::diff(&p.apply(&base), &base), p);
+        assert_eq!(PartialOptions::diff(&base, &base), PartialOptions::default());
     }
 
     #[test]

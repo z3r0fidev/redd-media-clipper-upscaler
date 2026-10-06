@@ -4,14 +4,27 @@
   "version": "0.1.0",
   "identifier": "com.openlogic.rmedia",
   "build": {
-    "frontendDist": "../spike-ui"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "withGlobalTauri": true,
-    "windows": [{ "title": "rmedia preview spike", "width": 800, "height": 500 }],
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "rmedia",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 980,
+        "minHeight": 640,
+        "dragDropEnabled": true
+      }
+    ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; media-src 'self' asset: http://asset.localhost blob: http://127.0.0.1:*; connect-src ipc: http://ipc.localhost asset: http://asset.localhost http://127.0.0.1:*",
-      "assetProtocol": { "enable": true, "scope": [] }
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src http://127.0.0.1:*; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "assetProtocol": { "enable": false }
     }
   },
   "bundle": { "active": false, "icon": ["icons/icon.png"] }

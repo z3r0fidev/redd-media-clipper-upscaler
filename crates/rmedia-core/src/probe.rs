@@ -13,6 +13,7 @@ use crate::tools::Tools;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum StreamKind {
     Video,
     Audio,
@@ -23,27 +24,35 @@ pub enum StreamKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct StreamInfo {
     /// Index within the input file (for `-map 0:<index>`).
     pub index: u32,
     pub kind: StreamKind,
     pub codec: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub width: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub height: Option<u32>,
     /// Average frame rate as (num, den).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub frame_rate: Option<(u32, u32)>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub pix_fmt: Option<String>,
     /// Cover art / thumbnail pseudo-video stream.
     pub is_attached_pic: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub start_time: Option<Ts>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub duration: Option<Ts>,
 }
 
@@ -63,6 +72,7 @@ impl StreamInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct MediaInfo {
     #[serde(serialize_with = "crate::pathser::path")]
     pub path: PathBuf,
@@ -71,6 +81,7 @@ pub struct MediaInfo {
     pub container: String,
     pub format_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub duration: Option<Ts>,
     /// Container start time (earliest stream). User time 0 is `zero_point()`.
     pub start_time: Ts,

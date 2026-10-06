@@ -74,6 +74,47 @@ jobs:
       - run: rustup target add x86_64-pc-windows-gnu
       - run: cargo check --workspace --all-targets --target x86_64-pc-windows-gnu
 
+  desktop:
+    name: desktop app (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: Linux webview build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev ffmpeg
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            . -> target
+            apps/desktop/src-tauri -> target
+      - name: Generated TypeScript bindings are up to date
+        shell: bash
+        run: |
+          cargo xtask gen-bindings
+          git diff --exit-code -- apps/desktop/src/lib/bindings
+      - name: Frontend checks and tests
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run check
+          npm test
+          npm run build
+      - name: Desktop backend tests (media server, bridge, CLI parity)
+        if: runner.os == 'Linux'
+        run: |
+          cargo build -p rmedia-cli
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: Desktop backend builds on Windows
+        if: runner.os == 'Windows'
+        run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
+
   deny:
     name: cargo-deny (${{ matrix.manifest }})
     runs-on: ubuntu-22.04

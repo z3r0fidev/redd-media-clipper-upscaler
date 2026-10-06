@@ -7,7 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-ts = []
+# TypeScript bindings for the desktop app (`cargo xtask gen-bindings`).
+ts = ["dep:ts-rs"]
 
 [dependencies]
 csv.workspace = true
@@ -15,11 +16,13 @@ directories.workspace = true
 globset.workspace = true
 process-wrap.workspace = true
 serde.workspace = true
+sha2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+ts-rs = { version = "12", optional = true, features = ["no-serde-warnings"] }
 walkdir.workspace = true
 which.workspace = true
 

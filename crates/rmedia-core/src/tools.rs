@@ -14,6 +14,7 @@ pub const BUNDLED_FFPROBE: &str = "rmedia-ffprobe";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum ToolSource {
     /// `--ffmpeg`/settings or `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE`.
     Config,
@@ -22,6 +23,7 @@ pub enum ToolSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Tool {
     #[serde(serialize_with = "crate::pathser::path")]
     pub path: PathBuf,
