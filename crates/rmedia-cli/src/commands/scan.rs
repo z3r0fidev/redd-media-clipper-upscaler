@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rmedia_core::discover::{self, ScanEvent, ScanResult};
 use rmedia_core::input::pathlist;
+use rmedia_core::pathser::lossy;
 use rmedia_core::probe::{MediaInfo, StreamKind};
 use rmedia_core::tools::{LocateOptions, Tools};
 use rmedia_core::{Error, doctor};
@@ -37,7 +38,14 @@ pub async fn run(cli: &Cli, args: &ScanArgs) -> u8 {
         println!("{}", scan_doc(&result));
     } else if args.paths {
         for v in &result.videos {
-            println!("{}", v.path.display());
+            let text = v.path.to_string_lossy();
+            if text.contains(['\n', '\r']) || matches!(text, std::borrow::Cow::Owned(_)) {
+                // A newline would inject extra entries into `clip --inputs-from -`; a non-UTF-8
+                // name cannot round-trip. Refuse rather than print something misleading.
+                eprintln!("warning: skipping a path that cannot be listed one-per-line: {}", clean(&text));
+                continue;
+            }
+            println!("{text}");
         }
     } else {
         for v in &result.videos {
@@ -55,7 +63,7 @@ pub async fn run(cli: &Cli, args: &ScanArgs) -> u8 {
         }
         let s = &result.skipped;
         eprintln!(
-            "{} video(s), {} rejected{}; skipped {} hidden, {} temp, {} symlink, {} excluded ({:.1} s)",
+            "{} video(s), {} rejected{}; skipped {} hidden, {} temp, {} symlink, {} excluded, {} online-only ({:.1} s)",
             result.videos.len(),
             result.rejected.len(),
             if result.rejected.is_empty() || cli.verbose > 0 { "" } else { " (-v lists them)" },
@@ -63,6 +71,7 @@ pub async fn run(cli: &Cli, args: &ScanArgs) -> u8 {
             s.temp,
             s.symlink,
             s.excluded,
+            s.cloud,
             result.elapsed_ms as f64 / 1000.0
         );
     }
@@ -74,6 +83,15 @@ async fn scan_with_progress(
     tools: &Tools,
     roots: &[PathBuf],
     flags: &ScanFlags,
+    out: &Output,
+) -> Result<ScanResult, u8> {
+    scan_with_options(tools, roots, &flags.options(), out).await
+}
+
+async fn scan_with_options(
+    tools: &Tools,
+    roots: &[PathBuf],
+    opts: &discover::ScanOptions,
     out: &Output,
 ) -> Result<ScanResult, u8> {
     let pb = if out.json || out.quiet {
@@ -96,7 +114,7 @@ async fn scan_with_progress(
             pb.set_message(format!("{visited} entries, checking {probed}/{candidates} candidate videos"));
         }
     };
-    let result = discover::scan(tools, roots, &flags.options(), &progress, &cancel).await;
+    let result = discover::scan(tools, roots, opts, &progress, &cancel).await;
     ctrl_c.abort();
     pb.finish_and_clear();
     match result {
@@ -137,18 +155,29 @@ pub async fn expand_inputs(
     let mut sources = files;
     if !dirs.is_empty() {
         // Never treat our own outputs as new sources on a re-run.
-        let mut flags = flags.clone();
+        // Compared as real paths / exact names — never as globs (folder names may contain `[`, `*`).
+        let mut opts = flags.options();
         match output_dir.map(absolute) {
             Some(o) => {
-                for d in &dirs {
-                    if let Ok(rel) = o.strip_prefix(d) {
-                        flags.exclude.push(format!("{}/**", rel.display()));
-                    }
+                let same = |d: &PathBuf| {
+                    std::fs::canonicalize(d)
+                        .ok()
+                        .zip(std::fs::canonicalize(&o).ok())
+                        .is_some_and(|(a, b)| a == b)
+                };
+                if dirs.iter().any(same) {
+                    return Err(out.input_error(&format!(
+                        "the output folder {} is also a scanned input folder; clips would be mixed with \
+                         the sources and picked up again. Use a sub-folder, e.g. -o {}",
+                        o.display(),
+                        o.join("clips").display()
+                    )));
                 }
+                opts.exclude_dirs.push(o)
             }
-            None => flags.exclude.push("**/clips/**".into()),
+            None => opts.exclude_dir_names.push("clips".into()),
         }
-        let found = scan_with_progress(tools, &dirs, &flags, out).await?;
+        let found = scan_with_options(tools, &dirs, &opts, out).await?;
         if !out.quiet && !out.json {
             eprintln!(
                 "found {} video(s) in {} folder(s){}",
@@ -203,7 +232,7 @@ fn scan_doc(r: &ScanResult) -> Value {
         .map(|v| {
             let vs = v.first_video();
             json!({
-                "path": v.path,
+                "path": lossy(&v.path),
                 "size": v.size,
                 "duration": v.duration,
                 "width": vs.and_then(|s| s.width),
@@ -219,9 +248,9 @@ fn scan_doc(r: &ScanResult) -> Value {
     json!({
         "schema": 1,
         "type": "scan",
-        "roots": r.roots,
+        "roots": r.roots.iter().map(|p| lossy(p)).collect::<Vec<_>>(),
         "videos": videos,
-        "rejected": r.rejected.iter().map(|x| json!({"path": x.path, "reason": x.reason})).collect::<Vec<_>>(),
+        "rejected": r.rejected.iter().map(|x| json!({"path": lossy(&x.path), "reason": x.reason})).collect::<Vec<_>>(),
         "skipped": r.skipped,
         "elapsed_ms": r.elapsed_ms,
     })

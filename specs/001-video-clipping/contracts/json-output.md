@@ -1,7 +1,8 @@
 # JSON Output Contract (`--json`)
 
 Every top-level document has `"schema": 1`. Times are seconds (number, µs precision). Paths are
-strings (lossy UTF-8 on Linux for non-UTF-8 names, flagged `"path_lossy": true`).
+strings; on Linux, bytes that are not valid UTF-8 are replaced with U+FFFD (such names cannot be
+round-tripped through JSON — JSON output never fails because of them).
 
 ## `scan --json` (single document)
 ```json

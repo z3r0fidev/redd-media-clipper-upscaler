@@ -102,3 +102,67 @@ fn scan_errors() {
     assert_eq!(code(&["scan", d.path().to_str().unwrap(), "--include", "a["]), Some(3));
     assert_eq!(code(&["scan", d.path().to_str().unwrap(), "--paths", "--json"]), Some(2));
 }
+
+#[test]
+fn output_folder_with_glob_characters_is_still_excluded() {
+    require_ffmpeg!();
+    let d = library();
+    let out = d.path().join("lib/out [*]");
+    let list = d.path().join("l.txt");
+    std::fs::write(&list, "0:01 0:02 x\n").unwrap();
+    let run = || {
+        rmedia(d.path())
+            .arg("clip")
+            .arg(d.path().join("lib"))
+            .arg("-l")
+            .arg(&list)
+            .arg("-o")
+            .arg(&out)
+            .output()
+            .unwrap()
+    };
+    assert_eq!(run().status.code(), Some(0));
+    let second = run();
+    assert!(
+        String::from_utf8_lossy(&second.stdout).contains("0 succeeded, 2 skipped"),
+        "{}",
+        String::from_utf8_lossy(&second.stdout)
+    );
+}
+
+#[test]
+fn output_folder_cannot_be_the_scanned_folder() {
+    require_ffmpeg!();
+    let d = library();
+    let lib = d.path().join("lib");
+    let o =
+        rmedia(d.path()).arg("clip").arg(&lib).args(["-s", "1", "-e", "2", "-o"]).arg(&lib).output().unwrap();
+    assert_eq!(o.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("also a scanned input folder"));
+}
+
+/// Hostile file names: non-UTF-8 bytes must not crash --json; newlines must not inject entries
+/// into --paths output.
+#[cfg(target_os = "linux")]
+#[test]
+fn hostile_file_names() {
+    use std::os::unix::ffi::OsStrExt;
+    require_ffmpeg!();
+    let d = library();
+    let lib = d.path().join("lib");
+    let bad_utf8 = lib.join(std::ffi::OsStr::from_bytes(b"caf\xe9.mp4"));
+    let newline = lib.join("evil\ninjected.mp4");
+    std::fs::copy(fixture(Fixture::Gop50Mp4), &bad_utf8).unwrap();
+    std::fs::copy(fixture(Fixture::Gop50Mp4), &newline).unwrap();
+
+    let o = rmedia(d.path()).args(["scan", "--json"]).arg(&lib).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let doc: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(doc["videos"].as_array().unwrap().len(), 4);
+
+    let o = rmedia(d.path()).args(["scan", "--paths"]).arg(&lib).output().unwrap();
+    let stdout = String::from_utf8(o.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 2, "only the two safe names are listed: {stdout}");
+    assert!(!stdout.contains("injected"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("skipping a path"));
+}

@@ -163,6 +163,7 @@ impl ScanFlags {
             exclude: self.exclude.clone(),
             hidden: self.hidden,
             follow_symlinks: self.follow_symlinks,
+            ..Default::default()
         }
     }
 }

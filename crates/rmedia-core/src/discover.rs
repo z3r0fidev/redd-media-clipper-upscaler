@@ -9,7 +9,6 @@ use std::time::Instant;
 
 use globset::{GlobSet, GlobSetBuilder};
 use serde::Serialize;
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -37,6 +36,10 @@ pub struct ScanOptions {
     pub exclude: Vec<String>,
     pub hidden: bool,
     pub follow_symlinks: bool,
+    /// Folders never descended into, compared as real paths (not globs).
+    pub exclude_dirs: Vec<PathBuf>,
+    /// Folder names never descended into (exact, case-insensitive), e.g. `clips`.
+    pub exclude_dir_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -54,6 +57,7 @@ pub enum RejectReason {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Rejected {
+    #[serde(serialize_with = "crate::pathser::path")]
     pub path: PathBuf,
     pub reason: RejectReason,
     pub detail: String,
@@ -65,10 +69,13 @@ pub struct Skipped {
     pub temp: usize,
     pub symlink: usize,
     pub excluded: usize,
+    /// Online-only cloud files (OneDrive etc.); reading them would download them.
+    pub cloud: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ScanResult {
+    #[serde(serialize_with = "crate::pathser::paths")]
     pub roots: Vec<PathBuf>,
     pub videos: Vec<MediaInfo>,
     pub rejected: Vec<Rejected>,
@@ -109,32 +116,60 @@ pub async fn scan(
     let Walk { candidates, mut rejected, skipped, visited } = walk;
     on_event(ScanEvent::Progress { visited, candidates: candidates.len(), probed: 0 });
 
-    // Probe in parallel (bounded). Probing spawns ffprobe from runtime workers (PDEATHSIG-safe).
-    let limit = Arc::new(Semaphore::new(std::thread::available_parallelism().map_or(4, |n| n.get()).min(16)));
+    // Probe with a fixed-size pool: at most `workers` tasks exist at any time, however large the
+    // tree. Probing spawns ffprobe from runtime workers (PDEATHSIG-safe).
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(16);
     let tools = Arc::new(tools.clone());
-    let mut set = JoinSet::new();
-    for path in candidates.iter().cloned() {
-        let (limit, tools, cancel) = (limit.clone(), tools.clone(), cancel.clone());
-        set.spawn(async move {
-            let _permit = limit.acquire_owned().await.expect("semaphore open");
-            let r = probe::probe(&tools, &path, &cancel).await;
-            (path, r)
-        });
-    }
+    let mut set: JoinSet<(PathBuf, Result<MediaInfo>)> = JoinSet::new();
+    let mut in_flight: std::collections::HashMap<tokio::task::Id, PathBuf> = std::collections::HashMap::new();
+    let mut pending = candidates.iter();
     let mut videos = Vec::new();
     let mut probed = 0;
     loop {
+        while set.len() < workers {
+            let Some(path) = pending.next() else { break };
+            // The file may have been swapped for a symlink since the walk; never follow it then.
+            if !opts.follow_symlinks
+                && std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
+            {
+                rejected.push(Rejected {
+                    path: path.clone(),
+                    reason: RejectReason::Inaccessible,
+                    detail: "replaced by a symbolic link during the scan".into(),
+                });
+                continue;
+            }
+            let (tools, cancel, p) = (tools.clone(), cancel.clone(), path.clone());
+            let handle = set.spawn(async move {
+                let r = probe::probe(&tools, &p, &cancel).await;
+                (p, r)
+            });
+            in_flight.insert(handle.id(), path.clone());
+        }
         let next = tokio::select! {
-            n = set.join_next() => n,
+            n = set.join_next_with_id() => n,
             () = cancel.cancelled() => {
                 set.abort_all(); // dropping probe futures kills their ffprobe processes
                 return Err(Error::Cancelled);
             }
         };
         let Some(joined) = next else { break };
-        let Ok((path, result)) = joined else { continue };
         probed += 1;
-        match classify(path, result) {
+        let outcome = match joined {
+            Ok((id, (path, result))) => {
+                in_flight.remove(&id);
+                classify(path, result)
+            }
+            Err(e) => {
+                let path = in_flight.remove(&e.id()).unwrap_or_default();
+                Err(Some(Rejected {
+                    path,
+                    reason: RejectReason::Unreadable,
+                    detail: format!("internal error: {e}"),
+                }))
+            }
+        };
+        match outcome {
             Ok(v) => {
                 on_event(ScanEvent::Found { video: v.clone() });
                 videos.push(v);
@@ -200,6 +235,11 @@ fn walk(
     let mut out =
         Walk { candidates: Vec::new(), rejected: Vec::new(), skipped: Skipped::default(), visited: 0 };
     let mut seen = std::collections::HashSet::new();
+    let excluded_dirs: Vec<std::ffi::OsString> = opts
+        .exclude_dirs
+        .iter()
+        .map(|d| path_key(&std::fs::canonicalize(d).unwrap_or_else(|_| d.clone())))
+        .collect();
     for root in roots {
         let depth = if opts.no_recursive { Some(1) } else { opts.max_depth };
         let mut walker = walkdir::WalkDir::new(root).follow_links(opts.follow_symlinks);
@@ -241,7 +281,13 @@ fn walk(
                 let skip_hidden = !opts.hidden && is_hidden(&entry);
                 let skip_system =
                     SKIP_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name)) || name.starts_with(".Trash-");
-                let skip_excluded = exclude.is_some_and(|g| g.is_match(rel) || g.is_match(rel.join("x")));
+                let skip_excluded = exclude.is_some_and(|g| g.is_match(rel) || g.is_match(rel.join("x")))
+                    || opts.exclude_dir_names.iter().any(|n| n.eq_ignore_ascii_case(&name))
+                    || (!excluded_dirs.is_empty()
+                        && excluded_dirs.contains(&path_key(
+                            &std::fs::canonicalize(entry.path())
+                                .unwrap_or_else(|_| entry.path().to_path_buf()),
+                        )));
                 if skip_hidden || skip_system || skip_excluded {
                     if skip_excluded {
                         out.skipped.excluded += 1;
@@ -253,6 +299,10 @@ fn walk(
                 continue;
             }
             if !ft.is_file() {
+                continue;
+            }
+            if is_cloud_placeholder(&entry) {
+                out.skipped.cloud += 1;
                 continue;
             }
             if !is_root {
@@ -289,9 +339,10 @@ fn walk(
     out
 }
 
-fn path_key(p: &Path) -> String {
-    let s = p.to_string_lossy();
-    if cfg!(windows) { s.to_lowercase() } else { s.into_owned() }
+/// Identity key for a path: exact bytes on Unix (non-UTF-8 names stay distinct), case-insensitive
+/// on Windows.
+pub(crate) fn path_key(p: &Path) -> std::ffi::OsString {
+    if cfg!(windows) { p.to_string_lossy().to_lowercase().into() } else { p.as_os_str().to_owned() }
 }
 
 /// Partial downloads and editor/OS temp files, including rmedia's own `.part` outputs.
@@ -301,6 +352,22 @@ fn is_temp_name(name: &str) -> bool {
         .iter()
         .any(|s| lower.ends_with(s))
         || name.starts_with("._")
+}
+
+/// Windows cloud-sync placeholders (recall-on-access/open, offline). Always false elsewhere.
+fn is_cloud_placeholder(entry: &walkdir::DirEntry) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const OFFLINE: u32 = 0x1000;
+        const RECALL_ON_OPEN: u32 = 0x4_0000;
+        const RECALL_ON_DATA_ACCESS: u32 = 0x40_0000;
+        if let Ok(m) = entry.metadata() {
+            return m.file_attributes() & (OFFLINE | RECALL_ON_OPEN | RECALL_ON_DATA_ACCESS) != 0;
+        }
+    }
+    let _ = entry;
+    false
 }
 
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {

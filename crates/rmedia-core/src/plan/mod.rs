@@ -68,7 +68,9 @@ pub enum JobSpec {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlannedJob {
     pub id: JobId,
+    #[serde(serialize_with = "crate::pathser::path")]
     pub source: PathBuf,
+    #[serde(serialize_with = "crate::pathser::path")]
     pub output: PathBuf,
     #[serde(skip)]
     pub temp: PathBuf,
@@ -155,9 +157,9 @@ struct Planner<'a> {
     jobs: Vec<PlannedJob>,
     issues: Vec<Issue>,
     /// Outputs already assigned in this plan (normalized keys).
-    claimed: HashSet<String>,
+    claimed: HashSet<std::ffi::OsString>,
     /// Canonical source paths (normalized keys); outputs may never equal one.
-    sources: HashSet<String>,
+    sources: HashSet<std::ffi::OsString>,
     probes: HashMap<PathBuf, Result<MediaInfo, String>>,
 }
 
@@ -518,10 +520,7 @@ impl Planner<'_> {
 }
 
 /// Normalized comparison key (case-insensitive on Windows).
-fn path_key(p: &Path) -> String {
-    let s = p.to_string_lossy();
-    if cfg!(windows) { s.to_lowercase() } else { s.into_owned() }
-}
+use crate::discover::path_key;
 
 /// 64-bit run id. `RandomState` is keyed from the OS RNG, so temp names are not predictable
 /// (prevents pre-planting a symlink at a temp path in a shared output folder).

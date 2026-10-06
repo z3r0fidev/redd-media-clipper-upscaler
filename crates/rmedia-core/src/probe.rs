@@ -64,6 +64,7 @@ impl StreamInfo {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MediaInfo {
+    #[serde(serialize_with = "crate::pathser::path")]
     pub path: PathBuf,
     pub size: u64,
     /// Lower-case file extension (empty if none).

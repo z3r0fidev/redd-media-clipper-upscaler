@@ -58,6 +58,7 @@ pub struct StreamSelection {
 pub struct Options {
     pub mode: Mode,
     /// `None` = `<source dir>/clips`.
+    #[serde(serialize_with = "crate::pathser::opt_path")]
     pub output_dir: Option<PathBuf>,
     pub name_template: String,
     /// Output extension; `None` = same as source.
@@ -85,7 +86,7 @@ impl Default for Options {
 pub struct PartialOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<Mode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "crate::pathser::opt_path")]
     pub output_dir: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name_template: Option<String>,
@@ -121,8 +122,16 @@ impl PartialOptions {
 pub enum Origin {
     Cli,
     Gui,
-    Line { file: PathBuf, line: usize },
-    JsonPath { file: PathBuf, path: String },
+    Line {
+        #[serde(serialize_with = "crate::pathser::path")]
+        file: PathBuf,
+        line: usize,
+    },
+    JsonPath {
+        #[serde(serialize_with = "crate::pathser::path")]
+        file: PathBuf,
+        path: String,
+    },
 }
 
 impl std::fmt::Display for Origin {

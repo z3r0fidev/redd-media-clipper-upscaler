@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rmedia_core::event::{Event, EventSink, JobId, JobOutcome, RunSummary};
+use rmedia_core::pathser::lossy;
 use rmedia_core::plan::ffargs::display_args;
 use rmedia_core::plan::{Disposition, Plan, PlannedJob, Severity};
 use rmedia_core::request::Origin;
@@ -183,11 +184,11 @@ fn print_json(v: &Value) {
 fn origin_fields(o: &Origin, v: &mut serde_json::Map<String, Value>) {
     match o {
         Origin::Line { file, line } => {
-            v.insert("file".into(), json!(file));
+            v.insert("file".into(), json!(lossy(file)));
             v.insert("line".into(), json!(line));
         }
         Origin::JsonPath { file, path } => {
-            v.insert("file".into(), json!(file));
+            v.insert("file".into(), json!(lossy(file)));
             v.insert("json_path".into(), json!(path));
         }
         Origin::Cli | Origin::Gui => {}
@@ -197,8 +198,8 @@ fn origin_fields(o: &Origin, v: &mut serde_json::Map<String, Value>) {
 fn job_doc(j: &PlannedJob) -> Value {
     let mut v = json!({
         "id": j.id,
-        "source": j.source,
-        "output": j.output,
+        "source": lossy(&j.source),
+        "output": lossy(&j.output),
         "mode": j.mode,
         "requested": j.requested,
         "warnings": j.warnings,

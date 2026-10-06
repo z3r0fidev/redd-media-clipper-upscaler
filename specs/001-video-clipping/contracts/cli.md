@@ -25,6 +25,12 @@ rmedia clip --inputs-from <FILE|-> (-s ... | -l ...) [OPTIONS]
 - `--no-recursive`, `--max-depth N`, `--include GLOB`*, `--exclude GLOB`*, `--hidden`,
   `--follow-symlinks`, `--paths` (one path per line; pipe into `--inputs-from -`).
 
+Notes: globs are case-insensitive on every platform. `--paths` prints one path per line and skips
+(with a warning) names containing line breaks or invalid UTF-8, so piping into
+`--inputs-from -` can never inject extra entries. On Windows, online-only cloud files (OneDrive
+etc.) are skipped and counted, because probing them would download them. When `clip` scans folders,
+`-o` must not be one of the scanned folders.
+
 ### `rmedia doctor`
 - Engine version/location (`bundled|config|path`), encoders/muxers, accurate-mode containers.
 

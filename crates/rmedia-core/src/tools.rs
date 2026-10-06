@@ -23,6 +23,7 @@ pub enum ToolSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Tool {
+    #[serde(serialize_with = "crate::pathser::path")]
     pub path: PathBuf,
     pub source: ToolSource,
 }

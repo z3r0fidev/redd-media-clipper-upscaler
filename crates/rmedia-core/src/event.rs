@@ -59,6 +59,7 @@ pub struct Span {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum JobOutcome {
     Succeeded {
+        #[serde(serialize_with = "crate::pathser::path")]
         output: PathBuf,
         actual: Span,
         /// The produced span differs from the requested one by more than 50 ms.
@@ -76,7 +77,9 @@ pub enum JobOutcome {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct JobResult {
     pub id: JobId,
+    #[serde(serialize_with = "crate::pathser::path")]
     pub source: PathBuf,
+    #[serde(serialize_with = "crate::pathser::path")]
     pub output: PathBuf,
     pub requested: Span,
     #[serde(flatten)]

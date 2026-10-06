@@ -13,6 +13,7 @@ use crate::time::Ts;
 /// Everything needed to cut one clip.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ClipSpec {
+    #[serde(serialize_with = "crate::pathser::path")]
     pub input: PathBuf,
     /// Input-side `-ss` (fast, possibly approximate demuxer seek). User time base.
     pub input_seek: Option<Ts>,
