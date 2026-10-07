@@ -3,7 +3,7 @@ import type { PartialOptions } from "./PartialOptions";
 
 export type Settings = { 
 /**
- * Explicit engine paths (empty = bundled, then PATH).
+ * Explicit engine paths (empty = `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE`, then bundled, then PATH).
  */
 ffmpeg_path?: string, ffprobe_path?: string, 
 /**

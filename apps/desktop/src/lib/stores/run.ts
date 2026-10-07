@@ -13,6 +13,8 @@ export interface JobView {
   speed?: number;
   etaMs?: number;
   warnings: string[];
+  /** Requested start (s), to tell a keyframe-snapped start from an end-only adjustment. */
+  requestedStart: number;
   outcome?: JobOutcome;
 }
 
@@ -37,6 +39,7 @@ export function initRun(plan: Plan): RunView {
       status: j.disposition.status === "skip" ? "skipped" : "queued",
       fraction: 0,
       warnings: [...j.warnings],
+      requestedStart: j.requested.start,
     })),
     fraction: 0,
     done: 0,

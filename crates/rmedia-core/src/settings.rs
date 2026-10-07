@@ -36,7 +36,7 @@ fn settings_path() -> Option<PathBuf> {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
-    /// Explicit engine paths (empty = bundled, then PATH).
+    /// Explicit engine paths (empty = `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE`, then bundled, then PATH).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub ffmpeg_path: Option<PathBuf>,

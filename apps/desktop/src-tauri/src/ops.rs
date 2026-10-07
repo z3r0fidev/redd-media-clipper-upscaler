@@ -114,10 +114,16 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 impl AppState {
     pub async fn new(settings: Settings, cache_dir: PathBuf) -> std::io::Result<AppState> {
+        // The saved default output folder was chosen with the folder dialog (set_settings only
+        // keeps picked folders), so it stays usable across restarts.
+        let mut allowed = Allowed::default();
+        if let Some(dir) = &settings.defaults.output_dir {
+            allowed.allow(dir);
+        }
         Ok(AppState {
             settings: Mutex::new(settings),
             engine: RwLock::new(None),
-            allowed: Mutex::new(Allowed::default()),
+            allowed: Mutex::new(allowed),
             media: MediaServer::start().await?,
             plans: Mutex::new(HashMap::new()),
             runs: Mutex::new(HashMap::new()),
@@ -297,8 +303,16 @@ impl AppState {
         let text = match ext(path).as_str() {
             // CSV folds every resolved option into its rows.
             "csv" => manifest_csv::write(&req),
-            // The queue already is a validated v1 manifest: write it as is.
-            _ => serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())? + "\n",
+            // The queue is a v1 manifest; fold the app's Settings defaults into its `defaults`
+            // (queue values win) so `rmedia batch` reproduces exactly what the app would run.
+            _ => {
+                serde_json::to_string_pretty(&with_settings_defaults(
+                    manifest,
+                    &lock(&self.settings).defaults,
+                ))
+                .map_err(|e| e.to_string())?
+                    + "\n"
+            }
         };
         std::fs::write(path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))
     }
@@ -444,6 +458,13 @@ impl AppState {
             let current = lock(&self.settings);
             s.ffmpeg_path = current.ffmpeg_path.clone();
             s.ffprobe_path = current.ffprobe_path.clone();
+            // A default output folder must be one the user picked (it is trusted after restart).
+            if let Some(dir) = &s.defaults.output_dir
+                && current.defaults.output_dir.as_ref() != Some(dir)
+                && !lock(&self.allowed).is_allowed(dir)
+            {
+                return Err("choose the output folder with Choose…".into());
+            }
         }
         s.save().map_err(|e| e.to_string())?;
         *lock(&self.settings) = s;
@@ -484,6 +505,22 @@ fn direct_playable(m: &MediaInfo) -> bool {
         }
         _ => false,
     }
+}
+
+/// The queue manifest with `defaults` = Settings defaults overlaid by the queue's own defaults.
+fn with_settings_defaults(manifest: &Value, settings: &PartialOptions) -> Value {
+    let mut out = manifest.clone();
+    let mut merged = serde_json::to_value(settings).unwrap_or_else(|_| Value::Object(Default::default()));
+    if let (Some(m), Some(q)) = (merged.as_object_mut(), manifest.get("defaults").and_then(Value::as_object))
+    {
+        for (k, v) in q {
+            m.insert(k.clone(), v.clone());
+        }
+    }
+    if merged.as_object().is_some_and(|m| !m.is_empty()) {
+        out["defaults"] = merged;
+    }
+    out
 }
 
 fn is_video_name(p: &Path) -> bool {

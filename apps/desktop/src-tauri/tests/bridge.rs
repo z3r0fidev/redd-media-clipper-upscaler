@@ -193,3 +193,38 @@ async fn outputs_lists_and_manifests_are_confined() {
     assert!(fresh.probe(&other_video).await.is_ok(), "manifest videos become usable");
     assert!(fresh.probe(&secret).await.is_err(), "non-video entries are not granted");
 }
+
+/// Docs review: a JSON export reproduces the app's run, including Settings defaults; and a picked
+/// output folder saved in Settings stays usable after a restart (but an unpicked one is refused).
+#[tokio::test(flavor = "multi_thread")]
+async fn export_carries_settings_defaults_and_saved_output_survives_restart() {
+    require_ffmpeg!();
+    let d = tempfile::tempdir().unwrap();
+    let out_dir = tempfile::tempdir().unwrap();
+    let src = d.path().join("a.mp4");
+    std::fs::copy(fixture(Fixture::Gop50Mp4), &src).unwrap();
+    let st = state(d.path()).await;
+    st.allow(std::slice::from_ref(&src));
+
+    let mut s = st.get_settings();
+    s.defaults.output_dir = Some(out_dir.path().to_path_buf());
+    assert!(st.set_settings(s.clone()).is_err(), "unpicked folder refused");
+    st.allow(&[out_dir.path().to_path_buf()]); // as pick_folder does
+    s.defaults.mode = Some(rmedia_core::request::Mode::Accurate);
+    st.set_settings(s.clone()).unwrap();
+
+    let queue = json!({"version":1,"videos":[{"input": src, "clips":[{"start":1,"end":2}]}]});
+    let export = d.path().join("q.json");
+    st.allowed.lock().unwrap().allow_save(&export);
+    st.export_manifest(&queue, &export).unwrap();
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&export).unwrap()).unwrap();
+    assert_eq!(written["defaults"]["mode"], "accurate");
+    assert_eq!(written["defaults"]["output_dir"], json!(out_dir.path()));
+
+    // "Restart": a fresh state from the saved settings can plan into the saved folder.
+    let restarted = AppState::new(s, d.path().join("cache2")).await.unwrap();
+    restarted.allow(std::slice::from_ref(&src));
+    let plan = restarted.plan(&queue).await.unwrap();
+    assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+}

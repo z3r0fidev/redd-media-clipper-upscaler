@@ -21,10 +21,10 @@ pub mod exit {
 #[derive(Debug, Parser)]
 #[command(name = "rmedia", version, about = "Cut clips from videos — fast (no re-encode) or frame-accurate.")]
 pub struct Cli {
-    /// Path to the ffmpeg executable (default: bundled, then PATH).
+    /// Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH).
     #[arg(long, global = true, value_name = "PATH")]
     pub ffmpeg: Option<PathBuf>,
-    /// Path to the ffprobe executable (default: bundled, then PATH).
+    /// Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH).
     #[arg(long, global = true, value_name = "PATH")]
     pub ffprobe: Option<PathBuf>,
     /// More detail (show ffmpeg commands with -v).
