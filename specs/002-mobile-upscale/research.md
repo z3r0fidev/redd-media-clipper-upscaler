@@ -320,8 +320,9 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
      blur-pad composed at source scale; a documented softness trade-off), and writes rawvideo.
   2. `rmedia-sr` runs ×s.
   3. ffmpeg #2 reads rawvideo with the source frame timing, runs `scale` to W×H, a light
-     anti-flicker step (`tmix=frames=2:weights=1 3`, only on static regions, by masking with
-     `tblend` difference), encodes, and muxes the audio from the source by a second input.
+     anti-flicker step, encodes, and muxes the audio from the source by a second input. The
+     anti-flicker method is chosen in US6 by measurement (static-region frame difference); the
+     leading candidate is a motion-masked temporal blend (`tmix` where a `tblend` difference is low).
   - All three processes share one process group / Job Object, so cancel kills them all
     (Principle IV).
 - **Gate:**
