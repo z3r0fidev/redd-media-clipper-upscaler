@@ -6,11 +6,11 @@ for Reddit (003). Spec-driven via Spec Kit.
 ## Where things are
 - Constitution: `.specify/memory/constitution.md` (read before planning or reviewing).
 - Research outlines: `research/` (01 clipping/discovery, 02 upscaling, 03 mobile displays,
-  04 stack/packaging, 05 GIF export). Items marked [K]/[verify]/[unverified] are not yet confirmed.
+  04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
-- Active feature: `specs/001-video-clipping/` (implemented). Next: 002 mobile upscaling + smart
-  reframe (spec not yet created; run speckit-specify).
+- Active feature: `specs/002-mobile-upscale/` (spec + plan done; next: tasks, then Phase 0 refactors
+  A1–A5). 001 (`specs/001-video-clipping/`) is implemented.
 
 ## Stack
 - Rust 1.94 workspace: `crates/rmedia-core` (ALL media logic), `crates/rmedia-cli` (bin `rmedia`),
@@ -26,5 +26,5 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Commits: Conventional Commits.
 
 <!-- SPECKIT START -->
-Active plan: specs/001-video-clipping/plan.md
+Active plan: specs/002-mobile-upscale/plan.md
 <!-- SPECKIT END -->

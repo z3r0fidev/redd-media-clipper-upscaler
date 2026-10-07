@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rmedia.local/schema/capability-v1.json",
+  "title": "rmedia capability record (state dir, capability.json)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "fingerprint", "checked_at", "devices", "tiers", "demoted"],
+  "properties": {
+    "schema": { "const": 1 },
+    "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "checked_at": { "type": "string", "format": "date-time" },
+    "devices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "name", "kind", "device_id", "usable"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0 },
+          "name": { "type": "string" },
+          "kind": { "enum": ["integrated", "discrete", "virtual", "cpu", "software", "other"] },
+          "device_id": { "type": "string" },
+          "usable": { "type": "boolean" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "tiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "gpu", "ai"],
+      "properties": {
+        "cpu": { "$ref": "#/$defs/tier" },
+        "gpu": { "$ref": "#/$defs/tier" },
+        "ai": { "$ref": "#/$defs/tier" }
+      }
+    },
+    "demoted": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tier", "error", "at"],
+        "properties": {
+          "tier": { "enum": ["gpu", "ai"] },
+          "error": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "tier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "device": { "type": "integer", "minimum": 0 },
+        "fps": { "type": "number", "minimum": 0, "description": "Self-test throughput at the default preset size" },
+        "sec_per_mpx": { "type": "number", "minimum": 0, "description": "AI only: seconds per input megapixel" }
+      }
+    }
+  }
+}

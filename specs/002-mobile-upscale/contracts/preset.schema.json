@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rmedia.local/schema/preset-v1.json",
+  "title": "rmedia device preset v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "version", "name", "devices", "width", "height", "max_fps", "video", "audio", "est_bpp"],
+  "properties": {
+    "schema": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 40 },
+    "version": { "type": "integer", "minimum": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "devices": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Device classes shown to users (FR-002)" },
+    "width": { "type": "integer", "minimum": 144, "maximum": 4320, "multipleOf": 2 },
+    "height": { "type": "integer", "minimum": 144, "maximum": 4320, "multipleOf": 2 },
+    "max_fps": { "type": "integer", "minimum": 1, "maximum": 120 },
+    "video": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codec", "crf", "preset", "profile"],
+      "properties": {
+        "codec": { "enum": ["hevc", "h264"] },
+        "crf": { "type": "integer", "minimum": 0, "maximum": 51 },
+        "preset": { "enum": ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"] },
+        "profile": { "enum": ["main", "high"] },
+        "level": { "type": "string", "pattern": "^[1-6](\\.[0-2])?$", "description": "Omitted = computed from size and fps" },
+        "tag": { "enum": ["hvc1"] }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codec", "bitrate_k"],
+      "properties": {
+        "codec": { "const": "aac" },
+        "bitrate_k": { "type": "integer", "minimum": 32, "maximum": 512 },
+        "copy_if_aac": { "type": "boolean", "default": true }
+      }
+    },
+    "hdr_capable": { "type": "boolean", "default": false },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_bytes": { "type": "integer", "minimum": 1 },
+        "max_duration": { "type": "number", "exclusiveMinimum": 0, "description": "Seconds" }
+      }
+    },
+    "est_bpp": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Bits per pixel per frame for the size estimate" }
+  },
+  "examples": [
+    {
+      "schema": 1, "id": "phone-fill", "version": 1, "name": "Phone fill",
+      "description": "Fills iPhone 15–18 and Galaxy S screens edge to edge in portrait",
+      "devices": ["iPhone 15–18 (all sizes)", "Galaxy S22–S26", "Pixel (≈1% bars)"],
+      "width": 1080, "height": 2340, "max_fps": 60,
+      "video": { "codec": "hevc", "crf": 22, "preset": "fast", "profile": "main", "tag": "hvc1" },
+      "audio": { "codec": "aac", "bitrate_k": 192, "copy_if_aac": true },
+      "hdr_capable": true, "est_bpp": 0.06
+    },
+    {
+      "schema": 1, "id": "reddit-916", "version": 1, "name": "Reddit 9:16",
+      "devices": ["Reddit full-screen player"],
+      "width": 1080, "height": 1920, "max_fps": 60,
+      "video": { "codec": "h264", "crf": 18, "preset": "medium", "profile": "high" },
+      "audio": { "codec": "aac", "bitrate_k": 192 },
+      "limits": { "max_bytes": 1073741824, "max_duration": 900 },
+      "est_bpp": 0.12
+    }
+  ]
+}
