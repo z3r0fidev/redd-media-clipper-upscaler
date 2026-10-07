@@ -8,7 +8,9 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Research outlines: `research/` (01 clipping/discovery, 02 upscaling, 03 mobile displays,
   04 stack/packaging, 05 GIF export). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
-- Active feature: `specs/001-video-clipping/`.
+- Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
+- Active feature: `specs/001-video-clipping/` (implemented). Next: 002 mobile upscaling + smart
+  reframe (spec not yet created; run speckit-specify).
 
 ## Stack
 - Rust 1.94 workspace: `crates/rmedia-core` (ALL media logic), `crates/rmedia-cli` (bin `rmedia`),

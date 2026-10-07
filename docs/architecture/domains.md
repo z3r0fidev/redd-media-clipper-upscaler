@@ -1,0 +1,290 @@
+# rmedia Domain Breakdown
+
+**Status:** Current (0.1.0, commit `bd1eef8`). This page lists, for each domain, what it is
+responsible for, its key types and files, and the invariants it upholds. For the system-level
+view, see the [Architecture Overview](overview.md).
+
+All paths are relative to the repository root. Core files are under `crates/rmedia-core/src/`.
+
+## Time and Parsing
+
+**Responsibility:** the timestamp grammar (FR-002) and time arithmetic.
+
+| Item | Location |
+|---|---|
+| `Ts` — non-negative time in microseconds (`i64`) | `time.rs` |
+| `EndSpec` — `At(Ts)` / `Duration(Ts)` / `EndOfMedia` | `time.rs` |
+| `TimeError` — `invalid time "<input>": <reason>` | `time.rs` |
+
+**Invariants**
+
+- Accepted positions: plain seconds (`90`, `90.5`), clock form (`1:30`, `00:01:30.500`,
+  `00:01:30,500`), and unit form (`1h2m3.5s`, `500ms`). `end` and `+<duration>` are handled by
+  `EndSpec::parse`. Full grammar: [File Formats › Time grammar](../api/file-formats.md#time-grammar).
+- Rejected: negatives, exponents, more than 6 fractional digits, non-leading fields of 60 or more,
+  and units out of order or repeated.
+- JSON serialization is always seconds as a number. Deserialization accepts a number or a grammar
+  string.
+- Display formats: `HH:MM:SS.mmm` (`display`), `HH-MM-SS.mmm` (`filename`, safe on every OS), and
+  `S.ffffff` (`ffmpeg`).
+
+## Request Model
+
+**Responsibility:** the single normalized input form for planning (data-model.md).
+
+| Item | Location |
+|---|---|
+| `Options`, `PartialOptions` (`apply`, `diff`), `Mode`, `OnExists`, `AudioSel`, `SubSel`, `StreamSelection` | `request.rs` |
+| `ClipRequest`, `SourceRequest`, `BatchRequest`, `Origin` (`Cli`, `Gui`, `Line`, `JsonPath`) | `request.rs` |
+| `DEFAULT_NAME_TEMPLATE` = `{source}_{index:03}_{name-or-range}.{ext}`; `MULTI_SOURCE_NAME_TEMPLATE` = `{source}/{source}_{index:03}_{name-or-range}.{ext}` | `request.rs` |
+
+**Invariants:** options layer as defaults < source < clip (`PartialOptions::apply`).
+`PartialOptions` rejects unknown fields. `diff` is the inverse of `apply` (unit-tested).
+
+## Input Formats
+
+**Responsibility:** turn user files into `BatchRequest`s and report every problem at once
+(FR-003, FR-005, SC-006).
+
+| Parser | File | Errors located by |
+|---|---|---|
+| Clip list (`START END|+DUR [NAME]`) | `input/cliplist.rs` | file:line |
+| JSON manifest v1 (strict) + writer | `input/manifest_json.rs` | Syntax/type: line (message includes column). Semantic: JSON path such as `videos[0].clips[1].start`. |
+| CSV manifest + writer | `input/manifest_csv.rs` | file:line (comment lines accounted for) |
+| Path list (`--inputs-from`) | `input/pathlist.rs` | (no errors; verbatim lines) |
+
+**Invariants**
+
+- UTF-8 only. A leading BOM is tolerated. Invalid UTF-8 is reported with the offending line.
+- Relative inputs and output folders resolve against the defining file's folder (FR-008).
+- JSON and CSV that express the same content produce identical plans (FR-007, tested).
+- The JSON writer emits `HH:MM:SS.mmm` strings when a time is exact to the millisecond, otherwise
+  seconds, so write → parse round-trips losslessly. The CSV writer folds options per row and drops
+  options CSV cannot express (container, name template, streams).
+
+## Engine Location and Diagnostics
+
+**Responsibility:** find ffmpeg/ffprobe, check the version, and detect capabilities (Principle VI,
+FR-026).
+
+| Item | Location |
+|---|---|
+| `tools::locate` — explicit path → `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` → bundled `rmedia-ffmpeg[.exe]`/`rmedia-ffprobe[.exe]` beside the executable → `PATH` | `tools.rs` |
+| `ToolSource` = `config` (flag, settings or env var) / `bundled` / `path` | `tools.rs` |
+| `MIN_VERSION` = 6.0. Git/nightly version strings count as supported. | `tools.rs` |
+| `doctor::run` → `DoctorReport` + `(Tools, Caps)`; `Caps { encoders }` from `ffmpeg -encoders` | `doctor.rs` |
+
+**Invariants:** the doctor never fails, it reports problems instead. Accurate-mode containers are
+listed only when both their video and audio encoders exist. Explicit paths are canonicalized so
+spawning never depends on the working directory.
+
+## Discovery
+
+**Responsibility:** find real videos in folder trees (US4, FR-010–FR-012, research.md R6).
+
+| Item | Location |
+|---|---|
+| `discover::scan(tools, roots, ScanOptions, on_event, cancel)` → `ScanResult` | `discover.rs` |
+| `ScanOptions` (`no_recursive`, `max_depth`, `include`, `exclude`, `hidden`, `follow_symlinks`, `exclude_dirs`, `exclude_dir_names`) | `discover.rs` |
+| `ScanEvent` = `progress` / `found` / `rejected`; `RejectReason` = `unreadable` / `no_video_stream` / `image` / `inaccessible` | `discover.rs` |
+| `VIDEO_EXTENSIONS` (22): mp4 m4v mov mkv webm avi divx wmv asf flv f4v mpg mpeg m2ts mts ts vob 3gp 3g2 ogv mxf qt | `discover.rs` |
+| `path_key` — identity key: exact bytes on Unix, lower-cased on Windows | `discover.rs` |
+
+**Invariants**
+
+- The walk runs in `spawn_blocking`. Probing runs on runtime workers in a fixed pool of
+  min(parallelism, 16), which keeps it PDEATHSIG-safe.
+- Symlinks are not followed by default, and a file swapped for a symlink after the walk is
+  rejected.
+- Hidden entries (dot-names, plus Hidden/System attributes on Windows), system folders
+  (`$RECYCLE.BIN`, `System Volume Information`, `@eaDir`, `.git`, `.Trashes`, `.thumbnails`,
+  `lost+found`, `.Trash-*`) and temp names (`.part`, `.crdownload`, `.tmp`, `.ytdl`, `.download`,
+  `.!qb`, `.partial`, `._*`) are skipped and counted. On Windows, online-only cloud placeholders
+  are skipped and counted.
+- A file is a video only if ffprobe finds at least one video stream that is not attached-picture
+  cover art. Image formats (`image2`, `*_pipe`) are rejected. Archives are never opened.
+- A file given explicitly as a root bypasses the extension and include/exclude checks.
+- Results are naturally sorted (`clip2` < `clip10`).
+
+## Probing
+
+**Responsibility:** ffprobe invocation and parsing into `MediaInfo`.
+
+| Item | Location |
+|---|---|
+| `probe::probe` → `MediaInfo { path, size, container (extension), format_name, duration?, start_time, streams }` | `probe.rs` |
+| `StreamInfo` (index, kind, codec, width/height, frame_rate, pix_fmt, is_attached_pic, language, start_time, duration) | `probe.rs` |
+| `keyframe_at_or_before` (packet scan, 12 s then 65 s windows) → `Keyframe { at, previous }` | `probe.rs` |
+| `file_arg` (`file:` prefix), `INPUT_PROTOCOLS = "file,pipe"` | `probe.rs` |
+
+**Invariants:** a 60 s timeout per call; at most 16 MiB of captured stdout. Matroska stream
+durations come from the `DURATION` tag. `has_indexed_seeking` uses `format_name`, never the
+extension.
+
+## Planning
+
+**Responsibility:** turn a `BatchRequest` into validated `PlannedJob`s, writing nothing (FR-003,
+FR-016–FR-019).
+
+| Item | Location |
+|---|---|
+| `plan::plan` → `Plan { run_id, jobs, issues, cancelled }`; `Planner::plan_clip` | `plan/mod.rs` |
+| `PlannedJob { id, source, output, temp, on_exists, disposition, mode, requested, predicted?, warnings, spec }`; `Disposition` = `run` / `skip{reason}`; `JobSpec::Clip(ClipSpec)` | `plan/mod.rs` |
+| `Issue { severity, code, origin, message }`; `Plan::has_errors`, `engine_errors_only` | `plan/mod.rs` |
+| Naming templates and filename sanitizing | `plan/naming.rs` |
+| `Container`, `EncodeProfile` (`X264_AAC`, `VP9_OPUS`), `SubtitlePolicy`, `select_streams` | `plan/streams.rs` |
+| `ClipSpec`, `Trim`, `common_args`, `clip_args` (pure; insta snapshot-tested) | `plan/ffargs.rs` |
+
+**Invariants**
+
+- Every source is probed once (results cached per path). Playlist-like inputs (`m3u8`, `m3u`,
+  `ffconcat`, `sdp`) are refused.
+- `start` must be before the media duration. `end` must be after `start`. A zero duration is
+  rejected. An end past the media is clamped to the duration with a warning.
+- An output never equals a canonical source path (the nearest existing ancestor is canonicalized,
+  then the remaining parts appended). Two clips cannot claim the same output unless
+  `on_exists = rename`, which picks `name_1.ext`, `name_2.ext`, …
+- An existing output means: `skip` → `Disposition::Skip`; `overwrite` → a warning; `rename` → a
+  free name.
+- Name templates must produce a relative path with no empty, `.` or `..` parts. Each component is
+  sanitized (Windows-reserved characters, control characters and reserved device names such as
+  `CON` or `COM¹`) and limited to 240 bytes.
+- Streams: every real video stream; audio all/none/1-based tracks; subtitles copied (MKV),
+  converted to `mov_text` (MP4/M4V/MOV) or `webvtt` (WebM) when text-based, otherwise dropped with
+  a warning. Attachments are kept only in MKV. Cover art and data streams are never mapped.
+- Accurate mode: a missing encoder is an `ENGINE_MISSING` issue. High-bit-depth sources get a
+  warning that output is 8-bit 4:2:0.
+- `run_id` is 64 bits from a `RandomState` hasher keyed by the OS RNG, so temp names are not
+  predictable.
+- Every ffmpeg call starts with `-hide_banner -nostdin -n -loglevel warning -progress pipe:1
+  -nostats -stats_period 0.25`. Fast mode adds `-c copy -avoid_negative_ts make_zero`.
+  MP4/M4V/MOV/3GP add `-movflags +faststart`. Chapters are dropped (`-map_chapters -1`) and
+  metadata is kept (`-map_metadata 0`).
+
+## Execution
+
+**Responsibility:** run a plan with concurrency, progress, cancellation, verification, commit and
+crash cleanup (FR-020–FR-022).
+
+| Sub-domain | Key items | File |
+|---|---|---|
+| Scheduler | `exec::start` → `RunHandle` (`cancel`, `cancel_job`, `control()` → `RunControl`, `wait`); `RunConfig { jobs, state_dir }`; `default_jobs()`; `JobCtx` | `exec/mod.rs` |
+| Clip job | `clip::execute` (run ffmpeg, re-probe, verify, measure); `classify_failure` (stderr → `DISK_FULL` / `OUTPUT_UNWRITABLE` / `ENGINE_FAILED`) | `exec/clip.rs` |
+| Process | `run_capture`, `run_lines`; process group / PDEATHSIG / Job Object / kill-on-drop | `exec/process.rs` |
+| Progress | `ProgressParser` (`out_time_us`, falling back to `out_time_ms` and `out_time`; `speed`; `progress=end`); `Throttle` | `exec/progress.rs` |
+| Commit | `temp_path` → `<dir>/.<stem>.rmedia-<run>-<job>.part`; `commit(temp, output, OnExists)`; `remove_with_retry` (10 tries, 100 ms apart) | `exec/commit.rs` |
+| Journal | `Journal::open/add/remove`, `Drop` cleans up; `purge_stale` | `exec/journal.rs` |
+| Events | `Event`, `JobOutcome`, `JobResult`, `RunSummary`, `EventSink` (closures implement it) | `event.rs` |
+| Errors | `Error` + stable `code()`; `ErrorInfo { code, message, stderr_tail? }` | `error.rs` |
+
+**Invariants**
+
+- Job states: queued → running → (verify) → succeeded / failed / cancelled; skipped jobs never
+  start.
+- Verification before commit: the stream count equals the mapped count, the duration is
+  positive, and accurate clips with an explicit end inside the video stream must match the
+  expected video length within 3 frames + 100 ms (else `VERIFY_FAILED`).
+- Commit fsyncs the temp file (opened for writing, which Windows `FlushFileBuffers` requires),
+  then:
+  - `skip`: `hard_link(temp, output)`, which fails if the output exists, then remove temp. On
+    filesystems without hard links, reserve the name with `create_new`, then rename over it.
+  - `rename`: the same, trying `_1` … `_9999`.
+  - `overwrite`: `rename`.
+- The temp file is always removed after the job, whether it succeeded, failed or was cancelled.
+- Journal: each run holds an exclusive OS file lock on its journal. `purge_stale` treats a
+  lockable journal as belonging to a dead process. It deletes only entries that are absolute,
+  named exactly `.<stem>.rmedia-<run_id>-<digits>.part` for that journal's run id, and regular
+  files (never symlinks). Fresh empty journals (under 60 s old) are left alone.
+- Exit code in `RunSummary`: 130 if the run was cancelled; otherwise 1 if any job failed or was
+  individually cancelled; otherwise 0.
+
+## Preview and Media Server
+
+**Responsibility:** make any source viewable in a webview (research.md R8, FR-025).
+
+| Item | Location |
+|---|---|
+| `preview::time_offset`, `frame_at` (one MJPEG frame ≤ `max_height`), `ensure_proxy` (480p H.264/AAC MP4 or VP8/Opus WebM, `-fps_mode passthrough`, `-g 15`), `thumbnails` (n clamped 1–60, 90 px tall JPEGs), `PreviewCache` (SHA-256 key, LRU `evict`) | `crates/rmedia-core/src/preview.rs` |
+| `MediaServer::start`, `register(path) → URL`, `revoke_all` | `apps/desktop/src-tauri/src/media_server.rs` |
+
+**Invariants:** proxy timestamps equal source timestamps. The server serves only registered,
+canonical, regular files by opaque id, over GET/HEAD with a single byte range, 128 KiB chunks,
+at most 8 connections, and one request per connection. Full list:
+[Security Model › Media server](../security/security-model.md#media-server).
+
+## Desktop App
+
+### Backend (`apps/desktop/src-tauri/src/`)
+
+| Item | Responsibility |
+|---|---|
+| `lib.rs` | Builder: dialog plugin, `AppState` setup (settings, cache dir, media server), command-line paths (allowed + handed to the page once), drag-drop paths registered before the page is told (`rmedia://dropped` event), `CloseRequested` → `AppState::shutdown` |
+| `commands.rs` | 23 `#[tauri::command]`s; argument plumbing; native dialogs run in Rust |
+| `ops.rs` | `AppState` with `Allowed` (files, dirs, save targets, lists), engine cache, plans by run id, run controls, scan tokens |
+
+**Path policy invariants (`ops::Allowed`)**
+
+- The page may only use paths the user chose: dialogs, drag-drop, command line, picked folders and
+  their contents, or video files named by a manifest the user opened.
+- Clip lists and manifests must have been picked as such.
+- Exports may write only to the path chosen in the Save dialog.
+- Planned outputs must be inside a picked folder or under the source's folder. Anything else adds
+  an `INVALID_INPUT` issue.
+- `set_settings` ignores engine paths. Only `pick_engine` (a native picker) changes them.
+- `set_settings` accepts a changed default output folder only if it is already allowed (picked);
+  `AppState::new` re-allows the saved folder at startup.
+- A `.json` export folds the Settings `defaults` into the manifest's `defaults` (queue values win,
+  `with_settings_defaults`), so `rmedia batch` reproduces the app's run.
+
+### Frontend (`apps/desktop/src/`)
+
+| Item | Responsibility |
+|---|---|
+| `lib/api.ts` | Typed `invoke` wrappers; `Channel` setup |
+| `lib/bindings/*.ts` | ts-rs types generated from core (`cargo xtask gen-bindings`); CI fails on drift |
+| `lib/manifest.ts` | `Manifest` / `VideoEntry` / `ClipEntry` — the queue is a v1 manifest |
+| `lib/stores/queue.ts` | Pure, unit-tested queue operations (`addClip`, `updateClip` keeps end/duration exclusive, `merge`, `runnable`) |
+| `lib/stores/run.ts` | Pure event → `RunView` reducer (`applyEvent`; progress never moves backwards) |
+| `lib/stores/app.svelte.ts`, `sources.svelte.ts` | Svelte 5 rune state; add/scan/open actions |
+| `lib/components/` | `Sources`, `Player` (direct → H.264 → VP8 → stills; keys), `Queue` (editable times via core parsing, import/export, plan/run), `RunPanel` (per-job and overall progress, cancel), `Settings` |
+
+**Invariant:** all time parsing goes through the core (`parse_time` / `parse_end`), giving one
+grammar everywhere (`lib/time.ts`).
+
+## Tooling (`xtask`)
+
+| Command | Effect |
+|---|---|
+| `cargo xtask fetch-tools [--target TRIPLE]` | Downloads the pinned BtbN build from `xtask/tools.lock.json`, verifies its SHA-256, and installs `binaries/rmedia-ffmpeg-<triple>` / `rmedia-ffprobe-<triple>`. A stamp file records the archive and binary hashes. |
+| `cargo xtask pin-tools` | Pins the newest BtbN autobuild using GitHub asset digests |
+| `cargo xtask gen-bindings` | Runs `cargo test -p rmedia-core --features ts` to export TypeScript into `apps/desktop/src/lib/bindings` |
+| `cargo xtask stage-cli [--target TRIPLE]` | Builds the release CLI and copies it to `binaries/rmedia-<triple>[.exe]` (Tauri sidecar naming) |
+| `cargo xtask notices` | Writes `THIRD_PARTY_NOTICES.md` from cargo and npm metadata, including license texts |
+
+## Testing
+
+| Layer | Where | Notes |
+|---|---|---|
+| Unit (table-driven parsers, naming, commit, journal, progress, version parsing) | `#[cfg(test)]` in core modules | 54 core unit tests (validation.md) |
+| Core integration | `crates/rmedia-core/tests/` (`us1_clip`, `us2_cliplist`, `us3_batch`, `us4_discover`, `preview`, `cancel`) | Real media from `rmedia-testkit`; accuracy checked via ffprobe durations and first-frame PSNR |
+| argv snapshots | `tests/snapshots_ffargs.rs` (insta) | 8 snapshots |
+| Benches | `tests/bench.rs` (`--ignored bench`) | SC-001, SC-003 |
+| CLI contract | `crates/rmedia-cli/tests/` (`clip_single`, `clip_list`, `scan`, `batch`) | Includes SIGINT / SIGKILL |
+| Desktop backend | `apps/desktop/src-tauri/tests/{bridge,media_server}.rs` | Path policy, CLI/GUI byte parity (SC-008), media server security |
+| Frontend | `apps/desktop/src/lib/stores/*.test.ts` (vitest), `svelte-check` | 8 tests |
+
+`rmedia-testkit` generates fixtures (testsrc2/sine, GOP 50, VFR, multi-audio + SRT, WebM,
+no-audio, MPEG-TS with offset, cover-art m4a, fake and mislabelled files) into
+`target/rmedia-fixtures/<hash>/`. No binary fixtures are committed (Principle III). Committed
+ffprobe JSON samples live in `crates/rmedia-core/tests/data/probe/`.
+
+CI (`.github/workflows/ci.yml`) runs fmt, clippy (`-D warnings`) and tests against the bundled
+engine on `ubuntu-22.04` and `windows-latest`; tests against distro FFmpeg 6.1 on `ubuntu-24.04`
+(the minimum engine); a Windows type-check from Linux; and the desktop job (bindings drift,
+frontend checks, backend tests on Linux).
+
+## Related Documentation
+
+- [Architecture Overview](overview.md)
+- [Security Model](../security/security-model.md)
+- [Glossary](../reference/glossary.md)

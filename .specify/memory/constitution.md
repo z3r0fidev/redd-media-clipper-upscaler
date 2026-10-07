@@ -1,6 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: (template) → 1.0.0
+- Version change: 1.0.0 → 1.0.1 (PATCH: wording matches the shipped `--on-exists` flag and
+  engine lookup order incl. environment variables; no change in meaning)
+- Previous: (template) → 1.0.0
 - Modified principles: n/a (initial ratification)
 - Added sections: Core Principles I–VII, Technical & Licensing Constraints, Development Workflow,
   Governance
@@ -52,7 +54,7 @@ cancellation on both platforms (process groups on Linux, Job Objects on Windows)
 
 The application MUST NEVER modify or delete a source video. Writes go only to an explicit or
 derived output location; existing outputs are never overwritten without an explicit
-`--overwrite` flag (default: skip or auto-suffix). External tools MUST be invoked with argument
+`--on-exists overwrite` choice (default: skip; `rename` auto-suffixes). External tools MUST be invoked with argument
 vectors, never interpolated command strings. Partially written outputs from failed or cancelled
 jobs MUST be removed.
 
@@ -72,7 +74,8 @@ new dependencies, new formats) MUST be justified in the plan's Complexity Tracki
 ## Technical & Licensing Constraints
 
 - FFmpeg/ffprobe are invoked as external binaries; the app MUST locate them via (1) explicit
-  config, (2) bundled sidecar, (3) `PATH`, in that order, and report the version found.
+  config (a flag, the settings file or the `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` environment
+  variables), (2) bundled sidecar, (3) `PATH`, in that order, and report the version found.
 - Distribution of GPL-licensed components (e.g. FFmpeg builds with libx264/libx265) MUST be
   documented with license notices and source offers; AI model weights MUST have their licenses
   recorded in-repo before bundling.
@@ -98,4 +101,4 @@ expanded; PATCH: clarifications), and a Sync Impact Report at the top of this fi
 MUST include a Constitution Check gate evaluated before research and again after design; any
 violation MUST be justified in Complexity Tracking or the design changed.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-06
+**Version**: 1.0.1 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-06

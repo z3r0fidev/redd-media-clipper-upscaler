@@ -108,8 +108,9 @@ Add videos or a folder (or drop them anywhere, or pass them on the command line:
 |---|---|
 | `Space` | play / pause |
 | `I` / `O` | set in / out |
-| `←` / `→` | previous / next frame (`Shift`: 1 s) |
-| `Enter` | add the clip to the queue |
+| `←` / `→` or `,` / `.` | previous / next frame (`Shift`: 1 s) |
+| `Home` / `End` | jump to start / end |
+| `Enter` or `A` | add the clip to the queue |
 
 Edit times and names in the queue, choose audio track / subtitles per video, then **Run**.
 **Export…** saves the queue as a manifest you can run with `rmedia batch` — the results are
@@ -141,6 +142,16 @@ cargo test --workspace --release -- --ignored bench   # timing targets
 cargo build -p rmedia-cli && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 (cd apps/desktop && npm test && npm run check)
 ```
+
+### Releasing
+
+Push a `v*` tag (for example `git tag v0.1.0 && git push origin v0.1.0`). The release workflow
+(also runnable by hand) builds the installers and CLI archives on Linux and Windows and uploads
+them as workflow artifacts. Publishing a GitHub release and code signing are manual steps.
+Before tagging: bump `version` in `Cargo.toml`, `apps/desktop/package.json`,
+`apps/desktop/src-tauri/Cargo.toml` and `apps/desktop/src-tauri/tauri.conf.json`; run `cargo xtask notices`; and make sure the FFmpeg
+source for the pinned build is mirrored (see `licenses/FFMPEG-NOTICE.md`). Details:
+`docs/operations/build-and-release.md`.
 
 Other tasks: `cargo xtask gen-bindings` (TypeScript types from the core), `cargo xtask notices`
 (third-party notices), `cargo xtask pin-tools` (move to a newer FFmpeg build).

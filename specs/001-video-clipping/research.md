@@ -20,7 +20,7 @@ either re-checked locally on 2026-10-06 (marked **verified**) or carried as test
 - **Decision**: invoke `ffmpeg`/`ffprobe` as subprocesses with argv vectors; never link libav.
 - **Rationale**: crash isolation, full CLI semantics, simple GPL boundary (research/01 §5.1).
 - **Details**: every call uses `-hide_banner -nostdin -n -loglevel warning -progress pipe:1
-  -nostats`; paths passed as `file:<path>` (prevents `-x.mp4` / `a:b.mp4` being read as
+  -stats_period 0.25 -nostats`; paths passed as `file:<path>` (prevents `-x.mp4` / `a:b.mp4` being read as
   options/protocols); explicit `-f <muxer>` because temp outputs end in `.part`.
 - **Verified locally (ffmpeg 6.1.1)**: `-progress pipe:1` emits `out_time_us` and a final
   `progress=end`.
@@ -80,7 +80,7 @@ either re-checked locally on 2026-10-06 (marked **verified**) or carried as test
 ## R6. Directory discovery
 - **Decision**: walkdir (no symlink following, skip hidden/system/temp/`.part`/`._*`), case-
   insensitive extension allowlist (`mp4 m4v mov mkv webm avi wmv flv f4v mpg mpeg m2ts mts ts vob
-  3gp 3g2 ogv mxf asf`), then parallel ffprobe validation requiring ≥1 video stream with
+  3gp 3g2 ogv mxf asf divx qt`, 22 entries)), then parallel ffprobe validation requiring ≥1 video stream with
   `disposition.attached_pic == 0`. Archives never opened (owner decision).
 - **Rationale**: ffprobe is authoritative; magic sniffing adds little (research/01 §4.2).
   1,000 probes × ~50 ms / 8 workers ≈ 7 s ≪ 60 s (SC-003), so no persistent cache in v1.
@@ -92,7 +92,8 @@ either re-checked locally on 2026-10-06 (marked **verified**) or carried as test
   anyway), then delete `.part` (retry ≤ 1 s on Windows sharing violations).
 - **Output commit**: write `.<stem>.rmedia-<run>-<job>.part` → ffprobe-verify → `hard_link` to
   final (atomic no-clobber) → remove temp; fallback rename on filesystems without hard links.
-- **Crash cleanup**: journal `state_dir/inflight/<pid>.json`; on start, purge entries of dead pids.
+- **Crash cleanup**: locked journal `state_dir/inflight/<run_id>-<pid>.json` (array of temp paths);
+  on start, purge journals whose lock is free (owner gone), deleting only rmedia-pattern temps.
 
 ## R8. GUI preview in a webview
 - **Problem**: WebKitGTK depends on distro GStreamer plugins (H.264 may be missing); WebView2
@@ -131,7 +132,8 @@ either re-checked locally on 2026-10-06 (marked **verified**) or carried as test
   8. Limits: ≤8 concurrent connections, read/write/idle timeouts, header size cap; tolerate files
      changing or disappearing mid-stream.
   9. Token and IDs never logged or exposed except via one `get_media_url(id)` command.
-  10. Never serve outputs, temp files, journal/state dir; proxies/thumbnails only by hash ID.
+  10. Never serve outputs, temp files, journal/state dir; proxies only by opaque random id (as
+      sources). *As built: thumbnails are returned inline as `data:` URLs, never served.*
   11. CSP narrowed at runtime to the exact port; production removes `unsafe-inline` and
       `withGlobalTauri`; asset-protocol static scope stays empty. A Tauri command must never take a
       webview-supplied path and widen a scope with it (arbitrary-file-read primitive).

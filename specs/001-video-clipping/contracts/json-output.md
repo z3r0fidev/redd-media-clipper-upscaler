@@ -10,7 +10,7 @@ round-tripped through JSON — JSON output never fails because of them).
  "videos":[{"path":"/v/a.mp4","size":1048576,"duration":60.0,"width":1920,"height":1080,
             "fps":29.97,"video_codec":"h264","container":"mp4","audio_streams":1,"subtitle_streams":0}],
  "rejected":[{"path":"/v/fake.mp4","reason":"unreadable"}],
- "skipped":{"hidden":3,"temp":1,"symlink":0,"excluded":0},"elapsed_ms":412}
+ "skipped":{"hidden":3,"temp":1,"symlink":0,"excluded":0,"cloud":0},"elapsed_ms":412}
 ```
 
 ## `doctor --json`
@@ -23,11 +23,11 @@ round-tripped through JSON — JSON output never fails because of them).
 
 ## `--dry-run --json` (single document)
 ```json
-{"schema":1,"type":"plan",
+{"schema":1,"type":"plan","run_id":"…",
  "jobs":[{"id":1,"source":"/v/a.mp4","output":"/v/clips/a_001_00-01-30.000_00-02-00.000.mp4","status":"planned",
           "mode":"fast","requested":{"start":90.0,"end":120.0},"predicted":{"start":88.0,"end":120.0},
           "warnings":[],"argv":["-hide_banner","..."]}],
- "issues":[{"severity":"error","file":"clips.txt","line":2,"message":"invalid time \"1:7x\""}],
+ "issues":[{"severity":"error","code":"…","file":"clips.txt","line":2,"message":"invalid time \"1:7x\""}],
  "summary":{"planned":1,"skipped":0,"errors":1}}
 ```
 
@@ -42,6 +42,11 @@ round-tripped through JSON — JSON output never fails because of them).
 ```
 The final line is always `type: "summary"` (also on cancel). Failed outcome:
 `{"status":"failed","error":{"code":"ENGINE_FAILED","message":"…","stderr_tail":"…"}}`.
+
+Also emitted (see `docs/api/json-output.md` for captured examples): JSON-manifest issues carry
+`json_path` instead of `line`; a job that will not run because its output exists has
+`"status":"skip"` and a `skip_reason`; a run that cannot start prints a single
+`{"schema":1,"type":"error",…}` document.
 
 Scan `rejected[].reason`: `unreadable` (ffprobe failed), `no_video_stream` (audio / cover art
 only), `image` (still image with a video extension), `inaccessible` (permission error, symlink

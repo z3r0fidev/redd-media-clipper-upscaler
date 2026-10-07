@@ -67,7 +67,7 @@ excluded}, elapsed_ms }`; reasons: `unreadable | no_video_stream | probe_failed`
 | warnings | [string] | dropped streams, clamped end, container fallback |
 | argv | [string] | exact ffmpeg arguments (shown in dry-run) |
 
-`Plan { jobs, issues: [Issue{severity: Error|Warning, origin, message}] }` — any Error issue ⇒
+`Plan { run_id, jobs, issues: [Issue{severity: Error|Warning, code, origin, message}], cancelled }` — any Error issue ⇒
 nothing runs (exit 3).
 
 `ClipSpec { segment: Segment{input, start, duration, map: [stream index]}, mode, container,
@@ -85,21 +85,25 @@ Queued ──► Cancelled
 On Failed/Cancelled: process tree killed, `.part` removed, journal entry cleared.
 
 ## Event (core → CLI renderer / GUI Channel)
-`RunStarted{run_id,total_jobs,total_media_us}`, `JobStarted{job_id}`,
-`JobProgress{job_id,fraction,out_time_us,speed?,eta_ms?}` (≤ 10 Hz/job), `JobWarning{job_id,
+`RunStarted{run_id,total_jobs,total_media}`, `JobStarted{job_id}`,
+`JobProgress{job_id,fraction,out_time,speed?,eta_ms?}` (≤ 10 Hz/job), `JobWarning{job_id,
 message}`, `JobFinished{job_id,outcome}`, `RunProgress{done,total,fraction,eta_ms?}`,
 `RunFinished{summary}`.
 
-`JobOutcome = Succeeded{output, actual_start, actual_end, adjusted} | Skipped{reason} |
+`JobOutcome = Succeeded{output, actual:{start,end}, adjusted} | Skipped{reason} |
 Failed{error:{code,message,stderr_tail}} | Cancelled`
 
 `RunSummary { succeeded, skipped, failed, cancelled, jobs: [..], exit_code }`
 
-`ScanEvent = Progress{visited,candidates,probed} | Found(MediaInfo) | Rejected{path,reason} |
-Done(ScanResult)`
+`ScanEvent = Progress{visited,candidates,probed} | Found{video: MediaInfo} |
+Rejected{rejected: {path, reason, detail?}}` — the call returns the `ScanResult` (no `Done` event).
+`ScanResult.skipped` counts `hidden, temp, symlink, excluded, cloud`; `excluded_named` lists folders
+skipped by name.
 
 ## Settings (`settings.json`)
-`{ ffmpeg_path?, ffprobe_path?, default_options: Options, jobs?, proxy_cache_max_mb: 5120 }`
+`{ ffmpeg_path?, ffprobe_path?, defaults: PartialOptions, jobs?, proxy_cache_max_mb: 5120 }`
 
-## Journal (`state_dir/inflight/<pid>.json`)
-`{ pid, started_at, temps: [path] }` — purged at startup when pid is not alive.
+## Journal (`state_dir/inflight/<run_id>-<pid>.json`)
+A JSON array of temp paths, held under an OS file lock by the running process. At startup, journals
+whose lock can be taken (owner gone) are purged: each listed `.part` is deleted only if it matches
+the rmedia temp-name pattern, then the journal file is removed.

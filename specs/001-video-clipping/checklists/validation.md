@@ -13,8 +13,8 @@ Legend: ✅ verified here · 🟡 verified indirectly / partially · ⏳ needs W
 | core integration: US1 clip (incl. MPEG-TS, mislabelled TS, VFR, odd sizes) | 12 |
 | core: US2 clip lists · US3 manifests (incl. SC-004) · US4 discovery · preview · cancel | 3 · 4 · 4 · 2 · 2 |
 | argv snapshots | 8 |
-| CLI contract tests: clip (incl. SIGINT, SIGKILL) · lists · scan · batch | 6 · 3 · 8 · 2 |
-| desktop backend: media server security · bridge (incl. SC-008 parity, path policy) | 3 · 5 |
+| CLI contract tests: clip (incl. SIGINT, SIGKILL) · lists · scan · batch | 6 (+1 Windows-only) · 3 · 8 · 2 |
+| desktop backend: media server security · bridge (incl. SC-008 parity, path policy) | 3 · 6 |
 | desktop frontend (vitest) · svelte-check | 8 · 0 errors |
 | benches (`--ignored`) | SC-001, SC-003 |
 

@@ -16,7 +16,7 @@ and GIF export (feature 003).
 
 ## Technical Context
 
-**Language/Version**: Rust 1.94 (edition 2024) for core/CLI/desktop backend; TypeScript 5 + Svelte 5
+**Language/Version**: Rust 1.94 (edition 2024) for core/CLI/desktop backend; TypeScript 6 + Svelte 5
 for the desktop frontend (Node 24 for tooling)
 
 **Primary Dependencies**: tokio 1.x, tokio-util (CancellationToken), process-wrap 10 (process groups
@@ -93,7 +93,8 @@ crates/
 │   ├── tools.rs  doctor.rs  probe.rs
 │   ├── discover.rs
 │   ├── plan/{mod,naming,streams,ffargs}.rs
-│   ├── exec/{mod,process,progress,commit,journal}.rs
+│   ├── exec/{mod,process,progress,commit,journal,clip}.rs
+│   ├── paths.rs, pathser.rs  # Windows-safe canonical paths; path serialization
 │   └── preview.rs  event.rs  settings.rs  error.rs
 ├── rmedia-core/tests/        # integration tests (via rmedia-testkit)
 ├── rmedia-cli/src/{main,render,commands/*}.rs   # bin "rmedia"

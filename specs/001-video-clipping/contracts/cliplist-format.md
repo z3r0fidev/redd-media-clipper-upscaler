@@ -24,5 +24,6 @@ START  +DURATION  [NAME...]
 ```
 
 Errors are reported as `<file>:<line>: <reason>` and all are reported before anything runs
-(exit 3). Example reasons: `end (0:40) is before start (0:45)`, `invalid time "1:7x"`,
-`missing end`.
+(exit 3). Example reasons: `invalid time "1:7x"`,
+`missing end after "0:45" (use END, +DURATION or end)`. An end that is not after its start is
+reported when the plan is built: `end (0:40) is not after start (0:45)`.

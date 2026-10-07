@@ -32,28 +32,29 @@ etc.) are skipped and counted, because probing them would download them. When `c
 `-o` must not be one of the scanned folders.
 
 ### `rmedia doctor`
-- Engine version/location (`bundled|config|path`), encoders/muxers, accurate-mode containers.
+- Engine version and location (`bundled|config|path`), required encoders, and which containers
+  accurate mode can produce.
 
 ## Shared clip/batch options
 | Flag | Values | Default |
 |---|---|---|
-| `--mode` | `fast` \| `accurate` | `fast` |
+| `--mode` | `fast` \| `accurate` | `fast` (`batch`: the manifest's value, else `fast`) |
 | `-o, --output-dir` | path | `<source dir>/clips` |
 | `--name` | template (`{source} {index} {index:03} {name} {start} {end} {range} {name-or-start} {name-or-range} {ext}`) | see data-model |
 | `--container` | ext | source's |
 | `--on-exists` | `skip` \| `overwrite` \| `rename` | `skip` |
-| `--no-audio`, `--audio 1,2`, `--no-subs` | | all streams |
+| `--no-audio`, `--audio 1,2`, `--no-subs` (`clip` only; manifests set `audio`/`subtitles`) | | all streams |
 | `-j, --jobs` | N ≥ 1 | clamp(ncpu/2,1,4) |
 | `--dry-run` | | off — plan only, writes nothing |
 | `--json` | | off |
-| `--ffmpeg`, `--ffprobe` | path | locator |
+| `--ffmpeg`, `--ffprobe` | path | `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE`, then bundled, then PATH |
 | `-v` / `-q` | | |
 
 ## Exit codes
 | Code | Meaning |
 |---|---|
 | 0 | all jobs succeeded or were skipped |
-| 1 | ≥ 1 job failed (others completed) |
+| 1 | ≥ 1 job failed, or a single job was cancelled while the run continued |
 | 2 | usage error |
 | 3 | input/validation error — nothing ran |
 | 4 | engine missing / too old / required encoder absent |
