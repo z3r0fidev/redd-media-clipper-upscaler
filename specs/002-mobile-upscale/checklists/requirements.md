@@ -38,3 +38,4 @@
   001 (`--on-exists`, `--inputs-from`, `doctor`, manifests) and the bundled engine named in
   Assumptions only, as a dependency. Codec names are kept out of FRs (described by effect).
 - SC-002 uses "an objective perceptual-quality metric"; the specific metric is chosen in planning.
+- Validation pass 2 (2026-10-06): open items settled per research/09; presets gained Pixel tall and Reddit feed 4:5 plus platform limits; v1 detector = faces. All items still pass.

@@ -12,7 +12,7 @@ past 5 years. Resolutions must be crisp and the video must fill the screen when 
 (standard orientation)." Owner decisions (2026-10-06): smart reframe; tiered quality (classical on
 CPU, GPU-accelerated when available, AI when a capable GPU is present — AI delivered last); FFmpeg
 stays bundled; default output is "phone fill" (1080×2340); the AI tier uses a bundled worker that
-runs on any major GPU vendor. Research: `research/02`, `03`, `06`, `07`, `08`.
+runs on any major GPU vendor. Research: `research/02`, `03`, `06`, `07`, `08`, `09`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -230,13 +230,17 @@ reason.
 - **FR-001**: The system MUST provide device presets as versioned data, not code. Users and
   maintainers can add a preset without changing the program. Shipped presets:
   - "phone fill" 1080×2340 (default);
-  - "Reddit 9:16" 1080×1920;
   - "phone fill HD" 1440×3120;
+  - "Pixel tall" 1080×2400;
+  - "Reddit 9:16" 1080×1920;
+  - "Reddit feed 4:5" 1080×1350;
   - "Fold inner";
   - "iPhone Duo".
-  The exact list and sizes are fixed in planning from `research/06`.
+  Sizes for the last two are fixed in planning from `research/06`; each preset targets an aspect
+  class (`research/09` §6).
 - **FR-002**: Each preset MUST define the output size, pixel aspect, maximum frame rate, video format
-  and tagging, audio format, and target quality. Users MUST be able to see which device classes
+  and tagging, audio format, target quality, and optional platform limits (maximum file size and
+  duration). The plan MUST warn when an output is predicted to exceed a limit. Users MUST be able to see which device classes
   each preset is meant for.
 - **FR-003**: Outputs MUST play natively, without third-party apps, on iPhone 15–18 including Air and
   Duo, Pixel 8–11 and Galaxy S22–S26 / Z Fold / Z Flip. Default-preset outputs MUST carry the format
@@ -274,7 +278,7 @@ reason.
     fills the screen.
 - **FR-013**: Smart reframe MUST:
   - detect scene cuts and treat each shot independently;
-  - locate faces and people;
+  - locate faces (people as a later addition if faces prove insufficient);
   - compute a crop path that keeps the subject in frame, limits pan speed and jerk, ignores small
     jitters, and changes abruptly only at cuts.
 - **FR-014**: Smart reframe MUST fall back to fit-with-blurred-background for time ranges with no
@@ -361,8 +365,12 @@ reason.
   - The reference device list and sizes come from `research/06-device-targets-verified.md`.
   - Unverified rows (the base iPhone 18, Fold8/Flip8 pixel counts) are fixed in planning.
   - Exact gallery-app fit/fill behaviour is confirmed by a manual device test matrix.
-- **Reddit:** Reddit re-encodes uploads and caps playback at 1080p, so the Reddit preset targets
-  1080×1920 in the most compatible format. Wider presets give no benefit there.
+- **Reddit:**
+  - Reddit re-encodes uploads and caps playback at 1080p, so the Reddit presets target 1080-wide
+    output in the most compatible format. Wider presets give no benefit there.
+  - Limits of 1 GB and 15 min are carried as preset data. Reddit's official help page could not be
+    read, so the figures come from consistent secondary sources (`research/09` §5).
+  - The owner confirms feed and full-screen presentation with one test upload.
 - **Output format:**
   - Phone presets default to the high-efficiency video format with iOS-compatible tagging. 60 fps is
     the cap: some base models have 60 Hz screens, and the size and battery cost of higher rates
@@ -371,9 +379,13 @@ reason.
 - **Engine and tiers:**
   - The bundled engine (FFmpeg 9) already provides the CPU and GPU scaling filters needed.
     `research/02` "Measured" shows both work on the development machine.
-  - The AI tier needs a separately bundled worker. Its engine and model choice are decided in
-    planning, constrained by FR-010.
-- **Smart reframe in v1:** v1 follows faces and people horizontally. Saliency models, vertical
+  - The AI tier needs a separately bundled worker. ncnn with Vulkan and the Real-ESRGAN model family
+    were chosen; both are permissively licensed (`research/09` §1–3).
+  - Measured on the reference iGPU, the AI tier runs at about 0.7 fps, so in practice it is a
+    discrete-GPU feature, and the self-test (FR-010) rejects integrated GPUs for normal clip lengths.
+- **Smart reframe in v1:** v1 follows faces horizontally, using a small permissively licensed
+  detector. It measured 68 ms per analysis frame on the reference CPU (`research/09` §4). Person
+  detection is added only if needed. Saliency models, vertical
   movement, zoom and split-screen layouts are out of scope (deferred per `research/08`).
 - **Out of scope:** GIF export (feature 003), frame-rate interpolation, colour grading, stabilization
   and audio enhancement.
