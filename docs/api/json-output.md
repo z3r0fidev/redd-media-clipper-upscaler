@@ -208,6 +208,6 @@ Stable codes from `Error::code()` (`crates/rmedia-core/src/error.rs`) plus `INTE
 | `IO_ERROR` | `failed` outcome | Other I/O errors |
 | `INTERNAL` | `failed` outcome | A job task crashed; reported, never silently dropped |
 
-**Unverified:** the `failed`, `cancelled` and `INTERNAL` outcomes above are documented from code
-and from the contract tests (`crates/rmedia-cli/tests/`, `crates/rmedia-core/tests/cancel.rs`,
-`tests/us3_batch.rs`). They were not reproduced by hand for this page.
+> **Unverified:** the `failed`, `cancelled` and `INTERNAL` outcomes above are documented from code
+> and from the contract tests (`crates/rmedia-cli/tests/`, `crates/rmedia-core/tests/cancel.rs`,
+> `tests/us3_batch.rs`). They were not reproduced by hand for this page.

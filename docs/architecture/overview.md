@@ -113,6 +113,11 @@ flowchart TB
   tops --> core
 ```
 
+The diagram shows both surfaces calling into `rmedia-core`. In the desktop app, `commands.rs`
+hands each call to `ops.rs`. Inside the core, time parsing feeds the input parsers, which build the
+request. The request, probe results (fed by discovery) and engine capabilities (`tools` /
+`doctor`) feed planning. Planning and `preview` both feed execution, which emits events.
+
 The CLI crate depends on `rmedia-core` and on presentation crates (`clap`, `indicatif`,
 `serde_json`) (`crates/rmedia-cli/Cargo.toml`). The desktop crate is a separate Cargo workspace
 (`[workspace]` in `apps/desktop/src-tauri/Cargo.toml`) because it needs webkit2gtk to build. It
@@ -196,12 +201,12 @@ sequenceDiagram
 
 | Decision | Rationale | Evidence |
 |---|---|---|
-| Rust workspace, clap CLI, Tauri **2.x** GUI | One core with no IPC between surfaces. `process-wrap` gives child-process control on both OSes. Tauri bundles NSIS/MSI/AppImage/deb. Tauri 3 was alpha at planning time. | research.md R1; `research/04-app-stack-and-packaging.md` |
+| Rust workspace, clap CLI, Tauri **2.x** desktop app | One core with no IPC between surfaces. `process-wrap` gives child-process control on both OSes. Tauri bundles NSIS/MSI/AppImage/deb. Tauri 3 was alpha at planning time. | research.md R1; `research/04-app-stack-and-packaging.md` |
 | FFmpeg as subprocesses, never linked | Crash isolation, full CLI semantics, simple GPL boundary | research.md R2 |
 | Paths passed as `file:<path>` plus `-protocol_whitelist file,pipe` | `-x.mp4` or `a:b.mp4` can never be read as an option or protocol, and playlists cannot make FFmpeg fetch network URLs | `probe::file_arg`, `probe::INPUT_PROTOCOLS` |
 | Explicit `-f <muxer>` | Temp outputs end in `.part`, so FFmpeg cannot infer the muxer | `plan/streams.rs` `Container::muxer` |
 | App computes durations (`-t`), never output `-to` | Timing must not depend on how FFmpeg relates `-ss` to `-to` | research.md R3 |
-| JSON + CSV manifests; no YAML/TOML | JSON round-trips with the GUI and avoids the YAML 1.1 sexagesimal trap (`1:30` → 90). CSV is spreadsheet-friendly. | research.md R5 |
+| JSON + CSV manifests; no YAML/TOML | JSON round-trips with the desktop app and avoids the YAML 1.1 sexagesimal trap (`1:30` → 90). CSV is spreadsheet-friendly. | research.md R5 |
 | No persistent probe cache in v1 | 1,000 probes at ~50 ms on 8 workers ≈ 7 s, well under the 60 s target. Measured 6.3 s for 10k files / 1k videos. | research.md R6; `checklists/validation.md` SC-003 |
 | In-flight journal | A killed process would otherwise leave `.part` files forever | research.md R7; plan.md Complexity Tracking |
 | Loopback media server for playback | WebKitGTK reported `MEDIA_ERR_SRC_NOT_SUPPORTED` for every codec via `asset://` | research.md R8 spike |

@@ -16,7 +16,7 @@ For build setup, see the [Development Guide](development-guide.md).
 From the constitution (Principle III, non-negotiable) and `CLAUDE.md`:
 
 - Tests are written before the implementation and must fail first.
-- Media behavior is verified against **real video generated at test time** with FFmpeg `lavfi`
+- Media behaviour is verified against **real video generated at test time** with FFmpeg `lavfi`
   sources. Outputs are checked with `ffprobe` (duration within tolerance, resolution, codec, stream
   presence), not only by exit code.
 - Parsers (timestamps, clip lists, manifests) have table-driven unit tests that include malformed
@@ -133,7 +133,7 @@ These run without a webview. CI runs them on Linux only.
 
 | File | Tests | Proves |
 |---|---|---|
-| `bridge.rs` | 6 | Only user-chosen paths are usable; preview chooses direct playback or a proxy; **SC-008:** GUI and CLI outputs are byte-identical (fast and accurate); the page cannot set engine paths through settings; outputs, lists, and manifests are confined; a JSON export carries the Settings defaults, an unpicked output folder is refused, and a saved output folder still works after a restart |
+| `bridge.rs` | 6 | Only user-chosen paths are usable; preview chooses direct playback or a proxy; **SC-008:** desktop app and CLI outputs are byte-identical (fast and accurate); the page cannot set engine paths through settings; outputs, lists, and manifests are confined; a JSON export carries the Settings defaults, an unpicked output folder is refused, and a saved output folder still works after a restart |
 | `media_server.rs` | 3 | Over raw TCP: only registered files are served, and only with the token; a registered file swapped for a symlink is not served; the server binds to loopback only |
 
 ### Desktop frontend tests (`apps/desktop/src/lib/stores/*.test.ts`)
@@ -173,7 +173,7 @@ From `checklists/validation.md`, all automated suites passed against both the di
 
 ### Not covered by automated tests
 
-- Windows behavior (installers, Job Object cancellation, long paths, cloud placeholders) is
+- Windows behaviour (installers, Job Object cancellation, long paths, cloud placeholders) is
   exercised only in CI on `windows-latest`. No manual Windows run has been recorded.
 - The desktop UI by hand: file dialogs, drag and drop, `I`/`O`/`Enter` marking, run and cancel from
   the UI (`quickstart.md` §4).

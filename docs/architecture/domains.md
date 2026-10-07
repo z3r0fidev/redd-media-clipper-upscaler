@@ -131,7 +131,7 @@ FR-016–FR-019).
 | `plan::plan` → `Plan { run_id, jobs, issues, cancelled }`; `Planner::plan_clip` | `plan/mod.rs` |
 | `PlannedJob { id, source, output, temp, on_exists, disposition, mode, requested, predicted?, warnings, spec }`; `Disposition` = `run` / `skip{reason}`; `JobSpec::Clip(ClipSpec)` | `plan/mod.rs` |
 | `Issue { severity, code, origin, message }`; `Plan::has_errors`, `engine_errors_only` | `plan/mod.rs` |
-| Naming templates and filename sanitizing | `plan/naming.rs` |
+| Name templates and file name sanitizing | `plan/naming.rs` |
 | `Container`, `EncodeProfile` (`X264_AAC`, `VP9_OPUS`), `SubtitlePolicy`, `select_streams` | `plan/streams.rs` |
 | `ClipSpec`, `Trim`, `common_args`, `clip_args` (pure; insta snapshot-tested) | `plan/ffargs.rs` |
 
@@ -270,7 +270,7 @@ grammar everywhere (`lib/time.ts`).
 | argv snapshots | `tests/snapshots_ffargs.rs` (insta) | 8 snapshots |
 | Benches | `tests/bench.rs` (`--ignored bench`) | SC-001, SC-003 |
 | CLI contract | `crates/rmedia-cli/tests/` (`clip_single`, `clip_list`, `scan`, `batch`) | Includes SIGINT / SIGKILL |
-| Desktop backend | `apps/desktop/src-tauri/tests/{bridge,media_server}.rs` | Path policy, CLI/GUI byte parity (SC-008), media server security |
+| Desktop backend | `apps/desktop/src-tauri/tests/{bridge,media_server}.rs` | Path policy, CLI/desktop app byte parity (SC-008), media server security |
 | Frontend | `apps/desktop/src/lib/stores/*.test.ts` (vitest), `svelte-check` | 8 tests |
 
 `rmedia-testkit` generates fixtures (testsrc2/sine, GOP 50, VFR, multi-audio + SRT, WebM,

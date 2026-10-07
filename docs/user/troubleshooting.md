@@ -81,11 +81,12 @@ The messages mean:
 4. If the bundled engine is missing, reinstall rmedia. For the command-line archive, keep
    `rmedia-ffmpeg` and `rmedia-ffprobe` in the same folder as `rmedia`.
 5. Or point rmedia to FFmpeg 6.0 or newer: use `--ffmpeg <path> --ffprobe <path>`, or in the app use
-   **Settings → Video engine → Choose ffmpeg…**.
+   **Settings › Video engine › Choose ffmpeg…**.
 
 #### Verify the fix
 
-`rmedia doctor` ends with `status:   ready`, and the app no longer shows the red engine button.
+`rmedia doctor` ends with `status:   ready`, and the app no longer shows
+**● Video engine missing — fix in Settings**.
 
 ### "the ffmpeg build lacks the `<encoder>` encoder needed for accurate mode"
 
@@ -132,7 +133,7 @@ choose the ffmpeg program (ffprobe must be in the same folder)
 
 #### Cause
 
-In **Settings → Video engine → Choose ffmpeg…**, you chose a file whose name does not end in
+In **Settings › Video engine › Choose ffmpeg…**, you chose a file whose name does not end in
 `ffmpeg`, or there is no matching `ffprobe` program in the same folder.
 
 #### Resolution
@@ -277,7 +278,7 @@ You do not need to do anything. If you want to improve playback:
 2. The AppImage includes its own GStreamer. If playback still fails there, try the `.deb` package
    on Debian/Ubuntu.
 3. To avoid waiting for a preview copy, select **Use still frames instead**.
-4. If preview copies are being made again and again, increase **Settings → Performance →
+4. If preview copies are being made again and again, increase **Settings › Performance ›
    Preview cache (MB)**. Older copies are removed when the cache is full.
 
 > **Unverified:** The GStreamer package list comes from the `.deb` dependencies, and the AppImage
@@ -382,8 +383,8 @@ the file while rmedia was cutting. rmedia skipped the clip rather than overwrite
 Choose one:
 
 * Keep the existing file. Nothing needs to be done.
-* Save the new clip under a numbered name: `--on-exists rename`, or **Settings → If the file
-  exists → Add a number**.
+* Save the new clip under a numbered name: `--on-exists rename`, or **Settings › New clips ›
+  If the file exists › Add a number**.
 * Replace the existing file: `--on-exists overwrite`, or **Replace it** in **Settings**. rmedia
   warns `existing output will be replaced`.
 * Use a different output folder (`-o`) or file name pattern (`--name`).
@@ -419,7 +420,7 @@ file. Nothing is cut.
 
 Use a different output folder or file name pattern.
 
-### No partial files after a cancelled or failed run
+### No temporary files after a cancelled or failed run
 
 This is expected. Clips are written to hidden temporary files (named like
 `.<name>.rmedia-<id>-<n>.part`) and are given their final name only after they have been checked. A
@@ -559,7 +560,7 @@ app. The other clips continue, and the command-line exit code is `1`.
 | Message | Cause | Resolution |
 |---|---|---|
 | `not enough disk space writing <path>` | The output drive is full. | Free up space or choose another output folder, and run again. |
-| `cannot write output <path>: <reason>` | rmedia cannot create or write the output file or folder, for example because of permissions or a read-only drive. | Choose a folder you can write to (`-o`, or **Settings → Output folder**). |
+| `cannot write output <path>: <reason>` | rmedia cannot create or write the output file or folder, for example because of permissions or a read-only drive. | Choose a folder you can write to (`-o`, or **Settings › New clips › Output folder**). |
 | `cannot read media <path>: <reason>` | The video engine could not read the source. It may be damaged, incomplete, or not a video. `ffprobe timed out` means reading took more than 60 seconds. | Check that the file plays in another player. If the file is on a slow network drive, copy it locally first. |
 | `ffmpeg failed: <message>` | FFmpeg reported an error while cutting. The message is the most specific line of FFmpeg's output. | Run with `-v` to see FFmpeg's full error output. Try accurate mode, or a different `--container`. |
 | `output verification failed: the clip's video lasts <n> s but <n> s was requested; the source may be damaged or its timestamps unreliable` | In accurate mode, the finished clip was much shorter or longer than requested. rmedia discarded it. | The source may have damaged or unusual timestamps. Try fast mode, or re-save the source with another tool first. |

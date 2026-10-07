@@ -24,7 +24,7 @@ app. Start with the page for your role.
 | Page | What it covers |
 |---|---|
 | [CLI reference](api/cli-reference.md) | Every command, option, default and exit code |
-| [File formats](api/file-formats.md) | Times, clip lists, path lists, JSON/CSV manifests, naming templates |
+| [File formats](api/file-formats.md) | Times, clip lists, path lists, JSON/CSV manifests, name templates |
 | [JSON output](api/json-output.md) | `--json` documents and NDJSON run events |
 | [Desktop IPC](api/desktop-ipc.md) | Tauri commands, events, path policy, media server |
 | [Glossary](reference/glossary.md) | Terms used across the project |

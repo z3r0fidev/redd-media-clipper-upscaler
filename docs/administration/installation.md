@@ -94,7 +94,7 @@ The desktop app needs Microsoft WebView2. It is preinstalled on Windows 11 and c
 According to `README.md`, the setup program downloads WebView2 if it is missing.
 
 > **Unverified:** The WebView2 install mode is not configured in `tauri.conf.json`, so the
-> behavior is Tauri's default (download bootstrapper). Neither the NSIS nor the MSI installer has
+> behaviour is Tauri's default (download bootstrapper). Neither the NSIS nor the MSI installer has
 > been tested outside CI.
 
 ### CLI archive
@@ -179,7 +179,7 @@ The archive is named `rmedia-cli-<ref>-<triple>`, where `<ref>` is the Git tag (
    tar -xzf rmedia-cli-<ref>-x86_64-unknown-linux-gnu.tar.gz
    ```
 
-2. Optionally, add the unpacked folder to PATH.
+2. Optional: add the unpacked folder to PATH.
 
 Archive contents (from `release.yml`):
 
@@ -250,7 +250,7 @@ Install the newer package over the existing one:
 - **CLI archive:** unpack the new archive and replace the old folder.
 - **NSIS / MSI:** run the new installer.
 
-> **Unverified:** In-place upgrade behavior of the NSIS and MSI installers (whether the old version
+> **Unverified:** In-place upgrade behaviour of the NSIS and MSI installers (whether the old version
 > is removed automatically) follows Tauri defaults and has not been tested.
 
 User data is not part of any package. `settings.json`, the crash journal, and the preview cache

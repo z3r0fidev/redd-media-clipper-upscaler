@@ -232,7 +232,7 @@ unavailable while the queue is empty.
 2. rmedia checks every clip before it cuts anything. If there are problems, a box titled
    **Fix these before running:** lists them, and nothing runs. Correct the clips and select
    **Run** again.
-3. While the clips are being cut, the run panel shows:
+3. Follow the progress in the run panel. While the clips are being cut, it shows:
    * the overall progress, as **N / M clips**, with a progress bar and time remaining;
    * a list of clips (select the arrow button to show or hide it), each with a status: **Waiting**,
      **Cutting**, **Done**, **Skipped**, **Failed** or **Cancelled**.
@@ -245,7 +245,7 @@ The clip list opens automatically if a clip fails, and shows the reason next to 
 * To stop everything, select **Cancel all**.
 * Closing the window also cancels any running work.
 
-A cancelled clip leaves no partial file behind. Clips that were already finished are kept.
+A cancelled clip leaves no temporary file behind. Clips that were already finished are kept.
 
 ### Read the results
 
@@ -333,7 +333,8 @@ override them.
 ### Video engine
 
 This section shows the FFmpeg program in use, where it came from (`bundled`, `config` or `path`),
-its version, and which formats accurate mode can write. Any problems are listed in red.
+its version, and which formats accurate mode can write. Any problems are listed as text messages,
+shown in red.
 
 * **Choose ffmpeg…** lets you choose a different FFmpeg program. The matching `ffprobe` program must
   be in the same folder.
@@ -345,8 +346,8 @@ its version, and which formats accurate mode can write. Any problems are listed 
 | Symptom | Resolution |
 |---|---|
 | **● Video engine missing — fix in Settings** | See [Video engine missing or too old](troubleshooting.md#video-engine-missing-or-too-old). |
-| `… was not opened in rmedia (use Add files/folder or drag it in)` | See [the troubleshooting entry](troubleshooting.md#was-not-opened-in-rmedia-use-add-filesfolder-or-drag-it-in). |
-| `… is outside the folders you chose; pick the output folder in Settings` | See [the troubleshooting entry](troubleshooting.md#is-outside-the-folders-you-chose-pick-the-output-folder-in-settings). |
+| `… was not opened in rmedia (use Add files/folder or drag it in)` | See [File was not opened in rmedia](troubleshooting.md#was-not-opened-in-rmedia-use-add-filesfolder-or-drag-it-in). |
+| `… is outside the folders you chose; pick the output folder in Settings` | See [Output is outside the folders you chose](troubleshooting.md#is-outside-the-folders-you-chose-pick-the-output-folder-in-settings). |
 | The label shows **Preview copy** or **Still frames** | See [Playback modes](troubleshooting.md#the-player-shows-preview-copy-or-still-frames). |
 | A clip is **Skipped** with `output already exists` | See [Output already exists](troubleshooting.md#skipped-output-already-exists). |
 | **Select a source first** when importing a list | Add a video and select it, then import again. |

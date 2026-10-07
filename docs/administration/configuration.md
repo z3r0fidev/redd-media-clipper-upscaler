@@ -40,7 +40,7 @@ The CLI takes its options from flags and manifests only. Only the desktop app ca
 The file does not exist until you select **Save** in the desktop **Settings** dialog. rmedia writes
 it atomically: it writes `settings.json.tmp` and then renames it over `settings.json`.
 
-### Load behavior
+### Load behaviour
 
 - A missing or unreadable file means all defaults are used.
 - The file rejects unknown fields. **If the file contains any unknown field, or any value that fails
@@ -199,7 +199,7 @@ The desktop app stores browser-playable preview copies ("proxies") and thumbnail
 
 There is no environment variable override for the cache directory.
 
-Behavior (`crates/rmedia-core/src/preview.rs`):
+Behaviour (`crates/rmedia-core/src/preview.rs`):
 
 - Proxies are 480p H.264/AAC MP4 or, when the webview has no H.264 decoder, VP8/Opus WebM. They are
   named `<key>-proxy.mp4` or `<key>-proxy.webm`.
@@ -221,7 +221,7 @@ The cache is safe to delete while the app is closed.
 | `RMEDIA_STATE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the state directory (crash journal parent). Used by the CLI tests. | per-user state directory |
 | `RMEDIA_CONFIG_DIR` | `rmedia-desktop` | Folder that holds `settings.json`. Used by tests. | per-user config directory |
 | `RMEDIA_REQUIRE_FFMPEG` | test kit only | When `1`, media tests fail instead of being skipped if FFmpeg is missing. Set in CI. | not set |
-| `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | Linux | Standard XDG base directories, honored when they are absolute paths. | `~/.config`, `~/.local/state`, `~/.cache` |
+| `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | Linux | Standard XDG base directories, honoured when they are absolute paths. | `~/.config`, `~/.local/state`, `~/.cache` |
 
 Empty values of the `RMEDIA_*` path variables are treated as not set.
 

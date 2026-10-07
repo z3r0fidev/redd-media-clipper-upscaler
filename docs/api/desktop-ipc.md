@@ -48,7 +48,7 @@ canonical path is what the command then uses.
 Further rules:
 
 - Planned clip outputs must be inside a picked folder or under the source's own folder (for
-  example the default `clips/` subfolder). `plan` adds an `INVALID_INPUT` issue for any other
+  example the default `clips/` sub-folder). `plan` adds an `INVALID_INPUT` issue for any other
   output: `<output> is outside the folders you chose; pick the output folder in Settings`.
 - A path that is not allowed is refused with:
   `<path> was not opened in rmedia (use Add files/folder or drag it in)`.

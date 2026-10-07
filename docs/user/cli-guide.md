@@ -149,7 +149,7 @@ To control the search, use the same options as `rmedia scan`. See
 
 * With `-o`, rmedia skips the output folder. The output folder cannot be one of the folders you are
   searching. If it is, rmedia stops with an error that suggests a sub-folder. See
-  [the troubleshooting entry](troubleshooting.md#the-output-folder--is-also-a-scanned-input-folder).
+  [The output folder is also a scanned input folder](troubleshooting.md#the-output-folder--is-also-a-scanned-input-folder).
 
 ### Many videos into one output folder
 
@@ -412,10 +412,10 @@ Press `Ctrl-C` once to cancel cleanly. rmedia prints:
 cancelling… (press Ctrl-C again to quit immediately)
 ```
 
-It then stops the clips in progress, removes their partial files, prints the summary and exits
+It then stops the clips in progress, removes their temporary files, prints the summary and exits
 with code `130`. Finished clips are kept.
 
-Press `Ctrl-C` a second time to quit immediately. rmedia tries to remove partial files first. Any it
+Press `Ctrl-C` a second time to quit immediately. rmedia tries to remove temporary files first. Any it
 cannot remove (for example, files that are still locked on Windows) are cleaned up the next time
 rmedia runs.
 

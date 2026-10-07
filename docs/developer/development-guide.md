@@ -185,7 +185,7 @@ From `CLAUDE.md` and the constitution (`.specify/memory/constitution.md`, versio
 | Rule | What it means in code |
 |---|---|
 | One core, thin surfaces (Principle I) | All media logic goes in `rmedia-core`. The CLI and Tauri crates only adapt I/O. Tauri commands and CLI subcommands map one to one to core functions. Anything available in one surface must be reachable from the other. |
-| CLI first (Principle II) | Every feature works from the CLI before the GUI. Human output on stdout, diagnostics on stderr, `--json` for results, `--dry-run` for anything that writes, stable exit codes (`0`, `1`, `2`, `3`, `4`, `130`), deterministic outputs. |
+| CLI first (Principle II) | Every feature works from the CLI before the desktop app. Human output on stdout, diagnostics on stderr, `--json` for results, `--dry-run` for anything that writes, stable exit codes (`0`, `1`, `2`, `3`, `4`, `130`), deterministic outputs. |
 | Test first with real media (Principle III, non-negotiable) | Write tests before the implementation and see them fail. Verify media with `ffprobe` (duration, resolution, codec, streams), not only exit codes. Table-driven parser tests that include malformed input. No binary fixtures. |
 | Linux and Windows are equal (Principle IV) | Never launch through a shell. Handle spaces, Unicode, drive letters, and UNC paths. Kill child process trees on cancel (process groups on Linux, Job Objects on Windows). |
 | Inputs are sacred (Principle V) | Never write to or delete a source file. Spawn tools with argument vectors only, with paths passed as `file:<path>` through `exec::process`. Write outputs to a `.part` file, verify it, then commit without overwriting (default `on_exists: skip`). Remove partial outputs. |

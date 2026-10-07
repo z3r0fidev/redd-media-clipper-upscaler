@@ -211,7 +211,7 @@ without it.
 To choose a mode:
 
 * **Command line:** `--mode fast` or `--mode accurate`.
-* **Desktop app:** pick the default under **Settings → New clips → Mode**, or choose a mode for one
+* **Desktop app:** pick the default under **Settings › New clips › Mode**, or choose a mode for one
   video in its queue options.
 
 ## Troubleshooting

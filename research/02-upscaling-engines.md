@@ -173,3 +173,19 @@ Recommendation: **Write own thin engine runner executable ("upscale-worker")** u
 7. **Encoding default**: libx264 `-preset slow -crf 18 -tune film` (or `animation`), High profile, yuv420p, `+faststart`, bt709 tags; HEVC 10-bit as an option; use NVENC/QSV/AMF/VAAPI only for a "Fast" preset (cq/qp ~19-20, quality preset slowest). Never use intermediate lossy files.
 8. **First-run**: detect Vulkan GPUs (exclude software lavapipe), run a ~10-frame benchmark, cache result, choose tier and tile size, display ETA; allow user override. Test matrix: NVIDIA (Win/Linux), AMD (Win; Linux Mesa RADV), Intel Arc/iGPU, and CPU-only (dev machine) - note dev machine lacks NVIDIA so NVENC/Maxine/CUDA paths need CI/remote testing.
 9. **Open items to verify before implementation**: current FFmpeg release option names for libplacebo; realesrgan-ncnn-vulkan release status/maintenance in 2026 and available `-s 2` models; Real-CUGAN and RIFE model licenses; DirectML vs Windows ML status; Maxine SDK redistribution terms; whether FFmpeg 8.x added ONNX/torch DNN improvements.
+
+## Measured on the bundled engine (FFmpeg n9.0.2, 2026-10-06)
+Machine: Intel Raptor Lake-P, UHD iGPU (Mesa ANV Vulkan), 12 threads. Source: 480x854 H.264 CRF 35,
+600 frames (20 s @ 30 fps), upscaled to 1080x1920, filters only (`-f null`):
+
+| Chain | Wall time | Throughput |
+|---|---|---|
+| `libplacebo=w=1080:h=1920:upscaler=ewa_lanczossharp:format=yuv420p` (Vulkan, `-init_hw_device vulkan`) | 8.7 s | ~69 fps |
+| `hqdn3d=1.5:1.5:6:6,zscale=…:filter=spline36,cas=0.5` (CPU) | 6.0 s | ~100 fps |
+| `nlmeans=s=2,zscale…,cas` (CPU) | 107 s | ~5.6 fps — too slow as a default |
+
+- [V] libplacebo works on the Intel iGPU with software frames in/out (no explicit hwupload needed;
+  Mesa prints a harmless `FINISHME` warning on stderr). With libx265 `-preset fast` encoding, both
+  chains take ~3 s for 5 s of video: **the encoder, not the scaler, dominates**.
+- Consequence: Tier 0 vs Tier 1 is a quality choice, not a speed one, on iGPU-class hardware.
+  nlmeans is only viable on GPU (`nlmeans_vulkan`, present in the build) or as an opt-in.

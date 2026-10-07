@@ -142,7 +142,7 @@ Implemented in `commands/scan.rs` › `expand_inputs`:
 |---|---|
 | `--mode` | `fast` |
 | `-o` | `<source folder>/clips` |
-| `--name` | `{source}_{index:03}_{name-or-range}.{ext}`. With more than one source **and** `-o`: `{source}/{source}_{index:03}_{name-or-range}.{ext}` (one subfolder per source). |
+| `--name` | `{source}_{index:03}_{name-or-range}.{ext}`. With more than one source **and** `-o`: `{source}/{source}_{index:03}_{name-or-range}.{ext}` (one sub-folder per source). |
 | `--container` | Source extension. In accurate mode, containers without an encode profile fall back to `mp4` with a warning. |
 | `--on-exists` | `skip` |
 | Streams | All video, audio and subtitle streams the output container supports |
@@ -226,7 +226,7 @@ Notes:
 - `batch` has **no** stream-selection flags (`--no-audio`, `--audio`, `--no-subs`). Use the
   manifest's `audio` / `subtitles` options (JSON only).
 - With more than one source, `-o` given, and no `--name`, the default template switches to one
-  subfolder per source, as in `clip`.
+  sub-folder per source, as in `clip`.
 - `--continue-on-missing`: sources whose files do not exist are dropped with a stderr warning:
   `warning: <origin>: <path> not found; skipping its N clip(s)`. If none remain, exit 3. Without
   this flag, a missing source is a `SOURCE_MISSING` plan error and nothing runs (exit 3).

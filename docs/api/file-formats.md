@@ -1,7 +1,7 @@
 # rmedia File Formats
 
 This page is the reference for every text format rmedia reads or writes: the time grammar, clip
-lists, path lists, JSON and CSV manifests, and output naming templates. It also covers how
+lists, path lists, JSON and CSV manifests, and output name templates. It also covers how
 options are layered.
 
 Authoritative sources: `crates/rmedia-core/src/{time.rs,input/*.rs,plan/naming.rs,request.rs}`.
@@ -34,7 +34,7 @@ In JSON, times may also be numbers of seconds (≥ 0, finite).
 ## Clip Lists
 
 A clip list holds one clip per line for one video. The same list is applied to every input of
-`rmedia clip -l FILE` and of the desktop's **Import list…** (`input/cliplist.rs`).
+`rmedia clip -l FILE` and of the desktop app's **Import list…** (`input/cliplist.rs`).
 
 ```text
 START  END        [NAME...]
@@ -129,7 +129,7 @@ A clip with neither `end` nor `duration` runs to the end of the video.
 |---|---|---|
 | `mode` | `"fast"` \| `"accurate"` | |
 | `output_dir` | string | Relative folders resolve against the manifest's folder |
-| `name_template` | string | See [Naming templates](#naming-templates) |
+| `name_template` | string | See [Name templates](#name-templates) |
 | `container` | string | Output extension; a leading `.` is ignored |
 | `on_exists` | `"skip"` \| `"overwrite"` \| `"rename"` | |
 | `audio` | `"all"` \| `"none"` \| array of 1-based track numbers | |
@@ -203,10 +203,10 @@ writes `mode` and `output` on every row. Other options are not written.
 This was verified by running `rmedia batch jobs.json --dry-run --json` and the CSV equivalent;
 both planned the same outputs, modes and spans.
 
-## Naming Templates
+## Name Templates
 
 `plan/naming.rs`. The template renders a path relative to the output folder. A `/` (or `\`) in
-the template creates subfolders.
+the template creates sub-folders.
 
 | Placeholder | Value |
 |---|---|
