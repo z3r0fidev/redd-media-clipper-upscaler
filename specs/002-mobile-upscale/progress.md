@@ -12,8 +12,8 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 
 | Phase | Tasks | Done | Status | senior-code-reviewer | security-auditor | Commit |
 |---|---|---|---|---|---|---|
-| 1 Setup | T001–T006 | 0/6 | ▶ next | — | — | |
-| 2 Foundational (A1–A5, probe, fixtures, presets) | T007–T021 | 0/15 | pending | with US1 | with US1 | |
+| 1 Setup | T001–T006 | 6/6 | done | — | — | |
+| 2 Foundational (A1–A5, probe, fixtures, presets) | T007–T021 | 0/15 | ▶ next | with US1 | with US1 | |
 | 3 US1 MVP: CPU tier, `rmedia upscale` | T022–T041 | 0/20 | pending | required | required (executor, paths) | |
 | 4 US2 Smart reframe | T042–T061 | 0/20 | pending | required | required (models, cache) | |
 | 5 US3 GPU tier, capability | T062–T073 | 0/12 | pending | required | required (capability file) | |
@@ -21,7 +21,7 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 | 7 US5 Desktop view | T082–T092 | 0/11 | pending | required | required (IPC surface) | |
 | 8 US6 AI worker | T093–T105 | 0/13 | pending | required | required (FFI, pipes) | |
 | 9 Polish | T106–T112 | 0/7 | pending | final pass | — | |
-| **Total** | | **0/112** | | | | |
+| **Total** | | **6/112** | | | | |
 
 Status values: `pending`, `▶ next`, `in progress`, `checkpoint`, `done`.
 

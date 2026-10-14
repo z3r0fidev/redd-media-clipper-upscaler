@@ -353,6 +353,59 @@ macro_rules! require_ffmpeg {
     };
 }
 
+/// Filters and encoders the engine at [`ffmpeg()`] provides (from `-filters` and `-encoders`),
+/// read once per test process.
+fn engine_features() -> &'static std::collections::BTreeSet<String> {
+    static FEATURES: std::sync::OnceLock<std::collections::BTreeSet<String>> = std::sync::OnceLock::new();
+    FEATURES.get_or_init(|| {
+        let mut set = std::collections::BTreeSet::new();
+        for flag in ["-filters", "-encoders"] {
+            let Ok(out) = Command::new(ffmpeg()).args(["-hide_banner", flag]).output() else { continue };
+            // Both listings print "<flags> <name> ..." rows after a header; take the name column.
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let mut cols = line.split_whitespace();
+                if let (Some(flags), Some(name)) = (cols.next(), cols.next())
+                    && flags.chars().all(|c| c.is_ascii_uppercase() || c == '.' || c == '|')
+                    && flags.len() <= 6
+                {
+                    set.insert(name.to_owned());
+                }
+            }
+        }
+        set
+    })
+}
+
+/// Whether the engine has ffmpeg plus every filter/encoder in `needs`. Tests for 002 call this
+/// (through [`require_engine!`]) so they skip on older engines, such as the distro ffmpeg 6.1 in
+/// the CI minimum-engine job. With `RMEDIA_REQUIRE_FFMPEG=1` a missing feature panics instead,
+/// so the bundled-engine jobs can never skip silently.
+pub fn require_engine(needs: &[&str]) -> bool {
+    let strict = std::env::var_os("RMEDIA_REQUIRE_FFMPEG").is_some_and(|v| v == "1");
+    if !ffmpeg_available() {
+        return false;
+    }
+    let missing: Vec<&str> = needs.iter().copied().filter(|n| !engine_features().contains(*n)).collect();
+    if missing.is_empty() {
+        return true;
+    }
+    if strict && std::env::var_os("RMEDIA_ALLOW_MISSING_FEATURES").is_none_or(|v| v != "1") {
+        panic!("engine lacks {missing:?} (RMEDIA_REQUIRE_FFMPEG=1)");
+    }
+    eprintln!("skipping: engine lacks {missing:?}");
+    false
+}
+
+/// Skips the calling test (returns early) when the engine lacks any listed filter or encoder.
+#[macro_export]
+macro_rules! require_engine {
+    ($($need:expr),+ $(,)?) => {
+        if !$crate::require_engine(&[$($need),+]) {
+            return;
+        }
+    };
+}
+
 fn fixtures_root() -> PathBuf {
     // CARGO_TARGET_TMPDIR is only set for integration tests; fall back to target/.
     let base = option_env!("CARGO_TARGET_TMPDIR")
@@ -457,4 +510,15 @@ pub fn first_frame_psnr(a: &Path, b: &Path, b_time: f64) -> f64 {
         .and_then(|rest| rest.split_whitespace().next())
         .unwrap_or_else(|| panic!("no PSNR in output: {stderr}"));
     if avg == "inf" { f64::INFINITY } else { avg.parse().expect("psnr value") }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn require_engine_sees_common_filters_and_encoders() {
+        if !super::ffmpeg_available() {
+            return;
+        }
+        assert!(super::require_engine(&["scale", "overlay", "aac"]));
+    }
 }

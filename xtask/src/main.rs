@@ -1,8 +1,10 @@
-//! Developer tasks: `cargo xtask fetch-tools [--target TRIPLE]`, `cargo xtask pin-tools`.
+//! Developer tasks: `cargo xtask fetch-tools [--target TRIPLE]`, `cargo xtask pin-tools`,
+//! `cargo xtask fetch-models`.
 //!
 //! Engine binaries are downloaded at build time from a pinned, SHA-256-verified URL and placed in
 //! `binaries/` using Tauri's sidecar naming (`rmedia-ffmpeg-<triple>[.exe]`). They are never
-//! committed (Constitution, Technical & Licensing Constraints).
+//! committed (Constitution, Technical & Licensing Constraints). Model files follow the same rule:
+//! `xtask/models.lock.json` pins them by URL and SHA-256, and they land in `models/`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -18,6 +20,20 @@ struct Lock {
     release: String,
     version: String,
     targets: BTreeMap<String, Pinned>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelLock {
+    models: BTreeMap<String, PinnedModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PinnedModel {
+    url: String,
+    sha256: String,
+    /// Repository path of the licence text, copied into the notices.
+    license: String,
+    description: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -54,9 +70,10 @@ fn main() -> Result<()> {
             stage_cli(&target)
         }
         Some("notices") => notices(),
+        Some("fetch-models") => fetch_models(),
         _ => {
             eprintln!(
-                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices>"
+                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models>"
             );
             std::process::exit(2);
         }
@@ -144,6 +161,43 @@ fn fetch_tools(target: &str) -> Result<()> {
 }
 
 /// Pins the newest BtbN autobuild of the current release line, using GitHub's asset digests.
+fn read_model_lock() -> Result<ModelLock> {
+    let path = root().join("xtask/models.lock.json");
+    serde_json::from_str(&std::fs::read_to_string(&path)?)
+        .with_context(|| format!("parse {}", path.display()))
+}
+
+/// Downloads every pinned model into `models/`, verifying SHA-256. Files already present with the
+/// right hash are kept; anything else is replaced through a temp file and a rename.
+fn fetch_models() -> Result<()> {
+    let lock = read_model_lock()?;
+    let dir = root().join("models");
+    std::fs::create_dir_all(&dir)?;
+    for (name, pin) in &lock.models {
+        if name.contains(['/', '\\']) || name.starts_with('.') {
+            bail!("bad model file name {name:?} in models.lock.json");
+        }
+        let dest = dir.join(name);
+        if file_sha256(&dest).is_ok_and(|h| h == pin.sha256) {
+            println!("model {name} already present (verified)");
+            continue;
+        }
+        let tmp = dir.join(format!(".{name}.download"));
+        println!("downloading {name}: {}", pin.description);
+        run(Command::new("curl")
+            .args(["-fL", "--retry", "3", "--silent", "--show-error", "-o"])
+            .arg(&tmp)
+            .arg(&pin.url))?;
+        let actual = file_sha256(&tmp)?;
+        if actual != pin.sha256 {
+            let _ = std::fs::remove_file(&tmp);
+            bail!("checksum mismatch for {name}: expected {}, got {actual}", pin.sha256);
+        }
+        std::fs::rename(&tmp, &dest)?;
+    }
+    Ok(())
+}
+
 fn pin_tools() -> Result<()> {
     let mut lock = read_lock()?;
     let line = lock.version.trim_start_matches('n').split('.').take(2).collect::<Vec<_>>().join(".");
@@ -374,6 +428,16 @@ fn notices() -> Result<()> {
                 Some(t) => out.push_str(&format!("### {id}\n\n```text\n{}\n```\n\n", t.trim())),
                 None => out.push_str(&format!("### {id}\n\nSee https://spdx.org/licenses/{id}.html\n\n")),
             }
+        }
+    }
+    // Model weights are distributed with the app, so their licences are listed too.
+    let models = read_model_lock()?;
+    if !models.models.is_empty() {
+        out.push_str("\n## Model files\n\n");
+        for (name, pin) in &models.models {
+            let text = std::fs::read_to_string(root().join(&pin.license))
+                .with_context(|| format!("licence file {} for {name}", pin.license))?;
+            out.push_str(&format!("### {name}\n\n{}\n\n```text\n{}\n```\n\n", pin.description, text.trim()));
         }
     }
     let path = root().join("THIRD_PARTY_NOTICES.md");

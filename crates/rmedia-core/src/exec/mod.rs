@@ -9,6 +9,7 @@ pub mod commit;
 pub mod journal;
 pub mod process;
 pub mod progress;
+mod upscale;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

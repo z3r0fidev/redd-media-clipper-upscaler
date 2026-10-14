@@ -18,3 +18,5 @@ node_modules/
 Thumbs.db
 *.log
 .env*
+# Model files (fetched by `cargo xtask fetch-models`, never committed)
+/models/

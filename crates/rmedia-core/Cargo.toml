@@ -9,16 +9,20 @@ license.workspace = true
 [features]
 # TypeScript bindings for the desktop app (`cargo xtask gen-bindings`).
 ts = ["dep:ts-rs"]
+# Test-only helpers (e.g. `MarkerDetector`) for this crate's integration tests.
+test-support = []
 
 [dependencies]
 csv.workspace = true
 directories.workspace = true
+fs4.workspace = true
 globset.workspace = true
 process-wrap.workspace = true
 serde.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tract-onnx.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
@@ -31,6 +35,9 @@ libc.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+jsonschema.workspace = true
+# Enables `test-support` for the integration tests in tests/.
+rmedia-core = { path = ".", features = ["test-support"] }
 rmedia-testkit.workspace = true
 sysinfo.workspace = true
 tempfile.workspace = true

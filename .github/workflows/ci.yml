@@ -43,6 +43,13 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Fetch pinned engine (sha256-verified)
         run: cargo xtask fetch-tools --target ${{ matrix.triple }}
+      - name: Cache model files
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: models-${{ hashFiles('xtask/models.lock.json') }}
+      - name: Fetch pinned models (sha256-verified)
+        run: cargo xtask fetch-models
       - name: Test against the bundled engine
         shell: bash
         env:
@@ -62,7 +69,11 @@ jobs:
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # 002 tests need filters/encoders a distro build may lack (zscale, libvmaf, ...); they skip
+      # here through testkit::require_engine and run for real in the bundled-engine jobs.
       - run: cargo test --workspace
+        env:
+          RMEDIA_ALLOW_MISSING_FEATURES: "1"
 
   windows-check-gnu:
     name: type-check Windows code paths from Linux

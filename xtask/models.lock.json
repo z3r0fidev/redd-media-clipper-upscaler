@@ -1,0 +1,11 @@
+{
+  "comment": "Model files fetched by `cargo xtask fetch-models` into models/ (never committed). Pinned to a commit; SHA-256 verified. See research/09 §4 and specs/002-mobile-upscale/research.md R14.",
+  "models": {
+    "face_detection_yunet_2026may.onnx": {
+      "url": "https://media.githubusercontent.com/media/opencv/opencv_zoo/26cc381e4d2594bb9f47a26eb8fd96c94a13660d/models/face_detection_yunet/face_detection_yunet_2026may.onnx",
+      "sha256": "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0",
+      "license": "licenses/models/yunet-MIT.txt",
+      "description": "YuNet face detector (OpenCV Zoo), dynamic input; smart reframe (FR-013)"
+    }
+  }
+}
