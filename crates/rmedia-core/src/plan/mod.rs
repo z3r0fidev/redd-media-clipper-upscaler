@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::error::Error;
+use crate::error::{Error, IssueCode};
 use crate::event::{JobId, Span};
 use crate::exec::commit::temp_path;
 use crate::probe::{self, MediaInfo};
@@ -24,10 +24,14 @@ use streams::Container;
 /// How far before the target an approximate (coarse) input seek lands.
 const COARSE_SEEK_MARGIN: Ts = Ts::from_micros(10_000_000);
 
-/// Encoders available in the ffmpeg build (from `doctor::caps`).
+/// What this machine can do: the engine's encoders and filters (from `doctor::caps`), the model
+/// files found, and the cached GPU capability record (refactor A4).
 #[derive(Debug, Clone, Default)]
 pub struct Caps {
     pub encoders: BTreeSet<String>,
+    pub filters: BTreeSet<String>,
+    pub models: crate::models::ModelSet,
+    pub capability: Option<crate::upscale::capability::CapabilityRecord>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -42,7 +46,7 @@ pub enum Severity {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Issue {
     pub severity: Severity,
-    pub code: &'static str,
+    pub code: IssueCode,
     pub origin: Origin,
     pub message: String,
 }
@@ -68,6 +72,14 @@ pub enum JobSpec {
     Clip(ClipSpec),
 }
 
+/// What a job occupies while it runs. Every job takes one of the `--jobs` slots; GPU jobs also
+/// take the single GPU slot, so two GPU jobs never share the device (research R9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resource {
+    Cpu,
+    Gpu,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct PlannedJob {
@@ -78,6 +90,10 @@ pub struct PlannedJob {
     pub output: PathBuf,
     #[serde(skip)]
     pub temp: PathBuf,
+    /// Per-job scratch directory (created, journaled and removed by the scheduler), for jobs that
+    /// need working files such as a `sendcmd` script. `None` for clips.
+    #[serde(skip)]
+    pub scratch: Option<PathBuf>,
     pub on_exists: OnExists,
     pub disposition: Disposition,
     /// The span of the source this job processes (user time base).
@@ -98,6 +114,13 @@ impl PlannedJob {
     /// Media seconds this job produces (for overall progress weighting).
     pub fn media_len(&self) -> Ts {
         self.requested.end.saturating_sub(self.requested.start)
+    }
+
+    /// The scarce resource this job needs besides a job slot.
+    pub fn resource(&self) -> Resource {
+        match &self.spec {
+            JobSpec::Clip(_) => Resource::Cpu,
+        }
     }
 
     /// The job kind as it appears in JSON (`"clip"`).
@@ -140,7 +163,7 @@ impl Plan {
     /// True when the only errors are engine capability problems (exit code 4).
     pub fn engine_errors_only(&self) -> bool {
         let mut errors = self.issues.iter().filter(|i| i.severity == Severity::Error).peekable();
-        errors.peek().is_some() && errors.all(|i| i.code == "ENGINE_MISSING")
+        errors.peek().is_some() && errors.all(|i| i.code == IssueCode::EngineMissing)
     }
 }
 
@@ -188,7 +211,7 @@ struct Planner<'a> {
 }
 
 impl Planner<'_> {
-    fn error(&mut self, origin: &Origin, code: &'static str, message: impl Into<String>) {
+    fn error(&mut self, origin: &Origin, code: IssueCode, message: impl Into<String>) {
         self.issues.push(Issue {
             severity: Severity::Error,
             code,
@@ -218,14 +241,15 @@ impl Planner<'_> {
         if matches!(ext.as_str(), "m3u8" | "m3u" | "ffconcat" | "sdp") {
             return self.error(
                 &source.origin,
-                "INVALID_INPUT",
+                IssueCode::InvalidInput,
                 format!("{} is a playlist/stream description, not a video file", source.path.display()),
             );
         }
         let media = match self.probe(&source.path).await {
             Ok(m) => m,
             Err(msg) => {
-                let code = if source.path.exists() { "PROBE_FAILED" } else { "SOURCE_MISSING" };
+                let code =
+                    if source.path.exists() { IssueCode::ProbeFailed } else { IssueCode::SourceMissing };
                 self.error(&source.origin, code, msg);
                 return;
             }
@@ -258,14 +282,14 @@ impl Planner<'_> {
         {
             return self.error(
                 origin,
-                "INVALID_INPUT",
+                IssueCode::InvalidInput,
                 format!("start ({}) is at or beyond the end of the video ({})", clip.start, d),
             );
         }
         let mut end = match clip.end {
             EndSpec::At(t) => Some(t),
             EndSpec::Duration(d) if d == Ts::ZERO => {
-                return self.error(origin, "INVALID_INPUT", "duration must be greater than zero");
+                return self.error(origin, IssueCode::InvalidInput, "duration must be greater than zero");
             }
             EndSpec::Duration(d) => Some(clip.start + d),
             EndSpec::EndOfMedia => None,
@@ -275,7 +299,7 @@ impl Planner<'_> {
         {
             return self.error(
                 origin,
-                "INVALID_INPUT",
+                IssueCode::InvalidInput,
                 format!("end ({e}) is not after start ({})", clip.start),
             );
         }
@@ -291,7 +315,7 @@ impl Planner<'_> {
             (None, None) => {
                 return self.error(
                     origin,
-                    "INVALID_INPUT",
+                    IssueCode::InvalidInput,
                     "the video's duration is unknown; give an explicit end time",
                 );
             }
@@ -306,7 +330,11 @@ impl Planner<'_> {
         let (mut container, mut out_ext) = match Container::from_ext(&ext) {
             Some(c) => (c, ext.clone()),
             None if opts.container.is_some() => {
-                return self.error(origin, "INVALID_INPUT", format!("unsupported output container .{ext}"));
+                return self.error(
+                    origin,
+                    IssueCode::InvalidInput,
+                    format!("unsupported output container .{ext}"),
+                );
             }
             None => {
                 warnings.push(format!("unknown container .{ext}; writing .mkv"));
@@ -327,7 +355,7 @@ impl Planner<'_> {
                 if !self.caps.encoders.contains(enc) {
                     return self.error(
                         origin,
-                        "ENGINE_MISSING",
+                        IssueCode::EngineMissing,
                         format!("the ffmpeg build lacks the {enc} encoder needed for accurate mode"),
                     );
                 }
@@ -344,7 +372,7 @@ impl Planner<'_> {
 
         let mut stream_plan = match streams::select_streams(media, &opts.streams, container, opts.mode) {
             Ok(p) => p,
-            Err(msg) => return self.error(origin, "INVALID_INPUT", msg),
+            Err(msg) => return self.error(origin, IssueCode::InvalidInput, msg),
         };
         warnings.extend(stream_plan.warnings.iter().cloned());
 
@@ -368,39 +396,13 @@ impl Planner<'_> {
             },
         ) {
             Ok(p) => p,
-            Err(msg) => return self.error(origin, "INVALID_INPUT", msg),
+            Err(msg) => return self.error(origin, IssueCode::InvalidInput, msg),
         };
-        let mut output = out_dir.join(rel);
-        if self.is_source(&output) {
-            return self.error(
-                origin,
-                "INVALID_INPUT",
-                format!("output {} would overwrite a source video", output.display()),
-            );
-        }
-        if self.claimed.contains(&path_key(&output)) {
-            if opts.on_exists == OnExists::Rename {
-                output = self.free_name(&output);
-            } else {
-                return self.error(
-                    origin,
-                    "INVALID_INPUT",
-                    format!(
-                        "two clips would write {}; use a name template with {{index}} or --on-exists rename",
-                        output.display()
-                    ),
-                );
-            }
-        }
-        let mut disposition = Disposition::Run;
-        if output.exists() {
-            match opts.on_exists {
-                OnExists::Skip => disposition = Disposition::Skip { reason: "output already exists".into() },
-                OnExists::Overwrite => warnings.push("existing output will be replaced".into()),
-                OnExists::Rename => output = self.free_name(&output),
-            }
-        }
-        self.claimed.insert(path_key(&output));
+        let Some((output, disposition)) =
+            self.claim_output(origin, out_dir.join(rel), opts.on_exists, "clips", &mut warnings)
+        else {
+            return;
+        };
 
         // --- seek plan (research.md R3) -----------------------------------------------------
         let requested = Span { start: clip.start, end: requested_end };
@@ -437,12 +439,12 @@ impl Planner<'_> {
                 Ok(None) => {
                     return self.error(
                         origin,
-                        "INVALID_INPUT",
+                        IssueCode::InvalidInput,
                         format!("no keyframe found before {}; use --mode accurate for this clip", clip.start),
                     );
                 }
                 Err(Error::Cancelled) => return,
-                Err(e) => return self.error(origin, e.code(), e.to_string()),
+                Err(e) => return self.error(origin, e.issue_code(), e.to_string()),
             };
             let gap = key.previous.map_or(Ts::from_micros(i64::MAX / 4), |p| key.at - p);
             let lead = Ts::from_micros((frame.as_micros() * 4).min(gap.as_micros() / 2));
@@ -474,6 +476,7 @@ impl Planner<'_> {
             source: source.path.clone(),
             output,
             temp,
+            scratch: None,
             on_exists: opts.on_exists,
             disposition,
             requested,
@@ -509,6 +512,52 @@ impl Planner<'_> {
         let video_len = media.first_video()?.duration?;
         (mode == Mode::Accurate && end <= video_len)
             .then(|| (end - start, Ts::from_micros(frame.as_micros() * 3 + 100_000)))
+    }
+
+    /// Resolves collisions for `output` (source files, outputs claimed earlier in this plan, files
+    /// on disk) under the `on_exists` policy and claims the final path. Reports an issue and
+    /// returns `None` when the job cannot get an output. `what` names the jobs in messages.
+    fn claim_output(
+        &mut self,
+        origin: &Origin,
+        mut output: PathBuf,
+        on_exists: OnExists,
+        what: &str,
+        warnings: &mut Vec<String>,
+    ) -> Option<(PathBuf, Disposition)> {
+        if self.is_source(&output) {
+            self.error(
+                origin,
+                IssueCode::InvalidInput,
+                format!("output {} would overwrite a source video", output.display()),
+            );
+            return None;
+        }
+        if self.claimed.contains(&path_key(&output)) {
+            if on_exists == OnExists::Rename {
+                output = self.free_name(&output);
+            } else {
+                self.error(
+                    origin,
+                    IssueCode::InvalidInput,
+                    format!(
+                        "two {what} would write {}; use a name template with {{index}} or --on-exists rename",
+                        output.display()
+                    ),
+                );
+                return None;
+            }
+        }
+        let mut disposition = Disposition::Run;
+        if output.exists() {
+            match on_exists {
+                OnExists::Skip => disposition = Disposition::Skip { reason: "output already exists".into() },
+                OnExists::Overwrite => warnings.push("existing output will be replaced".into()),
+                OnExists::Rename => output = self.free_name(&output),
+            }
+        }
+        self.claimed.insert(path_key(&output));
+        Some((output, disposition))
     }
 
     fn is_source(&self, output: &Path) -> bool {

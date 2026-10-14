@@ -32,9 +32,12 @@ pub struct ProcessOutput {
     pub stderr_tail: String,
 }
 
-fn build(program: &Path, args: &[OsString]) -> CommandWrap {
+fn build(program: &Path, args: &[OsString], cwd: Option<&Path>) -> CommandWrap {
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
     #[cfg(target_os = "linux")]
     set_parent_death_signal(&mut cmd);
 
@@ -70,8 +73,8 @@ fn set_parent_death_signal(cmd: &mut tokio::process::Command) {
     }
 }
 
-fn spawn(program: &Path, args: &[OsString]) -> Result<Box<dyn ChildWrapper>> {
-    build(program, args).spawn().map_err(|e| {
+fn spawn(program: &Path, args: &[OsString], cwd: Option<&Path>) -> Result<Box<dyn ChildWrapper>> {
+    build(program, args, cwd).spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             Error::EngineMissing(format!("{} not found", program.display()))
         } else {
@@ -87,7 +90,7 @@ pub async fn run_capture(
     cancel: &CancellationToken,
 ) -> Result<ProcessOutput> {
     let mut buf = Vec::new();
-    let mut out = run(program, args, cancel, |stdout| async {
+    let mut out = run(program, args, None, cancel, |stdout| async {
         let mut limited = stdout.take(MAX_CAPTURE_BYTES);
         limited.read_to_end(&mut buf).await?;
         if buf.len() as u64 >= MAX_CAPTURE_BYTES {
@@ -105,9 +108,21 @@ pub async fn run_lines(
     program: &Path,
     args: &[OsString],
     cancel: &CancellationToken,
+    on_line: impl FnMut(&str) + Send,
+) -> Result<ProcessOutput> {
+    run_lines_in(program, args, None, cancel, on_line).await
+}
+
+/// [`run_lines`] with a working directory (e.g. a job's scratch directory, so filter graphs can
+/// name their files relatively instead of escaping full paths).
+pub async fn run_lines_in(
+    program: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    cancel: &CancellationToken,
     mut on_line: impl FnMut(&str) + Send,
 ) -> Result<ProcessOutput> {
-    run(program, args, cancel, |stdout| async move {
+    run(program, args, cwd, cancel, |stdout| async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Some(line) = lines.next_line().await? {
             on_line(&line);
@@ -117,10 +132,12 @@ pub async fn run_lines(
     .await
 }
 
-/// Spawns, drains stdout with `consume` (racing cancellation), then reaps the child.
-async fn run<F, Fut>(
+/// Runs a tool and hands its stdout to `consume`, with no size limit (e.g. raw video frames).
+/// Kills the process tree on cancel or when `consume` fails.
+pub async fn run_stream<F, Fut>(
     program: &Path,
     args: &[OsString],
+    cwd: Option<&Path>,
     cancel: &CancellationToken,
     consume: F,
 ) -> Result<ProcessOutput>
@@ -128,7 +145,22 @@ where
     F: FnOnce(tokio::process::ChildStdout) -> Fut,
     Fut: std::future::Future<Output = std::io::Result<()>>,
 {
-    let mut child = spawn(program, args)?;
+    run(program, args, cwd, cancel, consume).await
+}
+
+/// Spawns, drains stdout with `consume` (racing cancellation), then reaps the child.
+async fn run<F, Fut>(
+    program: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    cancel: &CancellationToken,
+    consume: F,
+) -> Result<ProcessOutput>
+where
+    F: FnOnce(tokio::process::ChildStdout) -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<()>>,
+{
+    let mut child = spawn(program, args, cwd)?;
     let stdout = child.stdout().take().expect("stdout is piped");
     let stderr_task = tokio::spawn(collect_stderr(child.stderr().take()));
     let drained = tokio::select! {

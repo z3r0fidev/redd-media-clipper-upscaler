@@ -14,6 +14,12 @@ pub fn temp_path(output: &Path, run_id: &str, job: JobId) -> PathBuf {
     output.with_file_name(format!(".{stem}.rmedia-{run_id}-{job}.part"))
 }
 
+/// `<dir>/.<stem>.rmedia-<run>-<job>.d`: the job's scratch directory (refactor A2), named like
+/// the temp file so the crash journal can recognise it.
+pub fn scratch_path(output: &Path, run_id: &str, job: JobId) -> PathBuf {
+    temp_path(output, run_id, job).with_extension("d")
+}
+
 /// Moves a verified temp file to its final name according to `policy`.
 /// Returns the path actually written (may differ for `Rename`).
 pub fn commit(temp: &Path, output: &Path, policy: OnExists) -> Result<PathBuf> {
@@ -71,16 +77,40 @@ fn rename_free(temp: &Path, output: &Path) -> io::Result<PathBuf> {
     Err(io::Error::from(io::ErrorKind::AlreadyExists))
 }
 
-/// Removes a file, retrying briefly (Windows antivirus/indexers can hold files open).
+/// Removes a file or one of our scratch directories, retrying briefly (Windows antivirus and
+/// indexers can hold files open). A symlink is removed itself, never followed; directory
+/// removal does not follow symlinks inside the tree either.
 pub fn remove_with_retry(path: &Path) {
     for attempt in 0..10 {
-        match std::fs::remove_file(path) {
+        match remove_once(path) {
             Ok(()) => return,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return,
             Err(_) if attempt < 9 => std::thread::sleep(Duration::from_millis(100)),
             Err(e) => tracing::warn!("could not remove {}: {e}", path.display()),
         }
     }
+}
+
+/// Creates a job's scratch directory: private (0700 on Unix), and failing if anything already
+/// exists at that path so a planted file or symlink is never reused.
+pub fn create_scratch(path: &Path) -> io::Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    b.create(path)
+}
+
+/// One removal attempt; a missing path counts as removed.
+pub fn remove_now(path: &Path) -> io::Result<()> {
+    match remove_once(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        r => r,
+    }
+}
+
+fn remove_once(path: &Path) -> io::Result<()> {
+    let meta = std::fs::symlink_metadata(path)?;
+    if meta.file_type().is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) }
 }
 
 #[cfg(test)]

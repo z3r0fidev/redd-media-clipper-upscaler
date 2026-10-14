@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, ErrorInfo};
 use crate::event::{Event, EventSink, JobId, JobOutcome, JobResult, RunSummary};
-use crate::plan::{Disposition, JobSpec, Plan, PlannedJob};
+use crate::plan::{Disposition, JobSpec, Plan, PlannedJob, Resource};
 use crate::time::Ts;
 use crate::tools::Tools;
 use journal::Journal;
@@ -197,7 +197,7 @@ async fn run(
     });
 
     let mut results: HashMap<JobId, JobResult> = HashMap::new();
-    let semaphore = Arc::new(Semaphore::new(cfg.jobs.max(1)));
+    let slots = Arc::new(Slots::new(cfg.jobs));
     let tools = Arc::new(tools);
     let mut set = JoinSet::new();
     let mut tasks: HashMap<JobId, PlannedJob> = HashMap::new();
@@ -213,14 +213,13 @@ async fn run(
         }
         let job = job.clone();
         let token = job_tokens[&job.id].clone();
-        let (sem, shared, tools, journal) =
-            (semaphore.clone(), shared.clone(), tools.clone(), journal.clone());
+        let (slots, shared, tools, journal) = (slots.clone(), shared.clone(), tools.clone(), journal.clone());
         tasks.insert(job.id, job.clone());
         let task_job = job.id;
         let handle = set.spawn(async move {
             let outcome = tokio::select! {
-                permit = sem.acquire_owned() => {
-                    let _permit = permit.expect("semaphore open");
+                permits = slots.acquire(job.resource()) => {
+                    let _permits = permits;
                     run_job(&job, &tools, (*journal).as_ref(), &token, &shared).await
                 }
                 () = token.cancelled() => JobOutcome::Cancelled,
@@ -239,8 +238,14 @@ async fn run(
             Err(e) => {
                 tracing::error!("job task failed: {e}");
                 let Some(job) = task_ids.get(&e.id()).and_then(|id| tasks.get(id)) else { continue };
-                let temp = job.temp.clone();
-                let _ = tokio::task::spawn_blocking(move || commit::remove_with_retry(&temp)).await;
+                let (temp, scratch) = (job.temp.clone(), job.scratch.clone());
+                let _ = tokio::task::spawn_blocking(move || {
+                    commit::remove_with_retry(&temp);
+                    if let Some(s) = scratch {
+                        commit::remove_with_retry(&s);
+                    }
+                })
+                .await;
                 let outcome = JobOutcome::Failed {
                     error: ErrorInfo {
                         code: "INTERNAL".into(),
@@ -285,12 +290,53 @@ fn result_of(job: &PlannedJob, outcome: JobOutcome) -> JobResult {
     JobResult { id: job.id, source: job.source.clone(), output, requested: job.requested, outcome }
 }
 
+/// The stage after `prev`: it starts where `prev` ended.
+fn next_stage(prev: Option<(f64, f64)>, weight: f64) -> (f64, f64) {
+    (prev.map_or(0.0, |(b, w)| b + w).min(1.0), weight)
+}
+
+/// Maps progress within the current stage to progress of the whole job.
+fn job_fraction(stage: Option<(f64, f64)>, stage_fraction: f64) -> f64 {
+    match stage {
+        None => stage_fraction,
+        Some((base, weight)) => (base + stage_fraction * weight).clamp(0.0, 1.0),
+    }
+}
+
+/// Job slots: `--jobs` general slots plus one GPU slot (refactor A3).
+#[derive(Debug)]
+struct Slots {
+    cpu: Arc<Semaphore>,
+    gpu: Arc<Semaphore>,
+}
+
+impl Slots {
+    fn new(jobs: usize) -> Slots {
+        Slots { cpu: Arc::new(Semaphore::new(jobs.max(1))), gpu: Arc::new(Semaphore::new(1)) }
+    }
+
+    /// Waits for the permits `resource` needs. The GPU slot is taken first, so a GPU job that is
+    /// waiting for the device does not hold a general slot meanwhile.
+    async fn acquire(&self, resource: Resource) -> Vec<tokio::sync::OwnedSemaphorePermit> {
+        let mut permits = Vec::with_capacity(2);
+        if resource == Resource::Gpu {
+            permits.push(self.gpu.clone().acquire_owned().await.expect("semaphore open"));
+        }
+        permits.push(self.cpu.clone().acquire_owned().await.expect("semaphore open"));
+        permits
+    }
+}
+
 /// Context handed to a job kind's executor.
 pub struct JobCtx<'a> {
     pub tools: &'a Tools,
     pub temp: &'a Path,
     pub output: &'a Path,
     pub cancel: &'a CancellationToken,
+    scratch: Option<&'a Path>,
+    /// Current stage as (start of the stage within the whole job, its weight); `None` until the
+    /// executor calls [`JobCtx::stage`], in which case progress maps one-to-one.
+    stage: Option<(f64, f64)>,
     id: JobId,
     shared: &'a Shared,
     throttle: Throttle,
@@ -303,7 +349,37 @@ impl std::fmt::Debug for JobCtx<'_> {
 }
 
 impl JobCtx<'_> {
-    /// Reports ffmpeg progress for a job producing `total` media time.
+    /// The job's scratch directory, when the plan asked for one (it exists while the job runs).
+    pub fn scratch_dir(&self) -> Option<&Path> {
+        self.scratch
+    }
+
+    /// Runs ffmpeg with `args` in `cwd`, reporting its `-progress` output against `total` media
+    /// time. The caller checks the exit status.
+    pub async fn run_ffmpeg_in(
+        &mut self,
+        cwd: Option<&Path>,
+        args: &[std::ffi::OsString],
+        total: Ts,
+    ) -> crate::error::Result<process::ProcessOutput> {
+        let mut parser = progress::ProgressParser::default();
+        let (ffmpeg, cancel) = (self.tools.ffmpeg.path.clone(), self.cancel);
+        process::run_lines_in(&ffmpeg, args, cwd, cancel, |line| {
+            if let Some(block) = parser.feed(line) {
+                self.progress(block, total);
+            }
+        })
+        .await
+    }
+
+    /// Enters stage `index` of `of` (1-based), which accounts for `weight` of the job's progress.
+    /// Weights of a job's stages should add up to 1.
+    pub fn stage(&mut self, name: &str, index: u32, of: u32, weight: f64) {
+        self.stage = Some(next_stage(self.stage, weight));
+        self.shared.emit(Event::JobStage { job_id: self.id, stage: name.to_owned(), index, of });
+    }
+
+    /// Reports ffmpeg progress for a job producing `total` media time (within the current stage).
     pub fn progress(&mut self, block: ProgressBlock, total: Ts) {
         let Some(out_us) = block.out_time_us else { return };
         if !self.throttle.ready(block.done) {
@@ -311,6 +387,7 @@ impl JobCtx<'_> {
         }
         let total_s = total.as_secs_f64();
         let fraction = if total_s > 0.0 { (out_us as f64 / 1e6 / total_s).clamp(0.0, 1.0) } else { 0.0 };
+        let fraction = job_fraction(self.stage, fraction);
         let eta_ms = block
             .speed
             .filter(|s| *s > 0.0)
@@ -350,11 +427,28 @@ async fn run_job(
     if let Some(j) = journal {
         j.add(&job.temp);
     }
+    if let Some(scratch) = job.scratch.clone() {
+        // Journal first, so a crash between the two never leaves an unrecorded directory.
+        if let Some(j) = journal {
+            j.add(&scratch);
+        }
+        let made = blocking(move || commit::create_scratch(&scratch).map_err(|e| (scratch, e))).await;
+        if let Err((dir, e)) = made {
+            if let Some(j) = journal {
+                j.remove(&dir);
+                j.remove(&job.temp);
+            }
+            let err = Error::OutputUnwritable { path: dir, message: e.to_string() };
+            return JobOutcome::Failed { error: err.info() };
+        }
+    }
     let mut ctx = JobCtx {
         tools,
         temp: &job.temp,
         output: &job.output,
         cancel,
+        scratch: job.scratch.as_deref(),
+        stage: None,
         id: job.id,
         shared,
         throttle: Throttle::new(Duration::from_millis(100)),
@@ -380,10 +474,19 @@ async fn run_job(
         Err(Error::Cancelled) => JobOutcome::Cancelled,
         Err(e) => JobOutcome::Failed { error: e.info() },
     };
-    let temp = job.temp.clone();
-    blocking(move || commit::remove_with_retry(&temp)).await;
+    let (temp, scratch) = (job.temp.clone(), job.scratch.clone());
+    blocking(move || {
+        commit::remove_with_retry(&temp);
+        if let Some(s) = scratch {
+            commit::remove_with_retry(&s);
+        }
+    })
+    .await;
     if let Some(j) = journal {
         j.remove(&job.temp);
+        if let Some(s) = &job.scratch {
+            j.remove(s);
+        }
     }
     outcome
 }
@@ -391,4 +494,43 @@ async fn run_job(
 /// Runs blocking filesystem work (renames, deletes with retries) off the async workers.
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     tokio::task::spawn_blocking(f).await.expect("blocking filesystem task panicked")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn gpu_jobs_never_overlap_but_cpu_jobs_still_run() {
+        let slots = Slots::new(4);
+        let first = slots.acquire(Resource::Gpu).await;
+        let second = tokio::time::timeout(Duration::from_millis(50), slots.acquire(Resource::Gpu)).await;
+        assert!(second.is_err(), "a second GPU job must wait for the device");
+        let cpu = tokio::time::timeout(Duration::from_millis(50), slots.acquire(Resource::Cpu)).await;
+        assert!(cpu.is_ok(), "CPU jobs are not blocked by a running GPU job");
+        drop(first);
+        let second = tokio::time::timeout(Duration::from_millis(50), slots.acquire(Resource::Gpu)).await;
+        assert!(second.is_ok(), "the GPU slot is free again");
+    }
+
+    #[test]
+    fn stage_weights_map_to_whole_job_progress() {
+        assert_eq!(job_fraction(None, 0.4), 0.4, "single-stage jobs (clips) map one-to-one");
+        let analyze = next_stage(None, 0.25);
+        assert_eq!(job_fraction(Some(analyze), 0.0), 0.0);
+        assert_eq!(job_fraction(Some(analyze), 1.0), 0.25);
+        let render = next_stage(Some(analyze), 0.7);
+        assert_eq!(job_fraction(Some(render), 0.5), 0.6);
+        let verify = next_stage(Some(render), 0.05);
+        assert!((job_fraction(Some(verify), 1.0) - 1.0).abs() < 1e-9);
+        assert_eq!(job_fraction(Some((0.9, 0.5)), 1.0), 1.0, "never above 1");
+    }
+
+    #[tokio::test]
+    async fn general_slots_bound_all_jobs() {
+        let slots = Slots::new(1);
+        let _gpu = slots.acquire(Resource::Gpu).await;
+        let cpu = tokio::time::timeout(Duration::from_millis(50), slots.acquire(Resource::Cpu)).await;
+        assert!(cpu.is_err(), "--jobs 1 runs one job at a time, GPU or not");
+    }
 }

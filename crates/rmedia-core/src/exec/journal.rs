@@ -121,20 +121,29 @@ pub fn purge_stale(state_dir: &Path) -> usize {
     removed
 }
 
-/// A journal entry is deleted only if it is exactly one of our temp files from `run_id`:
-/// absolute, named `.<stem>.rmedia-<run_id>-<job>.part`, and a regular file (not a symlink).
+/// A journal entry is deleted only if it is exactly one of our temp outputs from `run_id`:
+/// absolute and named `.<stem>.rmedia-<run_id>-<job>.part` (a regular file) or
+/// `.<stem>.rmedia-<run_id>-<job>.d` (a scratch directory). Symlinks never qualify.
 fn is_own_temp(path: &Path, run_id: &str) -> bool {
     if !path.is_absolute() || run_id.is_empty() {
         return false;
     }
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return false };
-    let Some(rest) = name.strip_prefix('.').and_then(|n| n.strip_suffix(".part")) else { return false };
+    let Some(name) = name.strip_prefix('.') else { return false };
+    let (rest, want_dir) = match (name.strip_suffix(".part"), name.strip_suffix(".d")) {
+        (Some(r), _) => (r, false),
+        (None, Some(r)) => (r, true),
+        (None, None) => return false,
+    };
     let marker = format!(".rmedia-{run_id}-");
     let Some((stem, job)) = rest.rsplit_once(&marker) else { return false };
     if stem.is_empty() || job.is_empty() || !job.bytes().all(|b| b.is_ascii_digit()) {
         return false;
     }
-    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file())
+    std::fs::symlink_metadata(path).is_ok_and(|m| {
+        let t = m.file_type();
+        if want_dir { t.is_dir() } else { t.is_file() }
+    })
 }
 
 fn create_private_dir(dir: &Path) -> std::io::Result<()> {
@@ -191,6 +200,55 @@ mod tests {
         for kept in [&unrelated, &other_run, &lookalike] {
             assert!(kept.exists(), "must not delete {}", kept.display());
         }
+    }
+
+    #[test]
+    fn stale_scratch_dirs_are_purged_but_lookalikes_are_not() {
+        let d = tempfile::tempdir().unwrap();
+        let scratch = d.path().join(".x.rmedia-dead-1.d");
+        std::fs::create_dir(&scratch).unwrap();
+        std::fs::write(scratch.join("reframe.cmd"), b"0 crop@trk x 2;").unwrap();
+        let file_named_d = d.path().join(".y.rmedia-dead-2.d"); // a file, not a directory
+        std::fs::write(&file_named_d, b"x").unwrap();
+        let other_run = d.path().join(".z.rmedia-otherrun-1.d");
+        std::fs::create_dir(&other_run).unwrap();
+        std::fs::create_dir_all(d.path().join("inflight")).unwrap();
+        let entries = vec![scratch.clone(), file_named_d.clone(), other_run.clone()];
+        std::fs::write(d.path().join("inflight/dead-1.json"), serde_json::to_vec(&entries).unwrap()).unwrap();
+        assert_eq!(purge_stale(d.path()), 1);
+        assert!(!scratch.exists());
+        assert!(file_named_d.exists() && other_run.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_scratch_dirs_are_never_followed() {
+        let d = tempfile::tempdir().unwrap();
+        let victim = d.path().join("victim");
+        std::fs::create_dir(&victim).unwrap();
+        std::fs::write(victim.join("precious.mp4"), b"precious").unwrap();
+        let link = d.path().join(".x.rmedia-dead-1.d");
+        std::os::unix::fs::symlink(&victim, &link).unwrap();
+        std::fs::create_dir_all(d.path().join("inflight")).unwrap();
+        std::fs::write(d.path().join("inflight/dead-1.json"), serde_json::to_vec(&vec![&link]).unwrap())
+            .unwrap();
+        assert_eq!(purge_stale(d.path()), 0);
+        assert!(victim.join("precious.mp4").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_a_scratch_dir_does_not_follow_symlinks_inside_it() {
+        let d = tempfile::tempdir().unwrap();
+        let victim = d.path().join("victim");
+        std::fs::create_dir(&victim).unwrap();
+        std::fs::write(victim.join("precious.mp4"), b"precious").unwrap();
+        let scratch = d.path().join(".x.rmedia-r-1.d");
+        std::fs::create_dir(&scratch).unwrap();
+        std::os::unix::fs::symlink(&victim, scratch.join("planted")).unwrap();
+        remove_with_retry(&scratch);
+        assert!(!scratch.exists());
+        assert!(victim.join("precious.mp4").exists());
     }
 
     #[cfg(unix)]

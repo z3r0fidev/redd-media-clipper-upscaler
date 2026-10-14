@@ -169,7 +169,7 @@ fn line_at(text: &str, byte: u64) -> usize {
 fn issue(file: &Path, line: usize, message: String) -> Issue {
     Issue {
         severity: Severity::Error,
-        code: "INVALID_INPUT",
+        code: crate::error::IssueCode::InvalidInput,
         origin: Origin::Line { file: file.to_path_buf(), line },
         message,
     }

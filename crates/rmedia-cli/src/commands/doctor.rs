@@ -23,6 +23,13 @@ pub fn run(cli: &Cli, args: &DoctorArgs) -> u8 {
         for (enc, ok) in &report.encoders {
             println!("encoder:  {enc:<11} {}", if *ok { "yes" } else { "missing" });
         }
+        let missing: Vec<&str> =
+            report.filters.iter().filter(|(_, ok)| !**ok).map(|(f, _)| f.as_str()).collect();
+        if missing.is_empty() {
+            println!("filters:  all upscaling filters present");
+        } else {
+            println!("filters:  missing {} (upscaling needs some of these)", missing.join(", "));
+        }
         if !report.accurate_containers.is_empty() {
             println!("accurate mode can write: {}", report.accurate_containers.join(", "));
         }

@@ -12,6 +12,8 @@ export interface JobView {
   fraction: number;
   speed?: number;
   etaMs?: number;
+  /** Current stage of a multi-stage job (e.g. "analyze", "render", "verify"). */
+  stage?: string;
   warnings: string[];
   /** Requested start (s), to tell a keyframe-snapped start from an end-only adjustment. */
   requestedStart: number;
@@ -73,6 +75,8 @@ export function applyEvent(r: RunView, e: Event): RunView {
         speed: e.speed,
         etaMs: e.eta_ms,
       }));
+    case "job_stage":
+      return mapJob(r, e.job_id, (j) => ({ ...j, stage: e.stage }));
     case "job_warning":
       return mapJob(r, e.job_id, (j) =>
         j.warnings.includes(e.message) ? j : { ...j, warnings: [...j.warnings, e.message] },

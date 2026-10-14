@@ -12,7 +12,6 @@ const plan: Plan = {
     output: `/o/${id}.mp4`,
     on_exists: "skip",
     disposition: id === 2 ? { status: "skip", reason: "exists" } : { status: "run" },
-    mode: "fast",
     requested: { start: 0, end: 1 },
     warnings: [],
   })),
@@ -25,6 +24,8 @@ describe("run reducer", () => {
     r = applyEvent(r, { type: "job_started", job_id: 1 });
     r = applyEvent(r, { type: "job_progress", job_id: 1, fraction: 0.5, out_time: 0.5, speed: 2, eta_ms: 250 });
     expect(r.jobs[0]).toMatchObject({ status: "running", fraction: 0.5, etaMs: 250 });
+    r = applyEvent(r, { type: "job_stage", job_id: 1, stage: "render", index: 2, of: 3 });
+    expect(r.jobs[0]!.stage).toBe("render");
     r = applyEvent(r, { type: "job_warning", job_id: 1, message: "w" });
     r = applyEvent(r, { type: "job_warning", job_id: 1, message: "w" });
     expect(r.jobs[0]!.warnings).toEqual(["w"]);

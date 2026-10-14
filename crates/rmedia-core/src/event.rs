@@ -37,6 +37,14 @@ pub enum Event {
         job_id: JobId,
         message: String,
     },
+    /// A multi-stage job (e.g. upscale: analyze → render → verify) entered stage `index` of `of`.
+    /// `job_progress.fraction` always covers the whole job, weighted across stages.
+    JobStage {
+        job_id: JobId,
+        stage: String,
+        index: u32,
+        of: u32,
+    },
     JobFinished {
         job_id: JobId,
         outcome: JobOutcome,

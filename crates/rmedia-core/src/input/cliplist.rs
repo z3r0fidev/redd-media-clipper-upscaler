@@ -56,7 +56,7 @@ pub(crate) fn utf8_error_line(bytes: &[u8], e: &std::string::FromUtf8Error) -> u
 fn issue(path: &Path, line: usize, message: String) -> Issue {
     Issue {
         severity: Severity::Error,
-        code: "INVALID_INPUT",
+        code: crate::error::IssueCode::InvalidInput,
         origin: Origin::Line { file: path.to_path_buf(), line },
         message,
     }

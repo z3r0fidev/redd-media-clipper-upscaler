@@ -337,7 +337,7 @@ impl AppState {
                 if !allowed.may_write(&job.output, &job.source) {
                     plan.issues.push(Issue {
                         severity: rmedia_core::plan::Severity::Error,
-                        code: "INVALID_INPUT",
+                        code: rmedia_core::error::IssueCode::InvalidInput,
                         origin: rmedia_core::request::Origin::Gui,
                         message: format!(
                             "{} is outside the folders you chose; pick the output folder in Settings",

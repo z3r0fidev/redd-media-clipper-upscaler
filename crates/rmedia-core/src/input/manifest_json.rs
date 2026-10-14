@@ -60,7 +60,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
     let raw: RawManifest = serde_json::from_str(text).map_err(|e| {
         vec![Issue {
             severity: Severity::Error,
-            code: "INVALID_INPUT",
+            code: crate::error::IssueCode::InvalidInput,
             origin: Origin::Line { file: path.to_path_buf(), line: e.line() },
             message: format!("{e}"),
         }]
@@ -162,7 +162,7 @@ fn duration_value(v: &Value) -> Result<Ts, String> {
 fn issue(file: &Path, jpath: &str, message: String) -> Issue {
     Issue {
         severity: Severity::Error,
-        code: "INVALID_INPUT",
+        code: crate::error::IssueCode::InvalidInput,
         origin: Origin::JsonPath { file: file.to_path_buf(), path: jpath.to_owned() },
         message,
     }

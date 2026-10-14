@@ -88,7 +88,8 @@ pub async fn execute(
     }
     out.plan_warnings(&plan);
 
-    let temps: Vec<std::path::PathBuf> = plan.jobs.iter().map(|j| j.temp.clone()).collect();
+    let temps: Vec<std::path::PathBuf> =
+        plan.jobs.iter().flat_map(|j| std::iter::once(j.temp.clone()).chain(j.scratch.clone())).collect();
     let sink = render::sink(out, &plan);
     let cfg = RunConfig { jobs: jobs.map_or_else(exec::default_jobs, usize::from), ..RunConfig::default() };
     let handle = exec::start(plan, tools, cfg, sink.clone());
@@ -102,7 +103,7 @@ pub async fn execute(
                 // Best-effort removal of partial outputs first; anything still locked (Windows)
                 // is purged by the next run via the crash journal.
                 for t in &temps {
-                    let _ = std::fs::remove_file(t);
+                    let _ = rmedia_core::exec::commit::remove_now(t);
                 }
                 std::process::exit(i32::from(exit::CANCELLED));
             }
