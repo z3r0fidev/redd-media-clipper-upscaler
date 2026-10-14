@@ -11,6 +11,7 @@ expression: kept
         "start": 2.0
       },
       "adjusted": false,
+      "measure": "clip",
       "output": "[DIR]/out/in_001_00-00-02.000_00-00-04.000.mp4",
       "status": "succeeded"
     },
@@ -29,6 +30,7 @@ expression: kept
         },
         "adjusted": false,
         "id": 1,
+        "measure": "clip",
         "output": "[DIR]/out/in_001_00-00-02.000_00-00-04.000.mp4",
         "requested": {
           "end": 4.0,

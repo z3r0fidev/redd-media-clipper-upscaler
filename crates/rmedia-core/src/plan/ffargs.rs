@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use super::streams::{Container, EncodeProfile, StreamPlan};
+use crate::event::Span;
 use crate::probe::{INPUT_PROTOCOLS, StreamKind, file_arg};
 use crate::request::Mode;
 use crate::time::Ts;
 
 /// Everything needed to cut one clip.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ClipSpec {
     #[serde(serialize_with = "crate::pathser::path")]
     pub input: PathBuf,
@@ -28,6 +29,10 @@ pub struct ClipSpec {
     #[serde(skip)]
     pub verify_video: Option<(Ts, Ts)>,
     pub mode: Mode,
+    /// The span the user asked for (user time base).
+    pub requested: Span,
+    /// Fast mode: the span the copy is expected to produce (starts on a keyframe).
+    pub predicted: Option<Span>,
     pub container: Container,
     #[serde(skip)]
     pub encode: Option<EncodeProfile>,

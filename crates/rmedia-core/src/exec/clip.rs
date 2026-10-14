@@ -6,18 +6,17 @@ use super::JobCtx;
 use super::process::run_lines;
 use super::progress::ProgressParser;
 use crate::error::{Error, Result};
-use crate::event::Span;
+use crate::event::{JobMeasure, Span};
 use crate::plan::ffargs::{ClipSpec, clip_args};
 use crate::probe;
 use crate::request::Mode;
 use crate::time::Ts;
 
-pub(super) async fn execute(
-    spec: &ClipSpec,
-    requested: Span,
-    predicted: Option<Span>,
-    ctx: &mut JobCtx<'_>,
-) -> Result<Span> {
+/// Deviation above which a produced span counts as "adjusted" (FR-014).
+const ADJUST_TOLERANCE: Ts = Ts::from_micros(50_000);
+
+pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<JobMeasure> {
+    let (requested, predicted) = (spec.requested, spec.predicted);
     let args = clip_args(spec, ctx.temp);
     let total = requested.end.saturating_sub(requested.start);
     let mut parser = ProgressParser::default();
@@ -70,7 +69,14 @@ pub(super) async fn execute(
         Mode::Fast => produced,
         Mode::Accurate => info.duration.unwrap_or(produced),
     };
-    Ok(Span { start, end: start + produced })
+    let actual = Span { start, end: start + produced };
+    Ok(JobMeasure::Clip { actual, adjusted: adjusted(requested, actual) })
+}
+
+fn adjusted(requested: Span, actual: Span) -> bool {
+    let diff = |a: Ts, b: Ts| if a > b { a - b } else { b - a };
+    diff(requested.start, actual.start) > ADJUST_TOLERANCE
+        || diff(requested.end, actual.end) > ADJUST_TOLERANCE
 }
 
 /// Maps ffmpeg's stderr to a user-meaningful error.

@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::error::ErrorInfo;
 use crate::time::Ts;
+use crate::upscale::tier::Tier;
 
 pub type JobId = u32;
 
@@ -67,9 +68,10 @@ pub enum JobOutcome {
     Succeeded {
         #[serde(serialize_with = "crate::pathser::path")]
         output: PathBuf,
-        actual: Span,
-        /// The produced span differs from the requested one by more than 50 ms.
-        adjusted: bool,
+        /// What the job produced; its keys are flattened next to `output` (`"measure"` names
+        /// the kind), so clip outcomes keep 001's `actual` and `adjusted` keys.
+        #[serde(flatten)]
+        measure: JobMeasure,
     },
     Skipped {
         reason: String,
@@ -78,6 +80,28 @@ pub enum JobOutcome {
         error: ErrorInfo,
     },
     Cancelled,
+}
+
+/// What a succeeded job measured on its output, per job kind.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "measure", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum JobMeasure {
+    Clip {
+        actual: Span,
+        /// The produced span differs from the requested one by more than 50 ms.
+        adjusted: bool,
+    },
+    Upscale {
+        span: Span,
+        tier_used: Tier,
+        /// An automatic GPU job failed and was retried on the CPU tier (FR-008).
+        tier_fallback: bool,
+        /// Time ranges that fell back to the blurred background (FR-014).
+        fallback_ranges: Vec<Span>,
+        /// The source was already at or above the target size (FR-005).
+        no_upscale_needed: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

@@ -5,7 +5,8 @@ This extends `specs/001-video-clipping/contracts/json-output.md`. Every document
 
 ## `--dry-run --json`: upscale jobs
 
-An upscale job has the same fields as a clip job, plus `kind` and an `upscale` block. `mode` and
+An upscale job has the same fields as a clip job, plus `kind` and an `upscale` block. Clip jobs keep
+001's exact shape (no `kind` key), so existing consumers see no change. `mode` and
 `predicted` are omitted. `requested` is the span being processed: the clip span, or 0 to the end of
 the video.
 

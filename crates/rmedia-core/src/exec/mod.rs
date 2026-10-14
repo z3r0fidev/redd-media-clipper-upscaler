@@ -21,15 +21,12 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, ErrorInfo};
-use crate::event::{Event, EventSink, JobId, JobOutcome, JobResult, RunSummary, Span};
+use crate::event::{Event, EventSink, JobId, JobOutcome, JobResult, RunSummary};
 use crate::plan::{Disposition, JobSpec, Plan, PlannedJob};
 use crate::time::Ts;
 use crate::tools::Tools;
 use journal::Journal;
 use progress::{ProgressBlock, Throttle};
-
-/// Deviation above which a produced span counts as "adjusted" (FR-014).
-const ADJUST_TOLERANCE: Ts = Ts::from_micros(50_000);
 
 #[derive(Debug, Clone)]
 pub struct RunConfig {
@@ -363,18 +360,18 @@ async fn run_job(
         throttle: Throttle::new(Duration::from_millis(100)),
     };
     let result = match &job.spec {
-        JobSpec::Clip(spec) => clip::execute(spec, job.requested, job.predicted, &mut ctx).await,
+        JobSpec::Clip(spec) => clip::execute(spec, &mut ctx).await,
     };
     let committed = match result {
-        Ok(actual) => {
+        Ok(measure) => {
             let (temp, output, policy) = (job.temp.clone(), job.output.clone(), job.on_exists);
-            Ok((actual, blocking(move || commit::commit(&temp, &output, policy)).await))
+            Ok((measure, blocking(move || commit::commit(&temp, &output, policy)).await))
         }
         Err(e) => Err(e),
     };
     let outcome = match committed {
-        Ok((actual, committed)) => match committed {
-            Ok(output) => JobOutcome::Succeeded { output, actual, adjusted: adjusted(job.requested, actual) },
+        Ok((measure, committed)) => match committed {
+            Ok(output) => JobOutcome::Succeeded { output, measure },
             Err(Error::OutputExists(_)) => {
                 JobOutcome::Skipped { reason: "output appeared while the clip was being made".into() }
             }
@@ -394,10 +391,4 @@ async fn run_job(
 /// Runs blocking filesystem work (renames, deletes with retries) off the async workers.
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     tokio::task::spawn_blocking(f).await.expect("blocking filesystem task panicked")
-}
-
-fn adjusted(requested: Span, actual: Span) -> bool {
-    let diff = |a: Ts, b: Ts| if a > b { a - b } else { b - a };
-    diff(requested.start, actual.start) > ADJUST_TOLERANCE
-        || diff(requested.end, actual.end) > ADJUST_TOLERANCE
 }

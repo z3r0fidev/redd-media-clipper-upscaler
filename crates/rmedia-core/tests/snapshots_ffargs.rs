@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use rmedia_core::Ts;
+use rmedia_core::event::Span;
 use rmedia_core::plan::ffargs::{ClipSpec, Trim, clip_args, display_args};
 use rmedia_core::plan::streams::{Container, select_streams};
 use rmedia_core::probe::{MediaInfo, parse_probe_json};
@@ -29,6 +30,8 @@ fn args(m: &MediaInfo, mode: Mode, container: Container, sel: StreamSelection, s
         trim: None,
         verify_video: None,
         mode,
+        requested: Span { start: Ts::ZERO, end: Ts::ZERO },
+        predicted: None,
         container,
         encode: if mode == Mode::Accurate { container.encode_profile() } else { None },
         streams,
@@ -74,6 +77,8 @@ fn ts_accurate_copyts_trim() {
         trim: Some(Trim { start: Ts::from_secs_f64(13.98), end: Some(Ts::from_secs_f64(16.48)) }),
         verify_video: None,
         mode: Mode::Accurate,
+        requested: Span { start: Ts::ZERO, end: Ts::ZERO },
+        predicted: None,
         container: Container::MpegTs,
         encode: Container::MpegTs.encode_profile(),
         streams,

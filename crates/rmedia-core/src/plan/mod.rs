@@ -62,7 +62,7 @@ pub enum Disposition {
 }
 
 /// The work a job performs. Features 002/003 add `Upscale` and `Gif` variants.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum JobSpec {
     Clip(ClipSpec),
@@ -80,11 +80,8 @@ pub struct PlannedJob {
     pub temp: PathBuf,
     pub on_exists: OnExists,
     pub disposition: Disposition,
-    pub mode: Mode,
+    /// The span of the source this job processes (user time base).
     pub requested: Span,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub predicted: Option<Span>,
     pub warnings: Vec<String>,
     #[serde(skip)]
     pub spec: JobSpec,
@@ -101,6 +98,27 @@ impl PlannedJob {
     /// Media seconds this job produces (for overall progress weighting).
     pub fn media_len(&self) -> Ts {
         self.requested.end.saturating_sub(self.requested.start)
+    }
+
+    /// The job kind as it appears in JSON (`"clip"`).
+    pub fn kind(&self) -> &'static str {
+        match &self.spec {
+            JobSpec::Clip(_) => "clip",
+        }
+    }
+
+    /// Clip jobs: the cutting mode.
+    pub fn mode(&self) -> Option<Mode> {
+        match &self.spec {
+            JobSpec::Clip(c) => Some(c.mode),
+        }
+    }
+
+    /// Fast clip jobs: the span the copy is expected to produce.
+    pub fn predicted(&self) -> Option<Span> {
+        match &self.spec {
+            JobSpec::Clip(c) => c.predicted,
+        }
     }
 }
 
@@ -458,9 +476,7 @@ impl Planner<'_> {
             temp,
             on_exists: opts.on_exists,
             disposition,
-            mode: opts.mode,
             requested,
-            predicted,
             warnings,
             spec: JobSpec::Clip(ClipSpec {
                 input: source.path.clone(),
@@ -470,6 +486,8 @@ impl Planner<'_> {
                 trim,
                 verify_video: self.expected_video(media, opts.mode, clip.start, end, frame),
                 mode: opts.mode,
+                requested,
+                predicted,
                 container,
                 encode,
                 streams: stream_plan,

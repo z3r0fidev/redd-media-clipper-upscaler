@@ -6,7 +6,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
-use rmedia_core::event::{Event, EventSink, JobId, JobOutcome, RunSummary};
+use rmedia_core::event::{Event, EventSink, JobId, JobMeasure, JobOutcome, RunSummary};
 use rmedia_core::pathser::lossy;
 use rmedia_core::plan::ffargs::display_args;
 use rmedia_core::plan::{Disposition, Plan, PlannedJob, Severity};
@@ -85,14 +85,14 @@ impl Output {
                 Disposition::Skip { reason } => format!("would skip ({reason})"),
             };
             println!("#{:<3} {status}: {}", j.id, j.output.display());
+            let how = j.mode().map_or_else(|| j.kind().to_owned(), |m| format!("{m:?}").to_lowercase());
             println!(
-                "     from {}  {} → {}  [{}]",
+                "     from {}  {} → {}  [{how}]",
                 j.source.display(),
                 j.requested.start,
-                j.requested.end,
-                format!("{:?}", j.mode).to_lowercase()
+                j.requested.end
             );
-            if let Some(p) = j.predicted
+            if let Some(p) = j.predicted()
                 && p.start != j.requested.start
             {
                 println!(
@@ -121,7 +121,7 @@ impl Output {
         }
         for j in &s.jobs {
             match &j.outcome {
-                JobOutcome::Succeeded { output, actual, adjusted } => {
+                JobOutcome::Succeeded { output, measure: JobMeasure::Clip { actual, adjusted } } => {
                     let note = if *adjusted {
                         format!(
                             "  (actual {} → {}, requested {} → {})",
@@ -131,6 +131,9 @@ impl Output {
                         String::new()
                     };
                     println!("✓ {}{note}", output.display());
+                }
+                JobOutcome::Succeeded { output, measure: JobMeasure::Upscale { .. } } => {
+                    println!("✓ {}", output.display());
                 }
                 JobOutcome::Skipped { reason } => println!("- {} skipped: {reason}", j.output.display()),
                 JobOutcome::Failed { error } => {
@@ -200,12 +203,14 @@ fn job_doc(j: &PlannedJob) -> Value {
         "id": j.id,
         "source": lossy(&j.source),
         "output": lossy(&j.output),
-        "mode": j.mode,
         "requested": j.requested,
         "warnings": j.warnings,
         "argv": display_args(&j.args()),
     });
     let m = v.as_object_mut().expect("object");
+    if let Some(mode) = j.mode() {
+        m.insert("mode".into(), json!(mode));
+    }
     match &j.disposition {
         Disposition::Run => m.insert("status".into(), json!("planned")),
         Disposition::Skip { reason } => {
@@ -213,7 +218,7 @@ fn job_doc(j: &PlannedJob) -> Value {
             m.insert("status".into(), json!("skip"))
         }
     };
-    if let Some(p) = j.predicted {
+    if let Some(p) = j.predicted() {
         m.insert("predicted".into(), json!(p));
     }
     v

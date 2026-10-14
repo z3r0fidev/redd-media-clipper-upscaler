@@ -25,7 +25,7 @@
     if (!o) return j.warnings.join(" · ");
     if (o.status === "failed") return o.error.message;
     if (o.status === "skipped") return o.reason;
-    if (o.status === "succeeded" && o.adjusted) {
+    if (o.status === "succeeded" && o.measure === "clip" && o.adjusted) {
       // `adjusted` also covers an end that moved (e.g. clamped to the media end).
       if (Math.abs(o.actual.start - j.requestedStart) > 0.05) return `Starts on the keyframe at ${o.actual.start.toFixed(3)} s`;
       return `Ends at ${o.actual.end.toFixed(3)} s`;

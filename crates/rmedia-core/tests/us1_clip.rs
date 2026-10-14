@@ -4,14 +4,14 @@ mod common;
 
 use common::*;
 use rmedia_core::EndSpec;
-use rmedia_core::event::JobOutcome;
+use rmedia_core::event::{JobMeasure, JobOutcome};
 use rmedia_core::plan::Disposition;
 use rmedia_core::request::{AudioSel, Mode, OnExists, Options};
 use rmedia_testkit::{Fixture, duration, first_frame_psnr, fixture, require_ffmpeg, sha256, stream_types};
 
 fn succeeded(o: &JobOutcome) -> (&std::path::Path, f64, f64, bool) {
     match o {
-        JobOutcome::Succeeded { output, actual, adjusted } => {
+        JobOutcome::Succeeded { output, measure: JobMeasure::Clip { actual, adjusted } } => {
             (output, actual.start.as_secs_f64(), actual.end.as_secs_f64(), *adjusted)
         }
         other => panic!("job did not succeed: {other:?}"),
@@ -51,7 +51,7 @@ async fn fast_clip_snaps_to_keyframe_and_reports_it() {
     let out = tempfile::tempdir().unwrap();
     let req = request(&src, vec![clip(10.5, EndSpec::At(secs(20.0)))], opts(out.path(), Mode::Fast));
     let plan = make_plan(&req, &tools, &caps).await;
-    let predicted = plan.jobs[0].predicted.expect("fast mode predicts the snap");
+    let predicted = plan.jobs[0].predicted().expect("fast mode predicts the snap");
     assert_eq!(predicted.start, secs(10.0));
     let (summary, events) = run_plan(plan, tools, out.path()).await;
     let (output, start, end, adjusted) = succeeded(&summary.jobs[0].outcome);
@@ -183,7 +183,7 @@ async fn fast_mode_on_mpeg_ts_starts_exactly_on_the_keyframe() {
     let plan = make_plan(&req, &tools, &caps).await;
     assert!(plan.issues.is_empty(), "{:?}", plan.issues);
     // Keyframes every 2 s from user time 0 → the one before 5.0 is 4.0.
-    let k = plan.jobs[0].predicted.expect("keyframe found").start.as_secs_f64();
+    let k = plan.jobs[0].predicted().expect("keyframe found").start.as_secs_f64();
     assert!((k - 4.0).abs() < 1e-6, "keyframe {k}");
     let (summary, _) = run_plan(plan, tools, out.path()).await;
     let (o, start, _, adjusted) = succeeded(&summary.jobs[0].outcome);
@@ -323,7 +323,7 @@ async fn fast_mode_on_mislabelled_ts_late_start() {
     let src = fixture(Fixture::MislabelledTs);
     let req = request(&src, vec![clip(21.3, EndSpec::At(secs(25.0)))], opts(out.path(), Mode::Fast));
     let plan = make_plan(&req, &tools, &caps).await;
-    let k = plan.jobs[0].predicted.expect("keyframe").start.as_secs_f64();
+    let k = plan.jobs[0].predicted().expect("keyframe").start.as_secs_f64();
     assert!((k - 20.0).abs() < 1e-6, "keyframe {k}");
     let (summary, _) = run_plan(plan, tools, out.path()).await;
     let (o, start, ..) = succeeded(&summary.jobs[0].outcome);

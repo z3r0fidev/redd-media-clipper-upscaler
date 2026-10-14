@@ -83,7 +83,7 @@ async fn equivalent_json_and_csv_produce_identical_plans() {
     let key = |p: &rmedia_core::plan::Plan| {
         p.jobs
             .iter()
-            .map(|j| (j.source.clone(), j.output.clone(), j.mode, j.requested, j.args().len()))
+            .map(|j| (j.source.clone(), j.output.clone(), j.mode(), j.requested, j.args().len()))
             .collect::<Vec<_>>()
     };
     assert!(a.issues.is_empty() && b.issues.is_empty());

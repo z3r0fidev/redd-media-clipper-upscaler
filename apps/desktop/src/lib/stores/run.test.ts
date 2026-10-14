@@ -31,7 +31,7 @@ describe("run reducer", () => {
     r = applyEvent(r, {
       type: "job_finished",
       job_id: 1,
-      outcome: { status: "succeeded", output: "/o/1_1.mp4", actual: { start: 0, end: 1 }, adjusted: false },
+      outcome: { status: "succeeded", output: "/o/1_1.mp4", measure: "clip", actual: { start: 0, end: 1 }, adjusted: false },
     });
     expect(r.jobs[0]).toMatchObject({ status: "done", fraction: 1, output: "/o/1_1.mp4" });
   });
