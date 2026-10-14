@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "reddit-916",
+  "version": 1,
+  "name": "Reddit 9:16",
+  "description": "Reddit's full-screen vertical player; H.264 for the widest upload compatibility",
+  "devices": [
+    "Reddit full-screen player"
+  ],
+  "width": 1080,
+  "height": 1920,
+  "max_fps": 60,
+  "video": {
+    "codec": "h264",
+    "crf": 18,
+    "preset": "medium",
+    "profile": "high"
+  },
+  "audio": {
+    "codec": "aac",
+    "bitrate_k": 192,
+    "copy_if_aac": true
+  },
+  "hdr_capable": false,
+  "limits": {
+    "max_bytes": 1073741824,
+    "max_duration": 900
+  },
+  "est_bpp": 0.12
+}

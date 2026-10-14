@@ -54,9 +54,59 @@ pub struct StreamInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub duration: Option<Ts>,
+    /// Container codec tag, e.g. `hvc1` or `avc1`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub codec_tag: Option<String>,
+    /// Display-matrix rotation in degrees (players rotate by this before showing the picture).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub rotation: Option<i32>,
+    /// Sample (pixel) aspect ratio as (num, den).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub sar: Option<(u32, u32)>,
+    /// `progressive`, `tt`, `bb`, `tb` or `bt`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub field_order: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub color_space: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub color_primaries: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub color_transfer: Option<String>,
+    /// `tv` (limited) or `pc` (full).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub color_range: Option<String>,
 }
 
 impl StreamInfo {
+    /// The size a player shows: coded size with the pixel aspect applied (width scaled), then
+    /// rotated, rounded to even numbers. `None` when the coded size is unknown.
+    pub fn display_size(&self) -> Option<(u32, u32)> {
+        let (w, h) = (self.width?, self.height?);
+        let (num, den) = self.sar.filter(|(n, d)| *n > 0 && *d > 0).unwrap_or((1, 1));
+        let even = |v: f64| ((v / 2.0).round() as u32 * 2).max(2);
+        let (w, h) = (even(f64::from(w) * f64::from(num) / f64::from(den)), even(f64::from(h)));
+        let quarter_turn = self.rotation.is_some_and(|r| r.rem_euclid(180) == 90);
+        Some(if quarter_turn { (h, w) } else { (w, h) })
+    }
+
+    /// PQ (HDR10) or HLG transfer.
+    pub fn is_hdr(&self) -> bool {
+        matches!(self.color_transfer.as_deref(), Some("smpte2084" | "arib-std-b67"))
+    }
+
+    /// Interlaced field order (any order but `progressive`/unknown).
+    pub fn is_interlaced(&self) -> bool {
+        matches!(self.field_order.as_deref(), Some("tt" | "bb" | "tb" | "bt"))
+    }
+
     pub fn is_real_video(&self) -> bool {
         self.kind == StreamKind::Video && !self.is_attached_pic
     }
@@ -189,6 +239,20 @@ pub fn parse_probe_json(path: &Path, size: u64, json: &str) -> Result<MediaInfo>
                 duration: s.duration.as_deref().and_then(parse_secs).or_else(|| {
                     s.tags.as_ref().and_then(|t| t.duration.as_deref()).and_then(parse_clock_tag)
                 }),
+                codec_tag: s.codec_tag_string.filter(|t| !t.is_empty() && !t.starts_with('[')),
+                rotation: s
+                    .side_data_list
+                    .iter()
+                    .flatten()
+                    .find_map(|d| d.rotation)
+                    .map(|r| r.round() as i32)
+                    .filter(|r| r.rem_euclid(360) != 0),
+                sar: s.sample_aspect_ratio.as_deref().and_then(parse_ratio),
+                field_order: s.field_order.filter(|f| f != "unknown"),
+                color_space: known(s.color_space),
+                color_primaries: known(s.color_primaries),
+                color_transfer: known(s.color_transfer),
+                color_range: known(s.color_range),
             })
             .collect();
     Ok(MediaInfo {
@@ -298,6 +362,18 @@ fn parse_secs(v: &str) -> Option<Ts> {
     (f.is_finite() && f >= 0.0).then(|| Ts::from_secs_f64(f))
 }
 
+/// `64:45` → (64, 45); `0:1` (unknown) → None.
+fn parse_ratio(v: &str) -> Option<(u32, u32)> {
+    let (n, d) = v.split_once(':')?;
+    let (n, d) = (n.parse().ok()?, d.parse().ok()?);
+    (n > 0 && d > 0).then_some((n, d))
+}
+
+/// ffprobe reports untagged colour properties as absent or `unknown`.
+fn known(v: Option<String>) -> Option<String> {
+    v.filter(|s| !s.is_empty() && s != "unknown")
+}
+
 fn parse_rational(v: &str) -> Option<(u32, u32)> {
     let (n, d) = v.split_once('/')?;
     let (n, d) = (n.parse().ok()?, d.parse().ok()?);
@@ -332,6 +408,19 @@ struct RawStream {
     duration: Option<String>,
     disposition: Option<RawDisposition>,
     tags: Option<RawTags>,
+    codec_tag_string: Option<String>,
+    sample_aspect_ratio: Option<String>,
+    field_order: Option<String>,
+    color_space: Option<String>,
+    color_primaries: Option<String>,
+    color_transfer: Option<String>,
+    color_range: Option<String>,
+    side_data_list: Option<Vec<RawSideData>>,
+}
+
+#[derive(Deserialize)]
+struct RawSideData {
+    rotation: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -366,6 +455,46 @@ struct RawFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn one_video(fields: &str) -> StreamInfo {
+        let json = format!(
+            r#"{{"streams":[{{"index":0,"codec_type":"video","codec_name":"h264","width":1920,"height":1080{fields}}}],"format":{{"format_name":"mov,mp4"}}}}"#
+        );
+        parse_probe_json(Path::new("x.mp4"), 1, &json).unwrap().streams.remove(0)
+    }
+
+    #[test]
+    fn display_size_applies_sar_then_rotation() {
+        let table: &[(&str, (u32, u32))] = &[
+            ("", (1920, 1080)),
+            (r#","sample_aspect_ratio":"1:1""#, (1920, 1080)),
+            (r#","sample_aspect_ratio":"0:1""#, (1920, 1080)),
+            (r#","side_data_list":[{"rotation":-90}]"#, (1080, 1920)),
+            (r#","side_data_list":[{"rotation":270}]"#, (1080, 1920)),
+            (r#","side_data_list":[{"rotation":180}]"#, (1920, 1080)),
+            (r#","sample_aspect_ratio":"4:3""#, (2560, 1080)),
+            (r#","sample_aspect_ratio":"3:4","side_data_list":[{"rotation":90}]"#, (1080, 1440)),
+        ];
+        for (fields, want) in table {
+            assert_eq!(one_video(fields).display_size(), Some(*want), "{fields}");
+        }
+    }
+
+    #[test]
+    fn untagged_colour_and_unknown_field_order_are_none() {
+        let v = one_video(
+            r#","color_space":"unknown","color_transfer":"bt709","field_order":"unknown","codec_tag_string":"[0][0][0][0]""#,
+        );
+        assert_eq!(v.color_space, None);
+        assert_eq!(v.color_transfer.as_deref(), Some("bt709"));
+        assert_eq!(v.field_order, None);
+        assert_eq!(v.codec_tag, None);
+        assert!(!v.is_hdr() && !v.is_interlaced());
+        assert!(one_video(r#","color_transfer":"arib-std-b67""#).is_hdr());
+        assert!(one_video(r#","field_order":"bb""#).is_interlaced());
+        assert!(!one_video(r#","field_order":"progressive""#).is_interlaced());
+        assert_eq!(one_video(r#","side_data_list":[{"rotation":0}]"#).rotation, None);
+    }
 
     const SAMPLE: &str = r#"{
       "streams": [

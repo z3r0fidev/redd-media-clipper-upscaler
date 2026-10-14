@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "duo",
+  "version": 1,
+  "name": "iPhone Duo",
+  "description": "The foldable iPhone's outer screen (the inner screen is close: 1.42)",
+  "devices": [
+    "iPhone Duo (foldable)"
+  ],
+  "width": 1080,
+  "height": 1566,
+  "max_fps": 60,
+  "video": {
+    "codec": "hevc",
+    "crf": 22,
+    "preset": "fast",
+    "profile": "main",
+    "tag": "hvc1"
+  },
+  "audio": {
+    "codec": "aac",
+    "bitrate_k": 192,
+    "copy_if_aac": true
+  },
+  "hdr_capable": false,
+  "est_bpp": 0.06
+}

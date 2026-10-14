@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "id": "phone-fill-hd",
+  "version": 1,
+  "name": "Phone fill HD",
+  "description": "1440-wide version of Phone fill, for high-detail sources",
+  "devices": [
+    "1440p phones (Galaxy S Ultra, Pixel Pro XL)",
+    "iPhone Pro Max"
+  ],
+  "width": 1440,
+  "height": 3120,
+  "max_fps": 60,
+  "video": {
+    "codec": "hevc",
+    "crf": 22,
+    "preset": "fast",
+    "profile": "main",
+    "tag": "hvc1"
+  },
+  "audio": {
+    "codec": "aac",
+    "bitrate_k": 192,
+    "copy_if_aac": true
+  },
+  "hdr_capable": true,
+  "est_bpp": 0.05
+}

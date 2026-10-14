@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "id": "fold-inner",
+  "version": 1,
+  "name": "Fold inner",
+  "description": "Near-square inner screens of book-style foldables",
+  "devices": [
+    "Galaxy Z Fold inner screen",
+    "Pixel Fold / Pixel 9–10 Pro Fold inner screen"
+  ],
+  "width": 1080,
+  "height": 1200,
+  "max_fps": 60,
+  "video": {
+    "codec": "hevc",
+    "crf": 22,
+    "preset": "fast",
+    "profile": "main",
+    "tag": "hvc1"
+  },
+  "audio": {
+    "codec": "aac",
+    "bitrate_k": 192,
+    "copy_if_aac": true
+  },
+  "hdr_capable": false,
+  "est_bpp": 0.06
+}

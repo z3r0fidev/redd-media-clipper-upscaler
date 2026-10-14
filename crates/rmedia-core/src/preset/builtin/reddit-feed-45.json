@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "reddit-feed-45",
+  "version": 1,
+  "name": "Reddit feed 4:5",
+  "description": "The tallest frame Reddit shows uncropped in the feed",
+  "devices": [
+    "Reddit feed"
+  ],
+  "width": 1080,
+  "height": 1350,
+  "max_fps": 60,
+  "video": {
+    "codec": "h264",
+    "crf": 18,
+    "preset": "medium",
+    "profile": "high"
+  },
+  "audio": {
+    "codec": "aac",
+    "bitrate_k": 192,
+    "copy_if_aac": true
+  },
+  "hdr_capable": false,
+  "limits": {
+    "max_bytes": 1073741824,
+    "max_duration": 900
+  },
+  "est_bpp": 0.12
+}

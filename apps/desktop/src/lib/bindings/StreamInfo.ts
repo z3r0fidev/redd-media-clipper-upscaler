@@ -14,4 +14,24 @@ frame_rate?: [number, number], pix_fmt?: string,
 /**
  * Cover art / thumbnail pseudo-video stream.
  */
-is_attached_pic: boolean, language?: string, start_time?: Ts, duration?: Ts, };
+is_attached_pic: boolean, language?: string, start_time?: Ts, duration?: Ts, 
+/**
+ * Container codec tag, e.g. `hvc1` or `avc1`.
+ */
+codec_tag?: string, 
+/**
+ * Display-matrix rotation in degrees (players rotate by this before showing the picture).
+ */
+rotation?: number, 
+/**
+ * Sample (pixel) aspect ratio as (num, den).
+ */
+sar?: [number, number], 
+/**
+ * `progressive`, `tt`, `bb`, `tb` or `bt`.
+ */
+field_order?: string, color_space?: string, color_primaries?: string, color_transfer?: string, 
+/**
+ * `tv` (limited) or `pc` (full).
+ */
+color_range?: string, };

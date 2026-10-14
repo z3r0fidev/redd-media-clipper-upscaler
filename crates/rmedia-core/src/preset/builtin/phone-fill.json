@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "id": "phone-fill",
+  "version": 1,
+  "name": "Phone fill",
+  "description": "Fills iPhone and Galaxy S screens edge to edge in portrait (the default)",
+  "devices": [
+    "iPhone 15–18 (all sizes, incl. Air)",
+    "Galaxy S22–S26",
+    "Pixel 8–11 (≈1% bars)"
+  ],
+  "width": 1080,
+  "height": 2340,
+  "max_fps": 60,
+  "video": {
+    "codec": "hevc",
+    "crf": 22,
+    "preset": "fast",
+    "profile": "main",
+    "tag": "hvc1"
+  },
+  "audio": {
+    "codec": "aac",
+    "bitrate_k": 192,
+    "copy_if_aac": true
+  },
+  "hdr_capable": true,
+  "est_bpp": 0.06
+}

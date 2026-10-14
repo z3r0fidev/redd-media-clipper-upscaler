@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "id": "pixel-tall",
+  "version": 1,
+  "name": "Pixel tall",
+  "description": "20:9 for Pixel and other tall Android phones",
+  "devices": [
+    "Pixel 8–11 (incl. 10 Pro XL)",
+    "Tall 20:9 Android phones"
+  ],
+  "width": 1080,
+  "height": 2400,
+  "max_fps": 60,
+  "video": {
+    "codec": "hevc",
+    "crf": 22,
+    "preset": "fast",
+    "profile": "main",
+    "tag": "hvc1"
+  },
+  "audio": {
+    "codec": "aac",
+    "bitrate_k": 192,
+    "copy_if_aac": true
+  },
+  "hdr_capable": false,
+  "est_bpp": 0.06
+}
