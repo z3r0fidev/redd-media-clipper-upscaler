@@ -5,9 +5,14 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::time::{EndSpec, Ts};
+use crate::upscale::{PartialUpscale, UpscaleOptions};
 
 pub const DEFAULT_NAME_TEMPLATE: &str = "{source}_{index:03}_{name-or-range}.{ext}";
 pub const MULTI_SOURCE_NAME_TEMPLATE: &str = "{source}/{source}_{index:03}_{name-or-range}.{ext}";
+/// Default name of a whole-video upscale (in `<source dir>/upscaled/`).
+pub const UPSCALE_NAME_TEMPLATE: &str = "{source}_{preset}.{ext}";
+/// Default name of an upscaled clip (in `<source dir>/clips/`).
+pub const UPSCALE_CLIP_NAME_TEMPLATE: &str = "{source}_{index:03}_{name-or-range}_{preset}.{ext}";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -71,6 +76,10 @@ pub struct Options {
     pub container: Option<String>,
     pub on_exists: OnExists,
     pub streams: StreamSelection,
+    /// Upscale each job for phones (feature 002); `None` = plain clipping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub upscale: Option<UpscaleOptions>,
 }
 
 impl Default for Options {
@@ -82,6 +91,7 @@ impl Default for Options {
             container: None,
             on_exists: OnExists::Skip,
             streams: StreamSelection::default(),
+            upscale: None,
         }
     }
 }
@@ -112,6 +122,10 @@ pub struct PartialOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub subtitles: Option<SubSel>,
+    /// Present = upscaling on at this layer (unless `enabled: false`); absent = inherited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub upscale: Option<PartialUpscale>,
 }
 
 impl PartialOptions {
@@ -127,6 +141,7 @@ impl PartialOptions {
             audio: pick(opts.streams.audio == base.streams.audio).then(|| opts.streams.audio.clone()),
             subtitles: pick(opts.streams.subtitles == base.streams.subtitles)
                 .then_some(opts.streams.subtitles),
+            upscale: PartialUpscale::diff(opts.upscale.as_ref(), base.upscale.as_ref()),
         }
     }
 
@@ -140,6 +155,10 @@ impl PartialOptions {
             streams: StreamSelection {
                 audio: self.audio.clone().unwrap_or_else(|| base.streams.audio.clone()),
                 subtitles: self.subtitles.unwrap_or(base.streams.subtitles),
+            },
+            upscale: match &self.upscale {
+                None => base.upscale.clone(),
+                Some(p) => p.apply(base.upscale.as_ref()),
             },
         }
     }

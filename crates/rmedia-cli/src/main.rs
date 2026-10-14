@@ -41,6 +41,8 @@ pub struct Cli {
 pub enum Command {
     /// Cut clips from each input video: one with -s/-e/-d, or many with -l LIST.
     Clip(Box<ClipArgs>),
+    /// Make videos phone-ready: upscale and reframe to a device preset (default 1080x2340).
+    Upscale(Box<UpscaleArgs>),
     /// Run a batch manifest (.json or .csv) listing many videos and their clips.
     Batch(BatchArgs),
     /// Find the videos in folders (recursively) and list them.
@@ -77,16 +79,146 @@ pub struct ClipArgs {
     /// Clip length instead of an end time: 15, +15, 1:00 …
     #[arg(short = 'd', long, value_name = "DURATION", allow_hyphen_values = true)]
     pub duration: Option<String>,
+    /// fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode.
+    #[arg(long, value_enum, default_value_t = ModeArg::Fast)]
+    pub mode: ModeArg,
     #[command(flatten)]
     pub common: CommonArgs,
 }
 
 #[derive(Debug, Args)]
+pub struct UpscaleArgs {
+    /// Input video files and/or folders (folders are scanned for videos).
+    #[arg(value_name = "INPUT", required_unless_present_any = ["inputs_from", "list_presets"])]
+    pub inputs: Vec<PathBuf>,
+    /// Read more inputs from a file (one path per line), or "-" for stdin.
+    #[arg(long, value_name = "FILE")]
+    pub inputs_from: Option<String>,
+    /// List the device presets and exit.
+    #[arg(long)]
+    pub list_presets: bool,
+    #[command(flatten)]
+    pub scan: ScanFlags,
+    #[command(flatten)]
+    pub upscale: UpscaleFlags,
+    #[command(flatten)]
+    pub common: CommonArgs,
+}
+
+/// Upscale options (`rmedia upscale`; later also `clip --upscale` and `batch`).
+#[derive(Debug, Args, Clone)]
+pub struct UpscaleFlags {
+    /// Device preset (see --list-presets).
+    #[arg(long, value_name = "ID", default_value = "phone-fill")]
+    pub preset: String,
+    /// How to fill a screen of a different shape: follow the subject, crop the centre, or show
+    /// the whole frame over a blurred background.
+    #[arg(long, value_enum, default_value_t = ReframeArg::Smart)]
+    pub reframe: ReframeArg,
+    /// Quality tier: chosen for this machine (auto) or forced.
+    #[arg(long, value_enum, default_value_t = TierArg::Auto)]
+    pub tier: TierArg,
+    /// HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only).
+    #[arg(long, value_enum, default_value_t = HdrArg::Sdr)]
+    pub hdr: HdrArg,
+    /// Smart-reframe camera speed.
+    #[arg(long, value_enum, default_value_t = MotionArg::Normal)]
+    pub motion: MotionArg,
+    /// Override the preset's quality (CRF, lower = better and bigger).
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(0..=51))]
+    pub crf: Option<u8>,
+    /// With smart reframe, write the full crop path as JSON to FILE.
+    #[arg(long, value_name = "FILE")]
+    pub crop_path: Option<PathBuf>,
+    /// With --dry-run, skip the smart-reframe analysis (the crop path is shown as pending).
+    #[arg(long)]
+    pub no_analyze: bool,
+}
+
+impl UpscaleFlags {
+    pub fn options(&self) -> rmedia_core::upscale::UpscaleOptions {
+        rmedia_core::upscale::UpscaleOptions {
+            preset: self.preset.clone(),
+            reframe: self.reframe.into(),
+            tier: self.tier.into(),
+            hdr: self.hdr.into(),
+            motion: self.motion.into(),
+            crf: self.crf,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ReframeArg {
+    Smart,
+    Center,
+    Blur,
+}
+
+impl From<ReframeArg> for rmedia_core::upscale::Reframe {
+    fn from(r: ReframeArg) -> Self {
+        match r {
+            ReframeArg::Smart => Self::Smart,
+            ReframeArg::Center => Self::Center,
+            ReframeArg::Blur => Self::Blur,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum TierArg {
+    Auto,
+    Cpu,
+    Gpu,
+    Ai,
+}
+
+impl From<TierArg> for rmedia_core::upscale::TierChoice {
+    fn from(t: TierArg) -> Self {
+        match t {
+            TierArg::Auto => Self::Auto,
+            TierArg::Cpu => Self::Cpu,
+            TierArg::Gpu => Self::Gpu,
+            TierArg::Ai => Self::Ai,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum HdrArg {
+    Sdr,
+    Keep,
+}
+
+impl From<HdrArg> for rmedia_core::upscale::HdrMode {
+    fn from(h: HdrArg) -> Self {
+        match h {
+            HdrArg::Sdr => Self::Sdr,
+            HdrArg::Keep => Self::Keep,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum MotionArg {
+    Calm,
+    Normal,
+    Fast,
+}
+
+impl From<MotionArg> for rmedia_core::upscale::Motion {
+    fn from(m: MotionArg) -> Self {
+        match m {
+            MotionArg::Calm => Self::Calm,
+            MotionArg::Normal => Self::Normal,
+            MotionArg::Fast => Self::Fast,
+        }
+    }
+}
+
+#[derive(Debug, Args)]
 pub struct CommonArgs {
-    /// fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode.
-    #[arg(long, value_enum, default_value_t = ModeArg::Fast)]
-    pub mode: ModeArg,
-    /// Output folder (default: a "clips" folder next to each source).
+    /// Output folder (default: a "clips" folder next to each source; "upscaled" for upscale).
     #[arg(short = 'o', long, value_name = "DIR")]
     pub output_dir: Option<PathBuf>,
     /// Output name template: {source} {index} {index:03} {name} {name-or-range} {name-or-start} {start} {end} {range} {ext}
@@ -252,6 +384,7 @@ fn main() -> ExitCode {
     let code = runtime.block_on(async {
         match &cli.command {
             Command::Clip(args) => commands::clip::run(&cli, args).await,
+            Command::Upscale(args) => commands::upscale::run(&cli, args).await,
             Command::Batch(args) => commands::batch::run(&cli, args).await,
             Command::Scan(args) => commands::scan::run(&cli, args).await,
             Command::Doctor(args) => commands::doctor::run(&cli, args),

@@ -61,3 +61,26 @@ async fn bench_sc003_scan_10k_files_under_60s() {
     assert_eq!(r.videos.len(), 1000);
     assert!(elapsed < Duration::from_secs(60), "SC-003 violated: {elapsed:?}");
 }
+
+/// 002 SC-003: the CPU tier turns a 60 s 480p30 portrait source into the default preset in at
+/// most twice its duration (centre crop, so no smart-reframe analysis is timed).
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "benchmark"]
+async fn bench_upscale_sc003_cpu_tier_within_2x_duration() {
+    rmedia_testkit::require_engine!("libx265", "zscale", "cas");
+    let src = fixture(Fixture::Portrait480Long);
+    let (tools, caps) = engine();
+    let out = tempfile::tempdir().unwrap();
+    let mut o = opts(out.path(), Mode::Accurate);
+    o.upscale = Some(rmedia_core::upscale::UpscaleOptions {
+        reframe: rmedia_core::upscale::Reframe::Center,
+        ..Default::default()
+    });
+    let plan = make_plan(&request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], o), &tools, &caps).await;
+    let t0 = Instant::now();
+    let (summary, _) = run_plan(plan, tools, out.path()).await;
+    let elapsed = t0.elapsed();
+    assert_eq!(summary.succeeded, 1, "{summary:?}");
+    eprintln!("CPU tier, 60 s 480p → 1080x2340: {elapsed:?}");
+    assert!(elapsed < Duration::from_secs(120), "SC-003 violated: {elapsed:?}");
+}

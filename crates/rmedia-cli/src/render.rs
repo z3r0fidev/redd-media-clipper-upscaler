@@ -9,7 +9,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rmedia_core::event::{Event, EventSink, JobId, JobMeasure, JobOutcome, RunSummary};
 use rmedia_core::pathser::lossy;
 use rmedia_core::plan::ffargs::display_args;
-use rmedia_core::plan::{Disposition, Plan, PlannedJob, Severity};
+use rmedia_core::plan::{Disposition, JobSpec, Plan, PlannedJob, Severity};
 use rmedia_core::request::Origin;
 use serde_json::{Value, json};
 
@@ -66,6 +66,9 @@ impl Output {
         if self.json || self.quiet {
             return;
         }
+        for i in plan.issues.iter().filter(|i| i.severity == Severity::Warning) {
+            eprintln!("warning: {}", i.message);
+        }
         for j in &plan.jobs {
             for w in &j.warnings {
                 eprintln!("warning: {}: {w}", file_name(&j.output));
@@ -101,6 +104,23 @@ impl Output {
                     j.requested.start - p.start
                 );
             }
+            if let JobSpec::Upscale(u) = &j.spec {
+                let up = &u.up;
+                println!(
+                    "     preset {} {}x{}, reframe {}, tier {} ({})",
+                    up.preset.id,
+                    up.target.0,
+                    up.target.1,
+                    format!("{:?}", up.reframe).to_lowercase(),
+                    format!("{:?}", up.tier.tier).to_lowercase(),
+                    up.tier.reason
+                );
+                println!(
+                    "     estimate ~{}, ~{:.0} s",
+                    rmedia_core::upscale::estimate::human_bytes(up.estimate.bytes),
+                    up.estimate.secs.max(1.0)
+                );
+            }
             for w in &j.warnings {
                 println!("     warning: {w}");
             }
@@ -108,9 +128,13 @@ impl Output {
                 println!("     ffmpeg {}", shell_words(&display_args(&j.args())));
             }
         }
+        for i in plan.issues.iter().filter(|i| i.severity == Severity::Warning) {
+            println!("warning: {}", i.message);
+        }
         let skipped = plan.jobs.iter().filter(|j| j.disposition != Disposition::Run).count();
+        let noun = if plan.jobs.iter().all(|j| j.kind() == "clip") { "clip(s)" } else { "job(s)" };
         println!(
-            "{} clip(s) planned, {skipped} would be skipped. Nothing was written (dry run).",
+            "{} {noun} planned, {skipped} would be skipped. Nothing was written (dry run).",
             plan.jobs.len() - skipped
         );
     }
@@ -178,7 +202,7 @@ fn shell_words(args: &[String]) -> String {
         .join(" ")
 }
 
-fn print_json(v: &Value) {
+pub fn print_json(v: &Value) {
     let mut out = std::io::stdout().lock();
     let _ = serde_json::to_writer(&mut out, v);
     let _ = writeln!(out);
@@ -220,6 +244,13 @@ fn job_doc(j: &PlannedJob) -> Value {
     };
     if let Some(p) = j.predicted() {
         m.insert("predicted".into(), json!(p));
+    }
+    if let JobSpec::Upscale(u) = &j.spec {
+        m.insert("kind".into(), json!("upscale"));
+        m.insert("upscale".into(), u.up.to_json());
+        if let Some(cwd) = &j.scratch {
+            m.insert("cwd".into(), json!(lossy(cwd)));
+        }
     }
     v
 }

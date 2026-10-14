@@ -1,7 +1,8 @@
 //! Output naming templates and cross-platform file name sanitizing (FR-016).
 //!
 //! Placeholders: `{source}` `{index}` `{index:0N}` `{name}` `{name-or-start}` `{name-or-range}`
-//! `{start}` `{end}` `{range}` (`{start}_{end}`) `{ext}`. A `/` in the template creates a sub-folder of the output directory.
+//! `{start}` `{end}` `{range}` (`{start}_{end}`) `{ext}`, and `{preset}` for upscale jobs. A `/` in
+//! the template creates a sub-folder of the output directory.
 
 use std::path::PathBuf;
 
@@ -16,6 +17,8 @@ pub struct NameVars<'a> {
     pub start: Ts,
     pub end: Ts,
     pub ext: &'a str,
+    /// Upscale jobs: the device preset id. `{preset}` is unknown for clip jobs.
+    pub preset: Option<&'a str>,
 }
 
 /// Renders a template into a relative path. Errors describe the problem for the user.
@@ -66,6 +69,7 @@ fn expand(key: &str, v: &NameVars<'_>) -> Option<String> {
         "start" => v.start.filename(),
         "end" => v.end.filename(),
         "ext" => clean(v.ext),
+        "preset" => clean(v.preset?),
         _ => {
             let width = key.strip_prefix("index:0")?;
             let width: usize = width.parse().ok().filter(|w| (1..=9).contains(w))?;
@@ -150,7 +154,21 @@ mod tests {
             start: Ts::from_secs_f64(90.5),
             end: Ts::from_secs_f64(120.0),
             ext: "mkv",
+            preset: None,
         }
+    }
+
+    #[test]
+    fn preset_placeholder_only_for_upscale_jobs() {
+        let t = crate::request::UPSCALE_NAME_TEMPLATE;
+        assert!(render(t, &vars(None)).is_err(), "{{preset}} is unknown for clips");
+        let up = NameVars { preset: Some("phone-fill"), ext: "mp4", ..vars(None) };
+        assert_eq!(render(t, &up).unwrap(), PathBuf::from("match 12_phone-fill.mp4"));
+        let clip = crate::request::UPSCALE_CLIP_NAME_TEMPLATE;
+        assert_eq!(
+            render(clip, &NameVars { name: Some("goal"), ..up }).unwrap(),
+            PathBuf::from("match 12_007_goal_phone-fill.mp4")
+        );
     }
 
     #[test]

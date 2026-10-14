@@ -53,7 +53,7 @@ pub enum Fixture {
     MovingMarker,
     /// 1280x720, 6 s: two magenta markers 1000 px apart (cannot fit one portrait crop).
     FarMarkers,
-    /// `Gop50Mp4` remuxed with a 90° display rotation (coded 320x240, displayed 240x320).
+    /// `TinySource` remuxed with a 90° display rotation (coded 320x240, displayed 240x320).
     Rotated90,
     /// 720x576 with SAR 64:45 (anamorphic 16:9), 5 s.
     Anamorphic,
@@ -102,7 +102,7 @@ impl Fixture {
     fn derived_from(self) -> Option<Fixture> {
         match self {
             Fixture::DegradedPortrait | Fixture::DegradedPortrait360 => Some(Fixture::CleanPortrait),
-            Fixture::Rotated90 => Some(Fixture::Gop50Mp4),
+            Fixture::Rotated90 => Some(Fixture::TinySource),
             _ => None,
         }
     }

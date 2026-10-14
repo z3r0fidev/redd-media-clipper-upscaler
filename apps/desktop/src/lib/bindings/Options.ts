@@ -2,6 +2,7 @@
 import type { Mode } from "./Mode";
 import type { OnExists } from "./OnExists";
 import type { StreamSelection } from "./StreamSelection";
+import type { UpscaleOptions } from "./UpscaleOptions";
 
 /**
  * Fully resolved options for a clip.
@@ -14,4 +15,8 @@ output_dir: string | null, name_template: string,
 /**
  * Output extension; `None` = same as source.
  */
-container: string | null, on_exists: OnExists, streams: StreamSelection, };
+container: string | null, on_exists: OnExists, streams: StreamSelection, 
+/**
+ * Upscale each job for phones (feature 002); `None` = plain clipping.
+ */
+upscale?: UpscaleOptions, };

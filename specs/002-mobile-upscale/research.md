@@ -75,6 +75,8 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
   2. `scale=iw*sar:ih,setsar=1` when the SAR is not 1:1.
   3. Tone-map when the source is HDR and `hdr=sdr` (R4).
   4. `hqdn3d=1.5:1.5:6:6`.
+  The CPU scaler is `zscale` Lanczos with explicit input and output colour properties, then
+  `cas=0.7` when enlarging (see the measurements below).
   5. `fps=<max_fps>` only when the source is faster than that. Otherwise
      `-fps_mode passthrough`, which keeps VFR timing.
 - **Rotation:** FFmpeg autorotates by default. The probe reads the display-matrix rotation so that
@@ -84,6 +86,20 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
     `cas` is dropped.
   - The plan sets `no_upscale_needed: true` and tells the user.
 - **Tiny sources (240p or below):** warn, and suggest AI if it is available.
+- **Scaler and sharpening (measured 2026-10-14, VMAF against the clean 1080x1920 original, x264
+  CRF 18 output, `DegradedPortrait` 480p fixture):**
+
+  | Chain | VMAF | vs bicubic (54.85) |
+  |---|---|---|
+  | `hqdn3d` + spline36 + `cas=0.5` (first plan) | 56.54 | +1.7 |
+  | `hqdn3d` + lanczos + `cas=0.7` (**chosen**) | 57.63 | +2.8 (+2.9 at 360p) |
+  | `hqdn3d` + spline36 + `cas=0.8` | 57.90 | +3.1 |
+  | `hqdn3d` + spline36 + `cas=1.0` | 64.31 | +9.5, with visible ringing on flat areas |
+
+  VMAF rewards over-sharpening, so the chain stays inside the 0.3–0.7 `cas` range and SC-002's
+  automated CPU bar is +1.5 on the synthetic fixtures (owner decision). `hqdn3d` stays: it costs
+  little VMAF on clean synthetic content and is the artefact reduction FR-006 asks for on real
+  footage.
 - **Alternatives:** `nlmeans` was rejected as a default because it ran at 5.6 fps (research/02
   "Measured"). It may become an opt-in later.
 
@@ -105,7 +121,7 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
 - Smart reframe with fallback ranges:
   ```
   [0:v]<trim?>,<pre>,split[a][b];
-  [a]sendcmd=f=reframe.cmd,crop@trk=w=CW:h=CH:x=X0:y=Y0,<SCALER→W:H>,cas=0.5[crop];
+  [a]sendcmd=f=reframe.cmd,crop@trk=w=CW:h=CH:x=X0:y=Y0,<SCALER→W:H>,cas=0.7[crop];
   [b]split[bg0][fg0];
   [bg0]scale=W/10:H/10:force_original_aspect_ratio=increase,crop=W/10:H/10,gblur=sigma=3,
        eq=brightness=-0.08,scale=W:H[bg];

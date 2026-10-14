@@ -55,8 +55,10 @@ impl EventSink for Collect {
     }
 }
 
+/// Plans with the built-in presets only, so a developer's own preset folder never leaks in.
 pub async fn make_plan(req: &BatchRequest, tools: &Tools, caps: &Caps) -> Plan {
-    plan::plan(req, tools, caps, &CancellationToken::new()).await
+    let presets = rmedia_core::preset::PresetRegistry::builtin();
+    plan::plan_with(req, tools, caps, presets, &CancellationToken::new()).await
 }
 
 pub async fn run_plan(p: Plan, tools: Tools, state: &Path) -> (RunSummary, Vec<Event>) {

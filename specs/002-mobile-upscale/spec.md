@@ -341,8 +341,10 @@ reason.
   S2x. 100% of outputs pass an automated check of size, aspect, tagging and colour information.
 - **SC-002**: Measured against the clean original, outputs from degraded 360p–480p test sources
   score higher on an objective perceptual-quality metric than a plain resize to the same size.
-  The CPU tier scores ≥ 3 points higher on a 0–100 scale, and the AI tier scores ≥ 3 points higher
-  than the GPU tier.
+  The CPU tier scores ≥ 1.5 points higher on a 0–100 scale on the synthetic test sources
+  (≥ 3 points is checked on real footage by the owner), and the AI tier scores ≥ 3 points higher
+  than the GPU tier. (Owner decision 2026-10-14: restrained sharpening measured +2.8 on the
+  synthetic sources; passing +3 there needed sharpening that visibly rings.)
 - **SC-003**: The CPU tier processes a 60 s, 480p, 30 fps source to the default preset in ≤ 2× the
   clip's duration on the reference machine (12-thread laptop CPU). The GPU tier is no slower than
   the CPU tier on the same machine.

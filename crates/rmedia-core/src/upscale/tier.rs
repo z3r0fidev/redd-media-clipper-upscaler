@@ -11,3 +11,13 @@ pub enum Tier {
     Gpu,
     Ai,
 }
+
+/// The tier a job will use, and why (shown in dry runs and reports).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TierDecision {
+    pub tier: Tier,
+    pub reason: String,
+    /// A better tier the user could choose (AI for low-resolution sources; never chosen
+    /// automatically, research R9).
+    pub suggest: Option<Tier>,
+}

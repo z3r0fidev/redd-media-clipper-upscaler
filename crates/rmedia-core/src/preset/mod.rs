@@ -171,6 +171,25 @@ impl Preset {
                 self.video.profile, self.video.codec
             ));
         }
+        match (&self.video.level, self.video.codec) {
+            (None, _) => {}
+            (Some(_), VideoCodec::Hevc) => return Err("level is only supported for h264 presets".into()),
+            (Some(l), VideoCodec::H264) => {
+                let ok = matches!(l.as_bytes(), [b'1'..=b'6'] | [b'1'..=b'6', b'.', b'0'..=b'2']);
+                if !ok {
+                    return Err(format!("level {l:?} must look like 4.2"));
+                }
+            }
+        }
+        let text_ok = |s: &str, max: usize| s.chars().count() <= max && !s.chars().any(char::is_control);
+        if !text_ok(&self.name, 80) || !text_ok(&self.description, 500) {
+            return Err(
+                "name (≤ 80) and description (≤ 500) must be short, without control characters".into()
+            );
+        }
+        if self.devices.len() > 20 || !self.devices.iter().all(|d| text_ok(d, 80)) {
+            return Err("devices: at most 20 entries of ≤ 80 characters, without control characters".into());
+        }
         if !(32..=512).contains(&self.audio.bitrate_k) {
             return Err(format!("audio bitrate {} kb/s must be within 32..512", self.audio.bitrate_k));
         }
@@ -184,6 +203,26 @@ impl Preset {
     pub fn aspect(&self) -> f64 {
         f64::from(self.height) / f64::from(self.width)
     }
+}
+
+/// Largest preset file read (real presets are about 1 kB).
+const MAX_PRESET_BYTES: u64 = 64 * 1024;
+
+/// Reads a user preset: a regular file (not a symlink) of at most 64 KiB.
+fn read_preset_file(path: &Path) -> Result<String, String> {
+    use std::io::Read;
+    let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if !meta.file_type().is_file() {
+        return Err("not a regular file (symlinks are not followed)".into());
+    }
+    if meta.len() > MAX_PRESET_BYTES {
+        return Err(format!("larger than {} KiB", MAX_PRESET_BYTES / 1024));
+    }
+    let mut text = String::new();
+    std::fs::File::open(path)
+        .and_then(|f| f.take(MAX_PRESET_BYTES).read_to_string(&mut text))
+        .map_err(|e| e.to_string())?;
+    Ok(text)
 }
 
 /// Where a preset came from.
@@ -228,13 +267,12 @@ impl PresetRegistry {
         let mut files: Vec<PathBuf> = entries
             .flatten()
             .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")) && p.is_file())
+            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")))
             .collect();
         files.sort();
         let mut user: Vec<(Preset, PresetSource)> = Vec::new();
         for file in files {
-            let parsed =
-                std::fs::read_to_string(&file).map_err(|e| e.to_string()).and_then(|t| Preset::from_json(&t));
+            let parsed = read_preset_file(&file).and_then(|t| Preset::from_json(&t));
             match parsed {
                 Ok(p) if user.iter().any(|(u, _)| u.id == p.id) => reg.problems.push(PresetProblem {
                     file,
@@ -362,6 +400,9 @@ mod tests {
             ("unknown speed preset", Box::new(|v| v["video"]["preset"] = json!("placebo"))),
             ("profile mismatch", Box::new(|v| v["video"]["profile"] = json!("high"))),
             ("est_bpp zero", Box::new(|v| v["est_bpp"] = json!(0.0))),
+            ("level on hevc", Box::new(|v| v["video"]["level"] = json!("5.1"))),
+            ("escape in name", Box::new(|v| v["name"] = json!("x\u{1b}[31m"))),
+            ("long description", Box::new(|v| v["description"] = json!("x".repeat(501)))),
             ("fps 0", Box::new(|v| v["max_fps"] = json!(0))),
         ];
         for (name, edit) in cases {
@@ -401,6 +442,25 @@ mod tests {
             .collect();
         assert_eq!(bad, ["c-broken.json", "d-dup.json"]);
         assert!(matches!(reg.list().next().unwrap().1, PresetSource::User(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_and_oversized_preset_files_are_refused() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("presets");
+        std::fs::create_dir(&dir).unwrap();
+        let real = d.path().join("elsewhere.json");
+        std::fs::write(&real, BUILTIN[0]).unwrap();
+        std::os::unix::fs::symlink(&real, dir.join("link.json")).unwrap();
+        std::fs::write(dir.join("huge.json"), " ".repeat(70 * 1024)).unwrap();
+        let reg = PresetRegistry::load(Some(d.path()));
+        let msgs: Vec<&str> = reg.problems().iter().map(|p| p.message.as_str()).collect();
+        assert_eq!(msgs.len(), 2, "{msgs:?}");
+        assert!(
+            msgs.iter().any(|m| m.contains("larger than 64 KiB"))
+                && msgs.iter().any(|m| m.contains("symlinks"))
+        );
     }
 
     #[test]

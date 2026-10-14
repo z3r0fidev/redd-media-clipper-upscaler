@@ -114,7 +114,18 @@ fn fetch_tools(target: &str) -> Result<()> {
     let archive = work.join(pin.url.rsplit('/').next().context("url file name")?);
     println!("downloading {}", pin.url);
     run(Command::new("curl")
-        .args(["-fL", "--retry", "3", "--silent", "--show-error", "-o"])
+        .args([
+            "-fL",
+            "--proto",
+            "=https",
+            "--proto-redir",
+            "=https",
+            "--retry",
+            "3",
+            "--silent",
+            "--show-error",
+            "-o",
+        ])
         .arg(&archive)
         .arg(&pin.url))?;
 
@@ -183,9 +194,21 @@ fn fetch_models() -> Result<()> {
             continue;
         }
         let tmp = dir.join(format!(".{name}.download"));
+        let _ = std::fs::remove_file(&tmp); // never write through a planted file or link
         println!("downloading {name}: {}", pin.description);
         run(Command::new("curl")
-            .args(["-fL", "--retry", "3", "--silent", "--show-error", "-o"])
+            .args([
+                "-fL",
+                "--proto",
+                "=https",
+                "--proto-redir",
+                "=https",
+                "--retry",
+                "3",
+                "--silent",
+                "--show-error",
+                "-o",
+            ])
             .arg(&tmp)
             .arg(&pin.url))?;
         let actual = file_sha256(&tmp)?;

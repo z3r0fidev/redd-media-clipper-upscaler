@@ -39,8 +39,8 @@ pub fn search_dirs(settings: &Settings) -> Vec<PathBuf> {
     dirs.extend(settings.models_dir.clone());
     if let Some(exe_dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
         dirs.push(exe_dir.join("models"));
-        // target/<profile>/ (and target/<profile>/deps/ for tests) → workspace models/.
-        for up in exe_dir.ancestors().skip(1).take(3) {
+        // Development builds only: target/<profile>/ (and …/deps/ for tests) → workspace models/.
+        for up in exe_dir.ancestors().skip(1).take(if cfg!(debug_assertions) { 3 } else { 0 }) {
             if up.join("Cargo.toml").is_file() && up.join("models").is_dir() {
                 dirs.push(up.join("models"));
                 break;

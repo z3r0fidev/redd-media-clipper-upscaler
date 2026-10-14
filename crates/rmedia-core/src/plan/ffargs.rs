@@ -10,6 +10,7 @@ use crate::event::Span;
 use crate::probe::{INPUT_PROTOCOLS, StreamKind, file_arg};
 use crate::request::Mode;
 use crate::time::Ts;
+use crate::upscale::{UpscaleSpec, graph};
 
 /// Everything needed to cut one clip.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -74,10 +75,10 @@ pub fn common_args() -> Vec<OsString> {
     .collect()
 }
 
-pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
-    let mut a = common_args();
+/// The input and the source range: `[-copyts] [-ss] -i file:<input> [-ss] [-t]`.
+pub fn input_args(spec: &ClipSpec) -> Vec<OsString> {
+    let mut a = Vec::new();
     let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
-
     if spec.trim.is_some() {
         push(&["-copyts"]);
     }
@@ -94,6 +95,13 @@ pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
     if let Some(d) = spec.duration {
         push(&["-t", &d.ffmpeg()]);
     }
+    a
+}
+
+pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
+    let mut a = common_args();
+    a.extend(input_args(spec));
+    let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
     for m in &spec.streams.maps {
         push(&["-map", &format!("0:{}", m.index)]);
     }
@@ -139,6 +147,46 @@ pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
         push(&["-movflags", "+faststart"]);
     }
     push(&["-f", spec.container.muxer()]);
+    a.push(file_arg(output));
+    a
+}
+
+/// One-pass upscale: the clip's input and range, the upscale filtergraph for video, the clip's
+/// audio and subtitle streams, chapters and metadata, and the preset's encoder (research R2, R5).
+pub fn upscale_args(spec: &UpscaleSpec, output: &Path) -> Vec<OsString> {
+    let (cut, up) = (&spec.cut, &spec.up);
+    let mut a = common_args();
+    a.extend(input_args(cut));
+    let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
+    push(&["-filter_complex", &graph::build(&up.graph), "-map", "[v]"]);
+    for m in cut.streams.maps.iter().filter(|m| m.kind != StreamKind::Video) {
+        push(&["-map", &format!("0:{}", m.index)]);
+    }
+    // Unlike clips, a whole-video upscale keeps its chapters (FR-020).
+    push(&[
+        "-map_metadata",
+        "0",
+        "-map_chapters",
+        if cut.trim.is_none() && cut.input_seek.is_none() { "0" } else { "-1" },
+    ]);
+    push(&["-fps_mode", "passthrough"]);
+    let video: Vec<&str> = up.video_args.iter().map(String::as_str).collect();
+    push(&video);
+    if has(cut, StreamKind::Audio) {
+        let trim = cut.trim.map(|t| format!("atrim={},asetpts=PTS-STARTPTS", t.params()));
+        if up.audio_copy && trim.is_none() {
+            push(&["-c:a", "copy"]);
+        } else {
+            push(&["-c:a", "aac", "-b:a", &format!("{}k", up.preset.audio.bitrate_k)]);
+            if let Some(t) = &trim {
+                push(&["-af", t]);
+            }
+        }
+    }
+    if has(cut, StreamKind::Subtitle) {
+        push(&["-c:s", cut.streams.subtitle_codec.unwrap_or("mov_text")]);
+    }
+    push(&["-movflags", "+faststart", "-f", "mp4"]);
     a.push(file_arg(output));
     a
 }

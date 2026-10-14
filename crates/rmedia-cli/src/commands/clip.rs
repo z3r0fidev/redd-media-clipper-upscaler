@@ -41,6 +41,7 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
         args.inputs_from.as_deref(),
         &args.scan,
         args.common.output_dir.as_deref(),
+        "clips",
         &out,
     )
     .await
@@ -50,7 +51,7 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     };
 
     let req = BatchRequest {
-        defaults: options(&args.common, inputs.len() > 1),
+        defaults: options(&args.common, args.mode.into(), inputs.len() > 1),
         sources: inputs
             .iter()
             .map(|p| SourceRequest {
@@ -103,7 +104,10 @@ pub async fn execute(
                 // Best-effort removal of partial outputs first; anything still locked (Windows)
                 // is purged by the next run via the crash journal.
                 for t in &temps {
-                    let _ = rmedia_core::exec::commit::remove_now(t);
+                    // Only our own temp outputs (`.<stem>.rmedia-<run>-<job>.part|.d`).
+                    if t.file_name().is_some_and(|n| n.to_string_lossy().contains(".rmedia-")) {
+                        let _ = rmedia_core::exec::commit::remove_now(t);
+                    }
                 }
                 std::process::exit(i32::from(exit::CANCELLED));
             }
@@ -131,9 +135,9 @@ fn single_clip(args: &ClipArgs) -> Result<ClipRequest, String> {
     Ok(ClipRequest { start, end, name: None, overrides: PartialOptions::default(), origin: Origin::Cli })
 }
 
-fn options(c: &CommonArgs, multi_source: bool) -> Options {
+pub fn options(c: &CommonArgs, mode: rmedia_core::request::Mode, multi_source: bool) -> Options {
     let mut o = Options {
-        mode: c.mode.into(),
+        mode,
         output_dir: c.output_dir.as_deref().map(absolute),
         container: c.container.clone(),
         on_exists: c.on_exists.into(),

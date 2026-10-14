@@ -13,11 +13,22 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, IssueCode};
 use crate::event::{JobId, Span};
-use crate::exec::commit::temp_path;
+use crate::exec::commit::{scratch_path, temp_path};
+use crate::preset::{Preset, PresetRegistry, VideoCodec};
 use crate::probe::{self, MediaInfo};
-use crate::request::{BatchRequest, ClipRequest, Mode, OnExists, Origin, SourceRequest};
+use crate::request::{
+    BatchRequest, ClipRequest, DEFAULT_NAME_TEMPLATE, Mode, OnExists, Origin, SourceRequest,
+    UPSCALE_CLIP_NAME_TEMPLATE, UPSCALE_NAME_TEMPLATE,
+};
 use crate::time::{EndSpec, Ts};
 use crate::tools::Tools;
+use crate::upscale::encode::{self, ColourTags, EncodeParams};
+use crate::upscale::geometry::{self, Overflow};
+use crate::upscale::graph::GraphInput;
+use crate::upscale::tier::{Tier, TierDecision};
+use crate::upscale::{
+    AnalysisState, HdrMode, Reframe, TierChoice, UpscaleOptions, UpscalePlan, UpscaleSpec, estimate,
+};
 use ffargs::ClipSpec;
 use streams::Container;
 
@@ -65,11 +76,11 @@ pub enum Disposition {
     Skip { reason: String },
 }
 
-/// The work a job performs. Features 002/003 add `Upscale` and `Gif` variants.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+/// The work a job performs. Feature 003 adds a `Gif` variant.
+#[derive(Debug, Clone, PartialEq)]
 pub enum JobSpec {
-    Clip(ClipSpec),
+    Clip(Box<ClipSpec>),
+    Upscale(Box<crate::upscale::UpscaleSpec>),
 }
 
 /// What a job occupies while it runs. Every job takes one of the `--jobs` slots; GPU jobs also
@@ -108,6 +119,7 @@ impl PlannedJob {
     pub fn args(&self) -> Vec<OsString> {
         match &self.spec {
             JobSpec::Clip(c) => ffargs::clip_args(c, &self.temp),
+            JobSpec::Upscale(u) => ffargs::upscale_args(u, &self.temp),
         }
     }
 
@@ -120,6 +132,10 @@ impl PlannedJob {
     pub fn resource(&self) -> Resource {
         match &self.spec {
             JobSpec::Clip(_) => Resource::Cpu,
+            JobSpec::Upscale(u) => match u.up.tier.tier {
+                crate::upscale::tier::Tier::Cpu => Resource::Cpu,
+                _ => Resource::Gpu,
+            },
         }
     }
 
@@ -127,6 +143,7 @@ impl PlannedJob {
     pub fn kind(&self) -> &'static str {
         match &self.spec {
             JobSpec::Clip(_) => "clip",
+            JobSpec::Upscale(_) => "upscale",
         }
     }
 
@@ -134,6 +151,7 @@ impl PlannedJob {
     pub fn mode(&self) -> Option<Mode> {
         match &self.spec {
             JobSpec::Clip(c) => Some(c.mode),
+            JobSpec::Upscale(_) => None,
         }
     }
 
@@ -141,6 +159,7 @@ impl PlannedJob {
     pub fn predicted(&self) -> Option<Span> {
         match &self.spec {
             JobSpec::Clip(c) => c.predicted,
+            JobSpec::Upscale(_) => None,
         }
     }
 }
@@ -168,7 +187,20 @@ impl Plan {
 }
 
 /// Validates every request and resolves outputs. Reports all problems at once (FR-003).
+/// Upscale presets come from the built-ins plus the user's preset folder.
 pub async fn plan(req: &BatchRequest, tools: &Tools, caps: &Caps, cancel: &CancellationToken) -> Plan {
+    let presets = PresetRegistry::load(crate::settings::config_dir().as_deref());
+    plan_with(req, tools, caps, presets, cancel).await
+}
+
+/// [`plan`] with an explicit preset registry (tests use the built-ins only).
+pub async fn plan_with(
+    req: &BatchRequest,
+    tools: &Tools,
+    caps: &Caps,
+    presets: PresetRegistry,
+    cancel: &CancellationToken,
+) -> Plan {
     let mut planner = Planner {
         tools,
         caps,
@@ -179,6 +211,7 @@ pub async fn plan(req: &BatchRequest, tools: &Tools, caps: &Caps, cancel: &Cance
         claimed: HashSet::new(),
         sources: HashSet::new(),
         probes: HashMap::new(),
+        presets,
     };
     for s in &req.sources {
         if let Ok(c) = std::fs::canonicalize(&s.path) {
@@ -188,6 +221,7 @@ pub async fn plan(req: &BatchRequest, tools: &Tools, caps: &Caps, cancel: &Cance
     for source in &req.sources {
         planner.plan_source(req, source).await;
     }
+    planner.check_free_space();
     Plan {
         run_id: planner.run_id,
         jobs: planner.jobs,
@@ -208,6 +242,7 @@ struct Planner<'a> {
     /// Canonical source paths (normalized keys); outputs may never equal one.
     sources: HashSet<std::ffi::OsString>,
     probes: HashMap<PathBuf, Result<MediaInfo, String>>,
+    presets: PresetRegistry,
 }
 
 impl Planner<'_> {
@@ -275,6 +310,18 @@ impl Planner<'_> {
         let origin = &clip.origin;
         let mut warnings = Vec::new();
 
+        // --- upscaling (feature 002) ---------------------------------------------------------
+        let up = match &opts.upscale {
+            Some(u) => match self.check_upscale(origin, u, media) {
+                Some(preset) => Some((u, preset)),
+                None => return,
+            },
+            None => None,
+        };
+        let whole = clip.start == Ts::ZERO && clip.end == EndSpec::EndOfMedia;
+        // Upscaling always re-encodes, so it cuts like accurate mode (and `mode` is ignored).
+        let mode = if up.is_some() { Mode::Accurate } else { opts.mode };
+
         // --- times ---------------------------------------------------------------------------
         let duration = media.duration;
         if let Some(d) = duration
@@ -327,6 +374,14 @@ impl Planner<'_> {
             .clone()
             .map(|c| c.trim_start_matches('.').to_ascii_lowercase())
             .unwrap_or_else(|| media.container.clone());
+        let ext = match (&up, &opts.container) {
+            (None, _) => ext,
+            (Some(_), Some(c)) if !c.trim_start_matches('.').eq_ignore_ascii_case("mp4") => {
+                warnings.push(format!("upscaled outputs are always .mp4 (ignoring container .{ext})"));
+                "mp4".to_owned()
+            }
+            (Some(_), _) => "mp4".to_owned(),
+        };
         let (mut container, mut out_ext) = match Container::from_ext(&ext) {
             Some(c) => (c, ext.clone()),
             None if opts.container.is_some() => {
@@ -342,7 +397,7 @@ impl Planner<'_> {
             }
         };
         let mut encode = None;
-        if opts.mode == Mode::Accurate {
+        if mode == Mode::Accurate && up.is_none() {
             if container.encode_profile().is_none() {
                 warnings.push(format!(
                     "accurate mode cannot write .{out_ext}; writing .mp4 instead (choose --container to override)"
@@ -370,22 +425,29 @@ impl Planner<'_> {
             }
         }
 
-        let mut stream_plan = match streams::select_streams(media, &opts.streams, container, opts.mode) {
+        let mut stream_plan = match streams::select_streams(media, &opts.streams, container, mode) {
             Ok(p) => p,
             Err(msg) => return self.error(origin, IssueCode::InvalidInput, msg),
         };
         warnings.extend(stream_plan.warnings.iter().cloned());
 
         // --- output path ---------------------------------------------------------------------
-        let source_dir = source.path.parent().map(Path::to_path_buf).unwrap_or_default();
+        // Absolute paths: upscale jobs run ffmpeg inside their scratch directory.
+        let input = std::path::absolute(&source.path).unwrap_or_else(|_| source.path.clone());
+        let source_dir = input.parent().map(Path::to_path_buf).unwrap_or_default();
         let out_dir = match &opts.output_dir {
             Some(d) if d.is_absolute() => d.clone(),
             Some(d) => std::path::absolute(d).unwrap_or_else(|_| d.clone()),
-            None => source_dir.join("clips"),
+            None => source_dir.join(if up.is_some() && whole { "upscaled" } else { "clips" }),
+        };
+        let template = match &up {
+            Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE && whole => UPSCALE_NAME_TEMPLATE,
+            Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE => UPSCALE_CLIP_NAME_TEMPLATE,
+            _ => opts.name_template.as_str(),
         };
         let stem = source.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let rel = match naming::render(
-            &opts.name_template,
+            template,
             &naming::NameVars {
                 source_stem: &stem,
                 index,
@@ -393,14 +455,19 @@ impl Planner<'_> {
                 start: clip.start,
                 end: requested_end,
                 ext: &out_ext,
+                preset: up.as_ref().map(|(u, _)| u.preset.as_str()),
             },
         ) {
             Ok(p) => p,
             Err(msg) => return self.error(origin, IssueCode::InvalidInput, msg),
         };
-        let Some((output, disposition)) =
-            self.claim_output(origin, out_dir.join(rel), opts.on_exists, "clips", &mut warnings)
-        else {
+        let Some((output, disposition)) = self.claim_output(
+            origin,
+            out_dir.join(rel),
+            opts.on_exists,
+            if up.is_some() { "jobs" } else { "clips" },
+            &mut warnings,
+        ) else {
             return;
         };
 
@@ -415,10 +482,10 @@ impl Planner<'_> {
         let mut trim = None;
         let (input_seek, output_seek, cut, predicted) = if clip.start == Ts::ZERO {
             (None, None, Ts::ZERO, None)
-        } else if opts.mode == Mode::Accurate && source_precise {
+        } else if mode == Mode::Accurate && source_precise {
             // Index-based demuxer seek + decode is frame exact.
             (Some(clip.start), None, clip.start, None)
-        } else if opts.mode == Mode::Accurate {
+        } else if mode == Mode::Accurate {
             // Approximate seek: land well before the start, keep absolute timestamps and cut with
             // trim/atrim filters at absolute times — exact wherever the seek landed.
             let zero = media.zero_point();
@@ -471,31 +538,251 @@ impl Planner<'_> {
 
         let id = self.jobs.len() as JobId + 1;
         let temp = temp_path(&output, &self.run_id, id);
+        let cut = ClipSpec {
+            input,
+            input_seek,
+            output_seek,
+            duration: if trim.is_some() { None } else { end.map(|e| e - cut) },
+            trim,
+            verify_video: self.expected_video(media, mode, clip.start, end, frame),
+            mode,
+            requested,
+            predicted,
+            container,
+            encode,
+            streams: stream_plan,
+        };
+        let (spec, scratch) = match up {
+            None => (JobSpec::Clip(Box::new(cut)), None),
+            Some((u, preset)) => {
+                let plan = self.upscale_plan(origin, u, preset, media, &cut, whole, &mut warnings);
+                let scratch = scratch_path(&output, &self.run_id, id);
+                (JobSpec::Upscale(Box::new(UpscaleSpec { cut, up: plan })), Some(scratch))
+            }
+        };
         self.jobs.push(PlannedJob {
             id,
             source: source.path.clone(),
             output,
             temp,
-            scratch: None,
+            scratch,
             on_exists: opts.on_exists,
             disposition,
             requested,
             warnings,
-            spec: JobSpec::Clip(ClipSpec {
-                input: source.path.clone(),
-                input_seek,
-                output_seek,
-                duration: if trim.is_some() { None } else { end.map(|e| e - cut) },
-                trim,
-                verify_video: self.expected_video(media, opts.mode, clip.start, end, frame),
-                mode: opts.mode,
-                requested,
-                predicted,
-                container,
-                encode,
-                streams: stream_plan,
-            }),
+            spec,
         });
+    }
+
+    /// Upscale checks that need no output path: the preset exists, HDR can be kept, the tier can
+    /// run here, and the engine has what the job needs (FR-008, research R4). Reports an issue
+    /// and returns `None` when the job cannot be planned.
+    fn check_upscale(&mut self, origin: &Origin, u: &UpscaleOptions, media: &MediaInfo) -> Option<Preset> {
+        let Some(preset) = self.presets.get(&u.preset).cloned() else {
+            let known = self.presets.ids().join(", ");
+            self.error(
+                origin,
+                IssueCode::PresetUnknown,
+                format!("unknown preset {:?} (known: {known})", u.preset),
+            );
+            return None;
+        };
+        if u.hdr == HdrMode::Keep && !preset.hdr_capable {
+            self.error(
+                origin,
+                IssueCode::HdrUnsupported,
+                format!("preset {} cannot keep HDR; use --hdr sdr or an HDR-capable preset", preset.id),
+            );
+            return None;
+        }
+        if let Some(tier) = u.tier.forced().filter(|t| *t != Tier::Cpu) {
+            let name = format!("{tier:?}").to_lowercase();
+            self.error(
+                origin,
+                IssueCode::TierUnavailable,
+                format!("the {name} tier is not available on this machine"),
+            );
+            return None;
+        }
+        let v = media.first_video()?;
+        let encoder = match preset.video.codec {
+            VideoCodec::Hevc => "libx265",
+            VideoCodec::H264 => "libx264",
+        };
+        let mut filters = vec!["zscale", "cas", "hqdn3d", "aac"];
+        if v.is_interlaced() {
+            filters.push("bwdif");
+        }
+        if v.is_hdr() && u.hdr == HdrMode::Sdr {
+            filters.push("tonemap");
+        }
+        if u.reframe != Reframe::Center {
+            filters.push("gblur");
+        }
+        let missing: Vec<&str> = std::iter::once(encoder)
+            .chain(filters)
+            .filter(|f| !self.caps.encoders.contains(*f) && !self.caps.filters.contains(*f))
+            .collect();
+        if !missing.is_empty() {
+            self.error(
+                origin,
+                IssueCode::EngineMissing,
+                format!("the ffmpeg build lacks {} needed for upscaling", missing.join(", ")),
+            );
+            return None;
+        }
+        Some(preset)
+    }
+
+    /// Resolves geometry, colour, frame rate, encoder, estimate and warnings for an upscale job
+    /// (research R2–R5, R12). `cut` is the job's source range.
+    #[allow(clippy::too_many_arguments)]
+    fn upscale_plan(
+        &mut self,
+        origin: &Origin,
+        u: &UpscaleOptions,
+        preset: Preset,
+        media: &MediaInfo,
+        cut: &ClipSpec,
+        whole: bool,
+        warnings: &mut Vec<String>,
+    ) -> UpscalePlan {
+        let v = media.first_video().expect("checked: the source has video");
+        let target = (preset.width, preset.height);
+        let display = v.display_size().unwrap_or(target);
+        // Smart reframe (US2) needs the subject analysis; until then it uses the blurred
+        // background, which never cuts anything off.
+        let effective = match u.reframe {
+            Reframe::Smart => Reframe::Blur,
+            r => r,
+        };
+        let geometry = geometry::plan(display, target, effective);
+        if u.reframe == Reframe::Smart && geometry.overflow != Overflow::None {
+            warnings.push("smart reframe is not available yet; using the blurred background".into());
+        }
+        if geometry.no_upscale_needed {
+            warnings.push(format!(
+                "no upscaling needed: the source ({}x{}) is already at least {}x{}; it is only reframed and scaled down",
+                display.0, display.1, target.0, target.1
+            ));
+        }
+        if display.0.min(display.1) <= 240 {
+            warnings.push(format!(
+                "very small source ({}x{}): upscaling cannot invent detail",
+                display.0, display.1
+            ));
+        }
+        let colour_in = ColourTags {
+            space: v.color_space.clone(),
+            primaries: v.color_primaries.clone(),
+            transfer: v.color_transfer.clone(),
+            range: v.color_range.clone(),
+        };
+        let keep_hdr = u.hdr == HdrMode::Keep && v.is_hdr();
+        let tonemap = u.hdr == HdrMode::Sdr && v.is_hdr();
+        if keep_hdr {
+            warnings.push(
+                "HDR is kept without its mastering metadata (MaxCLL/mastering display are not carried)"
+                    .into(),
+            );
+        }
+        if u.hdr == HdrMode::Keep && !v.is_hdr() {
+            warnings.push("the source is SDR; it stays SDR".into());
+        }
+        let src_fps = v.frame_rate.map(|(n, d)| f64::from(n) / f64::from(d));
+        let fps_cap = src_fps.filter(|f| *f > f64::from(preset.max_fps) + 0.01).map(|_| preset.max_fps);
+        let fps_out = match (fps_cap, src_fps) {
+            (Some(c), _) => f64::from(c),
+            (None, Some(f)) => f,
+            (None, None) => 30.0,
+        };
+        let graph = GraphInput {
+            trim: cut.trim.map(|t| (t.start, t.end)),
+            deinterlace: v.is_interlaced(),
+            square_pixels: v.sar.is_some_and(|(n, d)| n != d),
+            tonemap,
+            keep_hdr,
+            colour_in: crate::upscale::graph::zscale_input(&colour_in, v.height.unwrap_or(0)),
+            fps_cap,
+            geometry,
+            reframe: effective,
+        };
+        let audio: Vec<&crate::probe::StreamInfo> = cut
+            .streams
+            .maps
+            .iter()
+            .filter(|m| m.kind == crate::probe::StreamKind::Audio)
+            .filter_map(|m| media.streams.iter().find(|s| s.index == m.index))
+            .collect();
+        // Copying is exact only for whole videos; a cut re-encodes so audio starts with the frame.
+        let audio_copy = preset.audio.copy_if_aac && whole && audio.iter().all(|s| s.codec == "aac");
+        let audio_kbps = (!audio.is_empty()).then_some(preset.audio.bitrate_k);
+        let len = cut.requested.end.saturating_sub(cut.requested.start).as_secs_f64();
+        let est =
+            estimate::estimate(&preset, fps_out, len, audio_kbps, estimate::cpu_fps(target.0, target.1));
+        let limit_warnings = estimate::limit_warnings(&preset, &est, len);
+        for w in &limit_warnings {
+            self.issues.push(Issue {
+                severity: Severity::Warning,
+                code: IssueCode::LimitExceeded,
+                origin: origin.clone(),
+                message: w.clone(),
+            });
+        }
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get() as u32).clamp(2, 8);
+        let video_args = encode::video_args(&EncodeParams {
+            preset: &preset,
+            crf: u.crf,
+            hdr_keep: keep_hdr.then_some(&colour_in),
+            fps_out,
+            threads,
+            maxrate_kbps: estimate::maxrate_for_limit(&preset, &est, len, audio_kbps),
+        });
+        let expected_video =
+            if whole { v.duration.or(media.duration) } else { Some(cut.requested.end - cut.requested.start) };
+        let reason = match u.tier {
+            TierChoice::Auto => "auto: the classical CPU tier",
+            _ => "forced: cpu",
+        };
+        UpscalePlan {
+            target,
+            geometry,
+            reframe: u.reframe,
+            reframe_applied: effective,
+            motion: u.motion,
+            analysis: AnalysisState::NotNeeded,
+            tier: TierDecision { tier: Tier::Cpu, reason: reason.into(), suggest: None },
+            hdr: u.hdr,
+            colour_in,
+            graph,
+            video_args,
+            audio_copy,
+            fps_out,
+            expected_video,
+            estimate: est,
+            limit_warnings,
+            preset,
+        }
+    }
+
+    /// Warns when an output folder lacks room for the upscale outputs planned into it (FR-021).
+    fn check_free_space(&mut self) {
+        let mut needs: std::collections::BTreeMap<PathBuf, u64> = std::collections::BTreeMap::new();
+        for job in &self.jobs {
+            if let (JobSpec::Upscale(u), Some(dir)) = (&job.spec, job.output.parent())
+                && job.disposition == Disposition::Run
+            {
+                *needs.entry(dir.to_path_buf()).or_default() += u.up.estimate.bytes;
+            }
+        }
+        for message in estimate::check_space(&needs, estimate::free_space) {
+            self.issues.push(Issue {
+                severity: Severity::Warning,
+                code: IssueCode::DiskFull,
+                origin: Origin::Cli,
+                message,
+            });
+        }
     }
 
     /// For accurate clips with an explicit end inside the video stream: the video length the output

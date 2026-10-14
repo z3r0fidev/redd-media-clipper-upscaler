@@ -14,7 +14,7 @@ the video.
 {"id":1,"kind":"upscale","source":"/v/game.mkv","output":"/v/upscaled/game_phone-fill.mp4",
  "status":"planned","requested":{"start":0.0,"end":62.4},"warnings":[],
  "upscale":{
-   "preset":"phone-fill","size":[1080,2340],"reframe":"smart","motion":"normal",
+   "preset":"phone-fill","size":[1080,2340],"reframe":"smart","reframe_applied":"smart","motion":"normal",
    "tier":"gpu","tier_reason":"auto: Intel(R) Graphics (RPL-U) passed the self-test",
    "suggest":null,"hdr":"sdr","no_upscale_needed":false,
    "estimate":{"bytes":38500000,"secs":41.0},"limit_warnings":[],
@@ -30,6 +30,8 @@ the video.
 **`upscale` fields:**
 - `tier` is `cpu`, `gpu` or `ai`.
 - `suggest` is `"ai"` when AI is available but was not chosen automatically (research R9).
+- `reframe_applied` is the reframe actually used: `smart` falls back to `blur` without a face
+  model (and, before US2 ships, always).
 - `reframe_analysis.status` is `not_needed` (the aspect already matches, or the reframe is `center`
   or `blur`), `pending` (`--no-analyze`, or the analysis did not run) or `ready`.
 - AI jobs (US6) add `pipeline`: the three argvs (ffmpeg #1, `rmedia-sr`, ffmpeg #2).

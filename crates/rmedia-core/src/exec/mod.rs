@@ -348,9 +348,9 @@ impl std::fmt::Debug for JobCtx<'_> {
     }
 }
 
-impl JobCtx<'_> {
+impl<'a> JobCtx<'a> {
     /// The job's scratch directory, when the plan asked for one (it exists while the job runs).
-    pub fn scratch_dir(&self) -> Option<&Path> {
+    pub fn scratch_dir(&self) -> Option<&'a Path> {
         self.scratch
     }
 
@@ -455,6 +455,7 @@ async fn run_job(
     };
     let result = match &job.spec {
         JobSpec::Clip(spec) => clip::execute(spec, &mut ctx).await,
+        JobSpec::Upscale(spec) => upscale::execute(spec, &mut ctx).await,
     };
     let committed = match result {
         Ok(measure) => {
