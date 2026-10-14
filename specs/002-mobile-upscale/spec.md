@@ -45,7 +45,9 @@ clean original than a plain resize does.
    **Then** it is scaled down or reframed only (never enlarged and then shrunk), and the user is told
    that no upscaling was needed.
 5. **Given** any run, **When** the user asks for a dry run, **Then** they see the planned output
-   size, preset, reframe mode, quality tier and file name, and nothing is written.
+   size, preset, reframe mode, quality tier and file name, and no output files are written (only the
+   analysis and capability caches may be updated, plus a crop-path file when the user explicitly asks
+   for one).
 6. **Given** a running upscale, **When** the user cancels, **Then** processing stops within
    2 seconds and no partial output remains.
 
@@ -279,7 +281,7 @@ reason.
 - **FR-013**: Smart reframe MUST:
   - detect scene cuts and treat each shot independently;
   - locate faces (people as a later addition if faces prove insufficient);
-  - compute a crop path that keeps the subject in frame, limits pan speed and jerk, ignores small
+  - compute a crop path that keeps the subject in frame, limits pan speed and acceleration, ignores small
     jitters, and changes abruptly only at cuts.
 - **FR-014**: Smart reframe MUST fall back to fit-with-blurred-background for time ranges with no
   subject, or with subjects that cannot fit together. These ranges MUST be listed in the job

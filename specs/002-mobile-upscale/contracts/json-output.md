@@ -19,11 +19,11 @@ the video.
    "estimate":{"bytes":38500000,"secs":41.0},"limit_warnings":[],
    "reframe_analysis":{
      "status":"ready",
-     "crop":[608,1080],"axis":"x","fps":30.0,
+     "crop":[498,1080],"axis":"x","fps":30.0,
      "shots":[{"start":0.0,"end":31.2,"kind":"tracked"},{"start":31.2,"end":62.4,"kind":"mixed"}],
      "fallback_ranges":[{"start":40.0,"end":44.5}],
      "path":{"hz":10,"keyframes":[[0.0,656],[0.1,656],[0.2,662]]}}},
- "cwd":"/v/upscaled/.game_phone-fill.mp4.r1a2-1.d","argv":["-hide_banner","..."]}
+ "cwd":"/v/upscaled/.game_phone-fill.mp4.rmedia-r1a2-1.d","argv":["-hide_banner","..."]}
 ```
 
 **`upscale` fields:**
@@ -31,8 +31,9 @@ the video.
 - `suggest` is `"ai"` when AI is available but was not chosen automatically (research R9).
 - `reframe_analysis.status` is `not_needed` (the aspect already matches, or the reframe is `center`
   or `blur`), `pending` (`--no-analyze`, or the analysis did not run) or `ready`.
+- AI jobs (US6) add `pipeline`: the three argvs (ffmpeg #1, `rmedia-sr`, ffmpeg #2).
 - `path.keyframes` are `[seconds, crop_x]` pairs at 10 Hz. `--crop-path FILE` writes the
-  per-frame path: `{"schema":1,"fps":30.0,"crop":[608,1080],"x":[656,656,…]}`.
+  per-frame path: `{"schema":1,"fps":30.0,"crop":[498,1080],"x":[656,656,…]}`.
 
 **New issue codes:** `TIER_UNAVAILABLE`, `PRESET_UNKNOWN` and `HDR_UNSUPPORTED` (errors), and
 `LIMIT_EXCEEDED` (warning).
@@ -73,7 +74,7 @@ stages.
 ```json
 {"tiers":{"cpu":{"available":true,"fps":96.0},
           "gpu":{"available":true,"device":0,"fps":69.0},
-          "ai":{"available":false,"reason":"too slow on this GPU: 0.7 fps (needs ≥ 2.6 fps for a 60 s 480p clip in 10 min)"}},
+          "ai":{"available":false,"reason":"too slow on this GPU: 0.7 fps (needs ≥ 3.0 fps for a 60 s 480p clip in 10 min)"}},
  "gpus":[{"index":0,"name":"Intel(R) Graphics (RPL-U)","kind":"integrated","usable":true},
          {"index":1,"name":"llvmpipe (LLVM 20.1.2, 256 bits)","kind":"software","usable":false,"reason":"software renderer"}],
  "models":{"yunet":"ok","realesr-animevideov3":"missing"},

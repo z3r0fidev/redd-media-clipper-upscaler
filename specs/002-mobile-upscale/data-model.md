@@ -7,9 +7,9 @@ marked (ts) are exported to the desktop app via ts-rs.
 
 | Ref | Change |
 |---|---|
-| A1 | `PlannedJob` drops `mode`, `requested` and `predicted`, which move into `ClipSpec`. A new `PlannedJob.media_len: Ts` replaces `media_len()`. `JobOutcome::Succeeded { output, measure: JobMeasure }`, where `JobMeasure` is `Clip { actual: Span, adjusted: bool }` or `Upscale { span: Span, tier_used: Tier, tier_fallback: bool, fallback_ranges: Vec<Span>, no_upscale_needed: bool }`. The JSON keeps 001's `actual` and `adjusted` keys for clip jobs (flattened), so the NDJSON contract does not change. |
-| A2 | `JobCtx::scratch_dir()` is a per-job folder next to the temp output (`.<run_id>-<id>.d/`). It is journaled and removed at the end. `JobCtx::spawn_*` helpers run several processes in one job. |
-| A3 | Each job has stage weights, reported with `JobCtx::stage(i, weight)`. The scheduler holds a `Semaphore` per `Resource` (`Cpu` = jobs, `Gpu` = 1). |
+| A1 | `PlannedJob` drops `requested` and `predicted`, which move into `ClipSpec` (which already holds `mode`); `ClipSpec` and `JobSpec` drop `Eq`. A new `PlannedJob.media_len: Ts` replaces `media_len()`. `JobOutcome::Succeeded { output, measure: JobMeasure }`, where `JobMeasure` is `Clip { actual: Span, adjusted: bool }` or `Upscale { span: Span, tier_used: Tier, tier_fallback: bool, fallback_ranges: Vec<Span>, no_upscale_needed: bool }`. The JSON keeps 001's `actual` and `adjusted` keys for clip jobs (flattened) and adds `"measure":"clip"`, an additive change to the NDJSON contract. |
+| A2 | `JobCtx::scratch_dir()` is a per-job folder next to the temp output (`.<stem>.rmedia-<run>-<job>.d/`, the `.part` naming with a `.d` suffix). It is journaled and removed at the end. `JobCtx::spawn_*` helpers run several processes in one job. |
+| A3 | Each job has stage weights, reported with `JobCtx::stage(index, of, weight)`. The scheduler holds a `Semaphore` per `Resource` (`Cpu` = jobs, `Gpu` = 1). |
 | A4 | `Caps { encoders, filters, models: ModelSet, capability: Option<CapabilityRecord> }`. Issue codes become `IssueCode`, an enum serialised as the existing strings plus `TIER_UNAVAILABLE`, `PRESET_UNKNOWN`, `HDR_UNSUPPORTED` and `LIMIT_EXCEEDED` (a warning). |
 | A5 | `Planner::claim_output(...) -> Result<(PathBuf, Disposition)>` is extracted from `plan_clip`. Clip and upscale jobs share it. |
 
@@ -32,6 +32,7 @@ The file format is defined in [contracts/preset.schema.json](./contracts/preset.
 
 ```text
 Preset {
+  schema: u32                    // 1
   id: String                     // kebab-case, unique; user files override built-ins by id
   version: u32
   name: String                   // "Phone fill"
@@ -110,7 +111,7 @@ The file format is defined in
 ```text
 CapabilityRecord {
   schema: 1, fingerprint: String, checked_at: String (RFC 3339)
-  devices: Vec<GpuDevice { index, name, kind: Integrated|Discrete|Virtual|Cpu|Software,
+  devices: Vec<GpuDevice { index, name, kind: Integrated|Discrete|Virtual|Cpu|Software|Other,
                            device_id: String, usable: bool, reason: Option<String> }>
   tiers: TierStatus { cpu: TierInfo, gpu: TierInfo, ai: TierInfo }
   demoted: Vec<Demotion { tier: Tier, error: String, at: String }>

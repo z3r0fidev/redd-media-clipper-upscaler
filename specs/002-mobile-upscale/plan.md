@@ -139,6 +139,7 @@ crates/rmedia-core/src/
 ├── plan/{mod,ffargs,naming,streams}.rs     # A5 extraction; Upscale jobs; {preset} var
 ├── exec/{mod,upscale,pipeline}.rs          # A1–A3; stages; GPU semaphore; AI pipe (US6)
 ├── probe.rs                                # + rotation, SAR, field order, colour tags
+├── models.rs                               # model lookup: settings → bundled → cache (R14)
 └── request.rs  doctor.rs  event.rs  settings.rs
 crates/rmedia-cli/src/commands/upscale.rs   # + clip --upscale, doctor --recheck
 crates/rmedia-testkit/src/lib.rs            # new fixtures, vmaf(), marker helpers
@@ -173,6 +174,9 @@ licenses/models/                            # YuNet MIT, Real-ESRGAN BSD-3
 | Component | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
 | `tract-onnx` dependency | Face detection for smart reframe (FR-013/015), pure Rust, MIT/Apache | ONNX Runtime or OpenCV add native libraries per OS; the 2023 YuNet model cannot be resized under tract, but 2026may can (research/09 §4) |
+| `Win32_System_Registry` feature of the existing `windows` crate | Vulkan driver fingerprint on Windows (R8) | Shelling out to `reg query` violates Principle IV's no-shell rule |
+| `jsonschema` (dev-dependency) | Tests validate built-in presets and capability records against the contract schemas | Hand-written field checks would drift from the schema files |
+| `test-support` cargo feature in rmedia-core | Exposes `MarkerDetector` to integration tests (R7) | A public test detector in release builds widens the API for no user benefit |
 | `fs4` dependency | Free-space check (FR-021) and a locked capability file | Platform-specific statvfs/GetDiskFreeSpaceEx code duplicates a maintained crate |
 | `rmedia-sr` crate + prebuilt ncnn (US6) | AI tier on any Vulkan GPU (FR-010) | ORT/DirectML is Windows-only; `realesrgan-ncnn-vulkan` is frozen and image-only (research/09 §1); in-process FFI would let a driver crash kill the app |
 | Multi-process pipe executor (US6) | ffmpeg → worker → ffmpeg over rawvideo | Image-sequence round trips multiply disk I/O and break cancellation guarantees |

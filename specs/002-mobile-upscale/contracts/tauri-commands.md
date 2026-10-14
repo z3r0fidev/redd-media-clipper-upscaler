@@ -6,7 +6,7 @@ generation and bridge tests are unchanged. Every command is a thin adapter over 
 | Command | Args | Returns | Core function |
 |---|---|---|---|
 | `list_presets` | — | `{ default, presets: Preset[], problems }` | `preset::PresetRegistry::load` |
-| `capabilities` | `recheck: boolean` | `CapabilityRecord` (plus GPUs and models) | `upscale::capability::ensure` |
+| `capabilities` | `recheck: boolean` (the self-test is bounded: about 2 s CPU, 30 GPU frames, 8 AI frames, so it has no cancel command) | `CapabilityRecord` (plus GPUs and models) | `upscale::capability::ensure` |
 | `analyze_reframe` | `analysisId, path, span?, options: UpscaleOptions, onEvent: Channel<AnalysisEvent>` | `ReframeAnalysis` | `upscale::reframe::analyze` (cached; same cache as the render, research R10) |
 | `cancel_analysis` | `analysisId` | — | cancel token |
 | `upscale_preview` | `path, at: Ts, options: UpscaleOptions` | `{ before: string, after: string }`: localhost media-server URLs of two PNG stills at the target size | `upscale::preview_frame`: one ffmpeg run of the job's graph limited to one frame at `at` |

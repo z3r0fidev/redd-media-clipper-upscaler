@@ -43,6 +43,9 @@ rmedia upscale --list-presets [--json]
   collide because a source stem is unique within one folder; across folders, 001's collision rules
   apply.
 
+**Dry run writes:** no output files. It may update the reframe-analysis cache and the capability
+record, and it writes `--crop-path FILE` when that flag is given.
+
 **Human dry run** prints, per job:
 - source and output;
 - preset with its size, reframe mode and tier (with the reason);

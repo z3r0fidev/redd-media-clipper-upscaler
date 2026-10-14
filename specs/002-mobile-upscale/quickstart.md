@@ -21,6 +21,8 @@ Test sources are generated here; nothing binary is committed.
 $F -f lavfi -i testsrc2=s=480x854:r=30:d=20 -f lavfi -i sine=d=20 -c:v libx264 -crf 35 -c:a aac low.mp4
 # landscape with a moving magenta marker and a hard cut at 6 s
 $F -f lavfi -i "color=gray:s=1280x720:r=30:d=6[a];color=magenta:s=80x80:r=30:d=6[m];[a][m]overlay=x='100+150*t':y=320[s1];color=0x406080:s=1280x720:r=30:d=4[b];[b][m]overlay=x=1000:y=320[s2];[s1][s2]concat=n=2" land.mp4
+# 4:3 slides-like source for the batch check
+$F -f lavfi -i testsrc2=s=960x720:r=30:d=8 -c:v libx264 slides.mp4
 ```
 
 The marker filter graph is illustrative; the testkit's `moving_marker` fixture is the reference.
@@ -80,13 +82,16 @@ cat > m.json <<'EOF'
 { "version": 1, "defaults": { "upscale": {} },
   "videos": [ { "input": "low.mp4" },
               { "input": "land.mp4", "options": { "upscale": { "preset": "reddit-916" } },
-                "clips": [ { "start": 1, "end": 5, "name": "pan" } ] } ] }
+                "clips": [ { "start": 1, "end": 5, "name": "pan" } ] },
+              { "input": "slides.mp4", "options": { "upscale": { "reframe": "blur", "tier": "cpu" } } } ] }
 EOF
 rmedia batch m.json
 rmedia clip land.mp4 -s 0 -e 4 --upscale --preset reddit-feed-45
 ```
 
-**Expected:** three outputs with the sizes their presets set, and no intermediate clip files.
+**Expected:** three outputs from the manifest (`low` and `slides` at 1080×2340, the `pan` clip at
+1080×1920) and one from `clip --upscale` at 1080×1350, each the size its preset sets, and no
+intermediate clip files.
 
 ## US5: desktop
 

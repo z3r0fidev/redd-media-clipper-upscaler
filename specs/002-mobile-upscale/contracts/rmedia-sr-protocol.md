@@ -16,7 +16,8 @@ rmedia-sr --version
 
 - `--model` names the ncnn files `<name>.param` and `<name>.bin`. Paths are plain OS paths in the
   argv, never parsed by a shell.
-- `--gpu` is required. A software Vulkan device (llvmpipe, lavapipe, SwiftShader, CPU type) is
+- `--gpu` is required. The test-only value `none` is accepted only with a `builtin:*` model
+  (`builtin:nearest` does CPU nearest-neighbour ×s, so the pipeline can be tested without a GPU). A software Vulkan device (llvmpipe, lavapipe, SwiftShader, CPU type) is
   rejected with exit code 3.
 
 ## Data
