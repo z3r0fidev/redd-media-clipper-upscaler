@@ -1528,6 +1528,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "indicatif",
+ "insta",
  "predicates",
  "rmedia-core",
  "rmedia-testkit",

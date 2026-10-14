@@ -1,0 +1,72 @@
+---
+source: crates/rmedia-cli/tests/contract_clip_json.rs
+expression: docs
+---
+[
+  {
+    "issues": [],
+    "jobs": [
+      {
+        "argv": [
+          "-hide_banner",
+          "-nostdin",
+          "-n",
+          "-loglevel",
+          "warning",
+          "-progress",
+          "pipe:1",
+          "-nostats",
+          "-stats_period",
+          "0.25",
+          "-ss",
+          "3.000000",
+          "-protocol_whitelist",
+          "file,pipe",
+          "-i",
+          "file:[DIR]/in.mp4",
+          "-t",
+          "4.000000",
+          "-map",
+          "0:0",
+          "-map",
+          "0:1",
+          "-map_metadata",
+          "0",
+          "-map_chapters",
+          "-1",
+          "-c",
+          "copy",
+          "-avoid_negative_ts",
+          "make_zero",
+          "-movflags",
+          "+faststart",
+          "-f",
+          "mp4",
+          "file:[DIR]/out/.in_001_00-00-03.000_00-00-07.000.rmedia-[RUN]-1.part"
+        ],
+        "id": 1,
+        "mode": "fast",
+        "output": "[DIR]/out/in_001_00-00-03.000_00-00-07.000.mp4",
+        "predicted": {
+          "end": 7.0,
+          "start": 2.0
+        },
+        "requested": {
+          "end": 7.0,
+          "start": 3.0
+        },
+        "source": "[DIR]/in.mp4",
+        "status": "planned",
+        "warnings": []
+      }
+    ],
+    "run_id": "[REDACTED]",
+    "schema": 1,
+    "summary": {
+      "errors": 0,
+      "planned": 1,
+      "skipped": 0
+    },
+    "type": "plan"
+  }
+]

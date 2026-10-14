@@ -1,0 +1,46 @@
+---
+source: crates/rmedia-cli/tests/contract_clip_json.rs
+expression: kept
+---
+[
+  {
+    "job_id": 1,
+    "outcome": {
+      "actual": {
+        "end": 4.0,
+        "start": 2.0
+      },
+      "adjusted": false,
+      "output": "[DIR]/out/in_001_00-00-02.000_00-00-04.000.mp4",
+      "status": "succeeded"
+    },
+    "schema": 1,
+    "type": "job_finished"
+  },
+  {
+    "cancelled": 0,
+    "exit_code": 0,
+    "failed": 0,
+    "jobs": [
+      {
+        "actual": {
+          "end": 4.0,
+          "start": 2.0
+        },
+        "adjusted": false,
+        "id": 1,
+        "output": "[DIR]/out/in_001_00-00-02.000_00-00-04.000.mp4",
+        "requested": {
+          "end": 4.0,
+          "start": 2.0
+        },
+        "source": "[DIR]/in.mp4",
+        "status": "succeeded"
+      }
+    ],
+    "schema": 1,
+    "skipped": 0,
+    "succeeded": 1,
+    "type": "summary"
+  }
+]
