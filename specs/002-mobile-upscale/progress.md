@@ -37,7 +37,13 @@ Status values: `pending`, `▶ next`, `in progress`, `checkpoint`, `done`.
 ## Owner validation (cannot be automated)
 - [ ] Two-phone gallery test (iPhone + Android): no bars, correct colours (SC-001)
 - [ ] Reddit test upload of `reddit-916` and `reddit-feed-45`
+- [ ] +3 VMAF over bicubic on real low-quality footage (SC-002 owner check)
 - [ ] Discrete-GPU run of the AI tier tests (T098, SC-002 AI, SC-009)
+
+## Decisions
+- 2026-10-14 (owner): the automated SC-002 CPU bar is +1.5 VMAF on synthetic fixtures (measured +2.78 at 480p, +2.89 at 360p); +3 on real footage is an owner check.
+
+Project-wide roadmap: `docs/roadmap.md` (must agree with this page).
 
 ## Log
 
@@ -45,4 +51,5 @@ Status values: `pending`, `▶ next`, `in progress`, `checkpoint`, `done`.
 |---|---|---|---|
 | 2026-10-14 | Design | tasks.md generated (111), analysis + senior review applied (112 tasks) | 6caa58d, a76f31e |
 | 2026-10-14 | Setup + Foundational | setup, contract pin, A1–A5, fixtures/probe/presets | d957471, 76f2339, d7ad0f9, d2c0804, 77690c9 |
-| 2026-10-14 | US1 | `rmedia upscale` CPU tier; SC-002 bar set to +1.5 on synthetic fixtures (owner); reviews fixed | (this commit) |
+| 2026-10-14 | US1 | `rmedia upscale` CPU tier; SC-002 bar set to +1.5 on synthetic fixtures (owner); reviews fixed | 2bfe3f0 |
+| 2026-10-15 | Session close | No code changes. Docs brought up to date (`docs/` CLI reference, JSON output, configuration, architecture, user guides, release notes 0.2.0-dev, new `docs/roadmap.md`); `cargo test --workspace` re-run: 182 passed, 0 failed, 3 ignored. Next: US2 (T042–T061), plan-mode pass first. No git remote and no `main` branch yet (owner to decide). | see git log |

@@ -9,8 +9,12 @@ for Reddit (003). Spec-driven via Spec Kit.
   04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
-- Active feature: `specs/002-mobile-upscale/` (spec + plan done; next: tasks, then Phase 0 refactors
-  A1–A5). 001 (`specs/001-video-clipping/`) is implemented.
+- Active feature: `specs/002-mobile-upscale/` (41/112 tasks; Setup, Foundational incl. refactors A1–A5
+  and US1 `rmedia upscale` on the CPU tier are done). Next: US2 smart reframe (T042–T061; start with a
+  plan-mode pass), then US3 GPU tier, US4 batch + `clip --upscale`, US5 desktop view, US6 AI worker,
+  Polish. Progress: `specs/002-mobile-upscale/progress.md`; roadmap: `docs/roadmap.md`.
+  001 (`specs/001-video-clipping/`) is implemented. Planned: 003 GIF export (research/05, no spec yet).
+- Git: no remote and no `main` branch yet; work is on `001-video-clipping` and `002-mobile-upscale`.
 
 ## Stack
 - Rust 1.94 workspace: `crates/rmedia-core` (ALL media logic), `crates/rmedia-cli` (bin `rmedia`),
