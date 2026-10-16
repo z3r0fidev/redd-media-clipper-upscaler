@@ -233,6 +233,36 @@ the template creates sub-folders.
     `LPT1`–`LPT9`, `COM¹²³`, `LPT¹²³`) get a `_` prefix.
   - Components are cut to 240 bytes, keeping the extension.
 
+## Device Preset Files (`presets/*.json`)
+
+Unreleased (0.2.0-dev). `rmedia upscale` reads user presets from `*.json` files in the `presets`
+folder of the config directory ([Configuration](../administration/configuration.md#file-locations)).
+A user preset with the same `id` as a built-in replaces it. A file that fails validation is
+skipped and reported (`warning: preset file … ignored: …`, and `problems` in
+`--list-presets --json`). The format is the JSON Schema in
+`specs/002-mobile-upscale/contracts/preset.schema.json` (schema version 1). Required keys:
+`schema`, `id`, `version`, `name`, `devices`, `width`, `height`, `max_fps`, `video`, `audio`,
+`est_bpp`. Optional keys include `description`, `hdr_capable` and `limits`.
+
+```json
+{
+  "schema": 1, "id": "reddit-916", "version": 1, "name": "Reddit 9:16",
+  "devices": ["Reddit full-screen player"],
+  "width": 1080, "height": 1920, "max_fps": 60,
+  "video": { "codec": "h264", "crf": 18, "preset": "medium", "profile": "high" },
+  "audio": { "codec": "aac", "bitrate_k": 192, "copy_if_aac": true },
+  "hdr_capable": false,
+  "limits": { "max_bytes": 1073741824, "max_duration": 900 },
+  "est_bpp": 0.12
+}
+```
+
+This is the built-in `reddit-916` preset. `id` is lowercase letters, digits and hyphens (at most 40
+characters). `video.codec` is `hevc` or `h264`. Manifest `upscale` fields
+(`specs/002-mobile-upscale/contracts/manifest-upscale.md`) are planned (user story 4) and are not
+accepted yet. The `{preset}` name-template placeholder is valid only for upscale jobs; the default
+template for upscale is `{source}_{preset}.{ext}`.
+
 ## Option Layering
 
 Each clip's options are resolved from the lowest to the highest priority:

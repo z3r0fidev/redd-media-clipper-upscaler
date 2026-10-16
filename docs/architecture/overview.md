@@ -1,7 +1,10 @@
 # rmedia Architecture Overview
 
-**Status:** Current (feature 001 "Video Clipping Base", version 0.1.0, commit `bd1eef8`).
-Sections labelled **Planned** describe features 002/003, which are not implemented.
+**Status:** Feature 001 "Video Clipping Base" (version 0.1.0, commit `bd1eef8`) is described as
+built. Feature 002 user story 1 (`rmedia upscale`, CPU tier; branch `002-mobile-upscale`, commit
+`2bfe3f0`) is implemented and described under [Feature 002 foundations](#feature-002-foundations-implemented).
+Sections labelled **Planned** describe work that is not implemented: the rest of feature 002
+(user stories 2 to 6) and feature 003. See the [Roadmap](../roadmap.md).
 
 ## Overview
 
@@ -285,24 +288,33 @@ clamp(ncpu/2, 1, 4)). Discovery probes with a fixed pool of min(available parall
 ffprobe tasks. Progress events are throttled: about 10 Hz per job (100 ms) and 4 Hz for
 `run_progress` (250 ms).
 
-## Extension Points (Planned: Features 002 and 003)
+## Feature 002 Foundations (Implemented)
 
 The scheduler does not inspect job kinds: `JobSpec` variants run through `JobCtx`
-(`exec/mod.rs`). Today `JobSpec` has a single variant, `Clip(ClipSpec)`.
+(`exec/mod.rs`). `JobSpec` now has two variants, `Clip(ClipSpec)` and `Upscale(UpscaleSpec)`.
+The upscale job is one ffmpeg pass (`upscale/graph.rs` builds the `-filter_complex`) followed by a
+verify stage (`exec/upscale.rs`). Device presets are data (`preset/`): seven built-ins compiled
+into the binary plus user files in `<config>/presets/`.
+
+## Extension Points (Planned: Rest of Feature 002, and Feature 003)
 
 **Planned** (plan.md › Forward Compatibility; not implemented):
 
-- **002 mobile upscale:** `JobSpec::Upscale`, a `Resource::Gpu` semaphore, Vulkan/upscaler
-  detection in `doctor`, and device presets as data files (constitution › Technical
-  Constraints). Research: `research/02-upscaling-engines.md`,
-  `research/03-mobile-display-targets.md`.
+- **002 user stories 2 to 6:** smart reframe (face detection, shot cuts, crop path; the
+  `upscale/reframe/` modules are empty scaffolds), a GPU tier with a `Resource::Gpu` slot,
+  capability record and Vulkan detection in `doctor` (`upscale/capability.rs` is a stub), batch
+  and `clip --upscale`, a desktop upscale view, and an AI worker (`rmedia-sr`, ncnn). Research:
+  `research/02-upscaling-engines.md`, `research/03-mobile-display-targets.md`, `research/06` to
+  `research/09`.
 - **003 GIF export:** `JobSpec::Gif` with a two-pass palette pipeline and a size-budget search,
   reusing segment, executor, events and commit. Research: `research/05-gif-export.md`.
 
-**Required refactors before adding job kinds** (plan.md, senior review A1–A5, 2026-10-06; not yet
-done in the code):
+**Refactors before adding job kinds** (plan.md, senior review A1–A5, 2026-10-06). All five were
+completed on 2026-10-14 as part of 002 phase 2 (tasks T007 to T021); the first table below
+is kept as the record of what each one was. The "Current state" column describes the code as it
+was before then (0.1.0).
 
-| ID | Refactor | Current state in code |
+| ID | Refactor | State in 0.1.0 (before the refactor) |
 |---|---|---|
 | A1 | Move clip-specific fields (`requested`/`predicted`, `mode`, `media_len`) into `ClipSpec`. `JobOutcome::Succeeded` carries a `JobMeasure` enum instead of a clip `Span`. | `PlannedJob` and `JobOutcome::Succeeded` still carry clip spans |
 | A2 | Multi-stage jobs: a job-kind `execute(&mut JobCtx)` that can run several processes. `JobCtx` offers `scratch_dir()` and journals every intermediate file. | `JobCtx` exposes one `temp`. Only `job.temp` is journaled. |

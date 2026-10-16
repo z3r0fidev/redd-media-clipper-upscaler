@@ -24,7 +24,11 @@ to avoid.
 | **indexed container / indexed seeking** | Formats whose demuxer seek is exact (ffprobe `format_name` `mov`, `mp4`, `matroska`, `webm`). Decides the seek strategy. | `MediaInfo::has_indexed_seeking` | |
 | **issue** | A planning or parsing problem (`severity` error/warning, `code`, `origin`, `message`). Any error-severity issue means nothing runs. | `plan::Issue` | |
 | **job** | One clip request resolved to a concrete output path, with state queued/running/succeeded/failed/cancelled/skipped | `plan::PlannedJob`, spec.md | task |
-| **job kind** | The work a job does: `JobSpec::Clip` today; `Upscale` (002) and `Gif` (003) are planned | `plan::JobSpec` | |
+| **job kind** | The work a job does: `JobSpec::Clip` or `JobSpec::Upscale` (0.2.0-dev); `Gif` (003) is planned | `plan::JobSpec` | |
+| **preset (device preset)** | A data file that describes an upscale target: size, codec, quality, platform limits. Seven are built in; users add JSON files to `<config>/presets/`. | `preset/`, `--list-presets` | profile |
+| **reframe** | How a video of one shape fills a screen of another: `smart` (planned), `center` or `blur` | `upscale::Reframe` | |
+| **tier** | The engine quality level of an upscale: `cpu` (available), `gpu` and `ai` (planned) | `upscale::Tier` | |
+| **upscale** | Make a video phone-ready: scale and reframe to a preset's screen size and re-encode. `rmedia upscale` | `exec/upscale.rs` | |
 | **journal (in-flight journal, crash journal)** | A per-run file under `<state dir>/inflight/` listing temp files, locked while the run lives. The next run deletes temp files of dead runs. | `exec/journal.rs` | lock file |
 | **keyframe snap** | Fast mode starting at the last keyframe K ≤ requested start, found by scanning packets with ffprobe | `probe::keyframe_at_or_before` | |
 | **manifest** | A batch file listing videos and their clips with layered options, in JSON (versioned, strict) or CSV (one row per clip). The desktop queue is a v1 manifest. | `input/manifest_json.rs`, `input/manifest_csv.rs` | job list |

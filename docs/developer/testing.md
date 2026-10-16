@@ -24,6 +24,27 @@ From the constitution (Principle III, non-negotiable) and `CLAUDE.md`:
 - **No binary fixtures are committed.** The committed `crates/rmedia-core/tests/data/probe/*.json`
   files are ffprobe JSON text used by the argv snapshot tests.
 
+## Feature 002 Suites
+
+Added on branch `002-mobile-upscale` (`cargo test --workspace` passes 182 tests, 3 ignored, on
+2026-10-15 with the bundled engine). Measured against the 108 passing at the 001 baseline.
+
+| Suite | What it proves |
+|---|---|
+| `crates/rmedia-cli/tests/contract_clip_json.rs` | Pins 001's clip JSON (dry-run job and outcome events) with insta snapshots, so refactors cannot change it |
+| `crates/rmedia-core/tests/scratch.rs` | Per-job scratch folders are created, journaled and removed on success, failure and cancel |
+| `crates/rmedia-core/tests/probe_002.rs` | Probe fields upscaling needs (rotation, pixel aspect, field order, colour tags) from real files |
+| `crates/rmedia-core/tests/engine_checks.rs` | Engine behaviours the filter graph relies on (for example `sendcmd` toggling an overlay) |
+| `crates/rmedia-core/tests/us1_upscale_plan.rs` | Naming, output folder, validation codes and warnings for upscale jobs |
+| `crates/rmedia-core/tests/us1_upscale.rs` | End-to-end CPU-tier upscales checked with ffprobe, determinism, stream handling |
+| `crates/rmedia-core/tests/quality.rs` | SC-002: the CPU tier beats bicubic by at least +1.5 VMAF on degraded 480p and 360p fixtures (measured +2.78 and +2.89) |
+| `crates/rmedia-cli/tests/upscale.rs` | CLI contract: dry-run JSON, `--list-presets`, exit codes, dry runs write nothing |
+| `crates/rmedia-testkit/tests/fixtures_002.rs` | The new lavfi fixtures |
+
+The +3 VMAF target on real footage, the two-phone gallery test and the Reddit upload test are owner
+checks that no test covers ([Roadmap](../roadmap.md#owner-validation-cannot-be-automated)).
+`RMEDIA_CACHE_DIR` redirects the cache root for tests; CI runs `cargo xtask fetch-models` first.
+
 ## Run the Tests
 
 ```bash

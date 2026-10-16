@@ -651,6 +651,84 @@ to `rmedia clip` directly.
 
 ---
 
+## Upscaling
+
+These messages come from `rmedia upscale`, which is in development (0.2.0-dev) and not in the
+0.1.0 packages.
+
+### "smart reframe is not available yet; using the blurred background"
+
+#### Cause
+
+`--reframe smart` is the default, but smart reframe (following the subject) is planned and not
+built. rmedia uses the blurred-background fit instead and tells you.
+
+#### Resolution
+
+Nothing is wrong. To silence the warning, choose `--reframe blur` or `--reframe center`.
+
+### "the gpu tier is not available on this machine" (or "the ai tier …")
+
+#### Cause
+
+You passed `--tier gpu` or `--tier ai`. Only the CPU tier exists today. Nothing ran (exit code 3).
+
+#### Resolution
+
+Use `--tier cpu` or leave the default, `--tier auto`.
+
+### "unknown preset …"
+
+#### Cause
+
+The `--preset` name is not a built-in or user preset. The message lists the known names (exit
+code 3).
+
+#### Resolution
+
+Run `rmedia upscale --list-presets`. If you added a preset file, check for
+`warning: preset file … ignored`.
+
+### "preset … cannot keep HDR; use --hdr sdr or an HDR-capable preset"
+
+#### Cause
+
+`--hdr keep` was used with a preset that is not HDR-capable, such as `reddit-916` (exit code 3).
+
+#### Resolution
+
+Use `--hdr sdr`, or a preset marked HDR-capable in `rmedia upscale --list-presets --json`
+(`hdr_capable`).
+
+### "the ffmpeg build lacks … needed for upscaling"
+
+#### Cause
+
+The video engine has no encoder (`libx265` for HEVC presets, `libx264` for H.264 presets) or
+filter that upscaling needs (exit code 4).
+
+#### Resolution
+
+Run `rmedia doctor` and read the `encoder:` and `filters:` lines. Use the bundled engine, or an
+FFmpeg build that has them. See [Video engine missing or too old](#video-engine-missing-or-too-old).
+
+### "upscaled outputs are always .mp4"
+
+#### Cause
+
+You passed `--container` with something other than `mp4`.
+
+#### Resolution
+
+Nothing is wrong; the output is written as `.mp4`. Omit `--container`.
+
+### Size, duration or free-space warnings
+
+A warning such as `predicted size … exceeds the … limit` (preset limits, for example Reddit) or
+`… has … free but these outputs need about …` does not stop the run. For the limit, shorten the
+video, choose a lower `--crf` value, or use a preset without the limit. For free space, free up
+disk space or choose another `-o` folder.
+
 ## Installation
 
 ### `rmedia` command not found

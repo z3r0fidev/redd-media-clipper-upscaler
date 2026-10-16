@@ -18,7 +18,7 @@ what the packages install, see [Installation](../administration/installation.md)
 `cargo xtask` is an alias for `cargo run --package xtask --` (`.cargo/config.toml`). Usage:
 
 ```text
-cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices>
+cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models>
 ```
 
 | Task | What it does | Writes |
@@ -28,6 +28,7 @@ cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cl
 | `gen-bindings` | Regenerates the desktop app's TypeScript types from `rmedia-core` (ts-rs) | `apps/desktop/src/lib/bindings/` (deleted and recreated) |
 | `stage-cli [--target T]` | Builds `rmedia-cli` in release mode and copies it with sidecar naming | `binaries/rmedia-<T>[.exe]` |
 | `notices` | Generates the third-party notices for every Rust crate and bundled npm package | `THIRD_PARTY_NOTICES.md` |
+| `fetch-models` | Downloads each model in `xtask/models.lock.json` (today: the YuNet face detector) with `curl` over HTTPS only, verifies its SHA-256, and replaces it through a temp file and rename. Files that already match are kept. Added in 0.2.0-dev. | `models/` (git-ignored; never committed) |
 
 Supported targets are `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`. On Windows the host
 triple is `x86_64-pc-windows-msvc`; elsewhere it is `x86_64-unknown-linux-gnu`.

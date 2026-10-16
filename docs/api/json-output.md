@@ -38,7 +38,9 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
   "ffmpeg": { "path": "/work/binaries/rmedia-ffmpeg-x86_64-unknown-linux-gnu", "source": "config" },
   "ffprobe": { "path": "/work/binaries/rmedia-ffprobe-x86_64-unknown-linux-gnu", "source": "config" },
   "version": "n9.0.2-22-g46d8f462ee-20261005",
-  "encoders": { "aac": true, "libopus": true, "libvpx-vp9": true, "libx264": true },
+  "encoders": { "aac": true, "libopus": true, "libvpx-vp9": true, "libx264": true, "libx265": true },
+  "filters": { "bwdif": true, "cas": true, "gblur": true, "hqdn3d": true, "libplacebo": true,
+               "libvmaf": true, "scdet": true, "sendcmd": true, "tonemap": true, "zscale": true },
   "accurate_containers": ["mp4", "m4v", "mov", "mkv", "ts", "webm"],
   "ok": true,
   "problems": []
@@ -49,7 +51,8 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
 |---|---|---|
 | `ffmpeg`, `ffprobe` | `{path, source}` or `null` | `source`: `config` (flag, settings or `RMEDIA_*` env var), `bundled`, `path` |
 | `version` | string or `null` | First token after `ffmpeg version` |
-| `encoders` | object | These four keys: `libx264`, `aac`, `libvpx-vp9`, `libopus`. Empty (`{}`) when the engine was not found. |
+| `encoders` | object | These five keys: `libx264`, `libx265`, `aac`, `libvpx-vp9`, `libopus`. Empty (`{}`) when the engine was not found. |
+| `filters` | object | Ten filters that `rmedia upscale` uses: `zscale`, `cas`, `hqdn3d`, `bwdif`, `gblur`, `tonemap`, `sendcmd`, `scdet`, `libplacebo`, `libvmaf`, each `true` or `false`. Empty (`{}`) when the engine was not found. Added in 0.2.0-dev. |
 | `accurate_containers` | string[] | Containers whose video and audio encoders both exist |
 | `ok` | boolean | `false` when the engine was not found or its encoders could not be read (exit 4). `doctor --json` reports a missing engine in this document (`ffmpeg`/`ffprobe`/`version` `null`), not as a `type: "error"` document. |
 | `problems` | string[] | Human-readable problems |
@@ -113,6 +116,40 @@ Real dry run (one fast clip, `argv` shown in full):
 | `predicted` | `{start, end}` | Fast mode only: the keyframe the clip will start on |
 | `warnings` | string[] | For example `end 00:00:40.000 is past the end of the video; clip ends at 00:00:30.000`, `accurate mode cannot write .avi; writing .mp4 instead (choose --container to override)` |
 | `argv` | string[] | The exact ffmpeg arguments, excluding the program; the last item is the temp file |
+| `kind` | `"upscale"` | Upscale jobs only (0.2.0-dev). Clip jobs have no `kind` key and keep the shape above |
+| `upscale` | object | Upscale jobs only; see [Upscale jobs](#upscale-jobs) |
+| `cwd` | string | Upscale jobs only: the job's scratch folder. Upscale jobs omit `mode` and `predicted` |
+
+### Upscale jobs
+
+Added in 0.2.0-dev. An upscale job has the clip job fields (minus `mode` and `predicted`) plus
+`kind`, `cwd` and an `upscale` block. `requested` is the span being processed: 0 to the end of
+the video. Real dry run, abridged (`argv` omitted):
+
+```json
+{"id":1,"kind":"upscale","source":"/work/t.mp4","output":"/work/upscaled/t_phone-fill.mp4",
+ "status":"planned","requested":{"start":0.0,"end":2.0},
+ "warnings":["smart reframe is not available yet; using the blurred background"],
+ "cwd":"/work/upscaled/.t_phone-fill.rmedia-c06fbb266d959734-1.d",
+ "upscale":{"preset":"phone-fill","size":[1080,2340],"reframe":"smart","reframe_applied":"blur",
+   "motion":"normal","tier":"cpu","tier_reason":"auto: the classical CPU tier","suggest":null,
+   "hdr":"sdr","no_upscale_needed":false,"estimate":{"bytes":1137240,"secs":1.5},
+   "limit_warnings":[],"reframe_analysis":{"status":"not_needed"}}}
+```
+
+| `upscale` field | Notes |
+|---|---|
+| `preset`, `size` | Preset id and output `[width, height]` |
+| `reframe` | What was requested: `smart`, `center` or `blur` |
+| `reframe_applied` | What is used. `smart` becomes `blur` until smart reframe ships (user story 2) |
+| `motion` | `calm`, `normal` or `fast` |
+| `tier`, `tier_reason` | `cpu` is the only tier available today; `gpu` and `ai` are planned |
+| `suggest` | `null` today; reserved for suggesting the `ai` tier |
+| `hdr` | `sdr` or `keep` |
+| `no_upscale_needed` | The source is already at or above the target size |
+| `estimate` | `{bytes, secs}`: rough output size and processing time |
+| `limit_warnings` | Platform limit messages (also `LIMIT_EXCEEDED` issues) |
+| `reframe_analysis` | `{status}`; `not_needed` for centre, blur or matching aspect. `pending` and `ready` (with crop path details) belong to smart reframe, which is planned. |
 
 ### `issues[]` and Errors
 
@@ -169,6 +206,7 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 | `job_started` | `job_id` | |
 | `job_progress` | `job_id`, `fraction` (0–1), `out_time`, `speed`?, `eta_ms`? | At most about 10 per second per job; the final block is always sent |
 | `job_warning` | `job_id`, `message` | One per plan warning, at job start |
+| `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs only (0.2.0-dev). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). `job_progress.fraction` covers the whole job, weighted across stages. Clip jobs emit none. |
 | `job_finished` | `job_id`, `outcome` | See below. Skipped jobs emit only this event. |
 | `run_progress` | `done`, `total`, `fraction`, `eta_ms`? | Weighted by media length. Throttled to about 4 per second, plus one after each finished job. `eta_ms` only when 2% < fraction < 100%. |
 | `summary` | `succeeded`, `skipped`, `failed`, `cancelled`, `exit_code`, `jobs[]` | **Always the last line**, also on cancel. This is the core's `run_finished` event, renamed by the CLI. |
@@ -177,12 +215,48 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 
 | `status` | Extra fields |
 |---|---|
-| `succeeded` | `output` (path actually written; may differ under `rename`), `actual` `{start,end}`, `adjusted` (true when start or end differ from the request by more than 50 ms) |
+| `succeeded` | `output` (path actually written; may differ under `rename`) and `measure` (`clip` or `upscale`, added in 0.2.0-dev), plus the fields for that measure below |
 | `skipped` | `reason`: `output already exists`, or `output appeared while the clip was being made` |
 | `failed` | `error` `{code, message, stderr_tail?}` |
 | `cancelled` | — |
 
 `summary.jobs[]` items have `id`, `source`, `output`, `requested`, plus the outcome fields.
+
+**`measure: "clip"`** adds `actual` `{start,end}` and `adjusted` (true when start or end differ
+from the request by more than 50 ms). These two keys are unchanged from 0.1.0.
+
+**`measure: "upscale"`** adds:
+
+| Field | Notes |
+|---|---|
+| `span` | `{start,end}` of the output |
+| `tier_used` | `cpu`, `gpu` or `ai` (`cpu` today) |
+| `tier_fallback` | `true` when an automatic GPU job failed and was retried on the CPU tier (cannot happen until the GPU tier exists) |
+| `fallback_ranges` | `{start,end}` ranges that used the blurred background instead of smart reframe; empty today |
+| `no_upscale_needed` | The source was already at or above the target size |
+
+Real upscale outcome:
+
+```json
+{"status":"succeeded","output":"/work/out/t_phone-fill.mp4","measure":"upscale",
+ "span":{"start":0.0,"end":2.0},"tier_used":"cpu","tier_fallback":false,
+ "fallback_ranges":[],"no_upscale_needed":false}
+```
+
+## `rmedia upscale --list-presets --json`
+
+Added in 0.2.0-dev. One document:
+
+```json
+{"schema":1,"type":"presets","default":"phone-fill",
+ "presets":[{"id":"phone-fill","name":"Phone fill","size":[1080,2340],"devices":["…"],
+             "codec":"hevc","max_fps":60,"hdr_capable":true,"limits":null,"source":"builtin"}],
+ "problems":[{"file":"/home/me/.config/rmedia/presets/bad.json","message":"…"}]}
+```
+
+`source` is `builtin` or the path of the user preset file. `problems` lists user preset files that
+were ignored. `limits` is `null` or an object with `max_bytes` and `max_duration`, as in the
+Reddit presets. The `devices` array in the example is abridged.
 
 In fast mode `actual.start` is the predicted keyframe and `actual.end` = start + measured output
 duration. In the example above, the request was 10.5–15.5 and the clip was produced as
@@ -207,6 +281,11 @@ Stable codes from `Error::code()` (`crates/rmedia-core/src/error.rs`) plus `INTE
 | `CANCELLED` | Internal | Surfaced as a `cancelled` outcome |
 | `IO_ERROR` | `failed` outcome | Other I/O errors |
 | `INTERNAL` | `failed` outcome | A job task crashed; reported, never silently dropped |
+
+New in 0.2.0-dev: `TIER_UNAVAILABLE` (a forced `gpu` or `ai` tier cannot be used; error, exit 3),
+`PRESET_UNKNOWN` (error, exit 3), `HDR_UNSUPPORTED` (`--hdr keep` with a preset that cannot keep
+HDR; error, exit 3) and `LIMIT_EXCEEDED` (a preset's size or duration limit would be exceeded;
+warning).
 
 > **Unverified:** the `failed`, `cancelled` and `INTERNAL` outcomes above are documented from code
 > and from the contract tests (`crates/rmedia-cli/tests/`, `crates/rmedia-core/tests/cancel.rs`,

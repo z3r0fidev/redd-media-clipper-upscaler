@@ -129,7 +129,7 @@ FR-016–FR-019).
 | Item | Location |
 |---|---|
 | `plan::plan` → `Plan { run_id, jobs, issues, cancelled }`; `Planner::plan_clip` | `plan/mod.rs` |
-| `PlannedJob { id, source, output, temp, on_exists, disposition, mode, requested, predicted?, warnings, spec }`; `Disposition` = `run` / `skip{reason}`; `JobSpec::Clip(ClipSpec)` | `plan/mod.rs` |
+| `PlannedJob`; `Disposition` = `run` / `skip{reason}`; `JobSpec::Clip(ClipSpec)` or `JobSpec::Upscale(UpscaleSpec)`. Since the 002 refactor A1, clip-only fields (`mode`, `requested`, `predicted`) live in `ClipSpec`. | `plan/mod.rs` |
 | `Issue { severity, code, origin, message }`; `Plan::has_errors`, `engine_errors_only` | `plan/mod.rs` |
 | Name templates and file name sanitizing | `plan/naming.rs` |
 | `Container`, `EncodeProfile` (`X264_AAC`, `VP9_OPUS`), `SubtitlePolicy`, `select_streams` | `plan/streams.rs` |
@@ -251,6 +251,40 @@ at most 8 connections, and one request per connection. Full list:
 **Invariant:** all time parsing goes through the core (`parse_time` / `parse_end`), giving one
 grammar everywhere (`lib/time.ts`).
 
+## Upscaling (feature 002, user story 1)
+
+**Responsibility:** make a whole video phone-ready on the CPU tier, driven by a device preset.
+Code is in `crates/rmedia-core/src/{upscale,preset,models.rs}` and `exec/upscale.rs`. Available
+from `rmedia upscale` only; branch `002-mobile-upscale`, unreleased.
+
+| Item | Location |
+|---|---|
+| `UpscaleOptions` (preset, reframe, tier, hdr, motion, crf), `PartialUpscale`, `UpscaleSpec`, `UpscalePlan` | `upscale/mod.rs` |
+| Displayed size, target fit, crop window, no-enlarge rule | `upscale/geometry.rs` |
+| Single-pass `-filter_complex` builder: trim, pre-processing, reframe, scale, sharpen, tag | `upscale/graph.rs` |
+| Preset to encoder, colour and tag arguments (`libx265` or `libx264`) | `upscale/encode.rs` |
+| Output size and time estimates, platform limit warnings, free-space check | `upscale/estimate.rs` |
+| Tier selection (only `cpu` works) | `upscale/tier.rs` |
+| Presets: `PresetRegistry` (built-ins plus `<config>/presets/*.json`), JSON schema v1 | `preset/` |
+| Model file lookup (`models_dir` setting, `models/` beside the executable, cache `models/`) | `models.rs` |
+| Executor: render stage then verify stage; emits `job_stage` | `exec/upscale.rs` |
+| Scaffolds only (empty): smart-reframe analysis, capability record | `upscale/reframe/*`, `upscale/capability.rs` |
+
+**Invariants**
+
+- Upscale jobs always re-encode and always write `.mp4`; they never write next to the source
+  outside an `upscaled/` folder (or `-o`).
+- A source already at or above the target size is not enlarged (`no_upscale_needed`).
+- `--reframe smart` is planned as `blur` until user story 2 ships (`reframe_applied`).
+- A forced `gpu` or `ai` tier is a planning error (`TIER_UNAVAILABLE`).
+- The job runs in a scratch folder next to the output (`.<stem>.rmedia-<run>-<job>.d`) that is
+  journaled and removed on success, failure and cancel.
+- The CPU tier is deterministic for identical inputs, options and engine on one machine.
+
+The 001 refactors A1 to A5 are in place: outcomes carry a `JobMeasure` (`clip` or `upscale`), jobs
+can run several stages with weighted progress, and issue codes are a typed enum
+(`IssueCode`).
+
 ## Tooling (`xtask`)
 
 | Command | Effect |
@@ -260,16 +294,17 @@ grammar everywhere (`lib/time.ts`).
 | `cargo xtask gen-bindings` | Runs `cargo test -p rmedia-core --features ts` to export TypeScript into `apps/desktop/src/lib/bindings` |
 | `cargo xtask stage-cli [--target TRIPLE]` | Builds the release CLI and copies it to `binaries/rmedia-<triple>[.exe]` (Tauri sidecar naming) |
 | `cargo xtask notices` | Writes `THIRD_PARTY_NOTICES.md` from cargo and npm metadata, including license texts |
+| `cargo xtask fetch-models` | Downloads the models pinned in `xtask/models.lock.json` into `models/`, verifying SHA-256; verified files are kept. Models are never committed. |
 
 ## Testing
 
 | Layer | Where | Notes |
 |---|---|---|
 | Unit (table-driven parsers, naming, commit, journal, progress, version parsing) | `#[cfg(test)]` in core modules | 54 core unit tests (validation.md) |
-| Core integration | `crates/rmedia-core/tests/` (`us1_clip`, `us2_cliplist`, `us3_batch`, `us4_discover`, `preview`, `cancel`) | Real media from `rmedia-testkit`; accuracy checked via ffprobe durations and first-frame PSNR |
+| Core integration | `crates/rmedia-core/tests/` (`us1_clip`, `us2_cliplist`, `us3_batch`, `us4_discover`, `preview`, `cancel`; for 002: `us1_upscale`, `us1_upscale_plan`, `quality`, `probe_002`, `engine_checks`, `scratch`) | Real media from `rmedia-testkit`; accuracy checked via ffprobe durations and first-frame PSNR |
 | argv snapshots | `tests/snapshots_ffargs.rs` (insta) | 8 snapshots |
 | Benches | `tests/bench.rs` (`--ignored bench`) | SC-001, SC-003 |
-| CLI contract | `crates/rmedia-cli/tests/` (`clip_single`, `clip_list`, `scan`, `batch`) | Includes SIGINT / SIGKILL |
+| CLI contract | `crates/rmedia-cli/tests/` (`clip_single`, `clip_list`, `scan`, `batch`, `contract_clip_json`, `upscale`) | Includes SIGINT / SIGKILL |
 | Desktop backend | `apps/desktop/src-tauri/tests/{bridge,media_server}.rs` | Path policy, CLI/desktop app byte parity (SC-008), media server security |
 | Frontend | `apps/desktop/src/lib/stores/*.test.ts` (vitest), `svelte-check` | 8 tests |
 

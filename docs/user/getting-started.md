@@ -82,6 +82,8 @@ encoder:  aac         yes
 encoder:  libopus     yes
 encoder:  libvpx-vp9  yes
 encoder:  libx264     yes
+encoder:  libx265     yes
+filters:  all upscaling filters present
 accurate mode can write: mp4, m4v, mov, mkv, ts, webm
 status:   ready
 ```

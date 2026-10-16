@@ -37,10 +37,10 @@ crates/rmedia-testkit/     test fixtures generated with FFmpeg + ffprobe asserti
 apps/desktop/              Tauri 2 + Svelte 5 + TypeScript desktop app
   src/                       App.svelte, lib/{components,stores,bindings}
   src-tauri/                 Rust backend: commands.rs, ops.rs, media_server.rs; tests/
-xtask/                     build tasks: fetch-tools, pin-tools, gen-bindings, stage-cli, notices
+xtask/                     build tasks: fetch-tools, pin-tools, gen-bindings, stage-cli, notices, fetch-models
 binaries/                  fetched engine + staged CLI (git-ignored)
 specs/001-video-clipping/  spec, plan, research, data model, contracts, tasks, checklists
-research/                  research outlines 01 to 05
+research/                  research outlines 01 to 09
 .specify/                  Spec Kit configuration, templates, constitution
 ```
 
@@ -219,31 +219,35 @@ Also available: `/speckit-checklist`, `/speckit-converge`, and `/speckit-tasksto
 (`.claude/skills/`).
 
 - Each feature lives in `specs/NNN-feature-name/`. The active feature is recorded in
-  `.specify/feature.json` (currently `specs/001-video-clipping`) and in the `SPECKIT` block of
+  `.specify/feature.json` (currently `specs/002-mobile-upscale`) and in the `SPECKIT` block of
   `CLAUDE.md`.
 - Every plan must include a Constitution Check gate, evaluated before research and again after
   design.
 - Research outlines in `research/` are not confirmed until marked so. Items tagged `[K]`, `[verify]`,
   or `[unverified]` are not yet confirmed (`CLAUDE.md`).
 
-Planned features: 002 (mobile upscaling with smart reframing) and 003 (GIF export for Reddit).
+Feature 002 (mobile upscaling with smart reframing) is in progress: user story 1 is done and the
+rest is planned. Feature 003 (GIF export for Reddit) is planned. See the [Roadmap](../roadmap.md).
 
 ## Add a New Job Kind
 
-The executor is designed to take further job kinds (features 002 and 003). The plan records
-mandatory refactors before the first new kind is added.
+The executor takes further job kinds. `Upscale` (feature 002) is the first added after `Clip`;
+the plan's mandatory refactors A1 to A5 were completed for it. Feature 003 will add `Gif`.
 
 ### Current extension point
 
-- `crates/rmedia-core/src/plan/mod.rs` defines `pub enum JobSpec { Clip(ClipSpec) }`.
+- `crates/rmedia-core/src/plan/mod.rs` defines `pub enum JobSpec { Clip(Box<ClipSpec>), Upscale(Box<UpscaleSpec>) }`.
   `PlannedJob.spec` holds it.
 - `crates/rmedia-core/src/exec/mod.rs` → `run_job()` dispatches on it:
-  `JobSpec::Clip(spec) => clip::execute(spec, job.requested, job.predicted, &mut ctx).await`.
+  `JobSpec::Clip(spec) => clip::execute(spec, &mut ctx).await` and
+  `JobSpec::Upscale(spec) => upscale::execute(spec, &mut ctx).await`.
 - The scheduler does not look inside a job kind. `JobCtx` provides the tools, the temp output path,
   the final output path, cancellation, the job ID, and progress events. The scheduler handles
   concurrency, journaling of `job.temp`, commit, and cleanup.
 
-### Required refactors first (plan.md, senior review A1 to A5)
+### Refactors A1 to A5 (plan.md, senior review; done 2026-10-14)
+
+The table records what each refactor changed. Do not repeat them for a new kind; build on them.
 
 | ID | Change |
 |---|---|
@@ -257,7 +261,9 @@ mandatory refactors before the first new kind is added.
 
 1. Write the spec, plan, and tasks for the feature with Spec Kit (`specs/NNN-name/`). Pass the
    Constitution Check.
-2. Complete the refactors A1 to A5 that the new kind needs, with tests passing before and after.
+2. Reuse the A1 to A5 foundations (per-kind measure, scratch folders, staged progress, resource
+   slots, typed issue codes); extend them only where the new kind needs more, with tests passing
+   before and after.
 3. Write failing tests first: argv snapshot tests for the new FFmpeg pipeline, and integration tests
    against `rmedia-testkit` fixtures that verify outputs with `ffprobe`. Add new fixture kinds to
    `rmedia-testkit` if needed (lavfi only).

@@ -1,9 +1,11 @@
 # `rmedia` CLI Reference
 
-This page documents every command and flag of the `rmedia` command-line tool, version 0.1.0.
+This page documents every command and flag of the `rmedia` command-line tool, version 0.1.0, plus
+the `rmedia upscale` command that is on the `002-mobile-upscale` branch and not yet released.
 Flags come from the clap definitions in `crates/rmedia-cli/src/main.rs`. Behaviour comes from
 `crates/rmedia-cli/src/commands/*.rs`. The help text below was captured from
-`target/debug/rmedia` built from the working tree after commit `bd1eef8`.
+`target/debug/rmedia` built from the working tree after commit `bd1eef8`; the `upscale` additions
+were captured on 2026-10-15 from commit `2bfe3f0`.
 
 Related: [File Formats](file-formats.md) · [JSON Output](json-output.md) ·
 [Architecture Overview](../architecture/overview.md).
@@ -27,11 +29,12 @@ Cut clips from videos — fast (no re-encode) or frame-accurate.
 Usage: rmedia [OPTIONS] <COMMAND>
 
 Commands:
-  clip    Cut clips from each input video: one with -s/-e/-d, or many with -l LIST
-  batch   Run a batch manifest (.json or .csv) listing many videos and their clips
-  scan    Find the videos in folders (recursively) and list them
-  doctor  Show the video engine in use and its capabilities
-  help    Print this message or the help of the given subcommand(s)
+  clip     Cut clips from each input video: one with -s/-e/-d, or many with -l LIST
+  upscale  Make videos phone-ready: upscale and reframe to a device preset (default 1080x2340)
+  batch    Run a batch manifest (.json or .csv) listing many videos and their clips
+  scan     Find the videos in folders (recursively) and list them
+  doctor   Show the video engine in use and its capabilities
+  help     Print this message or the help of the given subcommand(s)
 
 Options:
       --ffmpeg <PATH>   Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
@@ -288,6 +291,103 @@ $ rmedia scan v
 2 video(s), 1 rejected (-v lists them); skipped 0 hidden, 0 temp, 0 symlink, 0 excluded, 0 online-only (0.1 s)
 ```
 
+## `rmedia upscale`
+
+Makes each input video phone-ready: it scales and reframes the whole video to a device preset's
+screen size, re-encodes it and verifies the result. Added in the unreleased 0.2.0-dev
+([release notes](../releases/0.2.0-dev.md)). Only the CPU tier exists; GPU and AI tiers, smart
+reframe, batch/manifest upscaling and `clip --upscale` are planned ([Roadmap](../roadmap.md)).
+
+```text
+rmedia upscale [OPTIONS] [INPUT]...
+rmedia upscale --list-presets [--json]
+```
+
+Each input is processed whole, one job per video. Inputs are files, folders (scanned with the
+`scan` options) or `--inputs-from FILE|-`. `INPUT` is required unless `--inputs-from` or
+`--list-presets` is given. To upscale part of a video, cut it first with `rmedia clip`.
+
+### Upscale Options
+
+| Flag | Values | Default | Notes |
+|---|---|---|---|
+| `--preset ID` | an id from `--list-presets` | `phone-fill` | An unknown id is an input error (exit 3, `PRESET_UNKNOWN`) |
+| `--reframe` | `smart`, `center`, `blur` | `smart` | `smart` currently falls back to `blur` with a warning. `center` crops the middle; `blur` keeps the whole frame over a blurred background |
+| `--tier` | `auto`, `cpu`, `gpu`, `ai` | `auto` | Only `cpu` exists. `gpu` and `ai` stop with `TIER_UNAVAILABLE` (exit 3) |
+| `--hdr` | `sdr`, `keep` | `sdr` | `sdr` tone-maps HDR sources. `keep` needs an HDR-capable preset, otherwise `HDR_UNSUPPORTED` (exit 3) |
+| `--motion` | `calm`, `normal`, `fast` | `normal` | Smart-reframe camera speed; no effect until smart reframe ships |
+| `--crf N` | 0 to 51 | the preset's value | Lower is better quality and a bigger file |
+| `--crop-path FILE` | path | none | Takes effect once smart reframe is available; prints a note until then |
+| `--no-analyze` | flag | off | With `--dry-run`, skips the smart-reframe analysis; prints a note until smart reframe ships |
+| `--list-presets` | flag | off | Lists presets and exits |
+
+Scan options (`--no-recursive`, `--max-depth`, `--include`, `--exclude`, `--hidden`,
+`--follow-symlinks`) and the shared options `-o`, `--name`, `--container`, `--on-exists`,
+`--no-audio`, `--audio`, `--no-subs`, `-j`, `--dry-run`, `--json`, `--ffmpeg`, `--ffprobe`, `-v`
+and `-q` are accepted, with these differences from `clip`:
+
+- There is no `--mode`: upscaling always re-encodes.
+- Outputs are always `.mp4`. Another `--container` is ignored with the warning
+  `upscaled outputs are always .mp4`.
+- The default output folder is `upscaled/` next to each source (`-o` replaces it). While
+  scanning folders, the `upscaled/` folders and the `-o` folder are excluded.
+- The default name is `{source}_{preset}.mp4`. The name template also accepts `{preset}`, which
+  is valid only for upscale jobs.
+
+### Presets
+
+`rmedia upscale --list-presets` (real output, no user presets):
+
+```text
+phone-fill       1080x2340  HEVC   Phone fill (default)
+                 for: iPhone 15–18 (all sizes, incl. Air), Galaxy S22–S26, Pixel 8–11 (≈1% bars)
+phone-fill-hd    1440x3120  HEVC   Phone fill HD
+                 for: 1440p phones (Galaxy S Ultra, Pixel Pro XL), iPhone Pro Max
+pixel-tall       1080x2400  HEVC   Pixel tall
+                 for: Pixel 8–11 (incl. 10 Pro XL), Tall 20:9 Android phones
+reddit-916       1080x1920  H.264  Reddit 9:16
+                 for: Reddit full-screen player
+reddit-feed-45   1080x1350  H.264  Reddit feed 4:5
+                 for: Reddit feed
+fold-inner       1080x1200  HEVC   Fold inner
+                 for: Galaxy Z Fold inner screen, Pixel Fold / Pixel 9–10 Pro Fold inner screen
+duo              1080x1566  HEVC   iPhone Duo
+                 for: iPhone Duo (foldable)
+```
+
+User presets are `*.json` files in a `presets` folder inside the config directory
+([Configuration](../administration/configuration.md#file-locations)). They follow
+`specs/002-mobile-upscale/contracts/preset.schema.json`. A file that is invalid is skipped; the
+text listing prints `warning: preset file … ignored: …` and `--json` lists it under `problems`.
+User presets are tagged `[user]` in the text listing. The JSON form is documented in
+[JSON Output](json-output.md#rmedia-upscale---list-presets---json).
+
+### Planning and Running
+
+- The plan shows the preset, reframe, tier and the reason for the tier choice, an estimated size
+  and time, and any warnings. Example (real dry run):
+
+  ```text
+  #1   would write: /work/upscaled/t_phone-fill.mp4
+       from /work/t.mp4  00:00:00.000 → 00:00:02.000  [upscale]
+       preset phone-fill 1080x2340, reframe smart, tier cpu (auto: the classical CPU tier)
+       estimate ~1.1 MB, ~1 s
+       warning: smart reframe is not available yet; using the blurred background
+  ```
+
+- Presets with platform limits (for example the Reddit presets) produce a `LIMIT_EXCEEDED`
+  warning when the predicted size or the duration exceeds the limit. For size, the video bitrate
+  is capped to fit.
+- rmedia warns when an output folder has less free space than the summed estimates plus 20%.
+- A source already at or above the target size is flagged (`no_upscale_needed`).
+- After encoding, rmedia probes the output; a bad output fails the job with `VERIFY_FAILED`.
+- The engine must provide the preset's encoder (`libx265` for HEVC presets, `libx264` for H.264
+  presets) and the filters upscaling uses; otherwise planning reports `ENGINE_MISSING` and the
+  command exits 4. Check with [`rmedia doctor`](#rmedia-doctor).
+- Ctrl-C cancels as for `clip`; no partial output is left.
+
+Exit codes are those in [Exit Codes](#exit-codes).
+
 ## `rmedia doctor`
 
 Reports the engine in use and its capabilities (FR-026).
@@ -319,9 +419,20 @@ encoder:  aac         yes
 encoder:  libopus     yes
 encoder:  libvpx-vp9  yes
 encoder:  libx264     yes
+encoder:  libx265     yes
+filters:  all upscaling filters present
 accurate mode can write: mp4, m4v, mov, mkv, ts, webm
 status:   ready
 ```
+
+The `filters:` line reports whether the filters that `rmedia upscale` uses are present
+(`zscale`, `cas`, `hqdn3d`, `bwdif`, `gblur`, `tonemap`, `sendcmd`, `scdet`, `libplacebo`,
+`libvmaf`). When some are missing it reads `filters:  missing <names> (upscaling needs some of
+these)`. A missing filter does not change `status` or the exit code; `rmedia upscale` checks
+the filters it needs when it plans. `--json` lists every filter under `filters`.
+
+Planned for the GPU tier (user story 3, not implemented): tiers, GPUs, models and the
+capability record in `doctor`, and `doctor --recheck`.
 
 Problems print to stderr as `problem:  <text>`. The exit code is 0 when the engine was found and
 its encoder list read; otherwise 4. "No encoders for accurate mode" is reported as a problem, but
@@ -337,6 +448,6 @@ running the binary (see [JSON Output](json-output.md)).
 | `0` | Every job succeeded or was skipped; a dry run that planned without errors; `scan`/`doctor` succeeded; `--help`/`--version` | — |
 | `1` | At least one job failed, or a single job was cancelled while the run continued | `ENGINE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_UNWRITABLE`, `INTERNAL` |
 | `2` | Usage error (clap) | Unknown flag, `-e` together with `-d`, missing required argument |
-| `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing |
-| `4` | Engine missing, too old, or a required encoder absent | `ENGINE_MISSING` (plans whose only errors are engine errors also return 4) |
+| `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing; for `upscale`: unknown preset, `--hdr keep` with a preset that cannot keep HDR, a forced `--tier gpu` or `ai` |
+| `4` | Engine missing, too old, or a required encoder or filter absent | `ENGINE_MISSING` (plans whose only errors are engine errors also return 4); for `upscale` also a missing `libx265`/`libx264` or upscaling filter |
 | `130` | Cancelled (Ctrl-C) | First Ctrl-C after the summary, or immediately on the second |

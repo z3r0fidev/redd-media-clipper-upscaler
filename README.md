@@ -9,8 +9,11 @@ Cut clips from videos on **Linux and Windows**, from the command line or a deskt
   your start time and tells you so). **Accurate** mode re-encodes and is frame-exact.
 - Source files are never modified; existing outputs are never overwritten unless you ask.
 
-Coming next: phone-optimized upscaling with smart reframing (feature 002) and high-quality GIF
-export for Reddit (feature 003) — see `specs/` and `research/`.
+In development (branch `002-mobile-upscale`, unreleased): phone-optimized upscaling —
+`rmedia upscale` makes videos fill a phone screen using device presets (CPU tier). Smart reframe,
+GPU/AI tiers, batch and `clip --upscale`, and a desktop upscale view are planned, as is high-quality
+GIF export for Reddit (feature 003). See [`docs/roadmap.md`](docs/roadmap.md), `specs/` and
+`research/`.
 
 ## Install
 
@@ -60,6 +63,10 @@ rmedia scan ~/Videos --include '*.mp4' --paths | rmedia clip --inputs-from - -s 
 
 # preview what would happen, machine-readable
 rmedia batch jobs.csv --dry-run --json
+
+# unreleased (002): make a video phone-ready (default preset phone-fill, 1080x2340)
+rmedia upscale game.mp4            # writes upscaled/game_phone-fill.mp4
+rmedia upscale --list-presets
 ```
 
 Useful options: `--mode fast|accurate`, `-o DIR`, `--name TEMPLATE`
@@ -154,7 +161,9 @@ source for the pinned build is mirrored (see `licenses/FFMPEG-NOTICE.md`). Detai
 `docs/operations/build-and-release.md`.
 
 Other tasks: `cargo xtask gen-bindings` (TypeScript types from the core), `cargo xtask notices`
-(third-party notices), `cargo xtask pin-tools` (move to a newer FFmpeg build).
+(third-party notices), `cargo xtask pin-tools` (move to a newer FFmpeg build),
+`cargo xtask fetch-models` (pinned, SHA-256 verified model files into `models/`; used by the planned
+smart reframe).
 
 ## Project layout
 

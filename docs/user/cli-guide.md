@@ -28,6 +28,7 @@ documents:
 | Command | Purpose |
 |---|---|
 | `rmedia clip` | Cut clips from one or more videos or folders: one clip with `-s`/`-e`/`-d`, or many with `-l LIST`. |
+| `rmedia upscale` | Make videos phone-ready: scale and reframe each whole video to a device preset. Unreleased (0.2.0-dev). |
 | `rmedia batch` | Run a batch manifest (`.json` or `.csv`) that lists many videos and their clips. |
 | `rmedia scan` | Find the videos in folders (recursively) and list them. |
 | `rmedia doctor` | Show the video engine in use and its capabilities. |
@@ -439,6 +440,79 @@ non-zero.
 rmedia batch jobs.json || echo "rmedia exited with $?"
 ```
 
+## Make Videos Phone-Ready
+
+> **Availability:** `rmedia upscale` is in development (0.2.0-dev, branch `002-mobile-upscale`)
+> and is not in the 0.1.0 packages. Smart reframe, GPU and AI quality tiers, upscaling from
+> `clip` or `batch`, and the desktop upscale view are planned and not available. See the
+> [Roadmap](../roadmap.md).
+
+`rmedia upscale` scales each video to the screen size of a phone and re-encodes it, so it fills
+the screen without black bars. Each video is processed whole. To upscale only a part of a video,
+cut it first with `rmedia clip`.
+
+```bash
+# the default preset (phone-fill, 1080x2340)
+rmedia upscale game.mp4
+
+# a folder, for Reddit's full-screen player
+rmedia upscale ~/Videos/clips --preset reddit-916 -o ~/Videos/reddit
+
+# see what would happen, with an estimate of size and time
+rmedia upscale game.mp4 --dry-run
+```
+
+Results are written to an `upscaled/` folder next to each source (or the `-o` folder), named
+`{source}_{preset}.mp4`, for example `game_phone-fill.mp4`. Outputs are always `.mp4`. rmedia never
+changes the source, and an existing output is skipped unless you pass `--on-exists`.
+
+### Choose a Preset
+
+```bash
+rmedia upscale --list-presets
+```
+
+| Preset | Size | Codec | For |
+|---|---|---|---|
+| `phone-fill` (default) | 1080x2340 | HEVC | iPhone 15 to 18, Galaxy S22 to S26, Pixel 8 to 11 |
+| `phone-fill-hd` | 1440x3120 | HEVC | 1440p phones |
+| `pixel-tall` | 1080x2400 | HEVC | Pixel and tall 20:9 Android phones |
+| `reddit-916` | 1080x1920 | H.264 | Reddit full-screen player |
+| `reddit-feed-45` | 1080x1350 | H.264 | Reddit feed |
+| `fold-inner` | 1080x1200 | HEVC | Foldable inner screens |
+| `duo` | 1080x1566 | HEVC | iPhone Duo |
+
+You can add your own presets as JSON files in the `presets` folder of the config directory (see
+[Configuration](../administration/configuration.md#file-locations)). `--list-presets` prints a
+warning for any file it ignores.
+
+### Choose How the Picture Fills the Screen
+
+| `--reframe` | Result |
+|---|---|
+| `blur` | The whole frame, centred over a blurred copy of itself |
+| `center` | The middle of the frame, cropped to fit |
+| `smart` (default) | Planned: follow the subject. Today it behaves like `blur` and prints a warning |
+
+### Other Options
+
+- `--hdr sdr` (default) converts HDR videos to standard range. `--hdr keep` keeps HDR on presets that
+  support it; it stops with an error on other presets. HDR mastering metadata is not carried over.
+- `--crf N` overrides the preset's quality (lower is better and bigger).
+- `--tier auto|cpu` selects the quality tier. Only the CPU tier exists today; `gpu` and `ai` stop
+  with `the gpu tier is not available on this machine`.
+- Folder scanning options, `-o`, `--name` (also `{preset}`), `--on-exists`, `--no-audio`,
+  `--audio`, `--no-subs`, `-j`, `--dry-run` and `--json` work as for `clip`. There is no `--mode`.
+
+### Warnings
+
+- Reddit presets warn when the predicted size or the duration would exceed Reddit's limit.
+- rmedia warns when the output folder has less free space than the outputs need.
+- A source already at least as big as the preset is not enlarged.
+
+Press Ctrl-C to cancel; no partial file is left. Details:
+[CLI Reference](../api/cli-reference.md#rmedia-upscale).
+
 ## Check the Video Engine
 
 ```bash
@@ -447,8 +521,9 @@ rmedia doctor --json
 ```
 
 `doctor` shows which FFmpeg and FFprobe programs rmedia uses and where they came from, their
-version, whether the encoders that accurate mode needs are present, and which formats accurate mode
-can write. It exits with code `0` when the status is `ready` and `4` when it is not. rmedia looks for
+version, whether the encoders that accurate mode and upscaling need are present (including
+`libx265`), whether the filters that upscaling needs are present (`filters:` line), and which
+formats accurate mode can write. It exits with code `0` when the status is `ready` and `4` when it is not. rmedia looks for
 the engine in this order:
 
 1. `--ffmpeg` / `--ffprobe`;
@@ -467,6 +542,7 @@ FFmpeg 6.0 or newer is required.
 | `no keyframe found before …` | [No keyframe found](troubleshooting.md#no-keyframe-found-before--use---mode-accurate-for-this-clip) |
 | `skipped: output already exists` | [Output already exists](troubleshooting.md#skipped-output-already-exists) |
 | `no input videos (folders contained no videos)` | [No input videos](troubleshooting.md#no-input-videos-folders-contained-no-videos) |
+| `smart reframe is not available yet`, `the gpu tier is not available`, or other `rmedia upscale` messages | [Upscaling](troubleshooting.md#upscaling) |
 | Warnings about subtitles, high bit depth, or `.mp4` instead | [Warnings](troubleshooting.md#warnings-that-do-not-stop-the-clip) |
 
 ## Related Information

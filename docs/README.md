@@ -1,7 +1,8 @@
 # rmedia documentation
 
 rmedia cuts clips from videos on Linux and Windows, from the `rmedia` command line or the desktop
-app. Start with the page for your role.
+app. An unreleased `rmedia upscale` command (feature 002, branch `002-mobile-upscale`) makes videos
+phone-ready; see the [Roadmap](roadmap.md). Start with the page for your role.
 
 ## Users
 
@@ -9,7 +10,7 @@ app. Start with the page for your role.
 |---|---|
 | [Getting started](user/getting-started.md) | Install, check the engine, cut a first clip |
 | [Desktop guide](user/desktop-guide.md) | Sources, player, marking, queue, run, export |
-| [CLI guide](user/cli-guide.md) | `clip`, clip lists, folders, `batch`, `scan`, `doctor` by task |
+| [CLI guide](user/cli-guide.md) | `clip`, clip lists, folders, `batch`, `scan`, `upscale` (unreleased), `doctor` by task |
 | [Troubleshooting](user/troubleshooting.md) | Common errors and what to do |
 
 ## Administrators
@@ -39,7 +40,9 @@ app. Start with the page for your role.
 | [Development guide](developer/development-guide.md) | Setup, build, workflow, conventions |
 | [Testing](developer/testing.md) | Test suites, fixtures, benchmarks |
 | [Build and release](operations/build-and-release.md) | CI, packaging, pinned FFmpeg, releasing |
+| [Roadmap](roadmap.md) | What is done, next and planned; owner validation items |
 | [Release notes 0.1.0](releases/0.1.0.md) | What feature 001 delivers; known issues |
+| [Release notes 0.2.0-dev](releases/0.2.0-dev.md) | Unreleased: `rmedia upscale` on the CPU tier |
 
 Specifications, plans and contracts live in [`specs/`](../specs/); research notes are in
 [`research/`](../research/).

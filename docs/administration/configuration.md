@@ -22,7 +22,8 @@ crate 6.0.0 path rules.
 | `--ffmpeg` / `--ffprobe` flags | Yes | Not applicable |
 | `RMEDIA_FFMPEG` / `RMEDIA_FFPROBE` | Yes | Yes (when no engine path is set in settings) |
 | `RMEDIA_STATE_DIR` | Yes | Yes |
-| `RMEDIA_CONFIG_DIR` | No effect (CLI does not use settings) | Yes |
+| `RMEDIA_CONFIG_DIR` | Only for `rmedia upscale` device presets (`presets/` folder); the CLI does not read `settings.json` | Yes |
+| `RMEDIA_CACHE_DIR` | Yes (cache root; used by upscale and models lookup) | Yes |
 
 The CLI takes its options from flags and manifests only. Only the desktop app calls
 `Settings::load()` (`apps/desktop/src-tauri/src/lib.rs`).
@@ -58,6 +59,8 @@ All fields are optional. A file containing `{}` is equivalent to the defaults.
 | `defaults` | object | `{}` | Defaults for new clips (see the next table). |
 | `jobs` | integer (0 to 65535) | not set | Clips processed at once. Not set means half the CPU cores, between 1 and 4. The **Clips at once** field in the UI accepts 1 to 64. |
 | `proxy_cache_max_mb` | integer | `5120` | Size cap of the preview cache in MB (multiplied by 1024 × 1024). The UI field has a minimum of 100. |
+| `models_dir` | path string | not set | Folder searched first for model files (face detector, AI upscaler weights). Not yet shown in the UI; used by features that are still planned (see [Roadmap](../roadmap.md)). |
+| `upscale_defaults` | object | `{}` | Last-used upscale choices (`enabled`, `preset`, `reframe`, `tier`, `hdr`, …). Reserved for the desktop upscale view (user story 5, planned); kept apart from `defaults` so clip runs never turn upscaling on. |
 
 > **Unverified:** Setting `jobs` to `0` by editing the file is not rejected on load, and its effect
 > was not tested. Use values from 1 to 64, the range the UI and CLI accept.
@@ -149,7 +152,8 @@ The version check applies to `ffmpeg` only.
 source, the version, the availability of the key encoders (`libx264`, `aac`, `libvpx-vp9`,
 `libopus`), and which containers accurate mode can write. If no accurate-mode encoders are
 available, doctor reports `no encoders for accurate mode (fast mode still works)` and still returns
-ready.
+ready. The CLI `rmedia doctor` (since 0.2.0-dev) also lists `libx265` and the upscaling filters;
+the desktop **Video engine** section was not changed.
 
 CI tests the minimum supported version against the distribution FFmpeg 6.1 on `ubuntu-24.04`
 (`minimum-engine` job in `.github/workflows/ci.yml`).
@@ -197,7 +201,8 @@ The desktop app stores browser-playable preview copies ("proxies") and thumbnail
 | Windows | `%LOCALAPPDATA%\OpenLogic\rmedia\cache\preview\` |
 | Fallback | `<system temp>/rmedia-preview` if no per-user cache directory can be determined |
 
-There is no environment variable override for the cache directory.
+`RMEDIA_CACHE_DIR` replaces the cache root (the folder that contains `preview/`); the preview
+cache is then `$RMEDIA_CACHE_DIR/preview/`.
 
 Behaviour (`crates/rmedia-core/src/preview.rs`):
 
@@ -219,7 +224,8 @@ The cache is safe to delete while the app is closed.
 | `RMEDIA_FFMPEG` | `rmedia`, `rmedia-desktop`, test kit | Path to FFmpeg. Second in the [engine location order](#engine-location-order). In tests, the FFmpeg used to generate fixtures. | not set |
 | `RMEDIA_FFPROBE` | `rmedia`, `rmedia-desktop`, test kit | Path to ffprobe, as above. | not set |
 | `RMEDIA_STATE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the state directory (crash journal parent). Used by the CLI tests. | per-user state directory |
-| `RMEDIA_CONFIG_DIR` | `rmedia-desktop` | Folder that holds `settings.json`. Used by tests. | per-user config directory |
+| `RMEDIA_CONFIG_DIR` | `rmedia`, `rmedia-desktop` | Folder that holds `settings.json` and the user device presets (`presets/*.json`, read by `rmedia upscale`). Used by tests. | per-user config directory |
+| `RMEDIA_CACHE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the cache root, which holds `preview/`, `reframe/` (smart-reframe analyses) and `models/`. Used by tests. Added in 0.2.0-dev. | per-user cache directory |
 | `RMEDIA_REQUIRE_FFMPEG` | test kit only | When `1`, media tests fail instead of being skipped if FFmpeg is missing. Set in CI. | not set |
 | `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | Linux | Standard XDG base directories, honoured when they are absolute paths. | `~/.config`, `~/.local/state`, `~/.cache` |
 
@@ -236,6 +242,9 @@ Linux the folder name is the lowercased application name (`rmedia`); on Windows 
 | Settings (`settings.json`) | `~/.config/rmedia/` | `%APPDATA%\OpenLogic\rmedia\config\` |
 | Crash journal (`inflight/`) | `~/.local/state/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\data\` |
 | Preview cache (`preview/`) | `~/.cache/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\cache\` |
+| User device presets (`presets/*.json`) | `~/.config/rmedia/presets/` | `%APPDATA%\OpenLogic\rmedia\config\presets\` |
+| Model files (searched in order) | `models_dir` setting, `models/` beside the executable, `~/.cache/rmedia/models/` | same pattern; cache under `%LOCALAPPDATA%\OpenLogic\rmedia\cache\models\` |
+| Upscaled output (default) | `upscaled/` next to each source video | `upscaled\` next to each source video |
 | Program files (deb) | `/usr/bin/`, `/usr/lib/rmedia/licenses/` | See [Installation](installation.md) |
 | Clip output (default) | `clips/` next to each source video | `clips\` next to each source video |
 
