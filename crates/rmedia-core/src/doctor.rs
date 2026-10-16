@@ -102,9 +102,16 @@ pub fn caps(tools: &Tools) -> Result<Caps> {
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
             .map_err(|e| Error::EngineMissing(format!("cannot run ffmpeg: {e}")))
     };
+    let models =
+        crate::models::ModelSet::discover(&crate::settings::Settings::load(), &[crate::models::YUNET]);
+    let face =
+        models.get(crate::models::YUNET).cloned().map(crate::upscale::reframe::detect::DetectorSpec::Yunet);
     Ok(Caps {
         encoders: parse_encoders(&list("-encoders")?),
         filters: parse_filters(&list("-filters")?),
+        face,
+        models,
+        reframe_cache: crate::settings::cache_root().map(|c| c.join("reframe")),
         ..Caps::default()
     })
 }

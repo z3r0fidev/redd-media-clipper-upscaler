@@ -84,3 +84,35 @@ async fn bench_upscale_sc003_cpu_tier_within_2x_duration() {
     eprintln!("CPU tier, 60 s 480p → 1080x2340: {elapsed:?}");
     assert!(elapsed < Duration::from_secs(120), "SC-003 violated: {elapsed:?}");
 }
+
+/// 002 SC-005: the smart-reframe analysis of a 60 s 1080p source takes at most half the time
+/// of its centre-crop render. Needs the YuNet model.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "benchmark"]
+async fn bench_upscale_sc005_smart_reframe_overhead() {
+    rmedia_testkit::require_engine!("libx265", "zscale", "cas", "sendcmd", "scdet");
+    let src = fixture(Fixture::Hd60Mp4);
+    let (tools, mut caps) = engine();
+    caps.face = Some(yunet().expect("run `cargo xtask fetch-models` first"));
+    let out = tempfile::tempdir().unwrap();
+    caps.reframe_cache = Some(out.path().join("cache"));
+    let plan_with = |reframe| {
+        let mut o = opts(out.path(), Mode::Accurate);
+        o.upscale = Some(rmedia_core::upscale::UpscaleOptions { reframe, ..Default::default() });
+        o.on_exists = rmedia_core::request::OnExists::Rename;
+        request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], o)
+    };
+    let centre = make_plan(&plan_with(rmedia_core::upscale::Reframe::Center), &tools, &caps).await;
+    let t0 = Instant::now();
+    let (summary, _) = run_plan(centre, tools.clone(), out.path()).await;
+    let render = t0.elapsed();
+    assert_eq!(summary.succeeded, 1, "{summary:?}");
+    let mut smart = make_plan(&plan_with(rmedia_core::upscale::Reframe::Smart), &tools, &caps).await;
+    let t0 = Instant::now();
+    rmedia_core::upscale::prepare_plan(&mut smart, &tools, &tokio_util::sync::CancellationToken::new())
+        .await
+        .unwrap();
+    let analysis = t0.elapsed();
+    eprintln!("60 s 1080p: centre render {render:?}, smart analysis {analysis:?}");
+    assert!(analysis.as_secs_f64() <= render.as_secs_f64() * 0.5, "SC-005 violated");
+}

@@ -34,6 +34,9 @@ struct PinnedModel {
     /// Repository path of the licence text, copied into the notices.
     license: String,
     description: String,
+    /// Fetched for tests only; never shipped, so not listed in the notices.
+    #[serde(default)]
+    test_only: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -457,7 +460,7 @@ fn notices() -> Result<()> {
     let models = read_model_lock()?;
     if !models.models.is_empty() {
         out.push_str("\n## Model files\n\n");
-        for (name, pin) in &models.models {
+        for (name, pin) in models.models.iter().filter(|(_, p)| !p.test_only) {
             let text = std::fs::read_to_string(root().join(&pin.license))
                 .with_context(|| format!("licence file {} for {name}", pin.license))?;
             out.push_str(&format!("### {name}\n\n{}\n\n```text\n{}\n```\n\n", pin.description, text.trim()));

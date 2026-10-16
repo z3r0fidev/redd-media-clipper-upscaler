@@ -11,7 +11,9 @@ use serde_json::Value;
 /// `rmedia` with state and config isolated in `dir` (no user presets leak in).
 fn rmedia(dir: &Path) -> Command {
     let mut c = Command::new(cargo_bin("rmedia"));
-    c.env("RMEDIA_STATE_DIR", dir.join("state")).env("RMEDIA_CONFIG_DIR", dir.join("config"));
+    c.env("RMEDIA_STATE_DIR", dir.join("state"))
+        .env("RMEDIA_CONFIG_DIR", dir.join("config"))
+        .env("RMEDIA_CACHE_DIR", dir.join("cache"));
     c
 }
 
@@ -32,7 +34,7 @@ fn entries(dir: &Path) -> Vec<String> {
         .unwrap()
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n != "state" && n != "config")
+        .filter(|n| !matches!(n.as_str(), "state" | "config" | "cache"))
         .collect();
     v.sort();
     v
@@ -63,11 +65,11 @@ fn dry_run_json_matches_the_contract_and_writes_nothing() {
         (Some("smart"), Some("cpu"), Some("sdr"))
     );
     assert!(up["tier_reason"].as_str().is_some_and(|r| r.starts_with("auto")));
-    assert_eq!(up["reframe_applied"], "blur", "smart falls back to blur until US2");
+    assert_eq!(up["reframe_applied"], "smart");
     assert!(up["suggest"].is_null());
     assert_eq!(up["no_upscale_needed"], false);
     assert!(up["estimate"]["bytes"].as_u64().unwrap() > 0 && up["estimate"]["secs"].as_f64().unwrap() > 0.0);
-    assert_eq!(up["reframe_analysis"]["status"], "not_needed");
+    assert_eq!(up["reframe_analysis"]["status"], "ready", "a dry run analyses so the crop path can be shown");
     assert!(job["cwd"].as_str().is_some_and(|c| c.ends_with(".d")), "{job}");
     let argv: Vec<&str> = job["argv"].as_array().unwrap().iter().map(|a| a.as_str().unwrap()).collect();
     assert!(argv.contains(&"-filter_complex") && argv.contains(&"hvc1"), "{argv:?}");
@@ -118,4 +120,46 @@ fn invalid_requests_exit_3_and_unknown_flags_exit_2() {
     );
     assert_eq!(run(&["upscale", "--crf", "60"]).status.code(), Some(2));
     assert_eq!(entries(d.path()), ["low.mp4"]);
+}
+
+#[test]
+fn smart_reframe_dry_run_block_cache_no_analyze_and_crop_path() {
+    require_engine!("libx265", "zscale", "cas", "sendcmd", "scdet");
+    let d = tempfile::tempdir().unwrap();
+    let src = copy(Fixture::MovingMarker, d.path(), "land.mp4");
+    let dry = |extra: &[&str]| {
+        let o =
+            rmedia(d.path()).args(["upscale", "--dry-run", "--json"]).args(extra).arg(&src).output().unwrap();
+        assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+        json(&o)["jobs"][0]["upscale"]["reframe_analysis"].clone()
+    };
+    let pending = dry(&["--no-analyze"]);
+    assert_eq!(pending["status"], "pending");
+    let first = dry(&[]);
+    assert_eq!((first["status"].as_str(), first["cache"].as_str()), (Some("ready"), Some("miss")));
+    assert_eq!(first["crop"], serde_json::json!([332, 720]));
+    assert_eq!(first["axis"], "x");
+    let shots = first["shots"].as_array().unwrap();
+    assert_eq!(shots.len(), 2, "{shots:?}");
+    assert!((shots[1]["start"].as_f64().unwrap() - 6.0).abs() < 0.05);
+    assert_eq!(first["path"]["hz"], 10);
+    assert_eq!(first["path"]["keyframes"].as_array().unwrap().len(), 101, "10 s at 10 Hz");
+    assert_eq!(dry(&[])["cache"], "hit", "the second dry run reuses the analysis");
+
+    let path = d.path().join("path.json");
+    let o =
+        rmedia(d.path()).args(["upscale", "--dry-run", "--crop-path"]).arg(&path).arg(&src).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let doc: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!((doc["schema"].as_u64(), doc["fps"].as_f64()), (Some(1), Some(30.0)));
+    assert_eq!(doc["x"].as_array().unwrap().len(), 300);
+    assert!(doc["x"].as_array().unwrap().iter().all(|x| x.as_i64().unwrap() % 2 == 0));
+
+    let centre = rmedia(d.path())
+        .args(["upscale", "--dry-run", "--reframe", "center", "--crop-path"])
+        .arg(&path)
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(centre.status.code(), Some(2), "--crop-path needs a smart-reframe job");
 }

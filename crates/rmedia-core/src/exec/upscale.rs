@@ -1,5 +1,5 @@
-//! Upscale job executor: render → verify (data-model.md › Executor stages). US2 adds an analyze
-//! stage in front; US3 adds the one-time CPU retry after a GPU failure.
+//! Upscale job executor: analyze (smart reframe, unless already analysed) → render → verify
+//! (data-model.md › Executor stages). US3 adds the one-time CPU retry after a GPU failure.
 
 use super::JobCtx;
 use super::clip::classify_failure;
@@ -9,13 +9,33 @@ use crate::plan::ffargs::upscale_args;
 use crate::preset::VideoCodec;
 use crate::probe::{self, MediaInfo, StreamKind};
 use crate::time::Ts;
-use crate::upscale::UpscaleSpec;
 use crate::upscale::encode::ColourTags;
+use crate::upscale::{AnalysisState, UpscaleSpec, reframe};
 
 pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<JobMeasure> {
     let span = spec.cut.requested;
     let total = span.end.saturating_sub(span.start);
-    ctx.stage("render", 1, 2, 0.9);
+    let mut spec = spec.clone();
+    let analyse = spec.up.analysis == AnalysisState::Pending;
+    let of = if analyse { 3 } else { 2 };
+    if analyse {
+        ctx.stage("analyze", 1, 3, 0.25);
+        let (tools, cancel) = (ctx.tools, ctx.cancel);
+        match reframe::analyze_cached(tools, &spec, cancel, |f| ctx.stage_fraction(f, total)).await {
+            Ok((a, cache)) => spec.up = spec.up.with_analysis(a, cache),
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(e) => {
+                ctx.warn(format!("smart reframe analysis failed ({e}); using the blurred background"));
+                spec.up = spec.up.with_blur();
+            }
+        }
+    }
+    ctx.stage("render", of - 1, of, if analyse { 0.7 } else { 0.9 });
+    if let (Some(a), Some(dir)) = (spec.up.analysis(), ctx.scratch_dir()) {
+        std::fs::write(dir.join("reframe.cmd"), reframe::sendcmd::to_sendcmd(a, spec.up.cmd_offset))
+            .map_err(|e| Error::OutputUnwritable { path: dir.join("reframe.cmd"), message: e.to_string() })?;
+    }
+    let spec = &spec;
     let args = upscale_args(spec, ctx.temp);
     // ffmpeg runs in the scratch directory so the graph can name its files relatively.
     let cwd = ctx.scratch_dir();
@@ -23,7 +43,7 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
     if !out.status.success() {
         return Err(classify_failure(&out.stderr_tail, ctx.output));
     }
-    ctx.stage("verify", 2, 2, 0.1);
+    ctx.stage("verify", of, of, if analyse { 0.05 } else { 0.1 });
     let info = probe::probe(ctx.tools, ctx.temp, ctx.cancel)
         .await
         .map_err(|e| Error::VerifyFailed(e.to_string()))?;
@@ -32,7 +52,7 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
         span,
         tier_used: spec.up.tier.tier,
         tier_fallback: false,
-        fallback_ranges: Vec::new(),
+        fallback_ranges: spec.up.analysis().map_or_else(Vec::new, |a| a.fallback_ranges.clone()),
         no_upscale_needed: spec.up.geometry.no_upscale_needed,
     })
 }

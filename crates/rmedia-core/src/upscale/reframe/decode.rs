@@ -1,6 +1,19 @@
 //! Analysis decode: one ffmpeg process producing low-resolution frames and cut scores
 //! (research R6).
 
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use tokio::io::AsyncReadExt;
+use tokio_util::sync::CancellationToken;
+
+use super::detect::{Detector, FrameView};
+use super::{SAMPLE_FPS, SampleResult, cuts};
+use crate::error::{Error, Result};
+use crate::exec::process;
+use crate::tools::Tools;
+
 /// Long side of the analysis frames (research/09 §4: YuNet at 576 px is about 30 ms a frame).
 pub const ANALYSIS_LONG_SIDE: u32 = 576;
 
@@ -15,6 +28,133 @@ pub fn analysis_size(display: (u32, u32)) -> (u32, u32) {
 /// `size` rounded up to multiples of 32 (YuNet's largest stride); the extra is zero padding.
 pub fn padded(size: (u32, u32)) -> (u32, u32) {
     (size.0.div_ceil(32) * 32, size.1.div_ceil(32) * 32)
+}
+
+/// A private working directory for one analysis (holds `cuts.txt`), removed on drop.
+#[derive(Debug)]
+pub struct WorkDir(PathBuf);
+
+impl WorkDir {
+    /// Creates `<base>/tmp/<unique>` (or under the system temp folder without a cache).
+    pub fn new(base: Option<&Path>) -> Result<WorkDir> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let root = base.map_or_else(std::env::temp_dir, |b| b.join("tmp"));
+        std::fs::create_dir_all(&root)?;
+        let nanos =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let dir = root.join(format!(
+            "rmedia-analysis-{}-{nanos}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        crate::exec::commit::create_scratch(&dir)?;
+        Ok(WorkDir(dir))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for WorkDir {
+    fn drop(&mut self) {
+        crate::exec::commit::remove_with_retry(&self.0);
+    }
+}
+
+/// Runs the analysis decode: `input` (the clip's input arguments) through `graph`
+/// (`graph::analysis_graph`), detecting on every 3 fps frame with up to four threads while
+/// ffmpeg keeps decoding. Returns the samples in order and the scdet scores. `progress` gets the
+/// number of samples done.
+#[allow(clippy::too_many_arguments)]
+pub async fn run(
+    tools: &Tools,
+    input: Vec<OsString>,
+    graph: &str,
+    size: (u32, u32),
+    detector: Arc<dyn Detector>,
+    work: &Path,
+    cancel: &CancellationToken,
+    mut progress: impl FnMut(usize) + Send,
+) -> Result<(Vec<SampleResult>, Vec<(f64, f64)>)> {
+    let mut args: Vec<OsString> =
+        ["-hide_banner", "-nostdin", "-loglevel", "error"].iter().map(OsString::from).collect();
+    args.extend(input);
+    args.extend(
+        ["-filter_complex", graph, "-map", "[raw]", "-an", "-sn", "-f", "rawvideo", "pipe:1"]
+            .iter()
+            .map(OsString::from),
+    );
+    let frame_len = size.0 as usize * size.1 as usize * 3;
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(4);
+    let mut samples: Vec<SampleResult> = Vec::new();
+    let consume = |mut stdout: tokio::process::ChildStdout| {
+        let samples = &mut samples;
+        let progress = &mut progress;
+        async move {
+            let mut eof = false;
+            while !eof {
+                let mut batch = Vec::with_capacity(workers * 2);
+                while batch.len() < workers * 2 {
+                    let mut frame = vec![0u8; frame_len];
+                    match stdout.read_exact(&mut frame).await {
+                        Ok(_) => batch.push(frame),
+                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                            eof = true;
+                            break;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                if batch.is_empty() {
+                    break;
+                }
+                let det = detector.clone();
+                let first = samples.len();
+                let done =
+                    tokio::task::spawn_blocking(move || detect_batch(det.as_ref(), batch, size, workers))
+                        .await
+                        .map_err(std::io::Error::other)??;
+                for (i, (faces, hist)) in done.into_iter().enumerate() {
+                    samples.push(SampleResult { t: (first + i) as f64 / SAMPLE_FPS, faces, hist });
+                }
+                progress(samples.len());
+            }
+            Ok(())
+        }
+    };
+    let out = process::run_stream(&tools.ffmpeg.path, &args, Some(work), cancel, consume).await?;
+    if !out.status.success() {
+        return Err(Error::EngineFailed {
+            message: "the reframe analysis decode failed".into(),
+            stderr_tail: out.stderr_tail,
+        });
+    }
+    let scores =
+        std::fs::read_to_string(work.join("cuts.txt")).map(|t| cuts::parse_scdet(&t)).unwrap_or_default();
+    Ok((samples, scores))
+}
+
+/// Histogram and detections for a batch of frames, on up to `workers` threads, in order.
+fn detect_batch(
+    det: &dyn Detector,
+    frames: Vec<Vec<u8>>,
+    size: (u32, u32),
+    workers: usize,
+) -> std::io::Result<Vec<(Vec<super::detect::FaceBox>, [u32; 48])>> {
+    let one = |bgr: &Vec<u8>| -> std::io::Result<(Vec<super::detect::FaceBox>, [u32; 48])> {
+        let faces = det
+            .detect(&FrameView { bgr, width: size.0, height: size.1 })
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        Ok((faces, cuts::histogram(bgr)))
+    };
+    let chunk = frames.len().div_ceil(workers.max(1)).max(1);
+    std::thread::scope(|s| {
+        let handles: Vec<_> =
+            frames.chunks(chunk).map(|c| s.spawn(move || c.iter().map(one).collect::<Vec<_>>())).collect();
+        handles.into_iter().flat_map(|h| h.join().expect("detector thread panicked")).collect()
+    })
 }
 
 #[cfg(test)]

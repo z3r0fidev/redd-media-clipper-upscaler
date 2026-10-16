@@ -111,16 +111,18 @@ async fn engine_without_the_encoder_is_an_engine_error() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn warnings_for_tiny_sources_and_smart_before_us2() {
+async fn warnings_for_tiny_sources_and_smart_without_a_face_model() {
     require_engine!("libx265", "zscale", "cas", "gblur");
     let d = tempfile::tempdir().unwrap();
     let tiny = copy(Fixture::TinySource, d.path(), "tiny.mp4");
-    let p = plan_whole(&tiny, up(|_| {}), None).await;
+    let (_, mut no_model) = engine();
+    no_model.face = None;
+    let p = plan_whole(&tiny, up(|_| {}), Some(no_model)).await;
     let w = &p.jobs[0].warnings;
     assert!(w.iter().any(|w| w.contains("very small source (320x240)")), "{w:?}");
-    assert!(w.iter().any(|w| w.contains("smart reframe is not available yet")), "{w:?}");
+    assert!(w.iter().any(|w| w == "face model not found; using blurred background"), "{w:?}");
     let center = plan_whole(&tiny, up(|u| u.reframe = Reframe::Center), None).await;
-    assert!(!center.jobs[0].warnings.iter().any(|w| w.contains("smart")));
+    assert!(!center.jobs[0].warnings.iter().any(|w| w.contains("face model")));
 }
 
 #[tokio::test(flavor = "multi_thread")]

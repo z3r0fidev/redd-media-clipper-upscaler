@@ -32,6 +32,8 @@ the video.
 - `suggest` is `"ai"` when AI is available but was not chosen automatically (research R9).
 - `reframe_applied` is the reframe actually used: `smart` falls back to `blur` without a face
   model (and, before US2 ships, always).
+- `reframe_analysis.cache` is `hit` or `miss` when the status is `ready`. Shots, fallback ranges
+  and keyframe times are source times (seconds).
 - `reframe_analysis.status` is `not_needed` (the aspect already matches, or the reframe is `center`
   or `blur`), `pending` (`--no-analyze`, or the analysis did not run) or `ready`.
 - AI jobs (US6) add `pipeline`: the three argvs (ffmpeg #1, `rmedia-sr`, ffmpeg #2).

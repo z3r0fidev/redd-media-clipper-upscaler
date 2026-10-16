@@ -1,0 +1,7 @@
+Test image: "Official Portrait of Astronaut Terrence W. Wilcutt", JSC2003-E-041874 (19 June 2003).
+Photo credit: NASA. Source: https://images.nasa.gov/details/jsc2003e41874
+
+NASA still images are generally not subject to copyright in the United States (works of the
+U.S. Government, public domain). This file is used only by rmedia's ignored real-face test; it is
+fetched by `cargo xtask fetch-models` and never committed or shipped. Its use does not imply
+endorsement by NASA, and NASA insignia appearing in the image are not used to identify rmedia.

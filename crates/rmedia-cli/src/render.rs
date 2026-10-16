@@ -115,6 +115,7 @@ impl Output {
                     format!("{:?}", up.tier.tier).to_lowercase(),
                     up.tier.reason
                 );
+                println!("     {}", reframe_line(&up.reframe_applied, &up.analysis));
                 println!(
                     "     estimate ~{}, ~{:.0} s",
                     rmedia_core::upscale::estimate::human_bytes(up.estimate.bytes),
@@ -253,6 +254,33 @@ fn job_doc(j: &PlannedJob) -> Value {
         }
     }
     v
+}
+
+/// `reframe: smart, 2 shots; fallback 00:40–00:44` (contracts/cli.md › Human dry run).
+fn reframe_line(
+    applied: &rmedia_core::upscale::Reframe,
+    analysis: &rmedia_core::upscale::AnalysisState,
+) -> String {
+    use rmedia_core::upscale::AnalysisState;
+    let name = format!("{applied:?}").to_lowercase();
+    match analysis {
+        AnalysisState::NotNeeded => format!("reframe: {name}"),
+        AnalysisState::Pending => format!("reframe: {name} (analysis pending)"),
+        AnalysisState::Ready(a, _) => {
+            let mmss = |t: rmedia_core::Ts| {
+                let s = t.as_secs_f64().round() as u64;
+                format!("{:02}:{:02}", s / 60, s % 60)
+            };
+            let ranges: Vec<String> =
+                a.fallback_ranges.iter().map(|r| format!("{}–{}", mmss(r.start), mmss(r.end))).collect();
+            let fallback = if ranges.is_empty() {
+                String::new()
+            } else {
+                format!("; blurred background {}", ranges.join(", "))
+            };
+            format!("reframe: {name}, {} shot(s){fallback}", a.shots.len())
+        }
+    }
 }
 
 fn plan_doc(plan: &Plan) -> Value {

@@ -101,7 +101,8 @@ async fn phone_fill_is_hvc1_bt709_and_byte_identical_on_a_second_run() {
             _ => None,
         })
         .collect();
-    assert_eq!(stages, ["render", "verify"]);
+    // 9:16 into 9:19.5 overflows a little, so smart reframe analyses first.
+    assert_eq!(stages, ["analyze", "render", "verify"]);
     assert!(leftovers(d.path()).is_empty(), "{:?}", leftovers(d.path()));
 
     let (again, _) = run(&src, up(&d.path().join("b"), |_| {}), d.path()).await;

@@ -29,8 +29,18 @@ pub struct GraphInput {
     /// Frame-rate cap, only when the source is faster than the preset allows.
     pub fps_cap: Option<u32>,
     pub geometry: Geometry,
-    /// The reframe actually applied (`Smart` follows a crop path from US2; here it is centred).
+    /// The reframe actually applied.
     pub reframe: Reframe,
+    /// Smart reframe: the crop's starting x and whether any fallback range needs the blurred
+    /// background branch. `None` for other reframes (and smart with nothing to pan).
+    pub track: Option<Track>,
+}
+
+/// Smart-reframe parameters of the graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Track {
+    pub x0: u32,
+    pub fallback: bool,
 }
 
 /// Restrained sharpening after upscaling: the strongest setting in research R3's range
@@ -82,16 +92,47 @@ pub fn build(g: &GraphInput) -> String {
     let pre = pre_chain(g);
     let (w, h) = g.geometry.target;
     let pix = if g.keep_hdr { "yuv420p10le" } else { "yuv420p" };
-    let pad = g.reframe == Reframe::Blur && g.geometry.overflow != Overflow::None;
-    if !pad {
-        let mut chain = vec![pre];
-        if let Some(c) = g.geometry.crop {
-            chain.push(format!("crop={}:{}:{}:{}", c.w, c.h, c.x, c.y));
+    let overlay_fmt = if g.keep_hdr { ":format=yuv420p10" } else { "" };
+    let tail = format!("setsar=1,format={pix}");
+    let overflow = g.geometry.overflow != Overflow::None;
+    match (g.reframe, &g.track, g.geometry.crop) {
+        // Smart reframe: a crop that sendcmd moves along the path; where no subject fits, the
+        // blurred-background picture is switched on over it (research R5).
+        (Reframe::Smart, Some(t), Some(c)) if overflow => {
+            let crop = format!(
+                "sendcmd=f=reframe.cmd,crop@trk=w={}:h={}:x={}:y={},{}",
+                c.w,
+                c.h,
+                t.x0,
+                c.y,
+                scaler(g, w, h)
+            );
+            if !t.fallback {
+                return format!("[0:v]{pre},{crop},{tail}[v]");
+            }
+            format!(
+                "[0:v]{pre},split[a][b];[a]{crop}[crop];{};[crop][pad]overlay@fb=0:0:enable=0{overlay_fmt},{tail}[v]",
+                blur_pad(g, "[b]", "[pad]")
+            )
         }
-        chain.push(scaler(g, w, h));
-        chain.push(format!("setsar=1,format={pix}"));
-        return format!("[0:v]{}[v]", chain.join(","));
+        (Reframe::Blur, _, _) if overflow => blur_pad(g, &format!("[0:v]{pre},"), &format!(",{tail}[v]")),
+        _ => {
+            let mut chain = vec![pre];
+            if let Some(c) = g.geometry.crop {
+                chain.push(format!("crop={}:{}:{}:{}", c.w, c.h, c.x, c.y));
+            }
+            chain.push(scaler(g, w, h));
+            chain.push(tail);
+            format!("[0:v]{}[v]", chain.join(","))
+        }
     }
+}
+
+/// The whole frame fitted inside the target over a blurred, darkened copy that fills it.
+/// `head` feeds the picture in (a label or a filter chain ending in `,`); `end` follows the
+/// final overlay (an output label, or more filters and a label).
+fn blur_pad(g: &GraphInput, head: &str, end: &str) -> String {
+    let (w, h) = g.geometry.target;
     let (fw, fh) = g.geometry.fit;
     let (bw, bh) = (even(f64::from(w) / 10.0), even(f64::from(h) / 10.0));
     let (ox, oy) = ((w - fw) / 2 / 2 * 2, (h - fh) / 2 / 2 * 2);
@@ -100,12 +141,38 @@ pub fn build(g: &GraphInput) -> String {
     let bg_colour = colour_tail(g);
     let overlay_fmt = if g.keep_hdr { ":format=yuv420p10" } else { "" };
     format!(
-        "[0:v]{pre},split[bg0][fg0];\
+        "{head}split[bg0][fg0];\
          [bg0]scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}{bg_colour},gblur=sigma=3,\
          eq=brightness=-0.08,scale={w}:{h},setsar=1[bg];\
          [fg0]{}[fg];\
-         [bg][fg]overlay={ox}:{oy}{overlay_fmt},setsar=1,format={pix}[v]",
+         [bg][fg]overlay={ox}:{oy}{overlay_fmt}{end}",
         scaler(g, fw, fh)
+    )
+}
+
+/// The analysis decode graph (research R6): the clip at analysis size, scene-cut scores
+/// printed to `cuts.txt` (relative to the working directory) and 3 fps bgr24 frames on `[raw]`.
+/// No denoise or frame-rate cap: they do not change where things are.
+pub fn analysis_graph(g: &GraphInput, size: (u32, u32)) -> String {
+    let mut f: Vec<String> = Vec::new();
+    match g.trim {
+        Some((start, end)) => {
+            let end = end.map(|e| format!(":end={}", e.ffmpeg())).unwrap_or_default();
+            f.push(format!("trim=start={}{end},setpts=PTS-STARTPTS", start.ffmpeg()));
+        }
+        None => f.push("setpts=PTS-STARTPTS".into()),
+    }
+    if g.deinterlace {
+        f.push("bwdif=mode=send_frame".into());
+    }
+    f.push(format!("scale={}:{}:flags=area,setsar=1", size.0, size.1));
+    if g.tonemap || g.keep_hdr {
+        f.push(TONEMAP.replace("{in}", &g.colour_in));
+    }
+    format!(
+        "[0:v]{},split[s][d];[s]scdet=t=10,metadata=mode=print:key=lavfi.scd.score:file=cuts.txt,nullsink;\
+         [d]fps=3,format=bgr24[raw]",
+        f.join(",")
     )
 }
 
@@ -178,7 +245,45 @@ mod tests {
             fps_cap: None,
             geometry: plan(display, target, reframe),
             reframe,
+            track: None,
         }
+    }
+
+    fn smart(fallback: bool) -> GraphInput {
+        let mut g = input((1280, 720), (1080, 2340), Reframe::Smart);
+        g.track = Some(Track { x0: 470, fallback });
+        g
+    }
+
+    #[test]
+    fn smart_without_fallback_is_one_moving_crop() {
+        insta::assert_snapshot!(build(&smart(false)), @"[0:v]hqdn3d=1.5:1.5:6:6,sendcmd=f=reframe.cmd,crop@trk=w=332:h=720:x=470:y=0,zscale=w=1080:h=2340:f=lanczos:min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,cas=0.7,setsar=1,format=yuv420p[v]");
+    }
+
+    #[test]
+    fn smart_with_fallback_switches_the_blurred_background_on() {
+        insta::assert_snapshot!(build(&smart(true)), @"[0:v]hqdn3d=1.5:1.5:6:6,split[a][b];[a]sendcmd=f=reframe.cmd,crop@trk=w=332:h=720:x=470:y=0,zscale=w=1080:h=2340:f=lanczos:min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,cas=0.7[crop];[b]split[bg0][fg0];[bg0]scale=108:234:force_original_aspect_ratio=increase,crop=108:234,zscale=min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,gblur=sigma=3,eq=brightness=-0.08,scale=1080:2340,setsar=1[bg];[fg0]zscale=w=1080:h=608:f=lanczos:min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,cas=0.7[fg];[bg][fg]overlay=0:866[pad];[crop][pad]overlay@fb=0:0:enable=0,setsar=1,format=yuv420p[v]");
+        let mut keep = smart(true);
+        keep.keep_hdr = true;
+        let k = build(&keep);
+        assert!(
+            k.contains("overlay=0:866:format=yuv420p10[pad]")
+                && k.contains("overlay@fb=0:0:enable=0:format=yuv420p10,"),
+            "{k}"
+        );
+    }
+
+    #[test]
+    fn smart_with_nothing_to_pan_is_a_plain_scale() {
+        let g = input((480, 854), (1080, 1920), Reframe::Smart);
+        assert!(!build(&g).contains("sendcmd"));
+    }
+
+    #[test]
+    fn analysis_graph_prints_cuts_and_samples_three_frames_a_second() {
+        let mut g = input((1280, 720), (1080, 2340), Reframe::Smart);
+        g.trim = Some((Ts::from_secs_f64(2.0), Some(Ts::from_secs_f64(5.0))));
+        insta::assert_snapshot!(analysis_graph(&g, (576, 324)), @"[0:v]trim=start=2.000000:end=5.000000,setpts=PTS-STARTPTS,scale=576:324:flags=area,setsar=1,split[s][d];[s]scdet=t=10,metadata=mode=print:key=lavfi.scd.score:file=cuts.txt,nullsink;[d]fps=3,format=bgr24[raw]");
     }
 
     #[test]

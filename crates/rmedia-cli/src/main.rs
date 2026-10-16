@@ -13,6 +13,8 @@ use rmedia_core::request::{Mode, OnExists};
 pub mod exit {
     pub const OK: u8 = 0;
     pub const JOB_FAILED: u8 = 1;
+    /// Command-line usage errors (clap uses the same code).
+    pub const USAGE: u8 = 2;
     pub const INVALID_INPUT: u8 = 3;
     pub const ENGINE: u8 = 4;
     pub const CANCELLED: u8 = 130;

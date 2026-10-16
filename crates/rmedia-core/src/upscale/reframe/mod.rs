@@ -201,6 +201,81 @@ pub fn assemble(
     }
 }
 
+/// Analyses an upscale job's source range, or takes the result from the cache (research R10).
+/// `progress` receives the fraction of samples done.
+pub async fn analyze_cached(
+    tools: &crate::tools::Tools,
+    spec: &crate::upscale::UpscaleSpec,
+    cancel: &tokio_util::sync::CancellationToken,
+    mut progress: impl FnMut(f64) + Send,
+) -> crate::Result<(std::sync::Arc<ReframeAnalysis>, crate::upscale::CacheUse)> {
+    use crate::Error;
+    use crate::upscale::CacheUse;
+    let up = &spec.up;
+    let not_smart = || Error::InvalidInput("this job has no smart reframe to analyse".into());
+    let detector = detect::load(up.detector.as_ref().ok_or_else(not_smart)?)?;
+    let crop = up.geometry.crop.ok_or_else(not_smart)?;
+    let span = spec.cut.requested;
+    let len = span.end.saturating_sub(span.start).as_secs_f64();
+    let graph = crate::upscale::graph::analysis_graph(&up.graph, up.analysis_size);
+    let meta = std::fs::metadata(&spec.cut.input)?;
+    let mtime_ns = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as i128);
+    let source = std::fs::canonicalize(&spec.cut.input).unwrap_or_else(|_| spec.cut.input.clone());
+    let key = cache::key(&cache::KeyInputs {
+        source: source.to_string_lossy().into_owned(),
+        size: meta.len(),
+        mtime_ns,
+        span: (span.start.as_secs_f64(), span.end.as_secs_f64()),
+        chain: graph.clone(),
+        analysis_size: up.analysis_size,
+        crop: (crop.w, crop.h),
+        fps: up.fps_out,
+        motion: up.motion,
+        algo: ALGO_VERSION,
+        detector: detector.id(),
+        ffmpeg: tools.version.text().to_owned(),
+    });
+    let cache = up.reframe_cache.clone().map(cache::Cache::new);
+    if let Some(a) = cache.as_ref().and_then(|c| c.get(&key)) {
+        progress(1.0);
+        return Ok((std::sync::Arc::new(a), CacheUse::Hit));
+    }
+    let work = decode::WorkDir::new(up.reframe_cache.as_deref())?;
+    let expected = (len * SAMPLE_FPS).ceil().max(1.0);
+    let (samples, scores) = decode::run(
+        tools,
+        crate::plan::ffargs::input_args(&spec.cut),
+        &graph,
+        up.analysis_size,
+        detector,
+        work.path(),
+        cancel,
+        |n| progress((n as f64 / expected).min(1.0)),
+    )
+    .await?;
+    let params = AssembleParams {
+        analysis_size: up.analysis_size,
+        display: up.geometry.display,
+        crop: (crop.w, crop.h),
+        crop_y: crop.y,
+        fps: up.fps_out,
+        len,
+        clip_start: span.start,
+        motion: up.motion,
+    };
+    let a = assemble(&samples, &scores, &params, key);
+    if let Some(c) = &cache
+        && let Err(e) = c.put(&a)
+    {
+        tracing::warn!("could not cache the reframe analysis: {e}");
+    }
+    Ok((std::sync::Arc::new(a), CacheUse::Miss))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

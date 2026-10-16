@@ -27,13 +27,23 @@ pub struct UpscaleSpec {
     pub up: UpscalePlan,
 }
 
-/// Smart-reframe analysis state of a job (US2 fills `Pending`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Smart-reframe analysis state of a job.
+#[derive(Debug, Clone, PartialEq)]
 pub enum AnalysisState {
     /// The shape already matches, or the reframe is `center`/`blur`.
     NotNeeded,
     /// Analysis runs as the job's first stage (or was skipped with `--no-analyze`).
     Pending,
+    /// Analysed (in a dry run, for `--crop-path`, or by the executor).
+    Ready(std::sync::Arc<reframe::ReframeAnalysis>, CacheUse),
+}
+
+/// Whether an analysis came from the cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CacheUse {
+    Hit,
+    Miss,
 }
 
 /// Everything resolved for one upscale job; self-contained (the preset is copied in).
@@ -48,6 +58,14 @@ pub struct UpscalePlan {
     pub reframe_applied: Reframe,
     pub motion: Motion,
     pub analysis: AnalysisState,
+    /// Smart reframe: the face detector to analyse with.
+    pub detector: Option<reframe::detect::DetectorSpec>,
+    /// Analysis frame size (long side 576).
+    pub analysis_size: (u32, u32),
+    /// Where analyses are cached.
+    pub reframe_cache: Option<std::path::PathBuf>,
+    /// Seconds added to `reframe.cmd` times: the render's first video frame time.
+    pub cmd_offset: f64,
     pub tier: TierDecision,
     pub hdr: HdrMode,
     pub colour_in: ColourTags,
@@ -65,12 +83,81 @@ pub struct UpscalePlan {
 }
 
 impl UpscalePlan {
+    /// Applies a finished analysis: the graph starts the crop where the path starts and keeps
+    /// the fallback branch only when some range needs it.
+    pub fn with_analysis(
+        mut self,
+        a: std::sync::Arc<reframe::ReframeAnalysis>,
+        cache: CacheUse,
+    ) -> UpscalePlan {
+        let x0 = a.path.first().map_or(0, |x| (*x).max(0) as u32);
+        // Nothing to follow anywhere: render the plain blurred background (one branch instead
+        // of the crop and the background both).
+        let whole = a.fallback_ranges.first().is_some_and(|r| {
+            r.start <= a.clip_start
+                && r.end.as_secs_f64() >= a.clip_start.as_secs_f64() + a.len_secs() - 0.5 / a.fps
+        });
+        if whole {
+            let g = geometry::plan(self.geometry.display, self.geometry.target, Reframe::Blur);
+            self.graph.geometry = g;
+            self.graph.reframe = Reframe::Blur;
+            self.graph.track = None;
+        } else {
+            self.graph.track = Some(graph::Track { x0, fallback: !a.fallback_ranges.is_empty() });
+        }
+        self.analysis = AnalysisState::Ready(a, cache);
+        self
+    }
+
+    /// Falls back to the blurred background (the analysis could not run).
+    pub fn with_blur(mut self) -> UpscalePlan {
+        let g = geometry::plan(self.geometry.display, self.geometry.target, Reframe::Blur);
+        self.geometry = g;
+        self.graph.geometry = g;
+        self.graph.reframe = Reframe::Blur;
+        self.graph.track = None;
+        self.reframe_applied = Reframe::Blur;
+        self.analysis = AnalysisState::NotNeeded;
+        self
+    }
+
+    /// The finished analysis, if any.
+    pub fn analysis(&self) -> Option<&reframe::ReframeAnalysis> {
+        match &self.analysis {
+            AnalysisState::Ready(a, _) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// The `reframe_analysis` block of the dry-run JSON.
+    fn analysis_json(&self) -> Value {
+        match &self.analysis {
+            AnalysisState::NotNeeded => json!({ "status": "not_needed" }),
+            AnalysisState::Pending => json!({ "status": "pending" }),
+            AnalysisState::Ready(a, cache) => {
+                let span = |s: &crate::event::Span| json!({ "start": s.start, "end": s.end });
+                json!({
+                    "status": "ready",
+                    "cache": cache,
+                    "crop": [a.crop.0, a.crop.1],
+                    "axis": "x",
+                    "fps": a.fps,
+                    "shots": a.shots.iter().map(|s| json!({ "start": s.span.start, "end": s.span.end, "kind": s.kind })).collect::<Vec<_>>(),
+                    "fallback_ranges": a.fallback_ranges.iter().map(span).collect::<Vec<_>>(),
+                    "path": {
+                        "hz": 10,
+                        "keyframes": reframe::sendcmd::keyframes(a, 10.0)
+                            .into_iter()
+                            .map(|(t, x)| json!([(t * 1000.0).round() / 1000.0, x]))
+                            .collect::<Vec<_>>(),
+                    },
+                })
+            }
+        }
+    }
+
     /// The dry-run `upscale` block (contracts/json-output.md), shared by the CLI and desktop.
     pub fn to_json(&self) -> Value {
-        let status = match self.analysis {
-            AnalysisState::NotNeeded => "not_needed",
-            AnalysisState::Pending => "pending",
-        };
         json!({
             "preset": self.preset.id,
             "size": [self.target.0, self.target.1],
@@ -84,7 +171,7 @@ impl UpscalePlan {
             "no_upscale_needed": self.geometry.no_upscale_needed,
             "estimate": { "bytes": self.estimate.bytes, "secs": (self.estimate.secs * 10.0).round() / 10.0 },
             "limit_warnings": self.limit_warnings,
-            "reframe_analysis": { "status": status },
+            "reframe_analysis": self.analysis_json(),
         })
     }
 }
@@ -244,6 +331,32 @@ impl PartialUpscale {
             crf: (o.crf != b.crf).then_some(o.crf).flatten(),
         })
     }
+}
+
+/// Runs the smart-reframe analysis of every pending job in `plan` (dry runs, `--crop-path`, the
+/// desktop preview), so the plan shows the crop path and the render reuses it. A job whose
+/// analysis fails falls back to the blurred background with a warning.
+pub async fn prepare_plan(
+    plan: &mut crate::plan::Plan,
+    tools: &crate::tools::Tools,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> crate::Result<()> {
+    for job in &mut plan.jobs {
+        let crate::plan::JobSpec::Upscale(u) = &mut job.spec else { continue };
+        if u.up.analysis != AnalysisState::Pending {
+            continue;
+        }
+        match reframe::analyze_cached(tools, u, cancel, |_| {}).await {
+            Ok((a, cache)) => u.up = u.up.clone().with_analysis(a, cache),
+            Err(crate::Error::Cancelled) => return Err(crate::Error::Cancelled),
+            Err(e) => {
+                job.warnings
+                    .push(format!("smart reframe analysis failed ({e}); using the blurred background"));
+                u.up = u.up.clone().with_blur();
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

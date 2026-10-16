@@ -379,6 +379,18 @@ impl<'a> JobCtx<'a> {
         self.shared.emit(Event::JobStage { job_id: self.id, stage: name.to_owned(), index, of });
     }
 
+    /// Reports a warning for this job.
+    pub fn warn(&self, message: String) {
+        self.shared.emit(Event::JobWarning { job_id: self.id, message });
+    }
+
+    /// Reports progress within the current stage as a fraction (for stages without ffmpeg
+    /// `-progress`, such as the reframe analysis).
+    pub fn stage_fraction(&mut self, fraction: f64, total: Ts) {
+        let us = (fraction.clamp(0.0, 1.0) * total.as_secs_f64() * 1e6) as i64;
+        self.progress(ProgressBlock { out_time_us: Some(us), speed: None, done: fraction >= 1.0 }, total);
+    }
+
     /// Reports ffmpeg progress for a job producing `total` media time (within the current stage).
     pub fn progress(&mut self, block: ProgressBlock, total: Ts) {
         let Some(out_us) = block.out_time_us else { return };

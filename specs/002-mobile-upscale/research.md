@@ -167,11 +167,12 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
   - Frames are spread across a rayon-free pool of `std::thread::scope` workers, `min(cpus, 4)`.
   - Results are reassembled in frame order.
 - **Subject selection, per sample:**
-  - Take the largest face.
-  - Add other faces whose height is at least 50% of the largest one and that sit within 1.5 crop
-    widths of it.
-  - The subject box is the union. When the union is wider than 0.9 × crop width, the sample is
-    marked "no fit".
+  - Take the largest face. Faces under 50% of its height are background and are ignored.
+  - Every other face is a subject. The sample is "no fit" when any subject is more than 1.5 crop
+    widths from the largest face, or when the subjects' union is wider than 0.9 × crop width.
+    Otherwise the crop follows the centre of the union.
+  - (Implementation decision, 2026-10-16: with "add faces within 1.5 crop widths", two equal faces
+    far apart would track one of them and never fall back, contradicting FR-014.)
 - **Fallback ranges (FR-014):**
   - Any run of "no face" or "no fit" samples lasting at least 1.0 s becomes a fallback range,
     clipped to shot bounds.
@@ -191,6 +192,18 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
      | `fast` | 1.4 | 3.0 |
 
   5. Clamp to the frame, snap to even pixels, and reset at each cut.
+
+  Following uses the fastest speed that can still stop on the target
+  (`v = −a/2 + √(a²/4 + 2a|d|)`), then the acceleration limit, so the crop never overshoots.
+- **Analysis decode:** long side 576 px (padded to multiples of 32 in Rust), 3 fps, no denoise or
+  fps cap (they do not move anything). The scdet scores go to `cuts.txt` in a private working
+  directory under `<cache>/reframe/tmp/`; a 48-bin histogram jump (> 0.5) between samples adds cuts
+  scdet missed. On MovingMarker the hard cut scores 12.5, just above the threshold of 10.
+- **sendcmd file (R5):** commands at frame midpoints `(k − 0.5)/fps`, crop lines only where x
+  changes, toggles `[enter] overlay@fb enable 1|0` at the first frame of each fallback range and
+  after it. Verified on n9.0.2 through the full graph: the background shows on exactly the
+  commanded frames (2026-10-16). When fallback covers the whole clip, the render uses the plain
+  blur graph.
 - **SC-004 check:** the configured limit is the bound. Tests assert that no frame-to-frame step
   exceeds it except at cuts.
 - **Determinism:** fixed thresholds and in-order reassembly give the same path for the same input on
@@ -215,7 +228,7 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
   SC-004 (≥ 95% inside, never outside for more than 0.5 s, steps ≤ limit except at cuts).
 - **Golden files:** golden `reframe.cmd` text for path snapshots, and table tests for the median,
   deadzone and clamp steps.
-- **Real YuNet:** one `#[ignore]` test runs real YuNet on a CC0 face photo fetched by
+- **Real YuNet:** one `#[ignore]` test runs real YuNet on a public-domain NASA portrait fetched by
   `xtask fetch-models`, turned into a 3 s panning video with lavfi `zoompan`.
 
 ## R8. Capability detection [V]
@@ -289,7 +302,10 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
 - **Dry run:** `--dry-run` on smart jobs runs the analysis by default so the crop path can be shown
   (FR-016). `--no-analyze` skips it.
 - **Execution:** if no cached analysis exists, the job runs it as stage 1, with weighted progress
-  (analysis 0.25, render 0.75).
+  (analysis 0.25, render 0.7, verify 0.05).
+- **Measured (release build, 2026-10-16):** analysing 60 s of 1080p takes 10.7 s against a 79 s
+  centre-crop render (13.5%; SC-005 allows 50%). Clips that mix tracked and fallback sections
+  render both the crop and the background branch, which costs more than centre or blur alone.
 - **Cache:** the key is the SHA-256 of:
   - canonical path, size and mtime;
   - clip span;
@@ -297,7 +313,9 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
   - analysis size;
   - motion profile;
   - algorithm version;
-  - model SHA.
+  - model SHA (in the detector id);
+  - crop size, output fps and the ffmpeg version (added in implementation: the path depends on
+    them).
 - Cache entries are JSON in `<cache>/reframe/`, with LRU eviction by count (500).
 - The cache stores analysis only and never media. The desktop `analyze_reframe` command uses the
   same cache, so the overlay and the render agree.
@@ -356,7 +374,7 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
 - Model files are never committed.
 - `xtask fetch-models` downloads them from Git LFS media URLs and verifies SHA-256:
   - YuNet 2026may;
-  - a CC0 test face (test-only);
+  - a public-domain NASA test portrait (test-only, not listed in the notices);
   - Real-ESRGAN (US6).
 - Installers ship them under `models/` next to the executables.
 - Lookup order: `settings.models_dir` → the bundled `models/` → `<cache>/models`.

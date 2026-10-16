@@ -24,7 +24,8 @@ use crate::time::{EndSpec, Ts};
 use crate::tools::Tools;
 use crate::upscale::encode::{self, ColourTags, EncodeParams};
 use crate::upscale::geometry::{self, Overflow};
-use crate::upscale::graph::GraphInput;
+use crate::upscale::graph::{GraphInput, Track};
+use crate::upscale::reframe;
 use crate::upscale::tier::{Tier, TierDecision};
 use crate::upscale::{
     AnalysisState, HdrMode, Reframe, TierChoice, UpscaleOptions, UpscalePlan, UpscaleSpec, estimate,
@@ -43,6 +44,10 @@ pub struct Caps {
     pub filters: BTreeSet<String>,
     pub models: crate::models::ModelSet,
     pub capability: Option<crate::upscale::capability::CapabilityRecord>,
+    /// The face detector smart reframe uses (`None`: no model, smart falls back to blur).
+    pub face: Option<crate::upscale::reframe::detect::DetectorSpec>,
+    /// Where reframe analyses are cached (`None`: no cache).
+    pub reframe_cache: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -619,6 +624,9 @@ impl Planner<'_> {
         if u.reframe != Reframe::Center {
             filters.push("gblur");
         }
+        if u.reframe == Reframe::Smart {
+            filters.extend(["sendcmd", "scdet", "metadata", "split", "overlay", "crop"]);
+        }
         let missing: Vec<&str> = std::iter::once(encoder)
             .chain(filters)
             .filter(|f| !self.caps.encoders.contains(*f) && !self.caps.filters.contains(*f))
@@ -650,16 +658,22 @@ impl Planner<'_> {
         let v = media.first_video().expect("checked: the source has video");
         let target = (preset.width, preset.height);
         let display = v.display_size().unwrap_or(target);
-        // Smart reframe (US2) needs the subject analysis; until then it uses the blurred
-        // background, which never cuts anything off.
-        let effective = match u.reframe {
-            Reframe::Smart => Reframe::Blur,
-            r => r,
+        // Smart reframe pans horizontally (v1): it needs a face model and a source wider than
+        // the target. Otherwise it degrades to a reframe that never cuts anything off.
+        let overflow = geometry::plan(display, target, u.reframe).overflow;
+        let effective = match (u.reframe, overflow, &self.caps.face) {
+            (Reframe::Smart, Overflow::Horizontal, None) => {
+                warnings.push("face model not found; using blurred background".into());
+                Reframe::Blur
+            }
+            (Reframe::Smart, Overflow::Vertical, _) => {
+                warnings.push("smart reframe pans horizontally only; using a centre crop".into());
+                Reframe::Center
+            }
+            (r, ..) => r,
         };
         let geometry = geometry::plan(display, target, effective);
-        if u.reframe == Reframe::Smart && geometry.overflow != Overflow::None {
-            warnings.push("smart reframe is not available yet; using the blurred background".into());
-        }
+        let smart = effective == Reframe::Smart && geometry.overflow == Overflow::Horizontal;
         if geometry.no_upscale_needed {
             warnings.push(format!(
                 "no upscaling needed: the source ({}x{}) is already at least {}x{}; it is only reframed and scaled down",
@@ -706,6 +720,8 @@ impl Planner<'_> {
             fps_cap,
             geometry,
             reframe: effective,
+            // Until the analysis runs: centred, with the fallback branch available.
+            track: smart.then(|| Track { x0: geometry.crop.map_or(0, |c| c.x), fallback: true }),
         };
         let audio: Vec<&crate::probe::StreamInfo> = cut
             .streams
@@ -750,7 +766,12 @@ impl Planner<'_> {
             reframe: u.reframe,
             reframe_applied: effective,
             motion: u.motion,
-            analysis: AnalysisState::NotNeeded,
+            analysis: if smart { AnalysisState::Pending } else { AnalysisState::NotNeeded },
+            detector: if smart { self.caps.face.clone() } else { None },
+            analysis_size: reframe::decode::analysis_size(display),
+            reframe_cache: self.caps.reframe_cache.clone(),
+            // Whole videos keep their timestamps: the video may start after the audio.
+            cmd_offset: if whole { (media.zero_point() - media.start_time).as_secs_f64() } else { 0.0 },
             tier: TierDecision { tier: Tier::Cpu, reason: reason.into(), suggest: None },
             hdr: u.hdr,
             colour_in,

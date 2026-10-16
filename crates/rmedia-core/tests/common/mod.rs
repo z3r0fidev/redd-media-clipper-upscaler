@@ -84,3 +84,16 @@ pub fn partials(dir: &Path) -> Vec<PathBuf> {
     }
     found
 }
+
+/// A model file fetched into the workspace `models/` folder (`cargo xtask fetch-models`).
+/// Release builds never search that folder by themselves, so tests ask for it explicitly.
+pub fn workspace_model(name: &str) -> Option<PathBuf> {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models").join(name);
+    p.is_file().then_some(p)
+}
+
+/// The real YuNet detector from the workspace `models/` folder.
+pub fn yunet() -> Option<rmedia_core::upscale::reframe::detect::DetectorSpec> {
+    workspace_model(rmedia_core::models::YUNET)
+        .map(rmedia_core::upscale::reframe::detect::DetectorSpec::Yunet)
+}

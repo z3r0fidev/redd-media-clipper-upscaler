@@ -3,6 +3,7 @@
 use rmedia_core::preset::{PresetRegistry, PresetSource, VideoCodec};
 use rmedia_core::request::{BatchRequest, ClipRequest, Mode, Origin, PartialOptions, SourceRequest};
 use rmedia_core::tools::LocateOptions;
+use rmedia_core::upscale::prepare_plan;
 use rmedia_core::{EndSpec, Ts, doctor, plan, settings};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -37,9 +38,6 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
     };
     // Upscaling always re-encodes, so the clip mode does not apply; outputs never need a
     // per-source sub-folder (`{source}_{preset}` names are unique per folder).
-    if (args.upscale.crop_path.is_some() || args.upscale.no_analyze) && !out.quiet {
-        eprintln!("note: --crop-path and --no-analyze take effect once smart reframe is available");
-    }
     let mut defaults = options(&args.common, Mode::Accurate, false);
     defaults.upscale = Some(args.upscale.options());
     let whole = ClipRequest {
@@ -61,8 +59,64 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
             })
             .collect(),
     };
-    let plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
+    let mut plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
+    let crop_path = args.upscale.crop_path.as_deref();
+    let analyse = (args.common.dry_run && !args.upscale.no_analyze) || crop_path.is_some();
+    if analyse && !plan.has_errors() {
+        // The crop path is shown (and written) before anything renders; the render reuses the
+        // cached analysis (FR-016).
+        let cancel = CancellationToken::new();
+        let on_ctrl_c = cancel.clone();
+        let watcher = tokio::spawn(async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                on_ctrl_c.cancel();
+            }
+        });
+        let prepared = prepare_plan(&mut plan, &tools, &cancel).await;
+        watcher.abort();
+        if prepared.is_err() {
+            return exit::CANCELLED;
+        }
+        if let Some(file) = crop_path
+            && let Err(code) = write_crop_path(&plan, file, &out)
+        {
+            return code;
+        }
+    }
     execute(plan, tools, args.common.dry_run, args.common.jobs, &out).await
+}
+
+/// `--crop-path FILE`: the per-frame crop path of the one smart-reframe job, as
+/// `{"schema":1,"fps":…,"crop":[w,h],"x":[…]}` (contracts/json-output.md).
+fn write_crop_path(plan: &plan::Plan, file: &std::path::Path, out: &Output) -> Result<(), u8> {
+    let analysed: Vec<&rmedia_core::upscale::reframe::ReframeAnalysis> = plan
+        .jobs
+        .iter()
+        .filter_map(|j| match &j.spec {
+            plan::JobSpec::Upscale(u) => u.up.analysis(),
+            _ => None,
+        })
+        .collect();
+    let [a] = analysed.as_slice() else {
+        eprintln!(
+            "error: --crop-path needs exactly one video that uses smart reframe (found {})",
+            analysed.len()
+        );
+        return Err(exit::USAGE);
+    };
+    let doc = json!({"schema": 1, "fps": a.fps, "crop": [a.crop.0, a.crop.1], "x": a.path});
+    let file = absolute(file);
+    let tmp = file.with_extension("json.tmp");
+    let written = std::fs::write(&tmp, serde_json::to_vec(&doc).expect("crop path serialises"))
+        .and_then(|()| std::fs::rename(&tmp, &file));
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(out.input_error(&format!("cannot write {}: {e}", file.display())));
+    }
+    if !out.quiet && !out.json {
+        eprintln!("crop path written to {}", file.display());
+    }
+    Ok(())
 }
 
 /// `--list-presets [--json]`: built-in and user presets, plus any invalid user preset files.
