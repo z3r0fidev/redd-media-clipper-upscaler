@@ -317,8 +317,8 @@ Each input is processed whole, one job per video. Inputs are files, folders (sca
 | `--hdr` | `sdr`, `keep` | `sdr` | `sdr` tone-maps HDR sources. `keep` needs an HDR-capable preset, otherwise `HDR_UNSUPPORTED` (exit 3) |
 | `--motion` | `calm`, `normal`, `fast` | `normal` | Smart-reframe camera speed; no effect until smart reframe ships |
 | `--crf N` | 0 to 51 | the preset's value | Lower is better quality and a bigger file |
-| `--crop-path FILE` | path | none | Takes effect once smart reframe is available; prints a note until then |
-| `--no-analyze` | flag | off | With `--dry-run`, skips the smart-reframe analysis; prints a note until smart reframe ships |
+| `--crop-path FILE` | path | none | Writes the per-frame crop path of the one smart-reframe video as `{"schema":1,"fps","crop":[w,h],"x":[…]}`. Analyses first (with or without `--dry-run`); exit 2 when the run has no or several smart videos, or with `--no-analyze`; exit 3 when FILE is one of the run's videos |
+| `--no-analyze` | flag | off | With `--dry-run`, skips the smart-reframe analysis (shown as `pending`) |
 | `--list-presets` | flag | off | Lists presets and exits |
 
 Scan options (`--no-recursive`, `--max-depth`, `--include`, `--exclude`, `--hidden`,
@@ -371,8 +371,8 @@ User presets are tagged `[user]` in the text listing. The JSON form is documente
   #1   would write: /work/upscaled/t_phone-fill.mp4
        from /work/t.mp4  00:00:00.000 → 00:00:02.000  [upscale]
        preset phone-fill 1080x2340, reframe smart, tier cpu (auto: the classical CPU tier)
-       estimate ~1.1 MB, ~1 s
-       warning: smart reframe is not available yet; using the blurred background
+       reframe: smart, 2 shot(s); blurred background 00:00–00:10
+       estimate ~5.9 MB, ~7 s
   ```
 
 - Presets with platform limits (for example the Reddit presets) produce a `LIMIT_EXCEEDED`

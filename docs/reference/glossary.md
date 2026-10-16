@@ -26,7 +26,7 @@ to avoid.
 | **job** | One clip request resolved to a concrete output path, with state queued/running/succeeded/failed/cancelled/skipped | `plan::PlannedJob`, spec.md | task |
 | **job kind** | The work a job does: `JobSpec::Clip` or `JobSpec::Upscale` (0.2.0-dev); `Gif` (003) is planned | `plan::JobSpec` | |
 | **preset (device preset)** | A data file that describes an upscale target: size, codec, quality, platform limits. Seven are built in; users add JSON files to `<config>/presets/`. | `preset/`, `--list-presets` | profile |
-| **reframe** | How a video of one shape fills a screen of another: `smart` (planned), `center` or `blur` | `upscale::Reframe` | |
+| **reframe** | How a video of one shape fills a screen of another: `smart` (follow faces), `center` or `blur` | `upscale::Reframe` | |
 | **tier** | The engine quality level of an upscale: `cpu` (available), `gpu` and `ai` (planned) | `upscale::Tier` | |
 | **upscale** | Make a video phone-ready: scale and reframe to a preset's screen size and re-encode. `rmedia upscale` | `exec/upscale.rs` | |
 | **journal (in-flight journal, crash journal)** | A per-run file under `<state dir>/inflight/` listing temp files, locked while the run lives. The next run deletes temp files of dead runs. | `exec/journal.rs` | lock file |

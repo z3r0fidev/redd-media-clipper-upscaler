@@ -31,7 +31,7 @@ their findings are fixed. 182 tests pass.
 
 | Order | Phase | Tasks | Planned outcome | Status |
 |---|---|---|---|---|
-| 1 | US2 Smart reframe | T042–T061 | Follow the subject with a face detector (YuNet via `cargo xtask fetch-models`), shot detection, smooth crop path, `--crop-path`, `--motion`. Until then `--reframe smart` falls back to blur. Starts with a plan-mode pass. | Next |
+| 1 | US2 Smart reframe | T042–T061 | Follow faces (YuNet via `cargo xtask fetch-models`), shot detection, smooth crop path, `--crop-path`, `--motion`, analysis cache. | Done (2026-10-16) |
 | 2 | US3 GPU tier and capability record | T062–T073 | Vulkan GPU tier, self-test and capability record, `doctor` tiers, GPUs and models, `doctor --recheck`, automatic fallback to CPU | Planned |
 | 3 | US4 Batch and `clip --upscale` | T074–T081 | Upscale from manifests and `clip --upscale`; partial-clip tests carried over from the US1 review | Planned |
 | 4 | US5 Desktop upscale view | T082–T092 | Upscale view in the desktop app | Planned |
@@ -41,7 +41,7 @@ their findings are fixed. 182 tests pass.
 Each phase ends with a checkpoint: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`,
 `cargo test --workspace`, the quickstart section for the story, and the two reviews.
 
-None of US2–US6 is available in any build. Documentation elsewhere marks these as planned.
+US3–US6 are not available in any build. Documentation elsewhere marks these as planned.
 
 ### Owner validation (cannot be automated)
 

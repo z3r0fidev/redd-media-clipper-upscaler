@@ -33,6 +33,9 @@ use crate::upscale::{
 use ffargs::ClipSpec;
 use streams::Container;
 
+/// Filters smart reframe needs besides the common upscale ones (research R5, R6).
+const SMART_FILTERS: [&str; 6] = ["sendcmd", "scdet", "metadata", "split", "overlay", "crop"];
+
 /// How far before the target an approximate (coarse) input seek lands.
 const COARSE_SEEK_MARGIN: Ts = Ts::from_micros(10_000_000);
 
@@ -624,9 +627,7 @@ impl Planner<'_> {
         if u.reframe != Reframe::Center {
             filters.push("gblur");
         }
-        if u.reframe == Reframe::Smart {
-            filters.extend(["sendcmd", "scdet", "metadata", "split", "overlay", "crop"]);
-        }
+
         let missing: Vec<&str> = std::iter::once(encoder)
             .chain(filters)
             .filter(|f| !self.caps.encoders.contains(*f) && !self.caps.filters.contains(*f))
@@ -661,9 +662,18 @@ impl Planner<'_> {
         // Smart reframe pans horizontally (v1): it needs a face model and a source wider than
         // the target. Otherwise it degrades to a reframe that never cuts anything off.
         let overflow = geometry::plan(display, target, u.reframe).overflow;
+        let smart_missing: Vec<&str> =
+            SMART_FILTERS.iter().copied().filter(|f| !self.caps.filters.contains(*f)).collect();
         let effective = match (u.reframe, overflow, &self.caps.face) {
             (Reframe::Smart, Overflow::Horizontal, None) => {
                 warnings.push("face model not found; using blurred background".into());
+                Reframe::Blur
+            }
+            (Reframe::Smart, Overflow::Horizontal, Some(_)) if !smart_missing.is_empty() => {
+                warnings.push(format!(
+                    "the ffmpeg build lacks {} needed for smart reframe; using blurred background",
+                    smart_missing.join(", ")
+                ));
                 Reframe::Blur
             }
             (Reframe::Smart, Overflow::Vertical, _) => {

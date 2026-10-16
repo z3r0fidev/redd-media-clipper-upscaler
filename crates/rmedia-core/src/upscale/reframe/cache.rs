@@ -49,22 +49,28 @@ impl Cache {
         Cache { dir }
     }
 
-    /// The entry for `key`, if present, readable and valid.
-    pub fn get(&self, key: &str) -> Option<ReframeAnalysis> {
+    /// The entry for `key`, if present, readable, valid and accepted by `expect` (the caller's
+    /// check that it fits this job: frame count, sizes).
+    pub fn get(&self, key: &str, expect: impl Fn(&ReframeAnalysis) -> bool) -> Option<ReframeAnalysis> {
         if !is_key(key) {
             return None;
         }
+        use std::io::Read;
         let path = self.dir.join(format!("{key}.json"));
-        let meta = std::fs::symlink_metadata(&path).ok()?;
+        // One handle, opened without following a symlink; size and type checked on it.
+        let mut file = open_nofollow(std::fs::File::options().read(true), &path).ok()?;
+        let meta = file.metadata().ok()?;
         if !meta.file_type().is_file() || meta.len() > MAX_ENTRY_BYTES {
             return None;
         }
-        let a: ReframeAnalysis = serde_json::from_slice(&std::fs::read(&path).ok()?).ok()?;
-        if a.key != key || !a.is_valid() {
+        let mut bytes = Vec::new();
+        (&mut file).take(MAX_ENTRY_BYTES).read_to_end(&mut bytes).ok()?;
+        let a: ReframeAnalysis = serde_json::from_slice(&bytes).ok()?;
+        if a.key != key || !a.is_valid() || !expect(&a) {
             return None;
         }
-        // Recently used: evicted last.
-        if let Ok(f) = std::fs::File::options().write(true).open(&path) {
+        // Recently used: evicted last (best effort; a read-only cache still hits).
+        if let Ok(f) = open_nofollow(std::fs::File::options().write(true), &path) {
             let _ = f.set_modified(std::time::SystemTime::now());
         }
         Some(a)
@@ -75,10 +81,22 @@ impl Cache {
         if !is_key(&a.key) {
             return Err(std::io::Error::other("invalid cache key"));
         }
-        std::fs::create_dir_all(&self.dir)?;
-        let tmp = self.dir.join(format!(".{}.{}.tmp", a.key, std::process::id()));
-        std::fs::write(&tmp, serde_json::to_vec(a).map_err(std::io::Error::other)?)?;
-        std::fs::rename(&tmp, self.dir.join(format!("{}.json", a.key)))?;
+        use std::io::Write;
+        create_private_dirs(&self.dir)?;
+        // A fresh, unique temp file (never an existing path or link), then an atomic rename.
+        let nanos =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let tmp = self.dir.join(format!(".{}.{}-{nanos}.tmp", a.key, std::process::id()));
+        let written = std::fs::File::options()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .and_then(|mut f| f.write_all(&serde_json::to_vec(a).map_err(std::io::Error::other)?))
+            .and_then(|()| std::fs::rename(&tmp, self.dir.join(format!("{}.json", a.key))));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        written?;
         self.evict();
         Ok(())
     }
@@ -87,6 +105,22 @@ impl Cache {
 impl Cache {
     /// Removes the least recently used entries beyond [`MAX_ENTRIES`] (ties by name).
     fn evict(&self) {
+        // Temp files left by killed runs.
+        if let Ok(rd) = std::fs::read_dir(&self.dir) {
+            let day = std::time::Duration::from_secs(24 * 3600);
+            for e in rd.flatten() {
+                let stale = e
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.elapsed().ok())
+                    .is_some_and(|a| a > day);
+                let name = e.file_name().to_string_lossy().into_owned();
+                if stale && name.starts_with('.') && name.ends_with(".tmp") {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
         let Ok(rd) = std::fs::read_dir(&self.dir) else { return };
         let mut entries: Vec<(std::time::SystemTime, String)> = rd
             .flatten()
@@ -110,6 +144,22 @@ impl Cache {
             let _ = std::fs::remove_file(self.dir.join(name));
         }
     }
+}
+
+/// Opens `path` without following a final symlink (Unix; elsewhere a plain open).
+fn open_nofollow(opts: &mut std::fs::OpenOptions, path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(opts, libc::O_NOFOLLOW);
+    opts.open(path)
+}
+
+/// The cache folder is private to the user (0700 on Unix).
+fn create_private_dirs(dir: &std::path::Path) -> std::io::Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    b.create(dir)
 }
 
 /// Cache keys are SHA-256 hex digests; anything else could escape the folder.
@@ -188,17 +238,29 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let c = Cache::new(d.path().join("reframe"));
         let a = analysis(&"a".repeat(64));
+        #[cfg(unix)]
+        {
+            // A symlinked entry is never followed.
+            std::fs::create_dir_all(d.path().join("reframe")).unwrap();
+            let target = d.path().join("elsewhere.json");
+            std::fs::write(&target, serde_json::to_vec(&a).unwrap()).unwrap();
+            std::os::unix::fs::symlink(&target, d.path().join("reframe").join(format!("{}.json", a.key)))
+                .unwrap();
+            assert_eq!(c.get(&a.key, |_| true), None);
+            std::fs::remove_file(d.path().join("reframe").join(format!("{}.json", a.key))).unwrap();
+        }
         c.put(&a).unwrap();
-        assert_eq!(c.get(&a.key), Some(a.clone()), "bit-exact round trip");
-        assert_eq!(c.get(&"b".repeat(64)), None);
+        assert_eq!(c.get(&a.key, |_| true), Some(a.clone()), "bit-exact round trip");
+        assert_eq!(c.get(&a.key, |x| x.path.len() == 99), None, "an entry for another job shape is a miss");
+        assert_eq!(c.get(&"b".repeat(64), |_| true), None);
         std::fs::write(d.path().join("reframe").join(format!("{}.json", a.key)), "{ broken").unwrap();
-        assert_eq!(c.get(&a.key), None, "a corrupt entry is a miss");
+        assert_eq!(c.get(&a.key, |_| true), None, "a corrupt entry is a miss");
         c.put(&a).unwrap();
-        assert_eq!(c.get(&a.key), Some(a.clone()), "and is rewritten");
+        assert_eq!(c.get(&a.key, |_| true), Some(a.clone()), "and is rewritten");
         let mut bad = analysis(&"c".repeat(64));
         bad.path = vec![475]; // odd x: invalid
         c.put(&bad).unwrap();
-        assert_eq!(c.get(&bad.key), None, "entries that fail validation are misses");
+        assert_eq!(c.get(&bad.key, |_| true), None, "entries that fail validation are misses");
     }
 
     #[test]
@@ -210,7 +272,7 @@ mod tests {
         }
         let n = std::fs::read_dir(d.path()).unwrap().count();
         assert_eq!(n, MAX_ENTRIES);
-        assert_eq!(c.get(&format!("{:064}", 0)), None, "the oldest entry went");
-        assert!(c.get(&format!("{MAX_ENTRIES:064}")).is_some());
+        assert_eq!(c.get(&format!("{:064}", 0), |_| true), None, "the oldest entry went");
+        assert!(c.get(&format!("{MAX_ENTRIES:064}"), |_| true).is_some());
     }
 }

@@ -275,7 +275,9 @@ from `rmedia upscale` only; branch `002-mobile-upscale`, unreleased.
 - Upscale jobs always re-encode and always write `.mp4`; they never write next to the source
   outside an `upscaled/` folder (or `-o`).
 - A source already at or above the target size is not enlarged (`no_upscale_needed`).
-- `--reframe smart` is planned as `blur` until user story 2 ships (`reframe_applied`).
+- `--reframe smart` follows faces (YuNet under tract, analysed at 576 px and 3 fps, cached in
+  `<cache>/reframe/`); without a model, or where no face fits, it uses the blurred background,
+  and the plan says so (`reframe_applied`, `fallback_ranges`).
 - A forced `gpu` or `ai` tier is a planning error (`TIER_UNAVAILABLE`).
 - The job runs in a scratch folder next to the output (`.<stem>.rmedia-<run>-<job>.d`) that is
   journaled and removed on success, failure and cancel.

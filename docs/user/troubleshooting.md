@@ -656,16 +656,41 @@ to `rmedia clip` directly.
 These messages come from `rmedia upscale`, which is in development (0.2.0-dev) and not in the
 0.1.0 packages.
 
-### "smart reframe is not available yet; using the blurred background"
+### "face model not found; using blurred background"
 
 #### Cause
 
-`--reframe smart` is the default, but smart reframe (following the subject) is planned and not
-built. rmedia uses the blurred-background fit instead and tells you.
+`--reframe smart` (the default) follows faces with the YuNet model, and rmedia could not find it.
+It looks in the settings' `models_dir`, then `models/` next to the program, then
+`<cache>/models`. Installers place the model; a development checkout gets it with
+`cargo xtask fetch-models`.
 
 #### Resolution
 
-Nothing is wrong. To silence the warning, choose `--reframe blur` or `--reframe center`.
+Put `face_detection_yunet_2026may.onnx` in one of those folders, or choose `--reframe blur` or
+`--reframe center` to silence the warning.
+
+### "smart reframe analysis failed (…); using the blurred background"
+
+#### Cause
+
+The face analysis could not run for this video (for example a damaged model file). The job still
+finishes, over the blurred background.
+
+#### Resolution
+
+Check the model file (fetch it again), then re-run. Other videos are not affected.
+
+### "smart reframe pans horizontally only; using a centre crop"
+
+#### Cause
+
+The video is taller than the target shape (for example 9:21 into 9:19.5). Smart reframe moves the
+crop left and right only, so rmedia crops the centre.
+
+#### Resolution
+
+Nothing is wrong. Choose `--reframe blur` to keep the whole frame instead.
 
 ### "the gpu tier is not available on this machine" (or "the ai tier …")
 

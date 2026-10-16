@@ -492,7 +492,12 @@ warning for any file it ignores.
 |---|---|
 | `blur` | The whole frame, centred over a blurred copy of itself |
 | `center` | The middle of the frame, cropped to fit |
-| `smart` (default) | Planned: follow the subject. Today it behaves like `blur` and prints a warning |
+| `smart` (default) | Follow the faces: a crop that pans smoothly and jumps only at scene cuts. Where no face fits (none found, or people too far apart), that part shows the whole frame over the blurred background |
+
+Smart reframe needs the face model (see [Troubleshooting](troubleshooting.md#face-model-not-found-using-blurred-background)).
+A dry run analyses the video and shows the shots and the blurred ranges; `--crop-path FILE`
+writes the crop position of every frame as JSON. `--motion calm|normal|fast` sets how quickly the
+crop may follow. The analysis is cached, so the render that follows a dry run reuses it.
 
 ### Other Options
 
@@ -542,7 +547,7 @@ FFmpeg 6.0 or newer is required.
 | `no keyframe found before …` | [No keyframe found](troubleshooting.md#no-keyframe-found-before--use---mode-accurate-for-this-clip) |
 | `skipped: output already exists` | [Output already exists](troubleshooting.md#skipped-output-already-exists) |
 | `no input videos (folders contained no videos)` | [No input videos](troubleshooting.md#no-input-videos-folders-contained-no-videos) |
-| `smart reframe is not available yet`, `the gpu tier is not available`, or other `rmedia upscale` messages | [Upscaling](troubleshooting.md#upscaling) |
+| `face model not found`, `the gpu tier is not available`, or other `rmedia upscale` messages | [Upscaling](troubleshooting.md#upscaling) |
 | Warnings about subtitles, high bit depth, or `.mp4` instead | [Warnings](troubleshooting.md#warnings-that-do-not-stop-the-clip) |
 
 ## Related Information

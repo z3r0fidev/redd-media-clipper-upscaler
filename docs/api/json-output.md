@@ -129,19 +129,22 @@ the video. Real dry run, abridged (`argv` omitted):
 ```json
 {"id":1,"kind":"upscale","source":"/work/t.mp4","output":"/work/upscaled/t_phone-fill.mp4",
  "status":"planned","requested":{"start":0.0,"end":2.0},
- "warnings":["smart reframe is not available yet; using the blurred background"],
+ "warnings":[],
  "cwd":"/work/upscaled/.t_phone-fill.rmedia-c06fbb266d959734-1.d",
  "upscale":{"preset":"phone-fill","size":[1080,2340],"reframe":"smart","reframe_applied":"blur",
    "motion":"normal","tier":"cpu","tier_reason":"auto: the classical CPU tier","suggest":null,
    "hdr":"sdr","no_upscale_needed":false,"estimate":{"bytes":1137240,"secs":1.5},
-   "limit_warnings":[],"reframe_analysis":{"status":"not_needed"}}}
+   "limit_warnings":[],"reframe_analysis":{"status":"ready","cache":"miss","crop":[332,720],
+   "axis":"x","fps":30.0,"shots":[{"start":0.0,"end":6.0,"kind":"tracked"},
+   {"start":6.0,"end":10.0,"kind":"tracked"}],"fallback_ranges":[],
+   "path":{"hz":10,"keyframes":[[0.0,0],[0.1,0],["…"]]}}}}
 ```
 
 | `upscale` field | Notes |
 |---|---|
 | `preset`, `size` | Preset id and output `[width, height]` |
 | `reframe` | What was requested: `smart`, `center` or `blur` |
-| `reframe_applied` | What is used. `smart` becomes `blur` until smart reframe ships (user story 2) |
+| `reframe_applied` | What is used. `smart` becomes `blur` without a face model, when the analysis fails, or when no face fits anywhere in the video; `center` when the video is taller than the target |
 | `motion` | `calm`, `normal` or `fast` |
 | `tier`, `tier_reason` | `cpu` is the only tier available today; `gpu` and `ai` are planned |
 | `suggest` | `null` today; reserved for suggesting the `ai` tier |
@@ -149,7 +152,7 @@ the video. Real dry run, abridged (`argv` omitted):
 | `no_upscale_needed` | The source is already at or above the target size |
 | `estimate` | `{bytes, secs}`: rough output size and processing time |
 | `limit_warnings` | Platform limit messages (also `LIMIT_EXCEEDED` issues) |
-| `reframe_analysis` | `{status}`; `not_needed` for centre, blur or matching aspect. `pending` and `ready` (with crop path details) belong to smart reframe, which is planned. |
+| `reframe_analysis` | `status`: `not_needed` (centre, blur, matching aspect), `pending` (`--no-analyze`) or `ready`. When ready: `cache` (`hit`/`miss`), `crop` `[w,h]`, `axis` `x`, `fps`, `shots` (`start`, `end`, `kind`: `tracked`, `fallback` or `mixed`), `fallback_ranges` (blurred-background ranges), and `path` `{hz:10, keyframes:[[seconds, x], …]}`. Times are source seconds |
 
 ### `issues[]` and Errors
 

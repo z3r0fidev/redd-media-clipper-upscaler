@@ -170,7 +170,7 @@ pub fn analysis_graph(g: &GraphInput, size: (u32, u32)) -> String {
         f.push(TONEMAP.replace("{in}", &g.colour_in));
     }
     format!(
-        "[0:v]{},split[s][d];[s]scdet=t=10,metadata=mode=print:key=lavfi.scd.score:file=cuts.txt,nullsink;\
+        "[0:v]{},split[s][d];[s]scdet=t=10,metadata=mode=select:key=lavfi.scd.score:value=2.999:function=greater,metadata=mode=print:key=lavfi.scd.score:file=cuts.txt,nullsink;\
          [d]fps=3,format=bgr24[raw]",
         f.join(",")
     )
@@ -283,7 +283,7 @@ mod tests {
     fn analysis_graph_prints_cuts_and_samples_three_frames_a_second() {
         let mut g = input((1280, 720), (1080, 2340), Reframe::Smart);
         g.trim = Some((Ts::from_secs_f64(2.0), Some(Ts::from_secs_f64(5.0))));
-        insta::assert_snapshot!(analysis_graph(&g, (576, 324)), @"[0:v]trim=start=2.000000:end=5.000000,setpts=PTS-STARTPTS,scale=576:324:flags=area,setsar=1,split[s][d];[s]scdet=t=10,metadata=mode=print:key=lavfi.scd.score:file=cuts.txt,nullsink;[d]fps=3,format=bgr24[raw]");
+        insta::assert_snapshot!(analysis_graph(&g, (576, 324)), @"[0:v]trim=start=2.000000:end=5.000000,setpts=PTS-STARTPTS,scale=576:324:flags=area,setsar=1,split[s][d];[s]scdet=t=10,metadata=mode=select:key=lavfi.scd.score:value=2.999:function=greater,metadata=mode=print:key=lavfi.scd.score:file=cuts.txt,nullsink;[d]fps=3,format=bgr24[raw]");
     }
 
     #[test]

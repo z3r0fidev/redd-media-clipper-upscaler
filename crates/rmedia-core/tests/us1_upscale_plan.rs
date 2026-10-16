@@ -106,6 +106,15 @@ async fn engine_without_the_encoder_is_an_engine_error() {
     assert_eq!(codes(&p), ["ENGINE_MISSING"]);
     assert!(p.engine_errors_only(), "exit 4, not 3");
     let (_, mut caps) = engine();
+    caps.filters.remove("scdet");
+    let degraded = plan_whole(&src, up(|_| {}), Some(caps)).await;
+    assert!(degraded.issues.is_empty(), "missing smart filters degrade, not fail: {:?}", degraded.issues);
+    assert!(
+        degraded.jobs[0].warnings.iter().any(|w| w.contains("lacks scdet")),
+        "{:?}",
+        degraded.jobs[0].warnings
+    );
+    let (_, mut caps) = engine();
     caps.filters.remove("zscale");
     assert_eq!(codes(&plan_whole(&src, up(|_| {}), Some(caps)).await), ["ENGINE_MISSING"]);
 }

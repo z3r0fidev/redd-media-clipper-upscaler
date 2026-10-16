@@ -58,7 +58,10 @@ pub fn load(spec: &DetectorSpec) -> Result<Arc<dyn Detector>> {
             // One parsed model per path for the whole process: every job shares it and its
             // optimised plans.
             static LOADED: OnceLock<Mutex<HashMap<PathBuf, Arc<YunetDetector>>>> = OnceLock::new();
-            let mut loaded = LOADED.get_or_init(Default::default).lock().expect("detector registry");
+            let mut loaded = LOADED
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(d) = loaded.get(path) {
                 return Ok(d.clone());
             }
@@ -93,14 +96,16 @@ pub fn decode(outputs: &[&[f32]], input: (u32, u32), valid: (u32, u32)) -> Vec<F
         let s = stride as f32;
         for idx in 0..n {
             let score = (cls[idx].clamp(0.0, 1.0) * obj[idx].clamp(0.0, 1.0)).sqrt();
-            if score < SCORE_THRESHOLD {
+            // Written so that NaN scores are rejected too.
+            if score.is_nan() || score < SCORE_THRESHOLD {
                 continue;
             }
             let (row, col) = ((idx as u32 / cols) as f32, (idx as u32 % cols) as f32);
             let b = &bbox[idx * 4..idx * 4 + 4];
             let (cx, cy) = ((col + b[0]) * s, (row + b[1]) * s);
             let (w, h) = (b[2].exp() * s, b[3].exp() * s);
-            if !(w.is_finite() && h.is_finite()) || cx >= valid.0 as f32 || cy >= valid.1 as f32 {
+            let finite = [cx, cy, w, h].iter().all(|v| v.is_finite());
+            if !finite || cx >= valid.0 as f32 || cy >= valid.1 as f32 {
                 continue;
             }
             boxes.push(FaceBox { x: cx - w / 2.0, y: cy - h / 2.0, w, h, score });
@@ -161,7 +166,15 @@ impl YunetDetector {
         if !meta.is_file() || meta.len() > MAX_MODEL_BYTES {
             return Err(model_error(format!("{} is not a model file", path.display())));
         }
-        let bytes = std::fs::read(path).map_err(model_error)?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(
+            &mut std::io::Read::take(std::fs::File::open(path).map_err(model_error)?, MAX_MODEL_BYTES + 1),
+            &mut bytes,
+        )
+        .map_err(model_error)?;
+        if bytes.len() as u64 > MAX_MODEL_BYTES {
+            return Err(model_error(format!("{} is larger than 50 MB", path.display())));
+        }
         let sha = format!("{:x}", Sha256::digest(&bytes));
         let model =
             tract_onnx::onnx().model_for_read(&mut std::io::Cursor::new(bytes)).map_err(model_error)?;
@@ -170,7 +183,7 @@ impl YunetDetector {
 
     fn plan(&self, size: (u32, u32)) -> Result<YunetPlan> {
         use tract_onnx::prelude::*;
-        let mut plans = self.plans.lock().expect("plan cache");
+        let mut plans = self.plans.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(p) = plans.get(&size) {
             return Ok(p.clone());
         }

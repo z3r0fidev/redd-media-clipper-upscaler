@@ -56,13 +56,18 @@ pub fn deadzone(v: &[f64], band: f64) -> Vec<f64> {
 /// Linear interpolation of samples `(t, value)` onto frames `t = (first + i) / fps`,
 /// `i in 0..count`; values before the first and after the last sample hold.
 pub fn interpolate(samples: &[(f64, f64)], fps: f64, first: usize, count: usize) -> Vec<f64> {
+    // One pass over frames and samples together (frames are in time order).
+    let mut j = 0;
     (0..count)
         .map(|i| {
             let t = (first + i) as f64 / fps;
-            match samples.iter().position(|(st, _)| *st > t) {
-                None => samples.last().map_or(0.0, |s| s.1),
-                Some(0) => samples[0].1,
-                Some(j) => {
+            while j < samples.len() && samples[j].0 <= t {
+                j += 1;
+            }
+            match j {
+                0 => samples.first().map_or(0.0, |s| s.1),
+                j if j == samples.len() => samples[j - 1].1,
+                j => {
                     let ((t0, v0), (t1, v1)) = (samples[j - 1], samples[j]);
                     v0 + (v1 - v0) * (t - t0) / (t1 - t0)
                 }

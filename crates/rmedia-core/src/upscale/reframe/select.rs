@@ -68,6 +68,11 @@ pub fn hold(samples: &[(f64, Subject)], max_gap: f64) -> Vec<Option<f64>> {
 /// least 1 s (each sample covers ± half the sampling interval), clipped to the shot and merged.
 /// A shot without any face falls back whole.
 pub fn fallback_runs(samples: &[(f64, Subject)], shot: (f64, f64), interval: f64) -> Vec<(f64, f64)> {
+    if samples.is_empty() {
+        // Shorter than one sample: nothing seen, nothing to fall back for (it continues the
+        // previous position).
+        return Vec::new();
+    }
     if !samples.iter().any(|(_, s)| matches!(s, Subject::Centre(_))) {
         return vec![shot];
     }
@@ -147,6 +152,10 @@ mod tests {
             fallback_runs(&none, (0.0, 0.6), 1.0 / 3.0),
             vec![(0.0, 0.6)],
             "a faceless shot, however short"
+        );
+        assert!(
+            fallback_runs(&[], (2.0, 2.2), 1.0 / 3.0).is_empty(),
+            "a shot without samples is no fallback"
         );
         let far = samples(&[NoFit; 18]);
         assert_eq!(fallback_runs(&far, (0.0, 6.0), 1.0 / 3.0), vec![(0.0, 6.0)]);

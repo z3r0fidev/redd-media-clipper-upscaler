@@ -98,10 +98,7 @@ impl UpscalePlan {
                 && r.end.as_secs_f64() >= a.clip_start.as_secs_f64() + a.len_secs() - 0.5 / a.fps
         });
         if whole {
-            let g = geometry::plan(self.geometry.display, self.geometry.target, Reframe::Blur);
-            self.graph.geometry = g;
-            self.graph.reframe = Reframe::Blur;
-            self.graph.track = None;
+            self = self.with_blur();
         } else {
             self.graph.track = Some(graph::Track { x0, fallback: !a.fallback_ranges.is_empty() });
         }

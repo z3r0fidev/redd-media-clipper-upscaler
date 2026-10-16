@@ -154,3 +154,52 @@ async fn other_reframes_and_a_missing_model() {
     let JobSpec::Upscale(u) = &p.jobs[0].spec else { panic!() };
     assert_eq!(u.up.reframe_applied, Reframe::Blur);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_clip_of_the_source_is_tracked_in_clip_time() {
+    require_engine!("libx265", "zscale", "cas", "sendcmd", "scdet");
+    let d = tempfile::tempdir().unwrap();
+    let caps = caps(&d.path().join("cache"), Some(DetectorSpec::Marker));
+    let (tools, _) = engine();
+    // 2 s – 8 s: the cut (source 6 s) lands 4 s into the clip.
+    let req = request(
+        &fixture(Fixture::MovingMarker),
+        vec![clip(2.0, EndSpec::At(secs(8.0)))],
+        opts(d.path(), Reframe::Smart),
+    );
+    let mut p = make_plan(&req, &tools, &caps).await;
+    assert!(!p.has_errors(), "{:?}", p.issues);
+    prepare_plan(&mut p, &tools, &CancellationToken::new()).await.unwrap();
+    let (a, _) = analysis(&p);
+    assert_eq!(a.path.len(), 180);
+    assert_eq!(a.shots.len(), 2, "{:?}", a.shots);
+    let cut = a.shots[1].span.start.as_secs_f64();
+    assert!((cut - 6.0).abs() <= 1.0 / 30.0 + 1e-6, "cut reported in source time: {cut}");
+    let (out, _) = render(p, d.path()).await;
+    let (frames, (w, _)) = markers_per_frame(&out);
+    let inside = frames.iter().filter(|b| b.len() == 1 && b[0].x > 0.0 && b[0].x + b[0].w < w as f32).count();
+    assert!(inside as f64 >= 0.95 * frames.len() as f64, "{inside}/{} frames", frames.len());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_analysis_that_fails_while_rendering_falls_back_to_the_blurred_background() {
+    require_engine!("libx265", "zscale", "cas", "gblur");
+    let d = tempfile::tempdir().unwrap();
+    // A model path that does not exist: planning accepts it, loading fails in the job.
+    let caps = caps(&d.path().join("cache"), Some(DetectorSpec::Yunet(d.path().join("missing.onnx"))));
+    let (tools, _) = engine();
+    let p = make_plan(
+        &request(
+            &fixture(Fixture::MovingMarker),
+            vec![clip(0.0, EndSpec::EndOfMedia)],
+            opts(d.path(), Reframe::Smart),
+        ),
+        &tools,
+        &caps,
+    )
+    .await;
+    let (summary, events) = run_plan(p, tools, d.path()).await;
+    assert!(matches!(summary.jobs[0].outcome, JobOutcome::Succeeded { .. }), "{:?}", summary.jobs[0].outcome);
+    let warned = events.iter().any(|e| matches!(e, rmedia_core::event::Event::JobWarning { message, .. } if message.contains("using the blurred background")));
+    assert!(warned, "the fallback is reported");
+}

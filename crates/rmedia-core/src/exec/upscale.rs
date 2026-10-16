@@ -31,7 +31,7 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
         }
     }
     ctx.stage("render", of - 1, of, if analyse { 0.7 } else { 0.9 });
-    if let (Some(a), Some(dir)) = (spec.up.analysis(), ctx.scratch_dir()) {
+    if let (Some(a), Some(dir), Some(_)) = (spec.up.analysis(), ctx.scratch_dir(), spec.up.graph.track) {
         std::fs::write(dir.join("reframe.cmd"), reframe::sendcmd::to_sendcmd(a, spec.up.cmd_offset))
             .map_err(|e| Error::OutputUnwritable { path: dir.join("reframe.cmd"), message: e.to_string() })?;
     }

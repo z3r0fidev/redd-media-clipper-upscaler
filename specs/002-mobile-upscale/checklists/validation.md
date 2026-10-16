@@ -21,3 +21,17 @@
     overwrite through links).
   - Rare colour tags (smpte240m, film) fall back to BT.601/709 defaults.
   - Very long source names can exceed 255 bytes in temp names.
+
+## US2 checkpoint (2026-10-16)
+
+- SC-004 (MovingMarker, marker detector): marker fully inside in 100% of 300 frames, never out;
+  crop steps within the speed limit (+2 px for even rounding) except at the cut.
+- SC-005 (release, 60 s 1080p): analysis 10.7 s vs centre render 79 s (13.5%; bar 50%).
+- Real YuNet (ignored test): a public-domain NASA portrait panning across 1920x1080 stays inside the
+  crop; manual quickstart US2 render checked by eye (face centred at 1/3/5/7 s).
+- Engine: sendcmd toggles of `overlay@fb` land on exactly the commanded frames through the full graph.
+- **Known limits:**
+  - Pans horizontally only; taller sources get a centre crop.
+  - Clips mixing tracked and fallback sections render both branches throughout (slower).
+  - A histogram-only cut (scdet below 10) can start up to 1/3 s late.
+  - `--no-analyze` only affects dry runs; a render analyses when needed.

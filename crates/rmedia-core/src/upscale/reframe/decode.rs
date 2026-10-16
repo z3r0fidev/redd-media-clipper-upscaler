@@ -40,7 +40,12 @@ impl WorkDir {
         use std::sync::atomic::{AtomicU64, Ordering};
         static N: AtomicU64 = AtomicU64::new(0);
         let root = base.map_or_else(std::env::temp_dir, |b| b.join("tmp"));
-        std::fs::create_dir_all(&root)?;
+        let mut b = std::fs::DirBuilder::new();
+        b.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        b.create(&root)?;
+        sweep_stale(&root);
         let nanos =
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
         let dir = root.join(format!(
@@ -54,6 +59,23 @@ impl WorkDir {
 
     pub fn path(&self) -> &Path {
         &self.0
+    }
+}
+
+/// Removes analysis work folders left by killed runs (older than a day).
+fn sweep_stale(root: &Path) {
+    let Ok(rd) = std::fs::read_dir(root) else { return };
+    let day = std::time::Duration::from_secs(24 * 3600);
+    for e in rd.flatten() {
+        let old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > day);
+        if old && e.file_name().to_string_lossy().starts_with("rmedia-analysis-") {
+            crate::exec::commit::remove_with_retry(&e.path());
+        }
     }
 }
 
@@ -93,6 +115,17 @@ pub async fn run(
         let samples = &mut samples;
         let progress = &mut progress;
         async move {
+            type Batch = std::io::Result<Vec<(Vec<super::detect::FaceBox>, [u32; 48])>>;
+            // Detection of one batch runs while the next is read, so ffmpeg keeps decoding.
+            let mut pending: Option<tokio::task::JoinHandle<Batch>> = None;
+            let mut collect = |done: Vec<(Vec<super::detect::FaceBox>, [u32; 48])>,
+                               samples: &mut Vec<SampleResult>| {
+                let first = samples.len();
+                for (i, (faces, hist)) in done.into_iter().enumerate() {
+                    samples.push(SampleResult { t: (first + i) as f64 / SAMPLE_FPS, faces, hist });
+                }
+                progress(samples.len());
+            };
             let mut eof = false;
             while !eof {
                 let mut batch = Vec::with_capacity(workers * 2);
@@ -107,19 +140,19 @@ pub async fn run(
                         Err(e) => return Err(e),
                     }
                 }
+                if let Some(job) = pending.take() {
+                    collect(job.await.map_err(std::io::Error::other)??, samples);
+                }
                 if batch.is_empty() {
                     break;
                 }
                 let det = detector.clone();
-                let first = samples.len();
-                let done =
-                    tokio::task::spawn_blocking(move || detect_batch(det.as_ref(), batch, size, workers))
-                        .await
-                        .map_err(std::io::Error::other)??;
-                for (i, (faces, hist)) in done.into_iter().enumerate() {
-                    samples.push(SampleResult { t: (first + i) as f64 / SAMPLE_FPS, faces, hist });
-                }
-                progress(samples.len());
+                pending = Some(tokio::task::spawn_blocking(move || {
+                    detect_batch(det.as_ref(), batch, size, workers)
+                }));
+            }
+            if let Some(job) = pending.take() {
+                collect(job.await.map_err(std::io::Error::other)??, samples);
             }
             Ok(())
         }

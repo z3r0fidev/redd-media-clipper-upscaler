@@ -65,7 +65,8 @@ fn dry_run_json_matches_the_contract_and_writes_nothing() {
         (Some("smart"), Some("cpu"), Some("sdr"))
     );
     assert!(up["tier_reason"].as_str().is_some_and(|r| r.starts_with("auto")));
-    assert_eq!(up["reframe_applied"], "smart");
+    // The test pattern has no faces: the whole clip falls back, reported as blur.
+    assert_eq!(up["reframe_applied"], "blur");
     assert!(up["suggest"].is_null());
     assert_eq!(up["no_upscale_needed"], false);
     assert!(up["estimate"]["bytes"].as_u64().unwrap() > 0 && up["estimate"]["secs"].as_f64().unwrap() > 0.0);
@@ -162,4 +163,8 @@ fn smart_reframe_dry_run_block_cache_no_analyze_and_crop_path() {
         .output()
         .unwrap();
     assert_eq!(centre.status.code(), Some(2), "--crop-path needs a smart-reframe job");
+    let onto_source =
+        rmedia(d.path()).args(["upscale", "--dry-run", "--crop-path"]).arg(&src).arg(&src).output().unwrap();
+    assert_eq!(onto_source.status.code(), Some(3), "--crop-path never overwrites a source");
+    assert!(src.metadata().unwrap().len() > 10_000, "the source is intact");
 }

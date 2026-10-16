@@ -61,6 +61,10 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
     };
     let mut plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
     let crop_path = args.upscale.crop_path.as_deref();
+    if crop_path.is_some() && args.upscale.no_analyze {
+        eprintln!("error: --crop-path needs the analysis; it cannot be combined with --no-analyze");
+        return exit::USAGE;
+    }
     let analyse = (args.common.dry_run && !args.upscale.no_analyze) || crop_path.is_some();
     if analyse && !plan.has_errors() {
         // The crop path is shown (and written) before anything renders; the render reuses the
@@ -106,8 +110,31 @@ fn write_crop_path(plan: &plan::Plan, file: &std::path::Path, out: &Output) -> R
     };
     let doc = json!({"schema": 1, "fps": a.fps, "crop": [a.crop.0, a.crop.1], "x": a.path});
     let file = absolute(file);
-    let tmp = file.with_extension("json.tmp");
-    let written = std::fs::write(&tmp, serde_json::to_vec(&doc).expect("crop path serialises"))
+    // Never write over a video of this run (Principle V).
+    let same = |p: &std::path::Path| {
+        p == file
+            || std::fs::canonicalize(p)
+                .ok()
+                .zip(std::fs::canonicalize(&file).ok())
+                .is_some_and(|(a, b)| a == b)
+    };
+    if plan.jobs.iter().any(|j| same(&j.source) || same(&j.output)) {
+        return Err(
+            out.input_error(&format!("--crop-path {} is one of the videos of this run", file.display()))
+        );
+    }
+    // A fresh, unique temp file beside the target, then an atomic rename.
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let name = file.file_name().map_or_else(|| "crop-path".into(), |n| n.to_string_lossy().into_owned());
+    let tmp = file.with_file_name(format!(".{name}.{}-{nanos}.tmp", std::process::id()));
+    let written = std::fs::File::options()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .and_then(|mut f| {
+            std::io::Write::write_all(&mut f, &serde_json::to_vec(&doc).expect("crop path serialises"))
+        })
         .and_then(|()| std::fs::rename(&tmp, &file));
     if let Err(e) = written {
         let _ = std::fs::remove_file(&tmp);

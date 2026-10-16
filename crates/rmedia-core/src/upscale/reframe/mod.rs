@@ -73,7 +73,9 @@ impl ReframeAnalysis {
         let max_x = i64::from(self.source_size.0) - i64::from(self.crop.0);
         let end = self.clip_start.as_secs_f64() + self.len_secs() + 1.0 / self.fps.max(1.0);
         self.algo_version == ALGO_VERSION
-            && self.fps > 0.0
+            && self.fps.is_finite()
+            && self.fps >= 1.0
+            && self.crop_y + self.crop.1 <= self.source_size.1
             && !self.path.is_empty()
             && max_x >= 0
             && self.crop.1 <= self.source_size.1
@@ -166,6 +168,11 @@ pub fn assemble(
                 })
                 .collect()
         };
+        if known.is_empty() && fa > 0 && fb > fa {
+            // A shot too short to be sampled (a flash frame, a rapid cut): hold the position.
+            let last = centres[fa - 1];
+            centres[fa..fb].fill(last);
+        }
         if !known.is_empty() && fb > fa {
             let smooth = path::deadzone(&path::median5(&known), 0.06 * crop_w);
             let pairs: Vec<(f64, f64)> = in_shot.iter().map(|(t, _)| *t).zip(smooth).collect();
@@ -213,7 +220,11 @@ pub async fn analyze_cached(
     use crate::upscale::CacheUse;
     let up = &spec.up;
     let not_smart = || Error::InvalidInput("this job has no smart reframe to analyse".into());
-    let detector = detect::load(up.detector.as_ref().ok_or_else(not_smart)?)?;
+    let spec_det = up.detector.clone().ok_or_else(not_smart)?;
+    // Reading and hashing the model is blocking work.
+    let detector = tokio::task::spawn_blocking(move || detect::load(&spec_det)).await.map_err(|e| {
+        Error::EngineFailed { message: format!("face model: {e}"), stderr_tail: String::new() }
+    })??;
     let crop = up.geometry.crop.ok_or_else(not_smart)?;
     let span = spec.cut.requested;
     let len = span.end.saturating_sub(span.start).as_secs_f64();
@@ -240,7 +251,14 @@ pub async fn analyze_cached(
         ffmpeg: tools.version.text().to_owned(),
     });
     let cache = up.reframe_cache.clone().map(cache::Cache::new);
-    if let Some(a) = cache.as_ref().and_then(|c| c.get(&key)) {
+    let frames = frame_count(len, up.fps_out);
+    let fits = |a: &ReframeAnalysis| {
+        a.path.len() == frames
+            && a.source_size == up.geometry.display
+            && a.crop == (crop.w, crop.h)
+            && a.crop_y == crop.y
+    };
+    if let Some(a) = cache.as_ref().and_then(|c| c.get(&key, fits)) {
         progress(1.0);
         return Ok((std::sync::Arc::new(a), CacheUse::Hit));
     }
@@ -330,6 +348,20 @@ mod tests {
             let x = f64::from(a.path[k]);
             assert!(marker > x + 40.0 && marker < x + 332.0 - 40.0, "frame {k}: marker {marker} crop {x}");
         }
+    }
+
+    #[test]
+    fn a_shot_too_short_to_sample_holds_the_position_without_falling_back() {
+        let mut s = samples();
+        // A false cut at 3.1 s and a real one at 6.0 s: the 3.1–3.2 s shot has no sample.
+        s.retain(|x| x.t < 6.0);
+        let mut p = params();
+        p.len = 6.0;
+        let a = assemble(&s, &[(3.1, 12.0), (3.2, 12.0)], &p, "k".into());
+        assert_eq!(a.shots.len(), 3);
+        assert!(a.fallback_ranges.is_empty(), "{:?}", a.fallback_ranges);
+        let k = (3.1 * 30.0_f64).ceil() as usize;
+        assert_eq!(a.path[k], a.path[k - 1], "no jump into the unsampled shot");
     }
 
     #[test]
