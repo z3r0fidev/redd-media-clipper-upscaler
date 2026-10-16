@@ -16,23 +16,81 @@ pub enum Subject {
 /// union is wider than 0.9 crop widths, or one is more than 1.5 crop widths from the largest,
 /// nothing fits.
 pub fn select(faces: &[FaceBox], crop_w: f64) -> Subject {
-    let _ = (faces, crop_w);
-    todo!()
+    let Some(largest) = faces.iter().max_by(|a, b| a.h.total_cmp(&b.h).then(a.score.total_cmp(&b.score)))
+    else {
+        return Subject::NoFace;
+    };
+    let group: Vec<&FaceBox> = faces.iter().filter(|f| f.h >= 0.5 * largest.h).collect();
+    let anchor = f64::from(largest.centre_x());
+    if group.iter().any(|f| (f64::from(f.centre_x()) - anchor).abs() > 1.5 * crop_w) {
+        return Subject::NoFit;
+    }
+    let left = group.iter().map(|f| f64::from(f.x)).fold(f64::INFINITY, f64::min);
+    let right = group.iter().map(|f| f64::from(f.x + f.w)).fold(f64::NEG_INFINITY, f64::max);
+    if right - left > 0.9 * crop_w {
+        return Subject::NoFit;
+    }
+    Subject::Centre((left + right) / 2.0)
 }
 
 /// Centre per sample: gaps (no face / no fit) shorter than `max_gap` seconds hold the last
 /// centre (or take the next one at the start of a shot); longer gaps stay `None`.
 pub fn hold(samples: &[(f64, Subject)], max_gap: f64) -> Vec<Option<f64>> {
-    let _ = (samples, max_gap);
-    todo!()
+    let interval = match samples {
+        [a, b, ..] => b.0 - a.0,
+        _ => 1.0 / 3.0,
+    };
+    let centre = |s: &Subject| match s {
+        Subject::Centre(c) => Some(*c),
+        _ => None,
+    };
+    let mut out: Vec<Option<f64>> = samples.iter().map(|(_, s)| centre(s)).collect();
+    let mut i = 0;
+    while i < out.len() {
+        if out[i].is_some() {
+            i += 1;
+            continue;
+        }
+        let end = (i..out.len()).find(|j| out[*j].is_some()).unwrap_or(out.len());
+        let gap = (end - i) as f64 * interval;
+        if gap < max_gap - 1e-9 {
+            let fill = if i > 0 { out[i - 1] } else { out.get(end).copied().flatten() };
+            for slot in &mut out[i..end] {
+                *slot = fill;
+            }
+        }
+        i = end;
+    }
+    out
 }
 
 /// Fallback ranges `[start, end)` within `shot`: runs of no-face/no-fit samples lasting at
 /// least 1 s (each sample covers ± half the sampling interval), clipped to the shot and merged.
 /// A shot without any face falls back whole.
 pub fn fallback_runs(samples: &[(f64, Subject)], shot: (f64, f64), interval: f64) -> Vec<(f64, f64)> {
-    let _ = (samples, shot, interval);
-    todo!()
+    if !samples.iter().any(|(_, s)| matches!(s, Subject::Centre(_))) {
+        return vec![shot];
+    }
+    let mut runs: Vec<(f64, f64)> = Vec::new();
+    let mut i = 0;
+    while i < samples.len() {
+        if matches!(samples[i].1, Subject::Centre(_)) {
+            i += 1;
+            continue;
+        }
+        let end =
+            (i..samples.len()).find(|j| matches!(samples[*j].1, Subject::Centre(_))).unwrap_or(samples.len());
+        let start = (samples[i].0 - interval / 2.0).max(shot.0);
+        let stop = (samples[end - 1].0 + interval / 2.0).min(shot.1);
+        if stop - start >= 1.0 - 1e-9 {
+            match runs.last_mut() {
+                Some(last) if last.1 >= start => last.1 = last.1.max(stop),
+                _ => runs.push((start, stop)),
+            }
+        }
+        i = end;
+    }
+    runs
 }
 
 #[cfg(test)]

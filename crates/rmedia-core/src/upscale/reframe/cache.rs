@@ -34,8 +34,9 @@ pub struct KeyInputs {
 
 /// SHA-256 (hex) of the canonical JSON of `k`.
 pub fn key(k: &KeyInputs) -> String {
-    let _ = k;
-    todo!()
+    use sha2::{Digest, Sha256};
+    let canonical = serde_json::to_vec(k).expect("key inputs serialise");
+    format!("{:x}", Sha256::digest(canonical))
 }
 
 #[derive(Debug, Clone)]
@@ -50,15 +51,70 @@ impl Cache {
 
     /// The entry for `key`, if present, readable and valid.
     pub fn get(&self, key: &str) -> Option<ReframeAnalysis> {
-        let _ = key;
-        todo!()
+        if !is_key(key) {
+            return None;
+        }
+        let path = self.dir.join(format!("{key}.json"));
+        let meta = std::fs::symlink_metadata(&path).ok()?;
+        if !meta.file_type().is_file() || meta.len() > MAX_ENTRY_BYTES {
+            return None;
+        }
+        let a: ReframeAnalysis = serde_json::from_slice(&std::fs::read(&path).ok()?).ok()?;
+        if a.key != key || !a.is_valid() {
+            return None;
+        }
+        // Recently used: evicted last.
+        if let Ok(f) = std::fs::File::options().write(true).open(&path) {
+            let _ = f.set_modified(std::time::SystemTime::now());
+        }
+        Some(a)
     }
 
     /// Stores `a` under `a.key` and evicts the oldest entries beyond [`MAX_ENTRIES`].
     pub fn put(&self, a: &ReframeAnalysis) -> std::io::Result<()> {
-        let _ = a;
-        todo!()
+        if !is_key(&a.key) {
+            return Err(std::io::Error::other("invalid cache key"));
+        }
+        std::fs::create_dir_all(&self.dir)?;
+        let tmp = self.dir.join(format!(".{}.{}.tmp", a.key, std::process::id()));
+        std::fs::write(&tmp, serde_json::to_vec(a).map_err(std::io::Error::other)?)?;
+        std::fs::rename(&tmp, self.dir.join(format!("{}.json", a.key)))?;
+        self.evict();
+        Ok(())
     }
+}
+
+impl Cache {
+    /// Removes the least recently used entries beyond [`MAX_ENTRIES`] (ties by name).
+    fn evict(&self) {
+        let Ok(rd) = std::fs::read_dir(&self.dir) else { return };
+        let mut entries: Vec<(std::time::SystemTime, String)> = rd
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let key = name.strip_suffix(".json")?;
+                is_key(key).then(|| {
+                    (
+                        e.metadata().and_then(|m| m.modified()).ok().unwrap_or(std::time::UNIX_EPOCH),
+                        name.clone(),
+                    )
+                })
+            })
+            .collect();
+        if entries.len() <= MAX_ENTRIES {
+            return;
+        }
+        entries.sort();
+        let excess = entries.len() - MAX_ENTRIES;
+        for (_, name) in entries.into_iter().take(excess) {
+            let _ = std::fs::remove_file(self.dir.join(name));
+        }
+    }
+}
+
+/// Cache keys are SHA-256 hex digests; anything else could escape the folder.
+fn is_key(key: &str) -> bool {
+    key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 #[cfg(test)]
@@ -109,7 +165,8 @@ mod tests {
     fn key_changes_with_every_input() {
         let base = key(&inputs());
         assert_eq!(base.len(), 64);
-        let edits: Vec<Box<dyn Fn(&mut KeyInputs)>> = vec![
+        type Edit = Box<dyn Fn(&mut KeyInputs)>;
+        let edits: Vec<Edit> = vec![
             Box::new(|k| k.mtime_ns += 1),
             Box::new(|k| k.size += 1),
             Box::new(|k| k.span.1 = 9.0),

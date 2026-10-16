@@ -70,14 +70,25 @@ impl ReframeAnalysis {
     /// Structural checks for cached entries: version, even x inside the frame, ranges inside
     /// the clip.
     pub fn is_valid(&self) -> bool {
-        todo!()
+        let max_x = i64::from(self.source_size.0) - i64::from(self.crop.0);
+        let end = self.clip_start.as_secs_f64() + self.len_secs() + 1.0 / self.fps.max(1.0);
+        self.algo_version == ALGO_VERSION
+            && self.fps > 0.0
+            && !self.path.is_empty()
+            && max_x >= 0
+            && self.crop.1 <= self.source_size.1
+            && self.path.iter().all(|x| x % 2 == 0 && i64::from(*x) >= 0 && i64::from(*x) <= max_x)
+            && self.fallback_ranges.windows(2).all(|w| w[0].end <= w[1].start)
+            && self
+                .fallback_ranges
+                .iter()
+                .all(|r| r.start >= self.clip_start && r.start < r.end && r.end.as_secs_f64() <= end + 1e-6)
     }
 }
 
 /// Frames in a clip of `len` seconds at `fps`.
 pub fn frame_count(len: f64, fps: f64) -> usize {
-    let _ = (len, fps);
-    todo!()
+    (len * fps - 1e-9).ceil().max(0.0) as usize
 }
 
 /// One analysed sample: its clip time, detections (analysis pixels) and histogram.
@@ -108,8 +119,86 @@ pub fn assemble(
     p: &AssembleParams,
     key: String,
 ) -> ReframeAnalysis {
-    let _ = (samples, scores, p, key);
-    todo!()
+    let scale = f64::from(p.display.0) / f64::from(p.analysis_size.0.max(1));
+    let crop_w = f64::from(p.crop.0);
+    let interval = 1.0 / SAMPLE_FPS;
+    let subjects: Vec<(f64, select::Subject)> = samples
+        .iter()
+        .map(|s| {
+            let faces: Vec<FaceBox> = s
+                .faces
+                .iter()
+                .map(|f| FaceBox {
+                    x: (f64::from(f.x) * scale) as f32,
+                    y: (f64::from(f.y) * scale) as f32,
+                    w: (f64::from(f.w) * scale) as f32,
+                    h: (f64::from(f.h) * scale) as f32,
+                    score: f.score,
+                })
+                .collect();
+            (s.t, select::select(&faces, crop_w))
+        })
+        .collect();
+    let hists: Vec<(f64, [u32; 48])> = samples.iter().map(|s| (s.t, s.hist)).collect();
+    let shot_bounds = cuts::shots(&cuts::cuts(scores, &hists), p.len);
+    let n = frame_count(p.len, p.fps);
+    let lim = path::limits(p.motion, crop_w, p.fps);
+    let frame_of = |t: f64| ((t * p.fps - 1e-9).ceil().max(0.0) as usize).min(n);
+    let at = |t: f64| p.clip_start + Ts::from_secs_f64(t);
+    let mut centres = vec![f64::from(p.display.0) / 2.0; n];
+    let mut shots = Vec::new();
+    let mut fallback: Vec<(f64, f64)> = Vec::new();
+    for &(a, b) in &shot_bounds {
+        let in_shot: Vec<(f64, select::Subject)> =
+            subjects.iter().filter(|(t, _)| *t >= a && *t < b).copied().collect();
+        let runs = select::fallback_runs(&in_shot, (a, b), interval);
+        let held = select::hold(&in_shot, 1.0);
+        let (fa, fb) = (frame_of(a), frame_of(b));
+        let known: Vec<f64> = {
+            // Long gaps keep the last position (hidden behind the blurred background).
+            let mut last = held.iter().flatten().next().copied();
+            held.iter()
+                .map(|c| {
+                    if c.is_some() {
+                        last = *c;
+                    }
+                    last.unwrap_or(f64::from(p.display.0) / 2.0)
+                })
+                .collect()
+        };
+        if !known.is_empty() && fb > fa {
+            let smooth = path::deadzone(&path::median5(&known), 0.06 * crop_w);
+            let pairs: Vec<(f64, f64)> = in_shot.iter().map(|(t, _)| *t).zip(smooth).collect();
+            let targets = path::interpolate(&pairs, p.fps, fa, fb - fa);
+            centres[fa..fb].copy_from_slice(&path::follow(&targets, lim));
+        }
+        let kind = match runs.as_slice() {
+            [] => ShotKind::Tracked,
+            [(s, e)] if (s - a).abs() < 1e-9 && (e - b).abs() < 1e-9 => ShotKind::Fallback,
+            _ => ShotKind::Mixed,
+        };
+        shots.push(Shot { span: Span { start: at(a), end: at(b) }, kind });
+        for r in runs {
+            match fallback.last_mut() {
+                Some(last) if last.1 >= r.0 - 1e-9 => last.1 = last.1.max(r.1),
+                _ => fallback.push(r),
+            }
+        }
+    }
+    ReframeAnalysis {
+        key,
+        algo_version: ALGO_VERSION,
+        source_size: p.display,
+        crop: p.crop,
+        crop_y: p.crop_y,
+        fps: p.fps,
+        clip_start: p.clip_start,
+        shots,
+        fallback_ranges: fallback.into_iter().map(|(s, e)| Span { start: at(s), end: at(e) }).collect(),
+        path: path::finalize(&centres, p.crop.0, p.display.0 - p.crop.0),
+        detections: samples.iter().map(|s| s.faces.len() as u32).sum(),
+        samples: samples.len() as u32,
+    }
 }
 
 #[cfg(test)]

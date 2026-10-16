@@ -6,14 +6,15 @@ pub const ANALYSIS_LONG_SIDE: u32 = 576;
 
 /// Analysis frame size for a displayed source size: long side 576, aspect kept, even.
 pub fn analysis_size(display: (u32, u32)) -> (u32, u32) {
-    let _ = display;
-    todo!()
+    let even = |v: f64| ((v / 2.0).round().max(1.0) as u32) * 2;
+    let (w, h) = (f64::from(display.0.max(1)), f64::from(display.1.max(1)));
+    let long = f64::from(ANALYSIS_LONG_SIDE);
+    if w >= h { (ANALYSIS_LONG_SIDE, even(long * h / w)) } else { (even(long * w / h), ANALYSIS_LONG_SIDE) }
 }
 
 /// `size` rounded up to multiples of 32 (YuNet's largest stride); the extra is zero padding.
 pub fn padded(size: (u32, u32)) -> (u32, u32) {
-    let _ = size;
-    todo!()
+    (size.0.div_ceil(32) * 32, size.1.div_ceil(32) * 32)
 }
 
 #[cfg(test)]

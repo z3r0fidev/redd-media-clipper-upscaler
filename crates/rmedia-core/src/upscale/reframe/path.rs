@@ -16,41 +16,97 @@ pub struct Limits {
 /// Speed and acceleration limits for a motion profile, scaled to the crop width and frame rate
 /// (research R6: calm 0.35/0.7, normal 0.7/1.5, fast 1.4/3.0 crop widths per s / s²).
 pub fn limits(motion: Motion, crop_w: f64, fps: f64) -> Limits {
-    let _ = (motion, crop_w, fps);
-    todo!()
+    let (speed, accel) = match motion {
+        Motion::Calm => (0.35, 0.7),
+        Motion::Normal => (0.7, 1.5),
+        Motion::Fast => (1.4, 3.0),
+    };
+    Limits { speed: speed * crop_w / fps, accel: accel * crop_w / (fps * fps) }
 }
 
 /// Centred median over 5 values; the window shrinks symmetrically at the ends.
 pub fn median5(v: &[f64]) -> Vec<f64> {
-    let _ = v;
-    todo!()
+    (0..v.len())
+        .map(|i| {
+            let half = 2.min(i).min(v.len() - 1 - i);
+            let mut w: Vec<f64> = v[i - half..=i + half].to_vec();
+            w.sort_by(f64::total_cmp);
+            w[half]
+        })
+        .collect()
 }
 
 /// The target moves only when the value leaves ±`band` around the current target, and then
 /// jumps to the value (ignores small jitter, FR-013).
 pub fn deadzone(v: &[f64], band: f64) -> Vec<f64> {
-    let _ = (v, band);
-    todo!()
+    let mut target = match v.first() {
+        Some(t) => *t,
+        None => return Vec::new(),
+    };
+    v.iter()
+        .map(|x| {
+            if (x - target).abs() > band {
+                target = *x;
+            }
+            target
+        })
+        .collect()
 }
 
 /// Linear interpolation of samples `(t, value)` onto frames `t = (first + i) / fps`,
 /// `i in 0..count`; values before the first and after the last sample hold.
 pub fn interpolate(samples: &[(f64, f64)], fps: f64, first: usize, count: usize) -> Vec<f64> {
-    let _ = (samples, fps, first, count);
-    todo!()
+    (0..count)
+        .map(|i| {
+            let t = (first + i) as f64 / fps;
+            match samples.iter().position(|(st, _)| *st > t) {
+                None => samples.last().map_or(0.0, |s| s.1),
+                Some(0) => samples[0].1,
+                Some(j) => {
+                    let ((t0, v0), (t1, v1)) = (samples[j - 1], samples[j]);
+                    v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+                }
+            }
+        })
+        .collect()
 }
 
 /// Follows `targets` from `targets[0]` at rest, never faster than `speed` and never changing
 /// speed by more than `accel` per frame, slowing in time to stop at the target (no overshoot).
 pub fn follow(targets: &[f64], lim: Limits) -> Vec<f64> {
-    let _ = (targets, lim);
-    todo!()
+    let Some(&start) = targets.first() else { return Vec::new() };
+    let (v, a) = (lim.speed, lim.accel);
+    let (mut pos, mut step) = (start, 0.0f64);
+    let mut out = Vec::with_capacity(targets.len());
+    out.push(pos);
+    for &target in &targets[1..] {
+        let d = target - pos;
+        // The fastest speed that can still stop on the target, decelerating by `a` per frame.
+        let stoppable = -a / 2.0 + (a * a / 4.0 + 2.0 * a * d.abs()).sqrt();
+        let wanted = d.signum() * v.min(stoppable);
+        let mut next = wanted.clamp(step - a, step + a).clamp(-v, v);
+        let overshoots = (next > 0.0 && next > d) || (next < 0.0 && next < d);
+        if overshoots && (d - step).abs() <= a {
+            next = d;
+        }
+        step = next;
+        pos += step;
+        out.push(pos);
+    }
+    out
 }
 
 /// Crop centres → crop x: centre − w/2, clamped to `[0, max_x]`, rounded to even.
 pub fn finalize(centres: &[f64], crop_w: u32, max_x: u32) -> Vec<i32> {
-    let _ = (centres, crop_w, max_x);
-    todo!()
+    let half = f64::from(crop_w) / 2.0;
+    centres
+        .iter()
+        .map(|c| {
+            let x = (c - half).clamp(0.0, f64::from(max_x));
+            let even = (x / 2.0).round() * 2.0;
+            (even as i32).clamp(0, max_x as i32 - (max_x as i32 % 2))
+        })
+        .collect()
 }
 
 #[cfg(test)]

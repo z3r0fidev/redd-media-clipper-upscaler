@@ -5,18 +5,46 @@
 //! command is written only where x changes.
 
 use super::ReframeAnalysis;
+use crate::time::Ts;
 
 /// The `reframe.cmd` text. `offset` (seconds) is added to every time: the render's first video
 /// frame time when it is not 0 (whole videos whose audio starts first).
 pub fn to_sendcmd(a: &ReframeAnalysis, offset: f64) -> String {
-    let _ = (a, offset);
-    todo!()
+    let n = a.path.len();
+    let at = |k: usize| offset + ((k as f64 - 0.5) / a.fps).max(0.0);
+    // (time, order, line): crop commands sort before toggles at the same time.
+    let mut lines: Vec<(f64, u8, String)> = Vec::new();
+    for k in 1..n {
+        if a.path[k] != a.path[k - 1] {
+            lines.push((at(k), 0, format!("crop@trk x {}", a.path[k])));
+        }
+    }
+    let frame =
+        |t: Ts| ((t.as_secs_f64() - a.clip_start.as_secs_f64()) * a.fps - 1e-9).ceil().max(0.0) as usize;
+    for r in &a.fallback_ranges {
+        let (on, off) = (frame(r.start), frame(r.end));
+        if on < n {
+            lines.push((at(on), 1, "[enter] overlay@fb enable 1".into()));
+        }
+        if off < n {
+            lines.push((at(off), 1, "[enter] overlay@fb enable 0".into()));
+        }
+    }
+    lines.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+    lines.iter().map(|(t, _, cmd)| format!("{t:.6} {cmd};\n")).collect()
 }
 
 /// `(source seconds, crop x)` sampled at `hz`, for JSON and the desktop overlay.
 pub fn keyframes(a: &ReframeAnalysis, hz: f64) -> Vec<(f64, i32)> {
-    let _ = (a, hz);
-    todo!()
+    let Some(last) = a.path.len().checked_sub(1) else { return Vec::new() };
+    let ticks = (a.len_secs() * hz + 1e-9).floor() as usize;
+    (0..=ticks)
+        .map(|j| {
+            let t = j as f64 / hz;
+            let k = ((t * a.fps + 1e-9).floor() as usize).min(last);
+            (a.clip_start.as_secs_f64() + t, a.path[k])
+        })
+        .collect()
 }
 
 #[cfg(test)]
