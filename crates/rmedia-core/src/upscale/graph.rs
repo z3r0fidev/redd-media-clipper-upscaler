@@ -92,9 +92,79 @@ pub fn zscale_input(tags: &ColourTags, coded_height: u32) -> String {
     format!("min={matrix}:tin={transfer}:pin={primaries}:rin={range}")
 }
 
+/// What a graph is for: the render, or the plain-bicubic baseline the preview compares with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Flavor {
+    Render,
+    /// Same framing and colours, bicubic scaling, no denoise or sharpening (what a plain
+    /// upscaler gives; the quality bar of SC-002 is measured against it).
+    Baseline,
+}
+
 /// Builds the filtergraph.
 pub fn build(g: &GraphInput) -> String {
-    let pre = pre_chain(g);
+    build_with(g, Flavor::Render)
+}
+
+/// The inputs for one still frame at a fixed crop: smart reframe at crop x `x` (centred when
+/// `None`), or the blurred background when `blurred`. No trim and no frame-rate cap (the
+/// still is input-seeked); the CPU scaler when `cpu`.
+pub fn still_input(g: &GraphInput, x: Option<u32>, blurred: bool) -> GraphInput {
+    let mut s = g.clone();
+    s.trim = None;
+    s.fps_cap = None;
+    s.track = None;
+    if blurred {
+        s.geometry = super::geometry::plan(g.geometry.display, g.geometry.target, Reframe::Blur);
+        s.reframe = Reframe::Blur;
+    } else if let (Some(x), Some(c)) = (x, s.geometry.crop.as_mut()) {
+        c.x = x.min(g.geometry.display.0.saturating_sub(c.w));
+    }
+    s
+}
+
+/// One graph giving both preview stills from `[0:v]`: `[after]` (the render's processing) and
+/// `[before]` (the bicubic baseline, always on the CPU), each converted to full-range RGB with
+/// the output's matrix for PNG.
+pub fn preview_pair(g: &GraphInput) -> String {
+    let mut base = g.clone();
+    base.gpu = None;
+    let matrix = if g.keep_hdr { "bt2020" } else { "bt709" };
+    let rgb = format!(",scale=in_color_matrix={matrix}:in_range=tv:out_range=pc,format=rgb24");
+    // Both graphs use the same internal labels: each gets its own prefix.
+    let relabel = |graph: String, prefix: &str, to: &str| {
+        let graph = prefix_labels(&graph, prefix);
+        let cut = graph.rfind(&format!("[{prefix}v]")).expect("graph ends in [v]");
+        format!("{}{rgb}[{to}]", &graph[..cut])
+    };
+    format!(
+        "[0:v]split[a_in][b_in];{};{}",
+        relabel(build_with(g, Flavor::Render), "a_", "after"),
+        relabel(build_with(&base, Flavor::Baseline), "b_", "before")
+    )
+}
+
+/// Prefixes every link label (`[x]`) of `graph` with `prefix`; `[0:v]` becomes `[{prefix}in]`.
+fn prefix_labels(graph: &str, prefix: &str) -> String {
+    let mut out = String::with_capacity(graph.len() + 32);
+    let mut rest = graph;
+    while let Some(open) = rest.find('[') {
+        let close = open + rest[open..].find(']').expect("labels are closed");
+        let name = &rest[open + 1..close];
+        out.push_str(&rest[..open]);
+        if name == "0:v" {
+            out.push_str(&format!("[{prefix}in]"));
+        } else {
+            out.push_str(&format!("[{prefix}{name}]"));
+        }
+        rest = &rest[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn build_with(g: &GraphInput, flavor: Flavor) -> String {
+    let pre = pre_chain(g, flavor);
     let (w, h) = g.geometry.target;
     let pix = if g.keep_hdr { "yuv420p10le" } else { "yuv420p" };
     let overlay_fmt = if g.keep_hdr { ":format=yuv420p10" } else { "" };
@@ -110,23 +180,25 @@ pub fn build(g: &GraphInput) -> String {
                 c.h,
                 t.x0,
                 c.y,
-                scaler(g, w, h)
+                scaler(g, w, h, flavor)
             );
             if !t.fallback {
                 return format!("[0:v]{pre},{crop},{tail}[v]");
             }
             format!(
                 "[0:v]{pre},split[a][b];[a]{crop}[crop];{};[crop][pad]overlay@fb=0:0:enable=0{overlay_fmt},{tail}[v]",
-                blur_pad(g, "[b]", "[pad]")
+                blur_pad(g, "[b]", "[pad]", flavor)
             )
         }
-        (Reframe::Blur, _, _) if overflow => blur_pad(g, &format!("[0:v]{pre},"), &format!(",{tail}[v]")),
+        (Reframe::Blur, _, _) if overflow => {
+            blur_pad(g, &format!("[0:v]{pre},"), &format!(",{tail}[v]"), flavor)
+        }
         _ => {
             let mut chain = vec![pre];
             if let Some(c) = g.geometry.crop {
                 chain.push(format!("crop={}:{}:{}:{}", c.w, c.h, c.x, c.y));
             }
-            chain.push(scaler(g, w, h));
+            chain.push(scaler(g, w, h, flavor));
             chain.push(tail);
             format!("[0:v]{}[v]", chain.join(","))
         }
@@ -136,7 +208,7 @@ pub fn build(g: &GraphInput) -> String {
 /// The whole frame fitted inside the target over a blurred, darkened copy that fills it.
 /// `head` feeds the picture in (a label or a filter chain ending in `,`); `end` follows the
 /// final overlay (an output label, or more filters and a label).
-fn blur_pad(g: &GraphInput, head: &str, end: &str) -> String {
+fn blur_pad(g: &GraphInput, head: &str, end: &str, flavor: Flavor) -> String {
     let (w, h) = g.geometry.target;
     let (fw, fh) = g.geometry.fit;
     let (bw, bh) = (even(f64::from(w) / 10.0), even(f64::from(h) / 10.0));
@@ -151,7 +223,7 @@ fn blur_pad(g: &GraphInput, head: &str, end: &str) -> String {
          eq=brightness=-0.08,scale={w}:{h},setsar=1[bg];\
          [fg0]{}[fg];\
          [bg][fg]overlay={ox}:{oy}{overlay_fmt}{end}",
-        scaler(g, fw, fh)
+        scaler(g, fw, fh, flavor)
     )
 }
 
@@ -182,7 +254,7 @@ pub fn analysis_graph(g: &GraphInput, size: (u32, u32)) -> String {
 }
 
 /// Trim, deinterlace, square pixels, tone-map, denoise, frame-rate cap — at source resolution.
-fn pre_chain(g: &GraphInput) -> String {
+fn pre_chain(g: &GraphInput, flavor: Flavor) -> String {
     let mut f: Vec<String> = Vec::new();
     if let Some((start, end)) = g.trim {
         let end = end.map(|e| format!(":end={}", e.ffmpeg())).unwrap_or_default();
@@ -199,9 +271,15 @@ fn pre_chain(g: &GraphInput) -> String {
     if g.tonemap && g.gpu.is_none() {
         f.push(TONEMAP.replace("{in}", &g.colour_in));
     }
-    f.push(DENOISE.into());
+    if flavor == Flavor::Render {
+        f.push(DENOISE.into());
+    }
     if let Some(fps) = g.fps_cap {
         f.push(format!("fps={fps}"));
+    }
+    // A filter chain cannot be empty (the baseline of a plain source has nothing to do here).
+    if f.is_empty() {
+        f.push("null".into());
     }
     f.join(",")
 }
@@ -230,7 +308,10 @@ fn colour_tail(g: &GraphInput) -> String {
 /// The CPU-tier scaler to `w`x`h`: zscale Lanczos with explicit BT.709 output (or untouched
 /// colours when keeping HDR), then sharpening when enlarging. Lanczos with `cas=0.7` measured
 /// best within research R3's range (+2.8 VMAF over bicubic on the 480p fixture).
-fn scaler(g: &GraphInput, w: u32, h: u32) -> String {
+fn scaler(g: &GraphInput, w: u32, h: u32, flavor: Flavor) -> String {
+    if flavor == Flavor::Baseline {
+        return format!("zscale=w={w}:h={h}:f=bicubic{}", colour_options(g));
+    }
     if let Some(_device) = g.gpu {
         return gpu_scaler(g, w, h);
     }
@@ -454,5 +535,54 @@ mod tests {
             !keep.contains("tonemap") && !keep.contains(":m=709") && keep.ends_with("format=yuv420p10le[v]"),
             "{keep}"
         );
+    }
+
+    #[test]
+    fn still_input_fixes_the_crop_or_uses_the_background() {
+        let mut g = smart(true);
+        g.trim = Some((Ts::from_secs_f64(2.0), None));
+        g.fps_cap = Some(30);
+        let at = still_input(&g, Some(1100), false);
+        assert_eq!((at.trim, at.fps_cap, at.track), (None, None, None));
+        let c = at.geometry.crop.unwrap();
+        assert_eq!(c.x, 1280 - c.w, "x is clamped to the frame");
+        assert!(build(&at).contains(&format!("crop={}:{}:{}:0", c.w, c.h, c.x)), "{}", build(&at));
+        let centred = still_input(&g, None, false);
+        assert_eq!(centred.geometry.crop, g.geometry.crop);
+        let blurred = still_input(&g, Some(10), true);
+        assert_eq!(blurred.reframe, Reframe::Blur);
+        assert!(build(&blurred).contains("gblur"));
+    }
+
+    #[test]
+    fn preview_pair_gives_the_render_and_a_bicubic_baseline() {
+        let cropped = preview_pair(&gpu(still_input(&smart(false), Some(300), false)));
+        let after = &cropped[..cropped.find(";[b_in]").unwrap()];
+        assert!(after.contains("crop=332:720:300:0") && after.contains("libplacebo"), "{after}");
+        assert!(after.contains("cas=0.7"), "enlarging is sharpened: {after}");
+        let before = &cropped[cropped.rfind("[b_in]").unwrap()..];
+        assert!(before.contains("crop=332:720:300:0,zscale=w=1080:h=2340:f=bicubic"), "{before}");
+
+        let g = gpu(still_input(&smart(false), Some(300), true));
+        let pair = preview_pair(&g);
+        assert!(pair.starts_with("[0:v]split[a_in][b_in];[a_in]hqdn3d"), "{pair}");
+        // The baseline: no denoise, no sharpening, zscale bicubic on the CPU, same framing.
+        let before = &pair[pair.rfind("[b_in]").unwrap()..];
+        assert!(
+            !before.contains("hqdn3d") && !before.contains("cas=") && !before.contains("libplacebo"),
+            "{before}"
+        );
+        assert!(before.contains("zscale=w=1080:h=608:f=bicubic:min=709"), "{before}");
+        assert!(before.starts_with("[b_in]null,split[b_bg0][b_fg0];"), "{before}");
+        assert!(before.contains("[b_bg][b_fg]overlay"), "labels are prefixed: {before}");
+        for out in ["[after]", "[before]"] {
+            assert_eq!(pair.matches(out).count(), 1, "{pair}");
+            let end = pair.find(out).unwrap();
+            assert!(
+                pair[..end].ends_with("scale=in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24"),
+                "{pair}"
+            );
+        }
+        assert!(!pair.contains("[v]") && !pair.contains("[0:v]["), "{pair}");
     }
 }

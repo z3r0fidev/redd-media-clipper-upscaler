@@ -5,6 +5,7 @@ pub mod encode;
 pub mod estimate;
 pub mod geometry;
 pub mod graph;
+pub mod preview;
 pub mod reframe;
 pub mod tier;
 
