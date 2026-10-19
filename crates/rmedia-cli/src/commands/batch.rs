@@ -32,6 +32,13 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
     if let Some(e) = args.on_exists {
         defaults.on_exists = e.into();
     }
+    // Upscale flags fill the fields of videos the manifest upscales; only --upscale turns
+    // upscaling on for every video (a manifest `enabled: false` still wins).
+    if args.upscale {
+        defaults.upscale = Some(args.up.options());
+    } else if args.up.any() {
+        defaults.upscale_fill = Some(args.up.options());
+    }
 
     let ext = manifest.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     let parsed = match ext.as_str() {
@@ -74,10 +81,14 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
     }
 
     let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
-    let (report, engine) = doctor::run(&opts);
-    let Some((tools, caps)) = engine else {
+    let (mut report, mut engine) = doctor::run(&opts);
+    let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };
+    if let Err(code) = super::check_tiers(&mut report, found, &req).await {
+        return code;
+    }
+    let (tools, caps) = engine.expect("checked above");
     let plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
     execute(plan, tools, args.dry_run, args.jobs, &out).await
 }

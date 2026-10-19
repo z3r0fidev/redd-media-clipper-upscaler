@@ -30,18 +30,24 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
             Err(msg) => return out.input_error(&msg),
         },
     };
+    if !args.upscale && args.up.any() {
+        eprintln!("error: {} only apply with --upscale", args.up.given().join(", "));
+        return exit::USAGE;
+    }
     let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
-    let (report, engine) = doctor::run(&opts);
-    let Some((tools, caps)) = engine else {
+    let (mut report, mut engine) = doctor::run(&opts);
+    let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };
+    // A clip from the start with no end is a whole video, which goes to `upscaled/`.
+    let default_dirs: &[&str] = if args.upscale { &["clips", "upscaled"] } else { &["clips"] };
     let inputs = match super::scan::expand_inputs(
-        &tools,
+        &found.0,
         &args.inputs,
         args.inputs_from.as_deref(),
         &args.scan,
         args.common.output_dir.as_deref(),
-        "clips",
+        default_dirs,
         &out,
     )
     .await
@@ -50,8 +56,12 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
         Err(code) => return code,
     };
 
+    let mut defaults = options(&args.common, args.mode.into(), inputs.len() > 1);
+    if args.upscale {
+        defaults.upscale = Some(args.up.options());
+    }
     let req = BatchRequest {
-        defaults: options(&args.common, args.mode.into(), inputs.len() > 1),
+        defaults,
         sources: inputs
             .iter()
             .map(|p| SourceRequest {
@@ -62,6 +72,10 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
             })
             .collect(),
     };
+    if let Err(code) = super::check_tiers(&mut report, found, &req).await {
+        return code;
+    }
+    let (tools, caps) = engine.expect("checked above");
 
     let cancel = CancellationToken::new();
     let plan = plan::plan(&req, &tools, &caps, &cancel).await;

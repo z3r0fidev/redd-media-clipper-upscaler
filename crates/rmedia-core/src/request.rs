@@ -13,6 +13,9 @@ pub const MULTI_SOURCE_NAME_TEMPLATE: &str = "{source}/{source}_{index:03}_{name
 pub const UPSCALE_NAME_TEMPLATE: &str = "{source}_{preset}.{ext}";
 /// Default name of an upscaled clip (in `<source dir>/clips/`).
 pub const UPSCALE_CLIP_NAME_TEMPLATE: &str = "{source}_{index:03}_{name-or-range}_{preset}.{ext}";
+/// `MULTI_SOURCE_NAME_TEMPLATE` for upscaled clips (many sources into one output folder).
+pub const UPSCALE_MULTI_CLIP_NAME_TEMPLATE: &str =
+    "{source}/{source}_{index:03}_{name-or-range}_{preset}.{ext}";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -225,6 +228,22 @@ pub struct SourceRequest {
 pub struct BatchRequest {
     pub defaults: Options,
     pub sources: Vec<SourceRequest>,
+}
+
+impl BatchRequest {
+    /// Each clip's resolved options (defaults < source < clip).
+    pub fn resolved(&self) -> impl Iterator<Item = Options> + '_ {
+        self.sources.iter().flat_map(move |s| {
+            let base = s.overrides.apply(&self.defaults);
+            s.clips.iter().map(move |c| c.overrides.apply(&base))
+        })
+    }
+
+    /// Whether planning needs the machine's GPU/tier check (research R8): some job is upscaled
+    /// on a tier other than a forced CPU.
+    pub fn needs_capability_check(&self) -> bool {
+        self.resolved().any(|o| o.upscale.is_some_and(|u| u.tier != crate::upscale::TierChoice::Cpu))
+    }
 }
 
 #[cfg(test)]

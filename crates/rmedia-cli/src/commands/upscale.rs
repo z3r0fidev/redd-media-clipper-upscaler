@@ -3,7 +3,6 @@
 use rmedia_core::preset::{PresetRegistry, PresetSource, VideoCodec};
 use rmedia_core::request::{BatchRequest, ClipRequest, Mode, Origin, PartialOptions, SourceRequest};
 use rmedia_core::tools::LocateOptions;
-use rmedia_core::upscale::capability::CheckMode;
 use rmedia_core::upscale::prepare_plan;
 use rmedia_core::{EndSpec, Ts, doctor, plan, settings};
 use serde_json::json;
@@ -20,24 +19,16 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
     }
     let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
     let (mut report, mut engine) = doctor::run(&opts);
-    // A forced CPU tier needs no GPU check (FR-008); otherwise auto and a forced GPU need it.
-    if args.upscale.tier != crate::TierArg::Cpu {
-        let ctrl_c = super::ctrl_c_token();
-        doctor::check_capability(&mut report, engine.as_mut(), CheckMode::Ensure, &ctrl_c.token).await;
-        if ctrl_c.token.is_cancelled() {
-            return exit::CANCELLED;
-        }
-    }
-    let Some((tools, caps)) = engine else {
+    let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };
     let inputs = match super::scan::expand_inputs(
-        &tools,
+        &found.0,
         &args.inputs,
         args.inputs_from.as_deref(),
         &args.scan,
         args.common.output_dir.as_deref(),
-        "upscaled",
+        &["upscaled"],
         &out,
     )
     .await
@@ -68,13 +59,18 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
             })
             .collect(),
     };
+    // A forced CPU tier needs no GPU check (FR-008); auto and a forced GPU do.
+    if let Err(code) = super::check_tiers(&mut report, found, &req).await {
+        return code;
+    }
+    let (tools, caps) = engine.expect("checked above");
     let mut plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
-    let crop_path = args.upscale.crop_path.as_deref();
-    if crop_path.is_some() && args.upscale.no_analyze {
+    let crop_path = args.crop_path.as_deref();
+    if crop_path.is_some() && args.no_analyze {
         eprintln!("error: --crop-path needs the analysis; it cannot be combined with --no-analyze");
         return exit::USAGE;
     }
-    let analyse = (args.common.dry_run && !args.upscale.no_analyze) || crop_path.is_some();
+    let analyse = (args.common.dry_run && !args.no_analyze) || crop_path.is_some();
     if analyse && !plan.has_errors() {
         // The crop path is shown (and written) before anything renders; the render reuses the
         // cached analysis (FR-016).

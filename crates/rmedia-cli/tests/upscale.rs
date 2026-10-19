@@ -173,3 +173,140 @@ fn smart_reframe_dry_run_block_cache_no_analyze_and_crop_path() {
     assert_eq!(onto_source.status.code(), Some(3), "--crop-path never overwrites a source");
     assert!(src.metadata().unwrap().len() > 10_000, "the source is intact");
 }
+
+fn outputs(doc: &Value) -> Vec<String> {
+    doc["jobs"].as_array().unwrap().iter().map(|j| j["output"].as_str().unwrap().to_owned()).collect()
+}
+
+fn sources(doc: &Value) -> Vec<String> {
+    let mut v: Vec<String> = doc["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|j| Path::new(j["source"].as_str().unwrap()).file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    v.sort();
+    v
+}
+
+/// T077: `upscale DIR` scans with 001's discovery and never picks up its own outputs.
+#[test]
+fn upscale_folder_and_inputs_from_skip_output_folders() {
+    require_engine!("libx265", "zscale", "cas", "gblur");
+    let d = tempfile::tempdir().unwrap();
+    let videos = d.path().join("videos");
+    std::fs::create_dir_all(videos.join("upscaled")).unwrap();
+    std::fs::create_dir_all(videos.join("mine")).unwrap();
+    copy(Fixture::TinySource, &videos, "a.mp4");
+    copy(Fixture::TinySource, &videos.join("upscaled"), "a_phone-fill.mp4");
+    copy(Fixture::TinySource, &videos.join("mine"), "b.mp4");
+    std::fs::write(videos.join("notes.txt"), "not a video").unwrap();
+    let run = |extra: &[&str]| {
+        let o = rmedia(d.path())
+            .args(["upscale", "--dry-run", "--json", "--reframe", "center"])
+            .args(extra)
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+        json(&o)
+    };
+    let dir = videos.to_str().unwrap();
+    assert_eq!(sources(&run(&[dir])), ["a.mp4", "b.mp4"], "upscaled/ is skipped");
+    // With -o, that folder is skipped instead (and default-named folders are scanned).
+    let doc = run(&[dir, "-o", videos.join("mine").to_str().unwrap()]);
+    assert_eq!(sources(&doc), ["a.mp4", "a_phone-fill.mp4"]);
+    // A list of paths, relative to the list file.
+    std::fs::write(d.path().join("list.txt"), "videos/a.mp4\n# comment\nvideos/mine/b.mp4\n").unwrap();
+    let doc = run(&["--inputs-from", d.path().join("list.txt").to_str().unwrap()]);
+    assert_eq!(sources(&doc), ["a.mp4", "b.mp4"]);
+    assert!(outputs(&doc)[0].ends_with("videos/upscaled/a_phone-fill.mp4"), "{:?}", outputs(&doc));
+}
+
+/// T077: `clip … --upscale` cuts and upscales in one job; upscale flags need `--upscale`.
+#[test]
+fn clip_upscale_uses_the_preset_and_clip_names() {
+    require_engine!("libx265", "zscale", "cas", "gblur");
+    let d = tempfile::tempdir().unwrap();
+    let land = copy(Fixture::MovingMarker, d.path(), "land.mp4");
+    let o = rmedia(d.path())
+        .arg("clip")
+        .arg(&land)
+        .args(["-s", "0", "-e", "4", "--upscale", "--preset", "reddit-feed-45", "--dry-run", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let doc = json(&o);
+    let job = &doc["jobs"][0];
+    assert_eq!(job["kind"], "upscale");
+    assert_eq!(job["upscale"]["preset"], "reddit-feed-45");
+    assert_eq!(job["upscale"]["size"], serde_json::json!([1080, 1350]));
+    let want = d.path().join("clips/land_001_00-00-00.000_00-00-04.000_reddit-feed-45.mp4");
+    assert_eq!(Path::new(job["output"].as_str().unwrap()), want);
+    assert_eq!(entries(d.path()), ["land.mp4"], "a dry run writes nothing");
+
+    // Upscale flags without --upscale are a usage error.
+    let o = rmedia(d.path())
+        .arg("clip")
+        .arg(&land)
+        .args(["-s", "0", "--preset", "duo", "--dry-run"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("--preset only apply with --upscale"));
+    // Many sources into one folder: the clips keep their per-source sub-folder.
+    let b = copy(Fixture::TinySource, d.path(), "b.mp4");
+    let o = rmedia(d.path())
+        .arg("clip")
+        .args([&land, &b])
+        .args(["-s", "0", "-e", "1", "--upscale", "--reframe", "center", "-o"])
+        .arg(d.path().join("out"))
+        .args(["--dry-run", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let outs = outputs(&json(&o));
+    assert!(outs[0].contains("/out/land/land_001_") && outs[0].ends_with("_phone-fill.mp4"), "{outs:?}");
+}
+
+/// T077: `batch` upscale flags fill what the manifest leaves open and never turn upscaling on;
+/// `batch --upscale` turns it on for every video.
+#[test]
+fn batch_upscale_flags_are_defaults_under_the_manifest() {
+    require_engine!("libx265", "zscale", "cas", "gblur");
+    let d = tempfile::tempdir().unwrap();
+    copy(Fixture::TinySource, d.path(), "a.mp4");
+    copy(Fixture::TinySource, d.path(), "b.mp4");
+    copy(Fixture::TinySource, d.path(), "c.mp4");
+    let m = d.path().join("m.json");
+    std::fs::write(
+        &m,
+        r#"{"version":1,"videos":[
+            {"input":"a.mp4","options":{"upscale":{}}},
+            {"input":"b.mp4","options":{"upscale":{"preset":"reddit-916"}}},
+            {"input":"c.mp4","clips":[{"start":0,"end":1}]}]}"#,
+    )
+    .unwrap();
+    let run = |extra: &[&str]| {
+        let o =
+            rmedia(d.path()).arg("batch").arg(&m).args(["--dry-run", "--json"]).args(extra).output().unwrap();
+        assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+        json(&o)
+    };
+    let preset = |doc: &Value, i: usize| doc["jobs"][i]["upscale"]["preset"].as_str().map(str::to_owned);
+    let doc = run(&["--preset", "duo", "--reframe", "center"]);
+    assert_eq!(preset(&doc, 0).as_deref(), Some("duo"), "the flag fills a manifest `{{}}`");
+    assert_eq!(preset(&doc, 1).as_deref(), Some("reddit-916"), "the manifest's preset wins");
+    assert!(
+        doc["jobs"][2].get("upscale").is_none() && doc["jobs"][2]["mode"].is_string(),
+        "not turned on: {}",
+        doc["jobs"][2]
+    );
+    let doc = run(&["--upscale", "--preset", "duo", "--reframe", "center"]);
+    assert_eq!(preset(&doc, 2).as_deref(), Some("duo"), "--upscale turns it on everywhere");
+    assert!(
+        doc["jobs"][2]["output"].as_str().unwrap().ends_with("clips/c_001_00-00-00.000_00-00-01.000_duo.mp4"),
+        "{}",
+        doc["jobs"][2]["output"]
+    );
+    assert_eq!(entries(d.path()), ["a.mp4", "b.mp4", "c.mp4", "m.json"]);
+}

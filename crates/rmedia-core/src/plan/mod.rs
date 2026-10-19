@@ -17,8 +17,8 @@ use crate::exec::commit::{scratch_path, temp_path};
 use crate::preset::{Preset, PresetRegistry, VideoCodec};
 use crate::probe::{self, MediaInfo};
 use crate::request::{
-    BatchRequest, ClipRequest, DEFAULT_NAME_TEMPLATE, Mode, OnExists, Origin, SourceRequest,
-    UPSCALE_CLIP_NAME_TEMPLATE, UPSCALE_NAME_TEMPLATE,
+    BatchRequest, ClipRequest, DEFAULT_NAME_TEMPLATE, MULTI_SOURCE_NAME_TEMPLATE, Mode, OnExists, Origin,
+    SourceRequest, UPSCALE_CLIP_NAME_TEMPLATE, UPSCALE_MULTI_CLIP_NAME_TEMPLATE, UPSCALE_NAME_TEMPLATE,
 };
 use crate::time::{EndSpec, Ts};
 use crate::tools::Tools;
@@ -449,6 +449,9 @@ impl Planner<'_> {
         let template = match &up {
             Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE && whole => UPSCALE_NAME_TEMPLATE,
             Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE => UPSCALE_CLIP_NAME_TEMPLATE,
+            // Whole-video names are unique per folder already; clips keep their sub-folder.
+            Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE && whole => UPSCALE_NAME_TEMPLATE,
+            Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE => UPSCALE_MULTI_CLIP_NAME_TEMPLATE,
             _ => opts.name_template.as_str(),
         };
         let stem = source.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();

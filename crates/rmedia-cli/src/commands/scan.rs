@@ -132,7 +132,7 @@ pub async fn expand_inputs(
     inputs_from: Option<&str>,
     flags: &ScanFlags,
     output_dir: Option<&Path>,
-    default_dir: &str,
+    default_dirs: &[&str],
     out: &Output,
 ) -> Result<Vec<PathBuf>, u8> {
     let mut all: Vec<PathBuf> = inputs.iter().map(|p| absolute(p)).collect();
@@ -171,12 +171,12 @@ pub async fn expand_inputs(
                         "the output folder {} is also a scanned input folder; outputs would be mixed \
                          with the sources and picked up again. Use a sub-folder, e.g. -o {}",
                         o.display(),
-                        o.join(default_dir).display()
+                        o.join(default_dirs[0]).display()
                     )));
                 }
                 opts.exclude_dirs.push(o)
             }
-            None => opts.exclude_dir_names.push(default_dir.into()),
+            None => opts.exclude_dir_names.extend(default_dirs.iter().map(|d| (*d).to_owned())),
         }
         let found = scan_with_options(tools, &dirs, &opts, out).await?;
         if !out.quiet && !out.json {
@@ -193,9 +193,10 @@ pub async fn expand_inputs(
         }
         if !found.excluded_named.is_empty() && !out.quiet && !out.json {
             eprintln!(
-                "note: skipped {} folder(s) named \"{default_dir}\" (rmedia's default output folder); \
+                "note: skipped {} folder(s) named {} (rmedia's default output folders); \
                  pass such a folder directly to use its videos as sources",
-                found.excluded_named.len()
+                found.excluded_named.len(),
+                default_dirs.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(" or ")
             );
         }
         sources.extend(found.videos.into_iter().map(|v| v.path));

@@ -84,6 +84,11 @@ pub struct ClipArgs {
     /// fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode.
     #[arg(long, value_enum, default_value_t = ModeArg::Fast)]
     pub mode: ModeArg,
+    /// Also upscale every clip for phones, in the same pass (feature 002; see `rmedia upscale`).
+    #[arg(long)]
+    pub upscale: bool,
+    #[command(flatten)]
+    pub up: UpscaleFlags,
     #[command(flatten)]
     pub common: CommonArgs,
 }
@@ -103,50 +108,79 @@ pub struct UpscaleArgs {
     pub scan: ScanFlags,
     #[command(flatten)]
     pub upscale: UpscaleFlags,
-    #[command(flatten)]
-    pub common: CommonArgs,
-}
-
-/// Upscale options (`rmedia upscale`; later also `clip --upscale` and `batch`).
-#[derive(Debug, Args, Clone)]
-pub struct UpscaleFlags {
-    /// Device preset (see --list-presets).
-    #[arg(long, value_name = "ID", default_value = "phone-fill")]
-    pub preset: String,
-    /// How to fill a screen of a different shape: follow the subject, crop the centre, or show
-    /// the whole frame over a blurred background.
-    #[arg(long, value_enum, default_value_t = ReframeArg::Smart)]
-    pub reframe: ReframeArg,
-    /// Quality tier: chosen for this machine (auto) or forced.
-    #[arg(long, value_enum, default_value_t = TierArg::Auto)]
-    pub tier: TierArg,
-    /// HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only).
-    #[arg(long, value_enum, default_value_t = HdrArg::Sdr)]
-    pub hdr: HdrArg,
-    /// Smart-reframe camera speed.
-    #[arg(long, value_enum, default_value_t = MotionArg::Normal)]
-    pub motion: MotionArg,
-    /// Override the preset's quality (CRF, lower = better and bigger).
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(0..=51))]
-    pub crf: Option<u8>,
     /// With smart reframe, write the full crop path as JSON to FILE.
     #[arg(long, value_name = "FILE")]
     pub crop_path: Option<PathBuf>,
     /// With --dry-run, skip the smart-reframe analysis (the crop path is shown as pending).
     #[arg(long)]
     pub no_analyze: bool,
+    #[command(flatten)]
+    pub common: CommonArgs,
+}
+
+/// Upscale options (`rmedia upscale`, `clip --upscale`, `batch`). Unset flags are inherited:
+/// from the built-in defaults, or under `batch` from the manifest.
+#[derive(Debug, Args, Clone, Default)]
+pub struct UpscaleFlags {
+    /// Device preset (see `upscale --list-presets`) [default: phone-fill].
+    #[arg(long, value_name = "ID")]
+    pub preset: Option<String>,
+    /// How to fill a screen of a different shape: follow the subject, crop the centre, or show
+    /// the whole frame over a blurred background [default: smart].
+    #[arg(long, value_enum)]
+    pub reframe: Option<ReframeArg>,
+    /// Quality tier: chosen for this machine (auto) or forced [default: auto].
+    #[arg(long, value_enum)]
+    pub tier: Option<TierArg>,
+    /// HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only)
+    /// [default: sdr].
+    #[arg(long, value_enum)]
+    pub hdr: Option<HdrArg>,
+    /// Smart-reframe camera speed [default: normal].
+    #[arg(long, value_enum)]
+    pub motion: Option<MotionArg>,
+    /// Override the preset's quality (CRF, lower = better and bigger).
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(0..=51))]
+    pub crf: Option<u8>,
 }
 
 impl UpscaleFlags {
-    pub fn options(&self) -> rmedia_core::upscale::UpscaleOptions {
-        rmedia_core::upscale::UpscaleOptions {
+    /// The flags given, as one layer of overrides.
+    pub fn partial(&self) -> rmedia_core::upscale::PartialUpscale {
+        rmedia_core::upscale::PartialUpscale {
+            enabled: None,
             preset: self.preset.clone(),
-            reframe: self.reframe.into(),
-            tier: self.tier.into(),
-            hdr: self.hdr.into(),
-            motion: self.motion.into(),
-            crf: self.crf,
+            reframe: self.reframe.map(Into::into),
+            tier: self.tier.map(Into::into),
+            hdr: self.hdr.map(Into::into),
+            motion: self.motion.map(Into::into),
+            crf: self.crf.map(Some),
         }
+    }
+
+    /// The flags over the built-in defaults.
+    pub fn options(&self) -> rmedia_core::upscale::UpscaleOptions {
+        self.partial().apply(None).expect("a layer without `enabled: false` turns upscaling on")
+    }
+
+    /// Whether any upscale flag was given.
+    pub fn any(&self) -> bool {
+        self.partial() != rmedia_core::upscale::PartialUpscale::default()
+    }
+
+    /// The flag names given, for usage errors.
+    pub fn given(&self) -> Vec<&'static str> {
+        [
+            ("--preset", self.preset.is_some()),
+            ("--reframe", self.reframe.is_some()),
+            ("--tier", self.tier.is_some()),
+            ("--hdr", self.hdr.is_some()),
+            ("--motion", self.motion.is_some()),
+            ("--crf", self.crf.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(n, set)| set.then_some(n))
+        .collect()
     }
 }
 
@@ -278,6 +312,12 @@ pub struct BatchArgs {
     /// How many clips to process at once.
     #[arg(short = 'j', long, value_name = "N", value_parser = clap::value_parser!(u16).range(1..=64))]
     pub jobs: Option<u16>,
+    /// Upscale every video the manifest does not turn upscaling off for (feature 002).
+    #[arg(long)]
+    pub upscale: bool,
+    /// Upscale settings for the videos that are upscaled, under the manifest's own values.
+    #[command(flatten)]
+    pub up: UpscaleFlags,
     /// Show what would be done without writing anything.
     #[arg(long)]
     pub dry_run: bool,
