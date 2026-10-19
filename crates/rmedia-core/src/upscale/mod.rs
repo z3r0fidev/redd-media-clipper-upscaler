@@ -290,9 +290,15 @@ pub struct PartialUpscale {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub motion: Option<Motion>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub crf: Option<u8>,
+    /// `Some(None)` (JSON `null`) clears a crf set by a layer below, back to the preset's.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "some_or_null")]
+    #[cfg_attr(feature = "ts", ts(optional, type = "number | null"))]
+    pub crf: Option<Option<u8>>,
+}
+
+/// Keeps an explicit `null` apart from a missing field (`#[serde(default)]` covers the latter).
+fn some_or_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<u8>>, D::Error> {
+    Option::<u8>::deserialize(d).map(Some)
 }
 
 impl PartialUpscale {
@@ -310,7 +316,7 @@ impl PartialUpscale {
             tier: self.tier.unwrap_or(b.tier),
             hdr: self.hdr.unwrap_or(b.hdr),
             motion: self.motion.unwrap_or(b.motion),
-            crf: self.crf.or(b.crf),
+            crf: self.crf.unwrap_or(b.crf),
         })
     }
 
@@ -331,8 +337,7 @@ impl PartialUpscale {
             tier: (o.tier != b.tier).then_some(o.tier),
             hdr: (o.hdr != b.hdr).then_some(o.hdr),
             motion: (o.motion != b.motion).then_some(o.motion),
-            // A crf set below and cleared here cannot be expressed; keep the base's value.
-            crf: (o.crf != b.crf).then_some(o.crf).flatten(),
+            crf: (o.crf != b.crf).then_some(o.crf),
         })
     }
 }
@@ -400,6 +405,7 @@ mod tests {
             (None, Some(d.clone())),
             (Some(custom.clone()), Some(d.clone())),
             (Some(d.clone()), Some(UpscaleOptions { preset: "duo".into(), ..d.clone() })),
+            (Some(d.clone()), Some(custom.clone())),
         ];
         for (opts, base) in cases {
             let p = PartialUpscale::diff(opts.as_ref(), base.as_ref());
@@ -414,5 +420,11 @@ mod tests {
             PartialUpscale::diff(Some(&custom), Some(&d)).unwrap(),
             up(r#"{"preset":"duo","crf":20}"#)
         );
+        // A crf set below and cleared here is written as `null`.
+        let cleared = PartialUpscale::diff(Some(&d), Some(&custom)).unwrap();
+        assert_eq!(cleared.crf, Some(None));
+        assert_eq!(serde_json::to_string(&cleared).unwrap(), r#"{"preset":"phone-fill","crf":null}"#);
+        assert_eq!(up(r#"{"crf":null}"#).apply(Some(&custom)).unwrap().crf, None);
+        assert_eq!(up("{}").apply(Some(&custom)).unwrap().crf, Some(20));
     }
 }

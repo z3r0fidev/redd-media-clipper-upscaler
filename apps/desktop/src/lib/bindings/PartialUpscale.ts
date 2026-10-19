@@ -8,4 +8,8 @@ import type { TierChoice } from "./TierChoice";
  * One layer of upscale overrides (manifest defaults, a video, a clip, the CLI, settings).
  * `enabled: false` turns upscaling off at that layer; setting any other field turns it on.
  */
-export type PartialUpscale = { enabled?: boolean, preset?: string, reframe?: Reframe, tier?: TierChoice, hdr?: HdrMode, motion?: Motion, crf?: number, };
+export type PartialUpscale = { enabled?: boolean, preset?: string, reframe?: Reframe, tier?: TierChoice, hdr?: HdrMode, motion?: Motion, 
+/**
+ * `Some(None)` (JSON `null`) clears a crf set by a layer below, back to the preset's.
+ */
+crf?: number | null, };

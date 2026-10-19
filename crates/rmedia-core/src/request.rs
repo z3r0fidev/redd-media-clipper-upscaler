@@ -80,6 +80,11 @@ pub struct Options {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub upscale: Option<UpscaleOptions>,
+    /// Upscale fields from the command line that do not turn upscaling on (`batch --preset`):
+    /// a layer that turns it on starts from these instead of the built-in defaults.
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub upscale_fill: Option<UpscaleOptions>,
 }
 
 impl Default for Options {
@@ -92,6 +97,7 @@ impl Default for Options {
             on_exists: OnExists::Skip,
             streams: StreamSelection::default(),
             upscale: None,
+            upscale_fill: None,
         }
     }
 }
@@ -158,8 +164,9 @@ impl PartialOptions {
             },
             upscale: match &self.upscale {
                 None => base.upscale.clone(),
-                Some(p) => p.apply(base.upscale.as_ref()),
+                Some(p) => p.apply(base.upscale.as_ref().or(base.upscale_fill.as_ref())),
             },
+            upscale_fill: base.upscale_fill.clone(),
         }
     }
 }
@@ -249,6 +256,123 @@ mod tests {
         };
         assert_eq!(PartialOptions::diff(&p.apply(&base), &base), p);
         assert_eq!(PartialOptions::diff(&base, &base), PartialOptions::default());
+    }
+
+    fn layer(json: &str) -> PartialOptions {
+        serde_json::from_str(json).unwrap()
+    }
+
+    /// defaults < video < clip, per upscale field (T074).
+    #[test]
+    fn upscale_layers_in_order() {
+        use crate::upscale::{Reframe, TierChoice};
+        let resolve = |d: &str, v: &str, c: &str| {
+            let defaults = layer(d).apply(&Options::default());
+            layer(c).apply(&layer(v).apply(&defaults)).upscale
+        };
+        let get = |d, v, c| resolve(d, v, c).map(|u| (u.preset, u.reframe, u.tier, u.crf));
+        let preset = |p: &str| p.to_owned();
+        // (defaults, video, clip) → resolved
+        let table = [
+            ("{}", "{}", "{}", None),
+            (
+                r#"{"upscale":{}}"#,
+                "{}",
+                "{}",
+                Some((preset("phone-fill"), Reframe::Smart, TierChoice::Auto, None)),
+            ),
+            (
+                "{}",
+                r#"{"upscale":{}}"#,
+                "{}",
+                Some((preset("phone-fill"), Reframe::Smart, TierChoice::Auto, None)),
+            ),
+            (
+                r#"{"upscale":{"preset":"reddit-916","crf":20}}"#,
+                r#"{"upscale":{"reframe":"blur"}}"#,
+                r#"{"upscale":{"tier":"cpu"}}"#,
+                Some((preset("reddit-916"), Reframe::Blur, TierChoice::Cpu, Some(20))),
+            ),
+            (
+                r#"{"upscale":{"preset":"reddit-916"}}"#,
+                r#"{"upscale":{"preset":"duo"}}"#,
+                r#"{"upscale":{"preset":"phone-fill"}}"#,
+                Some((preset("phone-fill"), Reframe::Smart, TierChoice::Auto, None)),
+            ),
+            (
+                r#"{"upscale":{"crf":20}}"#,
+                "{}",
+                r#"{"upscale":{"crf":null}}"#,
+                Some((preset("phone-fill"), Reframe::Smart, TierChoice::Auto, None)),
+            ),
+            // `enabled: false` turns it off at that level; a lower layer turns it back on and
+            // inherits nothing from above the switch-off.
+            (r#"{"upscale":{"preset":"duo"}}"#, r#"{"upscale":{"enabled":false}}"#, "{}", None),
+            (r#"{"upscale":{"preset":"duo"}}"#, "{}", r#"{"upscale":{"enabled":false}}"#, None),
+            (
+                r#"{"upscale":{"preset":"duo"}}"#,
+                r#"{"upscale":{"enabled":false}}"#,
+                r#"{"upscale":{}}"#,
+                Some((preset("phone-fill"), Reframe::Smart, TierChoice::Auto, None)),
+            ),
+            // Other fields leave upscaling as inherited.
+            ("{}", r#"{"mode":"accurate"}"#, "{}", None),
+        ];
+        for (d, v, c, want) in table {
+            assert_eq!(get(d, v, c), want, "defaults {d} video {v} clip {c}");
+        }
+    }
+
+    /// Command-line fields that do not turn upscaling on (`batch --preset`) fill the layer that
+    /// does, under the manifest's own values.
+    #[test]
+    fn upscale_fill_is_used_only_when_a_layer_enables() {
+        use crate::upscale::UpscaleOptions;
+        let cli = Options {
+            upscale_fill: Some(UpscaleOptions { preset: "duo".into(), ..UpscaleOptions::default() }),
+            ..Options::default()
+        };
+        assert_eq!(layer("{}").apply(&cli).upscale, None, "the fill alone does not enable");
+        assert_eq!(layer(r#"{"mode":"accurate"}"#).apply(&cli).upscale, None);
+        let video = layer(r#"{"upscale":{}}"#).apply(&cli);
+        assert_eq!(video.upscale.as_ref().unwrap().preset, "duo");
+        assert_eq!(
+            layer(r#"{"upscale":{"preset":"reddit-916"}}"#).apply(&cli).upscale.unwrap().preset,
+            "reddit-916"
+        );
+        // Inherited through the levels, and an enabled base wins over the fill.
+        let clip = layer(r#"{"upscale":{"tier":"cpu"}}"#).apply(&layer("{}").apply(&cli));
+        assert_eq!(clip.upscale.unwrap().preset, "duo");
+        let base = layer(r#"{"upscale":{"preset":"reddit-916"}}"#).apply(&cli);
+        assert_eq!(layer(r#"{"upscale":{"tier":"cpu"}}"#).apply(&base).upscale.unwrap().preset, "reddit-916");
+        // Never written out.
+        assert!(!serde_json::to_string(&cli).unwrap().contains("fill"));
+    }
+
+    #[test]
+    fn upscale_diff_writes_only_changed_nested_fields_and_round_trips() {
+        let base = layer(r#"{"upscale":{"preset":"reddit-916","crf":20}}"#).apply(&Options::default());
+        let cases = [
+            r#"{}"#,
+            r#"{"upscale":{"reframe":"blur"}}"#,
+            r#"{"upscale":{"preset":"duo","tier":"cpu"}}"#,
+            r#"{"upscale":{"crf":null}}"#,
+            r#"{"upscale":{"enabled":false}}"#,
+            r#"{"mode":"accurate","upscale":{"motion":"fast"}}"#,
+        ];
+        for json in cases {
+            let opts = layer(json).apply(&base);
+            let d = PartialOptions::diff(&opts, &base);
+            assert_eq!(d, layer(json), "only the changed fields of {json}");
+            assert_eq!(d.apply(&base), opts, "round trip of {json}");
+        }
+        let plain = Options::default();
+        let d = PartialOptions::diff(&base, &plain);
+        assert_eq!(
+            serde_json::to_value(&d).unwrap(),
+            serde_json::json!({"upscale":{"preset":"reddit-916","crf":20}})
+        );
+        assert_eq!(d.apply(&plain), base);
     }
 
     #[test]
