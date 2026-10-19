@@ -8,6 +8,9 @@ use crate::error::{Error, Result};
 use crate::plan::Caps;
 use crate::plan::streams::Container;
 use crate::tools::{self, LocateOptions, Tool, Tools};
+use crate::upscale::capability::{
+    CapabilityStore, CheckMode, Demotion, GpuDevice, ProbeEnv, TierStatus, ensure,
+};
 
 /// Encoders the doctor report always lists.
 pub const KEY_ENCODERS: [&str; 5] = ["libx264", "libx265", "aac", "libvpx-vp9", "libopus"];
@@ -39,9 +42,32 @@ pub struct DoctorReport {
     pub accurate_containers: Vec<String>,
     pub ok: bool,
     pub problems: Vec<String>,
+    /// Quality tiers, when the capability check ran (`rmedia doctor`, `upscale`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tiers: Option<TierStatus>,
+    /// Vulkan devices found, with why unusable ones are not used.
+    pub gpus: Vec<GpuDevice>,
+    /// Model files: `ok` or `missing`.
+    pub models: BTreeMap<String, String>,
+    /// When the capability record was made, and tiers that failed since.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub capability: Option<CapabilitySummary>,
+    /// User preset files that could not be used (`file: message`).
+    pub preset_problems: Vec<String>,
 }
 
-/// Locates the engine and inspects its capabilities. Never fails; problems are reported.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct CapabilitySummary {
+    pub checked_at: String,
+    pub fingerprint: String,
+    pub demoted: Vec<Demotion>,
+}
+
+/// Locates the engine and inspects its capabilities (no GPU check: see [`check_capability`]).
+/// Never fails; problems are reported.
 pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
     let mut report = DoctorReport {
         schema: 1,
@@ -54,6 +80,11 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
         accurate_containers: Vec::new(),
         ok: false,
         problems: Vec::new(),
+        tiers: None,
+        gpus: Vec::new(),
+        models: BTreeMap::new(),
+        capability: None,
+        preset_problems: Vec::new(),
     };
     let tools = match tools::locate(opts) {
         Ok(t) => t,
@@ -89,8 +120,39 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
     if report.accurate_containers.is_empty() {
         report.problems.push("no encoders for accurate mode (fast mode still works)".into());
     }
+    report.models.insert(
+        crate::models::YUNET.to_owned(),
+        if caps.models.get(crate::models::YUNET).is_some() { "ok" } else { "missing" }.to_owned(),
+    );
+    let presets = crate::preset::PresetRegistry::load(crate::settings::config_dir().as_deref());
+    report.preset_problems =
+        presets.problems().iter().map(|p| format!("{}: {}", p.file.display(), p.message)).collect();
     report.ok = true;
     (report, Some((tools, caps)))
+}
+
+/// Adds the GPU/AI capability check (research R8) to a [`run`] result: the tiers, GPUs and
+/// record go into `report`, and the record into the engine's `Caps` so planning can choose a
+/// tier. Without an engine or a state folder there is nothing to check.
+pub async fn check_capability(
+    report: &mut DoctorReport,
+    engine: Option<&mut (Tools, Caps)>,
+    mode: CheckMode,
+    cancel: &tokio_util::sync::CancellationToken,
+) {
+    let (Some((tools, caps)), Some(state)) = (engine, crate::settings::state_dir()) else { return };
+    let presets = crate::preset::PresetRegistry::load(crate::settings::config_dir().as_deref());
+    let preset = presets.get(crate::preset::DEFAULT_PRESET).cloned().expect("the default preset is built in");
+    let store = CapabilityStore::in_state_dir(&state);
+    let Some(record) = ensure(tools, &store, &ProbeEnv::new(preset), mode, cancel).await else { return };
+    report.tiers = Some(record.tiers.clone());
+    report.gpus = record.devices.clone();
+    report.capability = Some(CapabilitySummary {
+        checked_at: record.checked_at.clone(),
+        fingerprint: record.fingerprint.clone(),
+        demoted: record.demoted.clone(),
+    });
+    caps.capability = Some(record);
 }
 
 /// Reads the encoder and filter lists of the ffmpeg build.

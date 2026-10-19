@@ -28,6 +28,28 @@ pub fn cpu_fps(w: u32, h: u32) -> f64 {
     CPU_FPS_AT_1080X1920 * (1080.0 * 1920.0) / (f64::from(w) * f64::from(h))
 }
 
+/// The size the capability self-tests run at (the default preset).
+const SELF_TEST_PIXELS: f64 = 1080.0 * 2340.0;
+
+/// Encode speed (frames/s) of `tier` at `size`: the self-test measurement from the capability
+/// record scaled by pixel count, or the reference-laptop CPU figure without a measurement.
+pub fn encode_fps(
+    tier: crate::upscale::tier::Tier,
+    record: Option<&crate::upscale::capability::CapabilityRecord>,
+    size: (u32, u32),
+) -> f64 {
+    use crate::upscale::tier::Tier;
+    let measured = record.and_then(|r| match tier {
+        Tier::Cpu => r.tiers.cpu.fps,
+        Tier::Gpu => r.tiers.gpu.fps,
+        Tier::Ai => r.tiers.ai.fps,
+    });
+    match measured {
+        Some(fps) if fps > 0.0 => f64::from(fps) * SELF_TEST_PIXELS / (f64::from(size.0) * f64::from(size.1)),
+        _ => cpu_fps(size.0, size.1),
+    }
+}
+
 /// Size: `est_bpp × W × H × fps × duration / 8` plus audio. Time: frames / encode speed.
 pub fn estimate(
     preset: &Preset,

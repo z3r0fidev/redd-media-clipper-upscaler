@@ -8,6 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use rmedia_core::discover::{self, ScanEvent, ScanOptions, ScanResult};
@@ -21,6 +22,7 @@ use rmedia_core::probe::{self, MediaInfo};
 use rmedia_core::request::{BatchRequest, Options, PartialOptions};
 use rmedia_core::settings::Settings;
 use rmedia_core::tools::{LocateOptions, Tools};
+use rmedia_core::upscale::capability::CheckMode;
 use rmedia_core::{EndSpec, Ts};
 use serde::Serialize;
 use serde_json::Value;
@@ -202,13 +204,40 @@ impl AppState {
         PreviewCache { dir: self.cache_dir.clone(), max_bytes: mb.saturating_mul(1024 * 1024) }
     }
 
-    /// Locates the engine (cached until settings change).
+    /// Locates the engine (cached until settings change), without the GPU check.
     pub fn doctor(&self) -> DoctorReport {
         let s = lock(&self.settings).clone();
         let (report, found) =
             doctor::run(&LocateOptions { ffmpeg: s.ffmpeg_path, ffprobe: s.ffprobe_path, bundled_dir: None });
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = found;
         report
+    }
+
+    /// The engine check plus the machine capability check: `Cached` reuses a stored record that
+    /// still matches this machine (start-up, settings saved); `Recheck` runs the tier self-tests
+    /// again (Settings › Check again; a few seconds). One recheck at a time.
+    pub async fn doctor_checked(&self, mode: CheckMode) -> OpResult<DoctorReport> {
+        static RECHECKING: AtomicBool = AtomicBool::new(false);
+        struct Done;
+        impl Drop for Done {
+            fn drop(&mut self) {
+                RECHECKING.store(false, Ordering::SeqCst);
+            }
+        }
+        let _done = if mode == CheckMode::Recheck {
+            if RECHECKING.swap(true, Ordering::SeqCst) {
+                return Err("the machine check is already running".into());
+            }
+            Some(Done)
+        } else {
+            None
+        };
+        let s = lock(&self.settings).clone();
+        let (mut report, mut found) =
+            doctor::run(&LocateOptions { ffmpeg: s.ffmpeg_path, ffprobe: s.ffprobe_path, bundled_dir: None });
+        doctor::check_capability(&mut report, found.as_mut(), mode, &CancellationToken::new()).await;
+        *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = found;
+        Ok(report)
     }
 
     fn engine(&self) -> OpResult<(Tools, Caps)> {

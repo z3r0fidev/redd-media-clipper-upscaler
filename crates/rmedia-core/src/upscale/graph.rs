@@ -34,6 +34,11 @@ pub struct GraphInput {
     /// Smart reframe: the crop's starting x and whether any fallback range needs the blurred
     /// background branch. `None` for other reframes (and smart with nothing to pan).
     pub track: Option<Track>,
+    /// GPU tier: the Vulkan device index the scaler runs on (`None` = CPU tier).
+    pub gpu: Option<u32>,
+    /// The source's colour tags in ffmpeg's names (`setparams` options), with the same SD/HD
+    /// defaults as `colour_in`, so the GPU scaler converts from the right colours.
+    pub params_in: String,
 }
 
 /// Smart-reframe parameters of the graph.
@@ -190,7 +195,8 @@ fn pre_chain(g: &GraphInput) -> String {
         let (w, h) = g.geometry.display;
         f.push(format!("scale={w}:{h},setsar=1"));
     }
-    if g.tonemap {
+    // On the GPU tier, libplacebo tone-maps while it scales.
+    if g.tonemap && g.gpu.is_none() {
         f.push(TONEMAP.replace("{in}", &g.colour_in));
     }
     f.push(DENOISE.into());
@@ -212,6 +218,11 @@ fn colour_options(g: &GraphInput) -> String {
 
 /// A colour-only zscale step (for the blurred background), or nothing when keeping HDR.
 fn colour_tail(g: &GraphInput) -> String {
+    if g.tonemap && g.gpu.is_some() {
+        // The pre chain did not tone-map (libplacebo does it for the picture): the background
+        // is tone-mapped here, at 1/10 size.
+        return format!(",{}", TONEMAP.replace("{in}", &g.colour_in));
+    }
     let opts = colour_options(g);
     if opts.is_empty() { String::new() } else { format!(",zscale={}", &opts[1..]) }
 }
@@ -220,6 +231,9 @@ fn colour_tail(g: &GraphInput) -> String {
 /// colours when keeping HDR), then sharpening when enlarging. Lanczos with `cas=0.7` measured
 /// best within research R3's range (+2.8 VMAF over bicubic on the 480p fixture).
 fn scaler(g: &GraphInput, w: u32, h: u32) -> String {
+    if let Some(_device) = g.gpu {
+        return gpu_scaler(g, w, h);
+    }
     let mut s = format!("zscale=w={w}:h={h}:f=lanczos");
     s.push_str(&colour_options(g));
     if !g.geometry.no_upscale_needed {
@@ -227,6 +241,41 @@ fn scaler(g: &GraphInput, w: u32, h: u32) -> String {
         s.push_str(CAS);
     }
     s
+}
+
+/// The GPU-tier scaler (research R9): the frame goes to the Vulkan device (`-filter_hw_device`),
+/// libplacebo scales it with `ewa_lanczossharp` in gamma light (`sigmoid=0`), converts to BT.709
+/// (tone-mapping HDR with BT.2390) or keeps HDR, and it comes back for the same `cas` as the CPU
+/// tier when enlarging. Measured on the 480p fixture: 57.65 VMAF against the CPU tier's 57.63;
+/// the libplacebo defaults (sigmoid upscaling, no `cas`) scored 53.9, under bicubic.
+fn gpu_scaler(g: &GraphInput, w: u32, h: u32) -> String {
+    let hdr_in = g.tonemap || g.keep_hdr;
+    let upload = if hdr_in { "p010le" } else { "yuv420p" };
+    let out = if g.keep_hdr { "yuv420p10le" } else { "yuv420p" };
+    let colour = match (g.keep_hdr, g.tonemap) {
+        (true, _) => String::new(),
+        (false, tonemap) => format!(
+            ":colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv{}",
+            if tonemap { ":tonemapping=bt.2390:peak_detect=0" } else { "" }
+        ),
+    };
+    format!(
+        "setparams={},format={upload},hwupload,libplacebo=w={w}:h={h}:upscaler=ewa_lanczossharp:sigmoid=0:\
+         format={out}{colour},hwdownload,format={out}{}",
+        g.params_in,
+        if g.geometry.no_upscale_needed { String::new() } else { format!(",{CAS}") }
+    )
+}
+
+/// `setparams` options for a source with these colour tags (ffprobe names), filling in defaults
+/// for anything untagged: BT.601 for SD (≤ 576 lines), BT.709 otherwise.
+pub fn setparams_input(tags: &ColourTags, coded_height: u32) -> String {
+    let sd = coded_height <= 576;
+    let space = tags.space.clone().unwrap_or_else(|| if sd { "bt470bg" } else { "bt709" }.into());
+    let primaries = tags.primaries.clone().unwrap_or_else(|| if sd { "smpte170m" } else { "bt709" }.into());
+    let trc = tags.transfer.clone().unwrap_or_else(|| if sd { "smpte170m" } else { "bt709" }.into());
+    let range = tags.range.clone().unwrap_or_else(|| "tv".into());
+    format!("colorspace={space}:color_primaries={primaries}:color_trc={trc}:range={range}")
 }
 
 #[cfg(test)]
@@ -246,7 +295,56 @@ mod tests {
             geometry: plan(display, target, reframe),
             reframe,
             track: None,
+            gpu: None,
+            params_in: setparams_input(&ColourTags::bt709(), 1080),
         }
+    }
+
+    fn gpu(mut g: GraphInput) -> GraphInput {
+        g.gpu = Some(0);
+        g
+    }
+
+    #[test]
+    fn gpu_tier_scales_with_libplacebo_on_the_vulkan_device() {
+        insta::assert_snapshot!(build(&gpu(input((480, 854), (1080, 2340), Reframe::Center))), @"[0:v]hqdn3d=1.5:1.5:6:6,crop=394:854:44:0,setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv,format=yuv420p,hwupload,libplacebo=w=1080:h=2340:upscaler=ewa_lanczossharp:sigmoid=0:format=yuv420p:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv,hwdownload,format=yuv420p,cas=0.7,setsar=1,format=yuv420p[v]");
+    }
+
+    #[test]
+    fn gpu_tier_hdr_tone_maps_in_libplacebo_and_keeps_10_bit() {
+        let mut g = gpu(input((640, 360), (1080, 2340), Reframe::Blur));
+        g.tonemap = true;
+        let sdr = build(&g);
+        assert!(
+            sdr.contains("format=p010le,hwupload,libplacebo=")
+                && sdr.contains(":tonemapping=bt.2390:peak_detect=0,"),
+            "{sdr}"
+        );
+        assert_eq!(
+            sdr.matches("tonemap=tonemap=hable").count(),
+            1,
+            "only the background is tone-mapped on the CPU: {sdr}"
+        );
+        let mut g = gpu(input((640, 360), (1080, 2340), Reframe::Center));
+        g.keep_hdr = true;
+        let keep = build(&g);
+        assert!(keep.contains("format=yuv420p10le,hwdownload,format=yuv420p10le"), "{keep}");
+        assert!(
+            !keep.contains("upscaler=ewa_lanczossharp:format=yuv420p10le:colorspace"),
+            "colours pass through: {keep}"
+        );
+    }
+
+    #[test]
+    fn untagged_sources_get_sd_or_hd_defaults() {
+        assert_eq!(
+            setparams_input(&ColourTags::default(), 480),
+            "colorspace=bt470bg:color_primaries=smpte170m:color_trc=smpte170m:range=tv"
+        );
+        assert_eq!(
+            setparams_input(&ColourTags::default(), 1080),
+            "colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv"
+        );
     }
 
     fn smart(fallback: bool) -> GraphInput {

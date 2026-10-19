@@ -114,6 +114,8 @@ struct Shared {
     total_jobs: usize,
     total_media: f64,
     state: Mutex<RunState>,
+    /// The run's state folder (crash journal, capability record).
+    state_dir: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -189,6 +191,7 @@ async fn run(
         total_jobs: plan.jobs.len(),
         total_media: to_run.iter().map(|j| j.media_len().as_secs_f64()).sum(),
         state: Mutex::new(RunState::default()),
+        state_dir: cfg.state_dir.clone(),
     });
     shared.emit(Event::RunStarted {
         run_id: plan.run_id.clone(),
@@ -337,6 +340,8 @@ pub struct JobCtx<'a> {
     /// Current stage as (start of the stage within the whole job, its weight); `None` until the
     /// executor calls [`JobCtx::stage`], in which case progress maps one-to-one.
     stage: Option<(f64, f64)>,
+    /// Last job fraction reported, so a repeated stage never moves the bar backwards.
+    last_fraction: f64,
     id: JobId,
     shared: &'a Shared,
     throttle: Throttle,
@@ -379,6 +384,21 @@ impl<'a> JobCtx<'a> {
         self.shared.emit(Event::JobStage { job_id: self.id, stage: name.to_owned(), index, of });
     }
 
+    /// Starts the current stage over (a retry): progress continues from where the bar is and
+    /// fills the rest of the stage's share, so it never moves backwards.
+    pub fn restart_stage(&mut self, name: &str, index: u32, of: u32) {
+        if let Some((base, weight)) = self.stage {
+            let from = self.last_fraction.clamp(base, base + weight);
+            self.stage = Some((from, base + weight - from));
+        }
+        self.shared.emit(Event::JobStage { job_id: self.id, stage: name.to_owned(), index, of });
+    }
+
+    /// The run's state folder, where the capability record lives.
+    pub fn state_dir(&self) -> Option<&Path> {
+        self.shared.state_dir.as_deref()
+    }
+
     /// Reports a warning for this job.
     pub fn warn(&self, message: String) {
         self.shared.emit(Event::JobWarning { job_id: self.id, message });
@@ -399,7 +419,8 @@ impl<'a> JobCtx<'a> {
         }
         let total_s = total.as_secs_f64();
         let fraction = if total_s > 0.0 { (out_us as f64 / 1e6 / total_s).clamp(0.0, 1.0) } else { 0.0 };
-        let fraction = job_fraction(self.stage, fraction);
+        let fraction = job_fraction(self.stage, fraction).max(self.last_fraction);
+        self.last_fraction = fraction;
         let eta_ms = block
             .speed
             .filter(|s| *s > 0.0)
@@ -461,6 +482,7 @@ async fn run_job(
         cancel,
         scratch: job.scratch.as_deref(),
         stage: None,
+        last_fraction: 0.0,
         id: job.id,
         shared,
         throttle: Throttle::new(Duration::from_millis(100)),

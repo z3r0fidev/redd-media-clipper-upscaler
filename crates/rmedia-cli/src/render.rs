@@ -115,6 +115,11 @@ impl Output {
                     format!("{:?}", up.tier.tier).to_lowercase(),
                     up.tier.reason
                 );
+                if up.tier.suggest.is_some() {
+                    println!(
+                        "     suggestion: --tier ai may recover more detail from this low-resolution source"
+                    );
+                }
                 println!("     {}", reframe_line(&up.reframe_applied, &up.analysis));
                 println!(
                     "     estimate ~{}, ~{:.0} s",

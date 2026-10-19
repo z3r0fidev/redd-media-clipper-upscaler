@@ -167,7 +167,7 @@ impl From<ReframeArg> for rmedia_core::upscale::Reframe {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum TierArg {
     Auto,
     Cpu,
@@ -343,6 +343,10 @@ pub struct DoctorArgs {
     /// Print the report as JSON.
     #[arg(long)]
     pub json: bool,
+    /// Run the GPU self-tests again now (normally they run only when the hardware, driver or
+    /// app version changes).
+    #[arg(long)]
+    pub recheck: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -389,7 +393,7 @@ fn main() -> ExitCode {
             Command::Upscale(args) => commands::upscale::run(&cli, args).await,
             Command::Batch(args) => commands::batch::run(&cli, args).await,
             Command::Scan(args) => commands::scan::run(&cli, args).await,
-            Command::Doctor(args) => commands::doctor::run(&cli, args),
+            Command::Doctor(args) => commands::doctor::run(&cli, args).await,
         }
     });
     ExitCode::from(code)

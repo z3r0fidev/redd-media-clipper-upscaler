@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Settings } from "../bindings/Settings";
+  import type { TierInfo } from "../bindings/TierInfo";
   import { api, errorText } from "../api";
   import { app, toast } from "../stores/app.svelte";
 
@@ -20,6 +21,25 @@
     } catch (e) {
       toast(errorText(e), "error");
     }
+  }
+
+  let checking = $state(false);
+
+  async function recheck() {
+    checking = true;
+    try {
+      app.engine = await api.doctorRecheck();
+      toast("Machine checked");
+    } catch (e) {
+      toast(errorText(e), "error");
+    } finally {
+      checking = false;
+    }
+  }
+
+  function tierText(info: TierInfo): string {
+    if (!info.available) return `no (${info.reason ?? "not detected"})`;
+    return info.fps ? `yes, ${Math.round(info.fps)} fps` : "yes";
   }
 
   async function save() {
@@ -90,6 +110,22 @@
         <p class="small">Version {app.engine.version ?? "?"} · accurate mode writes {app.engine.accurate_containers.join(", ") || "nothing"}</p>
         {#each app.engine.problems as p, i (i)}<p class="small bad">{p}</p>{/each}
       {/if}
+    </fieldset>
+    <fieldset>
+      <legend class="section-title">Upscaling quality tiers</legend>
+      {#if app.engine?.tiers}
+        {@const t = app.engine.tiers}
+        <p class="small">CPU: {tierText(t.cpu)} · GPU: {tierText(t.gpu)} · AI: {tierText(t.ai)}</p>
+        {#each app.engine.gpus as g (g.index)}
+          <p class="small mono">{g.name} — {g.usable ? "usable" : `not used: ${g.reason ?? "unknown"}`}</p>
+        {/each}
+        {#if app.engine.capability}
+          <p class="small">Checked {app.engine.capability.checked_at}{#each app.engine.capability.demoted as d (d.tier)} · {d.tier} failed since: {d.error}{/each}</p>
+        {/if}
+      {:else}
+        <p class="small">Not checked yet.</p>
+      {/if}
+      <button class="small" disabled={checking} onclick={recheck}>{checking ? "Checking…" : "Check again"}</button>
     </fieldset>
     <footer>
       <button class="ghost" onclick={() => (app.showSettings = false)}>Cancel</button>

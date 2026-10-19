@@ -106,6 +106,13 @@ impl UpscalePlan {
         self
     }
 
+    /// Switches to the CPU tier (after an automatic GPU job failed).
+    pub fn with_tier_cpu(mut self, reason: impl Into<String>) -> UpscalePlan {
+        self.tier = tier::TierDecision::cpu(reason);
+        self.graph.gpu = None;
+        self
+    }
+
     /// Falls back to the blurred background (the analysis could not run).
     pub fn with_blur(mut self) -> UpscalePlan {
         let g = geometry::plan(self.geometry.display, self.geometry.target, Reframe::Blur);

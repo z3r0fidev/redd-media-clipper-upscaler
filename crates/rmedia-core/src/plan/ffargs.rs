@@ -156,6 +156,15 @@ pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
 pub fn upscale_args(spec: &UpscaleSpec, output: &Path) -> Vec<OsString> {
     let (cut, up) = (&spec.cut, &spec.up);
     let mut a = common_args();
+    if let Some(device) = up.graph.gpu {
+        // The GPU tier pins its Vulkan device, so a software renderer is never picked (R9).
+        a.extend([
+            "-init_hw_device".into(),
+            format!("vulkan=vk:{device}").into(),
+            OsString::from("-filter_hw_device"),
+            "vk".into(),
+        ]);
+    }
     a.extend(input_args(cut));
     let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
     push(&["-filter_complex", &graph::build(&up.graph), "-map", "[v]"]);

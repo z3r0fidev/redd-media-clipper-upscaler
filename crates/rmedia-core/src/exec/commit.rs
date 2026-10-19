@@ -94,9 +94,14 @@ pub fn remove_with_retry(path: &Path) {
 /// Creates a job's scratch directory: private (0700 on Unix), and failing if anything already
 /// exists at that path so a planted file or symlink is never reused.
 pub fn create_scratch(path: &Path) -> io::Result<()> {
-    let mut b = std::fs::DirBuilder::new();
     #[cfg(unix)]
-    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    let b = {
+        let mut b = std::fs::DirBuilder::new();
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        b
+    };
+    #[cfg(not(unix))]
+    let b = std::fs::DirBuilder::new();
     b.create(path)
 }
 

@@ -8,12 +8,17 @@ use assert_cmd::cargo::cargo_bin;
 use rmedia_testkit::{Fixture, fixture, require_engine};
 use serde_json::Value;
 
-/// `rmedia` with state and config isolated in `dir` (no user presets leak in).
+/// `rmedia` with state and config isolated in `dir` (no user presets leak in), and the Vulkan
+/// loader pointed at a driver file that does not exist, so the tier is the CPU on every machine
+/// (the GPU tier is tested in `doctor.rs` and in rmedia-core's `us3_gpu.rs`).
 fn rmedia(dir: &Path) -> Command {
     let mut c = Command::new(cargo_bin("rmedia"));
+    let none = dir.join("no-driver.json");
     c.env("RMEDIA_STATE_DIR", dir.join("state"))
         .env("RMEDIA_CONFIG_DIR", dir.join("config"))
-        .env("RMEDIA_CACHE_DIR", dir.join("cache"));
+        .env("RMEDIA_CACHE_DIR", dir.join("cache"))
+        .env("VK_DRIVER_FILES", &none)
+        .env("VK_ICD_FILENAMES", &none);
     c
 }
 

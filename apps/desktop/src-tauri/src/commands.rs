@@ -16,12 +16,20 @@ use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::ops::{self, AppState, OpResult, PreviewInfo};
+use rmedia_core::upscale::capability::CheckMode;
 
 const VIDEO_EXTENSIONS: &[&str] = &rmedia_core::discover::VIDEO_EXTENSIONS;
 
+/// The engine and the stored machine check (`rmedia doctor` without new self-tests).
 #[tauri::command]
-pub fn doctor(state: State<'_, AppState>) -> DoctorReport {
-    state.doctor()
+pub async fn doctor(state: State<'_, AppState>) -> OpResult<DoctorReport> {
+    state.doctor_checked(CheckMode::Cached).await
+}
+
+/// Runs the GPU and tier checks again (`rmedia doctor --recheck`).
+#[tauri::command]
+pub async fn doctor_recheck(state: State<'_, AppState>) -> OpResult<DoctorReport> {
+    state.doctor_checked(CheckMode::Recheck).await
 }
 
 #[tauri::command]
@@ -187,10 +195,12 @@ pub async fn pick_engine(app: AppHandle, state: State<'_, AppState>, reset: bool
         let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
             .await
             .map_err(|e| e.to_string())?;
-        let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(state.doctor()) };
+        let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+            return state.doctor_checked(CheckMode::Cached).await;
+        };
         state.set_engine_path(Some(path))?;
     }
-    Ok(state.doctor())
+    state.doctor_checked(CheckMode::Cached).await
 }
 
 #[tauri::command]

@@ -24,6 +24,7 @@ export type PickKind = "video" | "cliplist" | "manifest";
 
 export const api = {
   doctor: () => invoke<DoctorReport>("doctor"),
+  doctorRecheck: () => invoke<DoctorReport>("doctor_recheck"),
   takeOpened: () => invoke<string[]>("take_opened"),
   pickFiles: (kind: PickKind) => invoke<string[]>("pick_files", { kind }),
   pickFolder: () => invoke<string | null>("pick_folder"),

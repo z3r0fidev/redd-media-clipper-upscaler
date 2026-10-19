@@ -40,6 +40,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::doctor,
+            commands::doctor_recheck,
             commands::take_opened,
             commands::pick_files,
             commands::pick_folder,

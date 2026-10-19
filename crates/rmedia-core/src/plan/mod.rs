@@ -27,9 +27,7 @@ use crate::upscale::geometry::{self, Overflow};
 use crate::upscale::graph::{GraphInput, Track};
 use crate::upscale::reframe;
 use crate::upscale::tier::{Tier, TierDecision};
-use crate::upscale::{
-    AnalysisState, HdrMode, Reframe, TierChoice, UpscaleOptions, UpscalePlan, UpscaleSpec, estimate,
-};
+use crate::upscale::{AnalysisState, HdrMode, Reframe, UpscaleOptions, UpscalePlan, UpscaleSpec, estimate};
 use ffargs::ClipSpec;
 use streams::Container;
 
@@ -321,7 +319,7 @@ impl Planner<'_> {
         // --- upscaling (feature 002) ---------------------------------------------------------
         let up = match &opts.upscale {
             Some(u) => match self.check_upscale(origin, u, media) {
-                Some(preset) => Some((u, preset)),
+                Some((preset, tier)) => Some((u, preset, tier)),
                 None => return,
             },
             None => None,
@@ -463,7 +461,7 @@ impl Planner<'_> {
                 start: clip.start,
                 end: requested_end,
                 ext: &out_ext,
-                preset: up.as_ref().map(|(u, _)| u.preset.as_str()),
+                preset: up.as_ref().map(|(u, ..)| u.preset.as_str()),
             },
         ) {
             Ok(p) => p,
@@ -562,8 +560,8 @@ impl Planner<'_> {
         };
         let (spec, scratch) = match up {
             None => (JobSpec::Clip(Box::new(cut)), None),
-            Some((u, preset)) => {
-                let plan = self.upscale_plan(origin, u, preset, media, &cut, whole, &mut warnings);
+            Some((u, preset, tier)) => {
+                let plan = self.upscale_plan(origin, u, preset, tier, media, &cut, whole, &mut warnings);
                 let scratch = scratch_path(&output, &self.run_id, id);
                 (JobSpec::Upscale(Box::new(UpscaleSpec { cut, up: plan })), Some(scratch))
             }
@@ -585,7 +583,12 @@ impl Planner<'_> {
     /// Upscale checks that need no output path: the preset exists, HDR can be kept, the tier can
     /// run here, and the engine has what the job needs (FR-008, research R4). Reports an issue
     /// and returns `None` when the job cannot be planned.
-    fn check_upscale(&mut self, origin: &Origin, u: &UpscaleOptions, media: &MediaInfo) -> Option<Preset> {
+    fn check_upscale(
+        &mut self,
+        origin: &Origin,
+        u: &UpscaleOptions,
+        media: &MediaInfo,
+    ) -> Option<(Preset, TierDecision)> {
         let Some(preset) = self.presets.get(&u.preset).cloned() else {
             let known = self.presets.ids().join(", ");
             self.error(
@@ -603,15 +606,15 @@ impl Planner<'_> {
             );
             return None;
         }
-        if let Some(tier) = u.tier.forced().filter(|t| *t != Tier::Cpu) {
-            let name = format!("{tier:?}").to_lowercase();
-            self.error(
-                origin,
-                IssueCode::TierUnavailable,
-                format!("the {name} tier is not available on this machine"),
-            );
-            return None;
-        }
+        let display =
+            media.first_video().and_then(|v| v.display_size()).unwrap_or((preset.width, preset.height));
+        let tier = match crate::upscale::tier::select(u.tier, self.caps.capability.as_ref(), display) {
+            Ok(t) => t,
+            Err(msg) => {
+                self.error(origin, IssueCode::TierUnavailable, msg);
+                return None;
+            }
+        };
         let v = media.first_video()?;
         let encoder = match preset.video.codec {
             VideoCodec::Hevc => "libx265",
@@ -640,7 +643,7 @@ impl Planner<'_> {
             );
             return None;
         }
-        Some(preset)
+        Some((preset, tier))
     }
 
     /// Resolves geometry, colour, frame rate, encoder, estimate and warnings for an upscale job
@@ -651,6 +654,7 @@ impl Planner<'_> {
         origin: &Origin,
         u: &UpscaleOptions,
         preset: Preset,
+        tier: TierDecision,
         media: &MediaInfo,
         cut: &ClipSpec,
         whole: bool,
@@ -727,6 +731,8 @@ impl Planner<'_> {
             tonemap,
             keep_hdr,
             colour_in: crate::upscale::graph::zscale_input(&colour_in, v.height.unwrap_or(0)),
+            params_in: crate::upscale::graph::setparams_input(&colour_in, v.height.unwrap_or(0)),
+            gpu: (tier.tier == Tier::Gpu).then_some(tier.device).flatten(),
             fps_cap,
             geometry,
             reframe: effective,
@@ -744,8 +750,13 @@ impl Planner<'_> {
         let audio_copy = preset.audio.copy_if_aac && whole && audio.iter().all(|s| s.codec == "aac");
         let audio_kbps = (!audio.is_empty()).then_some(preset.audio.bitrate_k);
         let len = cut.requested.end.saturating_sub(cut.requested.start).as_secs_f64();
-        let est =
-            estimate::estimate(&preset, fps_out, len, audio_kbps, estimate::cpu_fps(target.0, target.1));
+        let est = estimate::estimate(
+            &preset,
+            fps_out,
+            len,
+            audio_kbps,
+            estimate::encode_fps(tier.tier, self.caps.capability.as_ref(), target),
+        );
         let limit_warnings = estimate::limit_warnings(&preset, &est, len);
         for w in &limit_warnings {
             self.issues.push(Issue {
@@ -766,10 +777,6 @@ impl Planner<'_> {
         });
         let expected_video =
             if whole { v.duration.or(media.duration) } else { Some(cut.requested.end - cut.requested.start) };
-        let reason = match u.tier {
-            TierChoice::Auto => "auto: the classical CPU tier",
-            _ => "forced: cpu",
-        };
         UpscalePlan {
             target,
             geometry,
@@ -782,7 +789,7 @@ impl Planner<'_> {
             reframe_cache: self.caps.reframe_cache.clone(),
             // Whole videos keep their timestamps: the video may start after the audio.
             cmd_offset: if whole { (media.zero_point() - media.start_time).as_secs_f64() } else { 0.0 },
-            tier: TierDecision { tier: Tier::Cpu, reason: reason.into(), suggest: None },
+            tier,
             hdr: u.hdr,
             colour_in,
             graph,

@@ -3,6 +3,7 @@
 use rmedia_core::preset::{PresetRegistry, PresetSource, VideoCodec};
 use rmedia_core::request::{BatchRequest, ClipRequest, Mode, Origin, PartialOptions, SourceRequest};
 use rmedia_core::tools::LocateOptions;
+use rmedia_core::upscale::capability::CheckMode;
 use rmedia_core::upscale::prepare_plan;
 use rmedia_core::{EndSpec, Ts, doctor, plan, settings};
 use serde_json::json;
@@ -18,7 +19,15 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
         return list_presets(&out);
     }
     let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
-    let (report, engine) = doctor::run(&opts);
+    let (mut report, mut engine) = doctor::run(&opts);
+    // A forced CPU tier needs no GPU check (FR-008); otherwise auto and a forced GPU need it.
+    if args.upscale.tier != crate::TierArg::Cpu {
+        let ctrl_c = super::ctrl_c_token();
+        doctor::check_capability(&mut report, engine.as_mut(), CheckMode::Ensure, &ctrl_c.token).await;
+        if ctrl_c.token.is_cancelled() {
+            return exit::CANCELLED;
+        }
+    }
     let Some((tools, caps)) = engine else {
         return out.engine_error(&report.problems.join("; "));
     };
