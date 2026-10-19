@@ -3,14 +3,14 @@
   import type { Mode } from "../bindings/Mode";
   import type { PartialOptions } from "../bindings/PartialOptions";
   import { api, errorText } from "../api";
-  import type { TimeValue, VideoEntry } from "../manifest";
+  import type { ClipEntry, TimeValue, VideoEntry } from "../manifest";
   import { app, infoFor, toast } from "../stores/app.svelte";
   import { clipCount, merge, removeClip, removeSource, runnable, setSourceOptions, updateClip } from "../stores/queue";
-  import { applyEvent, initRun } from "../stores/run";
+  import { canRun, runManifest, runner } from "../stores/runner.svelte";
+  import { isUpscale } from "../stores/upscale";
   import { baseName, fmt } from "../time";
 
   let invalid = $state<Record<string, string>>({});
-  let busy = $state(false);
 
   const total = $derived(clipCount(app.queue));
 
@@ -100,34 +100,20 @@
     }
   }
 
-  async function run() {
-    busy = true;
-    app.runIssues = [];
-    try {
-      const plan = await api.plan(runnable(app.queue));
-      const errors = plan.issues.filter((i) => i.severity === "error");
-      if (errors.length) {
-        app.runIssues = errors.map((i) => i.message);
-        app.run = null;
-        return;
-      }
-      app.run = initRun(plan);
-      const summary = await api.run(plan.run_id, (e) => {
-        if (app.run) app.run = applyEvent(app.run, e);
-      });
-      if (app.run) app.run = { ...app.run, finished: true, summary };
-    } catch (e) {
-      toast(errorText(e), "error");
-    } finally {
-      busy = false;
-    }
+  function run() {
+    void runManifest(runnable(app.queue));
+  }
+
+  function upscaleLabel(c: ClipEntry): string {
+    const u = c.options?.upscale;
+    return u ? `${u.preset ?? "phone-fill"} · ${u.reframe ?? "smart"}` : "";
   }
 </script>
 
 <section class="queue">
   <header class="pane-head">
     <span class="section-title">Queue</span>
-    <span class="faint">{total} clip{total === 1 ? "" : "s"}</span>
+    <span class="faint">{total} job{total === 1 ? "" : "s"}</span>
     <span class="spacer"></span>
     <button class="ghost small" onclick={importClipList} title="Apply a clip list (.txt) to the selected source">Import list…</button>
     <button class="ghost small" onclick={exportQueue} disabled={!total} title="Save as a manifest for `rmedia batch`">Export…</button>
@@ -179,6 +165,7 @@
               aria-label="End"
             />
             <span class="len mono faint">{lengthOf(c, v.input)}</span>
+            {#if isUpscale(c)}<span class="pill up" title="Upscaled for phones: {upscaleLabel(c)}">↑ {upscaleLabel(c)}</span>{/if}
             <input type="text" class="n" placeholder="name" value={c.name ?? ""} onchange={(e) => (app.queue = updateClip(app.queue, v.input, i, { name: e.currentTarget.value }))} aria-label="Clip name" />
             <button class="icon ghost" aria-label="Remove clip" onclick={() => (app.queue = removeClip(app.queue, v.input, i))}>×</button>
           </div>
@@ -203,9 +190,9 @@
   {/if}
 
   <footer>
-    <span class="faint">Output: {app.settings?.defaults.output_dir ?? "“clips” folder next to each video"}</span>
-    <button class="primary" disabled={!total || busy || (app.run != null && !app.run.finished)} onclick={run}>
-      {busy ? "Running…" : `Run ${total} clip${total === 1 ? "" : "s"}`}
+    <span class="faint">Output: {app.settings?.defaults.output_dir ?? "“clips” (and “upscaled”) next to each video"}</span>
+    <button class="primary" disabled={!total || !canRun()} onclick={run}>
+      {runner.busy ? "Running…" : `Run ${total} job${total === 1 ? "" : "s"}`}
     </button>
   </footer>
 </section>
@@ -220,6 +207,7 @@
   .opts-wrap[open] summary { margin-bottom: var(--space-2); }
   .row { flex-wrap: wrap; row-gap: 4px; }
   .len { font-size: 11.5px; min-width: 44px; }
+  .pill.up { font-size: 11px; color: var(--accent); background: var(--accent-soft); border-color: transparent; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card-head { justify-content: space-between; }
   .name { font-weight: 650; padding: 0 var(--space-1); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }
   .opts select { flex: 1; min-width: 0; font-size: 12px; height: 28px; }

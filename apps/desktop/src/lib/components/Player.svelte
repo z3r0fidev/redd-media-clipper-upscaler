@@ -5,6 +5,10 @@
   import { addClip } from "../stores/queue";
   import { pickFolder, pickVideos } from "../stores/sources.svelte";
   import { baseName, fmt } from "../time";
+  import { cropRect, cropXAt, fallbackSegments } from "../stores/upscale";
+  import { initUpscale, stopView, syncView, upscale } from "../stores/upscale.svelte";
+  import UpscaleCompare from "./UpscaleCompare.svelte";
+  import UpscaleView from "./UpscaleView.svelte";
 
   type Mode = "empty" | "loading" | "direct" | "proxy-h264" | "proxy-vp8" | "still" | "error";
 
@@ -31,6 +35,52 @@
     return v?.frame_rate ? v.frame_rate[1] / v.frame_rate[0] : 1 / 25;
   });
   const canAdd = $derived(!!path && inPt != null && (outPt == null || outPt > inPt));
+
+  // Upscale view: the range is the In/Out marks (or the whole video); the overlay follows the
+  // playhead every frame while playing.
+  const upscaling = $derived(app.view === "upscale" && !!path && mode !== "empty" && mode !== "error");
+  const range = $derived({ start: inPt ?? 0, end: inPt == null ? null : outPt });
+  let stageW = $state(0);
+  let stageH = $state(0);
+  let overlayT = $state(0);
+  const analysis = $derived(upscaling ? upscale.analysis : null);
+  const rect = $derived(analysis && stageW ? cropRect(analysis, overlayT, { width: stageW, height: stageH }) : null);
+  const blurredHere = $derived.by(() => {
+    const at = analysis ? cropXAt(analysis, overlayT) : null;
+    return at != null && "fallback" in at;
+  });
+  const segments = $derived(analysis ? fallbackSegments(analysis, duration) : []);
+  // The phone-shaped before/after takes the stage's height (WebKitGTK does not size an
+  // aspect-ratio box from a flexed height, so its width is computed here).
+  const phoneWidth = $derived.by(() => {
+    const p = upscale.presets?.presets.find((x) => x.id === upscale.options.preset);
+    const [w, h] = p ? [p.width, p.height] : [1080, 2340];
+    return Math.round((stageH * w) / h);
+  });
+
+  $effect(() => {
+    if (!upscaling || !path) return;
+    const v = { path, range: { ...range }, at: current, playing, duration };
+    // Re-sync when the options or the finished analysis change, too.
+    void upscale.options;
+    void upscale.analysis?.key;
+    untrack(() => syncView(v));
+  });
+  $effect(() => {
+    if (upscaling) untrack(() => void initUpscale());
+    else stopView();
+  });
+  $effect(() => {
+    overlayT = current;
+    if (!upscaling || !playing || !video) return;
+    let raf = 0;
+    const tick = () => {
+      if (video) overlayT = Math.max(0, video.currentTime - offset);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  });
 
   // Only a change of source reloads: load() reads and writes state, which must not become
   // dependencies of this effect (setting a still frame would otherwise restart loading).
@@ -171,6 +221,7 @@
       case "Enter":
       case "a":
       case "A":
+        if (app.view !== "clip") return;
         addCurrentClip();
         break;
       case "ArrowLeft":
@@ -243,6 +294,10 @@
     </div>
   {:else}
     <header class="pane-head">
+      <div class="tabs" role="tablist" aria-label="What to do with this video">
+        <button role="tab" aria-selected={app.view === "clip"} class:on={app.view === "clip"} onclick={() => (app.view = "clip")}>Clip</button>
+        <button role="tab" aria-selected={app.view === "upscale"} class:on={app.view === "upscale"} onclick={() => (app.view = "upscale")}>Upscale for phone</button>
+      </div>
       <h2 title={path}>{path ? baseName(path) : ""}</h2>
       {#if mode === "direct"}
         <span class="pill" title="Playing the original file">Original</span>
@@ -253,7 +308,8 @@
       {/if}
     </header>
 
-    <div class="stage">
+    <div class="stage-row">
+    <div class="stage" bind:clientWidth={stageW} bind:clientHeight={stageH}>
       {#if mode === "loading"}
         <div class="overlay"><div class="spinner" aria-hidden="true"></div><p>Opening…</p></div>
       {/if}
@@ -282,6 +338,11 @@
           onpause={() => (playing = false)}
         ></video>
       {/if}
+      {#if rect}
+        <div class="crop" style="left: {rect.left}px; top: {rect.top}px; width: {rect.width}px; height: {rect.height}px" aria-hidden="true"></div>
+      {:else if blurredHere}
+        <span class="crop-note">Whole frame over a blurred background here</span>
+      {/if}
       {#if mode === "error"}
         <div class="overlay">
           <p class="title">Can't open this video</p>
@@ -289,6 +350,8 @@
           <button onclick={retry}>Retry</button>
         </div>
       {/if}
+    </div>
+    {#if upscaling}<div class="phone" style="width: {phoneWidth}px; height: {stageH}px"><UpscaleCompare /></div>{/if}
     </div>
 
     <div class="transport">
@@ -337,12 +400,18 @@
         <div class="dim" style="left: {pct(outPt ?? duration)}%; right: 0"></div>
         <div class="range" class:open={outPt == null} style="left: {pct(inPt)}%; width: {pct(outPt ?? duration) - pct(inPt)}%"></div>
       {/if}
+      {#each segments as g, i (i)}
+        <div class="fallback" style="left: {g.left}%; width: {g.width}%" title="Blurred background (no single subject fits)"></div>
+      {/each}
       <div class="playhead" style="left: {pct(current)}%"></div>
       {#if hoverT != null}
         <div class="tip mono" style="left: {hoverX}px">{fmt(hoverT)}</div>
       {/if}
     </div>
 
+    {#if upscaling && path}
+      <UpscaleView {path} {range} />
+    {:else}
     <div class="clipbar">
       <input type="text" placeholder="Clip name (optional)" bind:value={clipName} onkeydown={(e) => e.key === "Enter" && addCurrentClip()} />
       <button class="primary" disabled={!canAdd} onclick={addCurrentClip}>Add clip <kbd>↵</kbd></button>
@@ -350,6 +419,7 @@
     <p class="hints faint">
       <kbd>Space</kbd> play · <kbd>I</kbd>/<kbd>O</kbd> mark · <kbd>←</kbd>/<kbd>→</kbd> frame · <kbd>⇧</kbd>+arrows 1 s · <kbd>↵</kbd> add
     </p>
+    {/if}
     {#if message && mode === "still"}<p class="faint note">Playback isn't available for this file here; showing exact still frames. {message}</p>{/if}
   {/if}
 </section>
@@ -358,7 +428,9 @@
   .player { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); min-height: 0; height: 100%; }
   header { display: flex; align-items: center; gap: var(--space-3); }
   h2 { margin: 0; font-size: 16px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .stage { position: relative; flex: 1; min-height: 160px; border-radius: var(--radius-l); background: var(--stage-bg); overflow: hidden; display: grid; place-items: center; }
+  .stage-row { flex: 1; min-height: 160px; display: flex; gap: var(--space-3); }
+  .phone { flex: 0 0 auto; min-width: 0; }
+  .stage { position: relative; flex: 1; min-width: 0; min-height: 160px; border-radius: var(--radius-l); background: var(--stage-bg); overflow: hidden; display: grid; place-items: center; }
   .stage video, .stage img { width: 100%; height: 100%; object-fit: contain; }
   .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); color: #d9dbe5; background: rgba(7, 8, 12, 0.7); }
   .overlay .ghost { color: #d9dbe5; }
@@ -373,6 +445,12 @@
   .thumbs.loading { background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
   @keyframes shimmer { to { background-position: -200% 0; } }
   @keyframes fade { from { opacity: 0; } }
+  .crop { position: absolute; border: 2px solid #fff; border-radius: 3px; box-shadow: 0 0 0 9999px rgba(7, 8, 12, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.4); pointer-events: none; z-index: 1; }
+  .crop-note { position: absolute; left: 50%; bottom: var(--space-3); transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; font-size: 11.5px; color: #fff; background: rgba(7, 8, 12, 0.7); pointer-events: none; z-index: 1; }
+  .fallback { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--warn) 55%, transparent) 0 4px, transparent 4px 8px); border-top: 2px solid var(--warn); pointer-events: none; }
+  .tabs { display: flex; padding: 2px; gap: 2px; border-radius: var(--radius-m); background: var(--surface-2); border: 1px solid var(--border); flex-shrink: 0; }
+  .tabs button { height: 26px; padding: 0 10px; font-size: 12.5px; border: 0; background: transparent; color: var(--text-2); }
+  .tabs button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 600; }
   .dim { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.45); }
   .range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 22%, transparent); border-left: 3px solid var(--accent); border-right: 3px solid var(--accent); }
   .range.open { border-right-style: dashed; }

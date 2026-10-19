@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api } from "../api";
   import { app } from "../stores/app.svelte";
-  import type { JobView } from "../stores/run";
+  import { statusLabel, upscaleDetail, type JobView } from "../stores/run";
   import { baseName } from "../time";
 
   const run = $derived(app.run);
@@ -11,14 +11,6 @@
     if (run?.jobs.some((j) => j.status === "failed")) expanded = true;
   });
   const eta = (ms?: number) => (ms == null ? "" : ms < 60_000 ? `${Math.ceil(ms / 1000)} s left` : `${Math.ceil(ms / 60_000)} min left`);
-  const label: Record<JobView["status"], string> = {
-    queued: "Waiting",
-    running: "Cutting",
-    done: "Done",
-    skipped: "Skipped",
-    failed: "Failed",
-    cancelled: "Cancelled",
-  };
 
   function detail(j: JobView): string {
     const o = j.outcome;
@@ -30,18 +22,18 @@
       if (Math.abs(o.actual.start - j.requestedStart) > 0.05) return `Starts on the keyframe at ${o.actual.start.toFixed(3)} s`;
       return `Ends at ${o.actual.end.toFixed(3)} s`;
     }
-    return j.warnings.join(" · ");
+    return [upscaleDetail(o), ...j.warnings].filter(Boolean).join(" · ");
   }
 </script>
 
 {#if run}
   <section class="run panel" aria-label="Run">
     <header>
-      <button class="icon ghost" aria-expanded={expanded} aria-controls="run-jobs" onclick={() => (expanded = !expanded)} title={expanded ? "Hide clips" : "Show clips"}>
+      <button class="icon ghost" aria-expanded={expanded} aria-controls="run-jobs" onclick={() => (expanded = !expanded)} title={expanded ? "Hide jobs" : "Show jobs"}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="transform: rotate({expanded ? 180 : 0}deg); transition: transform 200ms var(--ease)"><path d="M6 15l6-6 6 6" /></svg>
       </button>
       <strong>{run.finished ? "Finished" : "Running"}</strong>
-      <span class="muted">{run.done} / {run.total} clips</span>
+      <span class="muted">{run.done} / {run.total} jobs</span>
       <div class="bar grow" role="progressbar" aria-label="Overall progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(run.fraction * 100)}><div style="width: {Math.round(run.fraction * 100)}%"></div></div>
       <span class="faint">{run.finished ? "" : eta(run.etaMs)}</span>
       {#if !run.finished}
@@ -62,7 +54,7 @@
     <ul id="run-jobs">
       {#each run.jobs as j (j.id)}
         <li class={j.status}>
-          <span class="status">{label[j.status]}</span>
+          <span class="status">{statusLabel(j)}</span>
           <span class="out" title={j.output}>{baseName(j.output)}</span>
           {#if j.status === "running"}
             <div class="bar mini"><div style="width: {Math.round(j.fraction * 100)}%"></div></div>

@@ -21,6 +21,8 @@ export const app = $state({
   run: null as RunView | null,
   runIssues: [] as string[],
   showSettings: false,
+  /** The centre pane: cutting clips, or "Upscale for phone". */
+  view: "clip" as "clip" | "upscale",
   toast: null as { kind: "info" | "error"; text: string } | null,
 });
 

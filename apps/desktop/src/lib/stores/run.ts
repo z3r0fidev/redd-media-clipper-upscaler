@@ -97,3 +97,22 @@ export function applyEvent(r: RunView, e: Event): RunView {
       return { ...r, finished: true, fraction: 1, etaMs: undefined, summary: e.summary };
   }
 }
+
+const stageLabel: Record<string, string> = { analyze: "Finding faces", render: "Upscaling", verify: "Checking" };
+
+/** The status column of a job row: the stage of a running multi-stage job, else its status. */
+export function statusLabel(j: JobView): string {
+  if (j.status === "running") return (j.stage && stageLabel[j.stage]) || (j.stage ? j.stage : "Cutting");
+  return { queued: "Waiting", running: "Cutting", done: "Done", skipped: "Skipped", failed: "Failed", cancelled: "Cancelled" }[j.status];
+}
+
+/** What an upscale outcome is worth telling: the tier used, a CPU fallback, blurred ranges. */
+export function upscaleDetail(o: JobOutcome): string {
+  if (o.status !== "succeeded" || o.measure !== "upscale") return "";
+  const parts = [`${o.tier_used.toUpperCase()} tier`];
+  if (o.tier_fallback) parts.push("GPU failed, redone on the CPU");
+  const n = o.fallback_ranges.length;
+  if (n) parts.push(`${n} blurred range${n === 1 ? "" : "s"}`);
+  if (o.no_upscale_needed) parts.push("already sharp enough, re-encoded only");
+  return parts.join(" · ");
+}

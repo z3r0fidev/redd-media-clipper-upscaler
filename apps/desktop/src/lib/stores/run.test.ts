@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Plan } from "../bindings/Plan";
-import { applyEvent, initRun } from "./run";
+import { applyEvent, initRun, statusLabel, upscaleDetail } from "./run";
 
 const plan: Plan = {
   run_id: "r1",
@@ -54,5 +54,24 @@ describe("run reducer", () => {
     expect(r.jobs[0]!.status).toBe("failed");
     r = applyEvent(initRun(plan), { type: "job_finished", job_id: 1, outcome: { status: "cancelled" } });
     expect(r.jobs[0]!.status).toBe("cancelled");
+  });
+});
+
+describe("job labels", () => {
+  const base = { id: 1, source: "a", output: "b", fraction: 0, warnings: [], requestedStart: 0 };
+  it("names the stage of a running upscale and keeps clip labels", () => {
+    expect(statusLabel({ ...base, status: "running", stage: "analyze" })).toBe("Finding faces");
+    expect(statusLabel({ ...base, status: "running", stage: "render" })).toBe("Upscaling");
+    expect(statusLabel({ ...base, status: "running" })).toBe("Cutting");
+    expect(statusLabel({ ...base, status: "done", stage: "verify" })).toBe("Done");
+  });
+
+  it("summarises an upscale outcome", () => {
+    const span = { start: 0, end: 1 };
+    const o = (extra: object) =>
+      ({ status: "succeeded", output: "b", measure: "upscale", span, tier_used: "cpu", tier_fallback: false, fallback_ranges: [], no_upscale_needed: false, ...extra }) as never;
+    expect(upscaleDetail(o({}))).toBe("CPU tier");
+    expect(upscaleDetail(o({ tier_fallback: true, fallback_ranges: [span, span] }))).toBe("CPU tier · GPU failed, redone on the CPU · 2 blurred ranges");
+    expect(upscaleDetail({ status: "succeeded", output: "b", measure: "clip", actual: span, adjusted: false } as never)).toBe("");
   });
 });

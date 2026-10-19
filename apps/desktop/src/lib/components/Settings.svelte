@@ -23,6 +23,17 @@
     }
   }
 
+  async function chooseModels(reset: boolean) {
+    try {
+      const s = await api.pickModelsDir(reset);
+      app.settings = s;
+      if (draft) draft.models_dir = s.models_dir;
+      app.engine = await api.doctor();
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  }
+
   let checking = $state(false);
 
   async function recheck() {
@@ -45,7 +56,8 @@
   async function save() {
     if (!draft) return;
     try {
-      const s = $state.snapshot(draft) as Settings;
+      // The upscale view may have saved new choices while this dialog was open.
+      const s = { ...($state.snapshot(draft) as Settings), upscale_defaults: app.settings?.upscale_defaults ?? draft.upscale_defaults };
       await api.setSettings(s);
       app.settings = s;
       app.engine = await api.doctor();
@@ -126,6 +138,16 @@
         <p class="small">Not checked yet.</p>
       {/if}
       <button class="small" disabled={checking} onclick={recheck}>{checking ? "Checking…" : "Check again"}</button>
+      <label>Models folder
+        <span class="row">
+          <input type="text" readonly value={app.settings?.models_dir ?? "Automatic (next to rmedia, then the cache)"} />
+          <button onclick={() => chooseModels(false)}>Choose…</button>
+          {#if app.settings?.models_dir}<button class="ghost" onclick={() => chooseModels(true)}>Reset</button>{/if}
+        </span>
+      </label>
+      {#if app.engine?.models}
+        <p class="small">Face model: {Object.entries(app.engine.models).find(([name]) => name.includes("yunet"))?.[1] ?? "not found — smart framing uses the blurred background"}</p>
+      {/if}
     </fieldset>
     <footer>
       <button class="ghost" onclick={() => (app.showSettings = false)}>Cancel</button>
