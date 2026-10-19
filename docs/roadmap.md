@@ -4,14 +4,14 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-10-15.
+Last updated: 2026-10-19.
 
 ## Status at a Glance
 
 | Feature | State | Available now |
 |---|---|---|
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, not yet tagged | `clip`, `batch`, `scan`, `doctor`, desktop app |
-| 002 Mobile upscaling and smart reframe | In progress (41/112 tasks); user story 1 done | `rmedia upscale` on the CPU tier |
+| 002 Mobile upscaling and smart reframe | In progress (73/112 tasks); user stories 1–3 done | `rmedia upscale` (CPU and GPU tiers, smart reframe), `doctor` tiers and `--recheck` |
 | 003 GIF export for Reddit | Planned; no specification yet | Nothing (research only: `research/05-gif-export.md`) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -24,16 +24,19 @@ Last updated: 2026-10-15.
 | 2 Foundational | T007–T021 | Refactors A1–A5 of the job model (job-agnostic outcomes with `measure`, multi-stage jobs with scratch folders, weighted progress, per-resource job slots, typed issue codes), test fixtures, VMAF measurement, richer probe, engine capability probes, device presets |
 | 3 US1 (MVP) | T022–T041 | `rmedia upscale` on the CPU tier, seven device presets, `--list-presets`, upscale block in dry-run JSON, centre and blur reframe, HDR tone-map or keep, size and time estimates, platform limit warnings, free-space warnings, verify stage, cancel within 2 s |
 
-Both checkpoint reviews (senior-code-reviewer, security-auditor) for phases 2 and 3 are done and
-their findings are fixed. 182 tests pass.
+| 4 US2 Smart reframe | T042–T061 | Follow faces (YuNet), shot detection, smooth crop path, `--crop-path`, `--motion`, analysis cache |
+| 5 US3 GPU tier | T062–T073 | Vulkan GPU tier (libplacebo), machine capability record and self-tests, `auto` with a speed guard, one CPU fallback with demotion, `doctor` tiers/GPUs/models and `--recheck`, desktop **Check again** |
+
+The checkpoint reviews (senior-code-reviewer, security-auditor) for every finished phase are done
+and their findings are fixed. 244 tests pass (6 ignored).
 
 ### Next and pending
 
 | Order | Phase | Tasks | Planned outcome | Status |
 |---|---|---|---|---|
 | 1 | US2 Smart reframe | T042–T061 | Follow faces (YuNet via `cargo xtask fetch-models`), shot detection, smooth crop path, `--crop-path`, `--motion`, analysis cache. | Done (2026-10-16) |
-| 2 | US3 GPU tier and capability record | T062–T073 | Vulkan GPU tier, self-test and capability record, `doctor` tiers, GPUs and models, `doctor --recheck`, automatic fallback to CPU | Planned |
-| 3 | US4 Batch and `clip --upscale` | T074–T081 | Upscale from manifests and `clip --upscale`; partial-clip tests carried over from the US1 review | Planned |
+| 2 | US3 GPU tier and capability record | T062–T073 | Vulkan GPU tier, self-test and capability record, `doctor` tiers, GPUs and models, `doctor --recheck`, automatic fallback to CPU | Done (2026-10-19) |
+| 3 | US4 Batch and `clip --upscale` | T074–T081 | Upscale from manifests and `clip --upscale`; partial-clip tests carried over from the US1 review; `batch` runs the machine check when it has upscale jobs | ▶ Next |
 | 4 | US5 Desktop upscale view | T082–T092 | Upscale view in the desktop app | Planned |
 | 5 | US6 AI worker | T093–T105 | `rmedia-sr` worker with ncnn for AI upscaling | Planned |
 | 6 | Polish, docs, packaging | T106–T112 | Final review pass, documentation, installers include models | Planned |
@@ -41,7 +44,7 @@ their findings are fixed. 182 tests pass.
 Each phase ends with a checkpoint: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`,
 `cargo test --workspace`, the quickstart section for the story, and the two reviews.
 
-US3–US6 are not available in any build. Documentation elsewhere marks these as planned.
+US4–US6 are not available in any build. Documentation elsewhere marks these as planned.
 
 ### Owner validation (cannot be automated)
 
@@ -62,6 +65,10 @@ owner on real footage.
 - A pre-existing symlinked `upscaled/` folder is followed.
 - Rare colour tags (smpte240m, film) fall back to BT.601 or BT.709 defaults.
 - Very long source names can exceed 255 bytes in temporary names.
+- On the reference iGPU the GPU tier is slower than the CPU, so `auto` uses the CPU there.
+- Windows: a GPU driver registered only under the display-adapter key is not in the fingerprint
+  (`rmedia doctor --recheck` after a driver update).
+- A verify failure on the GPU tier is not retried on the CPU.
 - `cargo deny` reports the advisory for `proc-macro-error` through Tauri's GTK dependencies.
   This predates feature 002.
 

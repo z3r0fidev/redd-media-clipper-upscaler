@@ -73,6 +73,10 @@ rmedia doctor               # tiers: cpu yes; gpu yes on a Vulkan GPU (llvmpipe 
 rmedia doctor --recheck
 rmedia upscale low.mp4 --tier gpu --on-exists overwrite    # forced GPU; exit 3 on a machine without one
 rmedia upscale low.mp4 --tier auto --dry-run --json | jq '.jobs[0].upscale | {tier, tier_reason}'
+# → gpu when the GPU self-test is at least as fast as the CPU's; otherwise cpu with
+#   "auto: <GPU> measured slower than the CPU here (21 vs 35 fps); the CPU tier"
+VK_DRIVER_FILES=/none.json VK_ICD_FILENAMES=/none.json RMEDIA_STATE_DIR=$(mktemp -d) \
+  rmedia upscale low.mp4 --tier gpu --dry-run    # exit 3: … not available on this machine: no Vulkan device
 ```
 
 ## US4: batch and chained clipping

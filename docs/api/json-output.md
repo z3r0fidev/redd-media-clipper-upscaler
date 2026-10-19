@@ -43,7 +43,19 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
                "libvmaf": true, "scdet": true, "sendcmd": true, "tonemap": true, "zscale": true },
   "accurate_containers": ["mp4", "m4v", "mov", "mkv", "ts", "webm"],
   "ok": true,
-  "problems": []
+  "problems": [],
+  "tiers": {
+    "cpu": { "available": true, "fps": 35.5 },
+    "gpu": { "available": true, "device": 0, "fps": 21.4 },
+    "ai": { "available": false, "reason": "the AI tier is not built yet" }
+  },
+  "gpus": [
+    { "index": 0, "name": "Intel(R) Graphics (RPL-U)", "kind": "integrated", "device_id": "0xa721", "usable": true },
+    { "index": 1, "name": "llvmpipe (LLVM 20.1.2, 256 bits)", "kind": "software", "device_id": "0x0", "usable": false, "reason": "software renderer" }
+  ],
+  "models": { "face_detection_yunet_2026may.onnx": "ok" },
+  "capability": { "checked_at": "2026-10-19T05:51:14Z", "fingerprint": "affa6e4c…", "demoted": [] },
+  "preset_problems": []
 }
 ```
 
@@ -56,6 +68,11 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
 | `accurate_containers` | string[] | Containers whose video and audio encoders both exist |
 | `ok` | boolean | `false` when the engine was not found or its encoders could not be read (exit 4). `doctor --json` reports a missing engine in this document (`ffmpeg`/`ffprobe`/`version` `null`), not as a `type: "error"` document. |
 | `problems` | string[] | Human-readable problems |
+| `tiers` | object, absent without the capability check | `cpu`, `gpu`, `ai`: `{available, reason?, device?, fps?}`. `fps` is the self-test throughput at the default preset size, encode included. Added in 0.2.0-dev. |
+| `gpus` | object[] | Vulkan devices: `index`, `name`, `kind` (`integrated`, `discrete`, `virtual`, `cpu`, `software`, `other`), `device_id`, `usable`, `reason` when not usable |
+| `models` | object | Model file name → `ok` or `missing` |
+| `capability` | object, absent without the check | `checked_at` (RFC 3339 UTC), `fingerprint`, `demoted[]` (`{tier, error, at}`: tiers that failed after an automatic choice) |
+| `preset_problems` | string[] | User preset files that could not be used (`file: message`) |
 
 ## `scan`
 
@@ -146,7 +163,7 @@ the video. Real dry run, abridged (`argv` omitted):
 | `reframe` | What was requested: `smart`, `center` or `blur` |
 | `reframe_applied` | What is used. `smart` becomes `blur` without a face model, when the analysis fails, or when no face fits anywhere in the video; `center` when the video is taller than the target |
 | `motion` | `calm`, `normal` or `fast` |
-| `tier`, `tier_reason` | `cpu` is the only tier available today; `gpu` and `ai` are planned |
+| `tier`, `tier_reason` | `cpu` or `gpu`, and why: for example `auto: Intel(R) Graphics (RPL-U) passed the self-test`, `auto: … measured slower than the CPU here (21 vs 35 fps); the CPU tier`, `auto: no Vulkan device; the classical CPU tier`, `forced: gpu`. `ai` is not built yet |
 | `suggest` | `null` today; reserved for suggesting the `ai` tier |
 | `hdr` | `sdr` or `keep` |
 | `no_upscale_needed` | The source is already at or above the target size |
@@ -233,9 +250,9 @@ from the request by more than 50 ms). These two keys are unchanged from 0.1.0.
 | Field | Notes |
 |---|---|
 | `span` | `{start,end}` of the output |
-| `tier_used` | `cpu`, `gpu` or `ai` (`cpu` today) |
-| `tier_fallback` | `true` when an automatic GPU job failed and was retried on the CPU tier (cannot happen until the GPU tier exists) |
-| `fallback_ranges` | `{start,end}` ranges that used the blurred background instead of smart reframe; empty today |
+| `tier_used` | `cpu` or `gpu` (`ai` later) |
+| `tier_fallback` | `true` when an automatic GPU job failed and was retried once on the CPU tier (a `job_warning` says so) |
+| `fallback_ranges` | `{start,end}` ranges that used the blurred background instead of smart reframe |
 | `no_upscale_needed` | The source was already at or above the target size |
 
 Real upscale outcome:

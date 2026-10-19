@@ -504,8 +504,12 @@ crop may follow. The analysis is cached, so the render that follows a dry run re
 - `--hdr sdr` (default) converts HDR videos to standard range. `--hdr keep` keeps HDR on presets that
   support it; it stops with an error on other presets. HDR mastering metadata is not carried over.
 - `--crf N` overrides the preset's quality (lower is better and bigger).
-- `--tier auto|cpu` selects the quality tier. Only the CPU tier exists today; `gpu` and `ai` stop
-  with `the gpu tier is not available on this machine`.
+- `--tier auto|cpu|gpu` selects the quality tier. `auto` (the default) uses the GPU tier when
+  `rmedia doctor` found a usable Vulkan GPU that is at least as fast as the CPU, and the CPU tier
+  otherwise; the dry run says which and why. If an automatic GPU job fails, it is retried once on
+  the CPU with a warning, and the GPU is not chosen again until the next check
+  (`rmedia doctor --recheck`). A forced `--tier gpu` never falls back. Both tiers give the same
+  quality; the GPU tier is only about speed. `ai` is not built yet.
 - Folder scanning options, `-o`, `--name` (also `{preset}`), `--on-exists`, `--no-audio`,
   `--audio`, `--no-subs`, `-j`, `--dry-run` and `--json` work as for `clip`. There is no `--mode`.
 

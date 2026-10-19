@@ -6,7 +6,7 @@ generation and bridge tests are unchanged. Every command is a thin adapter over 
 | Command | Args | Returns | Core function |
 |---|---|---|---|
 | `list_presets` | — | `{ default, presets: Preset[], problems }` | `preset::PresetRegistry::load` |
-| `capabilities` | `recheck: boolean` (the self-test is bounded: about 2 s CPU, 30 GPU frames, 8 AI frames, so it has no cancel command) | `CapabilityRecord` (plus GPUs and models) | `upscale::capability::ensure` |
+| `doctor_recheck` (US3, done) | — | `DoctorReport` with `tiers`, `gpus`, `models`, `capability` | `doctor::check_capability(…, CheckMode::Recheck)`: runs the tier self-tests again (a few seconds, 180 s budget, no cancel command); a second call while one runs is refused |
 | `analyze_reframe` | `analysisId, path, span?, options: UpscaleOptions, onEvent: Channel<AnalysisEvent>` | `ReframeAnalysis` | `upscale::reframe::analyze` (cached; same cache as the render, research R10) |
 | `cancel_analysis` | `analysisId` | — | cancel token |
 | `upscale_preview` | `path, at: Ts, options: UpscaleOptions` | `{ before: string, after: string }`: localhost media-server URLs of two PNG stills at the target size | `upscale::preview_frame`: one ffmpeg run of the job's graph limited to one frame at `at` |
@@ -19,6 +19,10 @@ generation and bridge tests are unchanged. Every command is a thin adapter over 
   - Without one, it uses a centred crop, flagged `approximate: true`.
 
 ## Existing commands extended
+
+- **`doctor`** (US3, done): now async; adds the stored capability record when it still matches the
+  machine (`CheckMode::Cached`: the GPU listing only, never the self-tests). Without a matching
+  record `tiers` is absent and Settings shows "Not checked yet" with **Check again**.
 
 - **`plan` / `run`:** queue entries may carry `options.upscale` (`PartialUpscale`). Upscale jobs
   appear in `Plan.jobs` with the `upscale` block (json-output.md).

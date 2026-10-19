@@ -250,7 +250,10 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
   - A device is usable only when the libplacebo round trip on that index exits 0.
   - Mesa `FINISHME` lines are ignored.
 - **Fingerprint:** SHA-256 over:
-  - the app version, the ffmpeg version string, the listing lines and the model SHAs;
+  - the app version plus a check revision (bumped when the self-tests or tier graphs change),
+    the ffmpeg version string, the listing lines and the AI model SHAs (YuNet is left out, so
+    fetching the face model does not re-test);
+  - the `VK_DRIVER_FILES`, `VK_ICD_FILENAMES` and `VK_ADD_DRIVER_FILES` values;
   - the `rmedia-sr` version (US6);
   - the Vulkan driver identity, because the listing has no driver version. On Linux, the
     `icd.d/*.json` files under `/usr/share/vulkan` and `/etc/vulkan`, plus the size and mtime of
@@ -258,7 +261,10 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
     plus the size and mtime of each file.
 - **Record:** `<state>/capability.json`
   ([contracts/capability-record.schema.json](./contracts/capability-record.schema.json)).
-  - Written to a temp file, then renamed, under an `fs4` lock.
+  - Written to a `create_new` temp file, then renamed, while holding std `File::lock()` on a
+    `capability.lock` sidecar (as `exec/journal.rs` does; `fs4` is used only for free space).
+  - Loaded with a size cap and validated (schema 1, hex fingerprint, bounded lists and strings);
+    anything else counts as no record.
   - Contents: devices, tiers (`cpu`, `gpu`, `ai`, each with `available`, `reason` and measured
     throughput), and `demoted[]`.
 - **When it is checked:**
@@ -266,16 +272,21 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
   - The self-test runs only when the fingerprint changes, or on `doctor --recheck` / the Settings
     "Check again" button (FR-009).
   - This reads US3 scenario 5's "do not repeat the check" as the self-test, not the listing.
-- **Self-test, both run at preset size:**
-  - CPU: about 2 s of lavfi `testsrc2` through the T0 graph with libx265 to `-f null`.
-  - GPU: 30 frames through the T1 graph.
-
-  The measured fps feeds the time estimate (FR-021).
+- **Self-test, both run at the default preset size:** 60 frames of lavfi `testsrc2` at 480×854
+  through the tier's graph and the preset's x265 encode to `-f null` (about 1.5–2 s each), so the
+  CPU and GPU figures compare whole jobs. The measured fps feeds the time estimate (FR-021),
+  scaled by output pixel count. Every probe has a 60 s timeout; a check never fails, problems
+  become `reason` strings.
+- **Measured on the reference laptop (2026-10-19):** CPU 33–36 fps, Intel RPL-U iGPU 21–29 fps;
+  first check 4.2 s, cached 0.13 s. The x265 encode dominates both tiers, and on an iGPU the
+  upload and download cost more than the scaling saves.
 
 ## R9. Tier selection and fallback
 
 - **`auto`:**
-  - Choose `gpu` when the record says it is available and it has not been demoted.
+  - Choose `gpu` when the record says it is available, it has not been demoted, and its self-test
+    is at least as fast as the CPU's (SC-003). A slower GPU gets `cpu` with the reason
+    `… measured slower than the CPU here (21 vs 35 fps)`; it can still be forced.
   - Otherwise choose `cpu`, with a `tier_reason`.
   - `auto` never selects `ai` on its own. When AI is available and the source is under 720p, the
     plan sets `suggest: "ai"` and the CLI and desktop show it. This is the reading of FR-011 and
@@ -286,11 +297,28 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
   - A forced tier never falls back (FR-008).
 - **One fallback:** an automatic `gpu` job that fails with `ENGINE_FAILED` is retried once on `cpu`.
   - Not on disk full, cancel or verify errors.
-  - The job emits a `job_warning`, and its outcome records `tier_fallback`.
-  - The record gets `demoted: {tier: gpu, error, at}`, so later `auto` runs pick CPU until the
-    fingerprint changes (SC-008).
+  - The job emits a `job_warning` (with ffmpeg's message), and its outcome records
+    `tier_fallback`. Progress continues from where the bar is (never backwards).
+  - Only when the CPU retry succeeds (so the source is not to blame) does the record get
+    `demoted: {tier: gpu, error, at}`, with a fixed `error` text (ffmpeg's text can name the
+    user's files). Later `auto` runs pick CPU until the fingerprint changes or a recheck (SC-008).
+- **Checks are bounded and never stored half-done (review 2026-10-19):** probes run through
+  `exec::process` (process-tree kill), each within 60 s and the whole check within 180 s, and
+  honour Ctrl-C. A check cut short is used for that run only, never stored. `upscale --tier cpu`
+  skips the check. The desktop loads a matching stored record at start (listing only) and runs
+  the self-tests only on **Check again**.
+- **Known limit:** on Windows the driver fingerprint reads only
+  `HKLM\SOFTWARE\Khronos\Vulkan\Drivers`; drivers registered under the display-adapter key are
+  missed, so after a Windows driver update run `rmedia doctor --recheck`.
 - **Disappearing GPU:** a GPU that vanished since the check (dock, driver) shows up as a failure of
   the job's `-init_hw_device`. It is handled by the same fallback (auto) or a clear error (forced).
+- **GPU scaler (measured 2026-10-19, 480p fixture to 1080×1920, VMAF):**
+  `libplacebo=…:upscaler=ewa_lanczossharp:sigmoid=0`, then `hwdownload` and the CPU tier's
+  `cas=0.7` when enlarging. Results: 57.66, against CPU 57.63 and bicubic 54.85. The libplacebo
+  defaults (sigmoid upscaling, no sharpening) scored 53.86, under bicubic; with `cas=0.7` and
+  sigmoid on, 56.0. The ignored test `us3_gpu::gpu_is_not_slower_and_not_worse_than_cpu` keeps
+  GPU ≥ CPU − 0.5. HDR→SDR uses `tonemapping=bt.2390:peak_detect=0` (deterministic across cuts);
+  the blurred background stays on the CPU.
 - **GPU device pinning:** the GPU tier always uses `-init_hw_device vulkan=vk:<index>` +
   `hwupload` + libplacebo + `hwdownload`, so libplacebo cannot silently pick llvmpipe
   (research/07).

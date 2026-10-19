@@ -35,3 +35,27 @@
   - Clips mixing tracked and fallback sections render both branches throughout (slower).
   - A histogram-only cut (scdet below 10) can start up to 1/3 s late.
   - `--no-analyze` only affects dry runs; a render analyses when needed.
+
+## US3 checkpoint (2026-10-19)
+
+- Laptop (Intel RPL-U iGPU + llvmpipe, bundled n9.0.2): `rmedia doctor` lists the Intel GPU as
+  usable and llvmpipe as "software renderer"; self-tests CPU 33–36 fps, GPU 21–29 fps; first
+  check 4.2 s, cached 0.13 s; `--recheck` rewrites `checked_at`.
+- GPU quality (480p fixture → 1080x1920, VMAF): GPU 57.66, CPU 57.63, bicubic 54.85 with
+  `ewa_lanczossharp:sigmoid=0` + `cas=0.7`. The libplacebo defaults scored 53.86 (under bicubic).
+- SC-003 (60 s 480p30 → phone-fill, release): CPU 42.3 s, forced GPU 44.6 s. The iGPU is slower
+  because x265 dominates both tiers, so `auto` stays on the CPU here (SC-003 amended: auto never
+  picks a slower GPU). A discrete GPU is expected to pass the GPU ≥ CPU path of the bench.
+- SC-006: a GPU-tier cancel stops within 2 s with no `.part` and no demotion.
+- SC-008: a GPU decision pinned to a missing device fails, is retried on the CPU (warning,
+  `tier_fallback`, monotonic progress), and the GPU is demoted (fixed text, no paths); the next
+  plan picks the CPU. A forced GPU fails without falling back or demoting.
+- Forced GPU output: 1080x2340 HEVC `hvc1`, BT.709 tags. With `VK_DRIVER_FILES`/`VK_ICD_FILENAMES`
+  pointed at a missing file: `--tier gpu` exits 3 `TIER_UNAVAILABLE` ("no Vulkan device").
+- Windows: `cargo check --target x86_64-pc-windows-gnu --workspace --all-targets` with
+  `-D warnings` passes (registry code compiles); not run on Windows hardware.
+- **Known limits:**
+  - Windows driver fingerprint misses drivers registered only under the display-adapter key
+    (`doctor --recheck` after a driver update).
+  - A verify failure on the GPU tier is not retried on the CPU.
+  - GPU output may differ slightly between GPUs and drivers.

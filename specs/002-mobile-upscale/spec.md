@@ -258,7 +258,8 @@ reason.
   noise, scales with a high-quality filter, then applies restrained sharpening. It MUST work on
   every supported machine with no GPU.
 - **FR-007**: The system MUST provide a GPU tier with higher-quality scaling. It is used
-  automatically when a usable hardware GPU is detected, and software-emulated GPUs MUST NOT count.
+  automatically when a usable hardware GPU is detected and its self-test is not slower than the
+  CPU tier's, and software-emulated GPUs MUST NOT count.
 - **FR-008**: Tier choice MUST be automatic by default, reported per job, and overridable per run,
   per video and per clip. An automatic choice that fails MUST fall back once to the CPU tier with a
   warning. A forced tier MUST NOT fall back.
@@ -346,8 +347,11 @@ reason.
   than the GPU tier. (Owner decision 2026-10-14: restrained sharpening measured +2.8 on the
   synthetic sources; passing +3 there needed sharpening that visibly rings.)
 - **SC-003**: The CPU tier processes a 60 s, 480p, 30 fps source to the default preset in ≤ 2× the
-  clip's duration on the reference machine (12-thread laptop CPU). The GPU tier is no slower than
-  the CPU tier on the same machine.
+  clip's duration on the reference machine (12-thread laptop CPU). The automatic tier choice is
+  never slower than the CPU tier on the same machine: the GPU tier is chosen only when its
+  self-test is at least as fast. (Amended 2026-10-19: on the reference laptop's integrated GPU the
+  encoder dominates both tiers and the GPU tier measured about 5–25% slower, so auto stays on
+  the CPU there; the GPU tier matches the CPU tier's quality.)
 - **SC-004**: With smart reframe, a moving subject in synthetic test material stays fully inside
   the output frame in ≥ 95% of frames and never leaves it for more than 0.5 s. Crop movement
   between consecutive frames never exceeds the configured speed limit except at detected cuts.

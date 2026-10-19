@@ -72,7 +72,8 @@ FR-026).
 | `tools::locate` — explicit path → `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` → bundled `rmedia-ffmpeg[.exe]`/`rmedia-ffprobe[.exe]` beside the executable → `PATH` | `tools.rs` |
 | `ToolSource` = `config` (flag, settings or env var) / `bundled` / `path` | `tools.rs` |
 | `MIN_VERSION` = 6.0. Git/nightly version strings count as supported. | `tools.rs` |
-| `doctor::run` → `DoctorReport` + `(Tools, Caps)`; `Caps { encoders }` from `ffmpeg -encoders` | `doctor.rs` |
+| `doctor::run` → `DoctorReport` + `(Tools, Caps)`; `Caps` (encoders, filters, models, face detector, capability record) | `doctor.rs` |
+| `doctor::check_capability` (async): adds the machine capability record (tiers, GPUs) to a report and to `Caps` | `doctor.rs`, `upscale/capability.rs` |
 
 **Invariants:** the doctor never fails, it reports problems instead. Accurate-mode containers are
 listed only when both their video and audio encoders exist. Explicit paths are canonicalized so
@@ -251,9 +252,10 @@ at most 8 connections, and one request per connection. Full list:
 **Invariant:** all time parsing goes through the core (`parse_time` / `parse_end`), giving one
 grammar everywhere (`lib/time.ts`).
 
-## Upscaling (feature 002, user story 1)
+## Upscaling (feature 002, user stories 1 to 3)
 
-**Responsibility:** make a whole video phone-ready on the CPU tier, driven by a device preset.
+**Responsibility:** make a whole video phone-ready on the CPU or GPU tier, driven by a device
+preset.
 Code is in `crates/rmedia-core/src/{upscale,preset,models.rs}` and `exec/upscale.rs`. Available
 from `rmedia upscale` only; branch `002-mobile-upscale`, unreleased.
 
@@ -264,11 +266,12 @@ from `rmedia upscale` only; branch `002-mobile-upscale`, unreleased.
 | Single-pass `-filter_complex` builder: trim, pre-processing, reframe, scale, sharpen, tag | `upscale/graph.rs` |
 | Preset to encoder, colour and tag arguments (`libx265` or `libx264`) | `upscale/encode.rs` |
 | Output size and time estimates, platform limit warnings, free-space check | `upscale/estimate.rs` |
-| Tier selection (only `cpu` works) | `upscale/tier.rs` |
+| Tier selection: `select(choice, record, size)`; auto takes the GPU only when it passed its self-test, is not slower than the CPU and has not failed since | `upscale/tier.rs` |
+| Capability record: Vulkan listing, software-renderer rejection, fingerprint (versions, listing, driver manifests, `VK_*`), self-tests, `<state>/capability.json` under `capability.lock`, demotions | `upscale/capability.rs` |
 | Presets: `PresetRegistry` (built-ins plus `<config>/presets/*.json`), JSON schema v1 | `preset/` |
 | Model file lookup (`models_dir` setting, `models/` beside the executable, cache `models/`) | `models.rs` |
-| Executor: render stage then verify stage; emits `job_stage` | `exec/upscale.rs` |
-| Scaffolds only (empty): smart-reframe analysis, capability record | `upscale/reframe/*`, `upscale/capability.rs` |
+| Executor: analyze (smart), render, verify; emits `job_stage`; one CPU retry after an automatic GPU failure | `exec/upscale.rs` |
+| Smart-reframe analysis: decode, YuNet, cuts, subject choice, crop path, sendcmd, cache | `upscale/reframe/*` |
 
 **Invariants**
 
@@ -278,7 +281,13 @@ from `rmedia upscale` only; branch `002-mobile-upscale`, unreleased.
 - `--reframe smart` follows faces (YuNet under tract, analysed at 576 px and 3 fps, cached in
   `<cache>/reframe/`); without a model, or where no face fits, it uses the blurred background,
   and the plan says so (`reframe_applied`, `fallback_ranges`).
-- A forced `gpu` or `ai` tier is a planning error (`TIER_UNAVAILABLE`).
+- A forced tier the machine cannot run is a planning error (`TIER_UNAVAILABLE`); a forced tier
+  never falls back. An automatic GPU job that fails is retried once on the CPU, and the GPU is
+  demoted only when that retry succeeds.
+- GPU jobs pin the Vulkan device (`-init_hw_device vulkan=vk:N -filter_hw_device vk`) and hold the
+  single `Resource::Gpu` slot.
+- Capability probes run through `exec::process` with per-probe and total time limits; a check
+  cut short is never stored.
 - The job runs in a scratch folder next to the output (`.<stem>.rmedia-<run>-<job>.d`) that is
   journaled and removed on success, failure and cancel.
 - The CPU tier is deterministic for identical inputs, options and engine on one machine.

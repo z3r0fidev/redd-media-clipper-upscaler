@@ -184,6 +184,12 @@ How it works:
   `crash journal unavailable: …` warning is emitted through `tracing` only, so it is not visible
   (see [Logging](#logging)).
 
+The same state folder holds `capability.json`, the machine capability record (GPU devices,
+tier self-test speeds, tiers that failed since; see [`rmedia doctor`](../api/cli-reference.md#rmedia-doctor)),
+and its `capability.lock`. It is rewritten when the hardware, driver, engine or app version
+changes, or on `rmedia doctor --recheck`. Deleting it is safe: the next `upscale` or `doctor`
+measures again (a few seconds).
+
 Operational notes:
 
 - Cleanup of a crashed run happens at the **next run**, not at startup of the app.

@@ -696,11 +696,27 @@ Nothing is wrong. Choose `--reframe blur` to keep the whole frame instead.
 
 #### Cause
 
-You passed `--tier gpu` or `--tier ai`. Only the CPU tier exists today. Nothing ran (exit code 3).
+You forced a tier this machine cannot run. The message ends with the reason, for example
+`no Vulkan device`, `no usable hardware GPU (only software renderers)` or `the AI tier is not
+built yet`. Nothing ran (exit code 3).
 
 #### Resolution
 
-Use `--tier cpu` or leave the default, `--tier auto`.
+1. Run `rmedia doctor` and read the `tier:` and `gpu:` lines.
+2. If you installed or updated a GPU driver, run `rmedia doctor --recheck`.
+3. Otherwise use `--tier cpu` or leave the default, `--tier auto`.
+
+### "GPU tier failed (…); retried on CPU"
+
+#### Cause
+
+An automatic GPU job failed (for example the GPU was undocked or the driver crashed), so rmedia
+made the output on the CPU tier instead. The output is fine.
+
+#### Resolution
+
+Nothing is needed. Later automatic jobs use the CPU until the GPU is checked again. After fixing
+the driver, run `rmedia doctor --recheck`.
 
 ### "unknown preset …"
 

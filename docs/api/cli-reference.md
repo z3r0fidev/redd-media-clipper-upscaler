@@ -39,6 +39,7 @@ Commands:
 Options:
       --ffmpeg <PATH>   Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
       --ffprobe <PATH>  Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
+      --recheck         Run the GPU self-tests again now (normally they run only when the hardware, driver or app version changes)
   -v, --verbose...      More detail (show ffmpeg commands with -v)
   -q, --quiet           Only print errors and the final summary
   -h, --help            Print help
@@ -295,8 +296,8 @@ $ rmedia scan v
 
 Makes each input video phone-ready: it scales and reframes the whole video to a device preset's
 screen size, re-encodes it and verifies the result. Added in the unreleased 0.2.0-dev
-([release notes](../releases/0.2.0-dev.md)). Only the CPU tier exists; GPU and AI tiers, smart
-reframe, batch/manifest upscaling and `clip --upscale` are planned ([Roadmap](../roadmap.md)).
+([release notes](../releases/0.2.0-dev.md)). The CPU and GPU tiers and smart reframe exist; the AI
+tier, batch/manifest upscaling and `clip --upscale` are planned ([Roadmap](../roadmap.md)).
 
 ```text
 rmedia upscale [OPTIONS] [INPUT]...
@@ -312,10 +313,10 @@ Each input is processed whole, one job per video. Inputs are files, folders (sca
 | Flag | Values | Default | Notes |
 |---|---|---|---|
 | `--preset ID` | an id from `--list-presets` | `phone-fill` | An unknown id is an input error (exit 3, `PRESET_UNKNOWN`) |
-| `--reframe` | `smart`, `center`, `blur` | `smart` | `smart` currently falls back to `blur` with a warning. `center` crops the middle; `blur` keeps the whole frame over a blurred background |
-| `--tier` | `auto`, `cpu`, `gpu`, `ai` | `auto` | Only `cpu` exists. `gpu` and `ai` stop with `TIER_UNAVAILABLE` (exit 3) |
+| `--reframe` | `smart`, `center`, `blur` | `smart` | `smart` follows faces (needs the YuNet model, otherwise `blur` with a warning). `center` crops the middle; `blur` keeps the whole frame over a blurred background |
+| `--tier` | `auto`, `cpu`, `gpu`, `ai` | `auto` | `auto` takes the GPU tier when `doctor` found a usable Vulkan GPU that is not slower than the CPU and has not failed since, otherwise `cpu`. A forced tier the machine cannot run stops with `TIER_UNAVAILABLE` (exit 3); `ai` is not built yet |
 | `--hdr` | `sdr`, `keep` | `sdr` | `sdr` tone-maps HDR sources. `keep` needs an HDR-capable preset, otherwise `HDR_UNSUPPORTED` (exit 3) |
-| `--motion` | `calm`, `normal`, `fast` | `normal` | Smart-reframe camera speed; no effect until smart reframe ships |
+| `--motion` | `calm`, `normal`, `fast` | `normal` | Smart-reframe camera speed |
 | `--crf N` | 0 to 51 | the preset's value | Lower is better quality and a bigger file |
 | `--crop-path FILE` | path | none | Writes the per-frame crop path of the one smart-reframe video as `{"schema":1,"fps","crop":[w,h],"x":[…]}`. Analyses first (with or without `--dry-run`); exit 2 when the run has no or several smart videos, or with `--no-analyze`; exit 3 when FILE is one of the run's videos |
 | `--no-analyze` | flag | off | With `--dry-run`, skips the smart-reframe analysis (shown as `pending`) |
@@ -421,6 +422,13 @@ encoder:  libvpx-vp9  yes
 encoder:  libx264     yes
 encoder:  libx265     yes
 filters:  all upscaling filters present
+tier:     cpu  yes, 35 fps
+tier:     gpu  yes, 21 fps
+tier:     ai   no (the AI tier is not built yet)
+gpu:      0 Intel(R) Graphics (RPL-U) (integrated) — usable
+gpu:      1 llvmpipe (LLVM 20.1.2, 256 bits) (software) — not used: software renderer
+model:    face_detection_yunet_2026may.onnx ok
+checked:  2026-10-19T05:51:14Z
 accurate mode can write: mp4, m4v, mov, mkv, ts, webm
 status:   ready
 ```
@@ -431,8 +439,14 @@ The `filters:` line reports whether the filters that `rmedia upscale` uses are p
 these)`. A missing filter does not change `status` or the exit code; `rmedia upscale` checks
 the filters it needs when it plans. `--json` lists every filter under `filters`.
 
-Planned for the GPU tier (user story 3, not implemented): tiers, GPUs, models and the
-capability record in `doctor`, and `doctor --recheck`.
+The `tier:`, `gpu:`, `model:` and `checked:` lines come from the machine capability check
+(added in 0.2.0-dev). It lists the Vulkan devices, rejects software renderers (llvmpipe,
+lavapipe, SwiftShader), and times a short CPU and GPU self-test that includes the preset's
+encoder (`fps`). The result is stored in `capability.json` in the state folder and reused until
+the hardware, driver, engine or app version changes; the first check takes a few seconds, later
+ones about 0.1 s. `--recheck` runs it again. `rmedia upscale` runs the same check. A tier that
+failed after being chosen automatically is listed as `demoted:` and is not chosen again until
+the next check. A missing GPU never changes `status` or the exit code.
 
 Problems print to stderr as `problem:  <text>`. The exit code is 0 when the engine was found and
 its encoder list read; otherwise 4. "No encoders for accurate mode" is reported as a problem, but

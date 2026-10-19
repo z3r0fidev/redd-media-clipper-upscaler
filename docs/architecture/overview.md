@@ -1,10 +1,11 @@
 # rmedia Architecture Overview
 
 **Status:** Feature 001 "Video Clipping Base" (version 0.1.0, commit `bd1eef8`) is described as
-built. Feature 002 user story 1 (`rmedia upscale`, CPU tier; branch `002-mobile-upscale`, commit
-`2bfe3f0`) is implemented and described under [Feature 002 foundations](#feature-002-foundations-implemented).
+built. Feature 002 user stories 1 to 3 (`rmedia upscale` with the CPU and GPU tiers, smart
+reframe and the machine capability record; branch `002-mobile-upscale`) are implemented and
+described under [Feature 002 foundations](#feature-002-foundations-implemented).
 Sections labelled **Planned** describe work that is not implemented: the rest of feature 002
-(user stories 2 to 6) and feature 003. See the [Roadmap](../roadmap.md).
+(user stories 4 to 6) and feature 003. See the [Roadmap](../roadmap.md).
 
 ## Overview
 
@@ -300,10 +301,8 @@ into the binary plus user files in `<config>/presets/`.
 
 **Planned** (plan.md › Forward Compatibility; not implemented):
 
-- **002 user stories 2 to 6:** smart reframe (face detection, shot cuts, crop path; the
-  `upscale/reframe/` modules are empty scaffolds), a GPU tier with a `Resource::Gpu` slot,
-  capability record and Vulkan detection in `doctor` (`upscale/capability.rs` is a stub), batch
-  and `clip --upscale`, a desktop upscale view, and an AI worker (`rmedia-sr`, ncnn). Research:
+- **002 user stories 4 to 6:** batch and `clip --upscale`, a desktop upscale view, and an AI
+  worker (`rmedia-sr`, ncnn). (Smart reframe, the GPU tier and the capability record are done.) Research:
   `research/02-upscaling-engines.md`, `research/03-mobile-display-targets.md`, `research/06` to
   `research/09`.
 - **003 GIF export:** `JobSpec::Gif` with a two-pass palette pipeline and a size-budget search,
