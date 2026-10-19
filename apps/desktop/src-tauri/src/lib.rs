@@ -63,6 +63,11 @@ pub fn run() {
             commands::pick_engine,
             commands::get_settings,
             commands::set_settings,
+            commands::list_presets,
+            commands::analyze_reframe,
+            commands::cancel_analysis,
+            commands::upscale_preview,
+            commands::pick_models_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running rmedia");

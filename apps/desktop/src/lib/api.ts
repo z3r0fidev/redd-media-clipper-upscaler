@@ -6,12 +6,15 @@ import type { DoctorReport } from "./bindings/DoctorReport";
 import type { Event } from "./bindings/Event";
 import type { MediaInfo } from "./bindings/MediaInfo";
 import type { Plan } from "./bindings/Plan";
+import type { Preset } from "./bindings/Preset";
 import type { ProxyCodec } from "./bindings/ProxyCodec";
 import type { RunSummary } from "./bindings/RunSummary";
 import type { ScanEvent } from "./bindings/ScanEvent";
 import type { ScanOptions } from "./bindings/ScanOptions";
 import type { ScanResult } from "./bindings/ScanResult";
+import type { ReframeAnalysis } from "./bindings/ReframeAnalysis";
 import type { Settings } from "./bindings/Settings";
+import type { UpscaleOptions } from "./bindings/UpscaleOptions";
 import type { Manifest } from "./manifest";
 
 export interface PreviewInfo {
@@ -21,6 +24,30 @@ export interface PreviewInfo {
 }
 
 export type PickKind = "video" | "cliplist" | "manifest";
+
+/** A clip range in seconds of source time (`end: null` = to the end). */
+export interface RangeArg {
+  start: number;
+  end: number | null;
+}
+
+export interface PresetList {
+  default: string;
+  presets: Preset[];
+  problems: { file: string; message: string }[];
+}
+
+export type AnalysisEvent = { type: "progress"; fraction: number } | { type: "done" };
+
+/** Before/after stills as local media-server URLs. */
+export interface UpscalePreview {
+  before: string;
+  after: string;
+  size: [number, number];
+  approximate: boolean;
+  crop_x: number | null;
+  in_fallback: boolean;
+}
 
 export const api = {
   doctor: () => invoke<DoctorReport>("doctor"),
@@ -72,6 +99,17 @@ export const api = {
   pickEngine: (reset: boolean) => invoke<DoctorReport>("pick_engine", { reset }),
   getSettings: () => invoke<Settings>("get_settings"),
   setSettings: (settings: Settings) => invoke<void>("set_settings", { settings }),
+  listPresets: () => invoke<PresetList>("list_presets"),
+  analyzeReframe(analysisId: string, path: string, span: RangeArg | null, options: UpscaleOptions, onEvent: (e: AnalysisEvent) => void) {
+    const ch = new Channel<AnalysisEvent>();
+    ch.onmessage = onEvent;
+    return invoke<ReframeAnalysis | null>("analyze_reframe", { analysisId, path, span, options, onEvent: ch });
+  },
+  cancelAnalysis: (analysisId: string) => invoke<void>("cancel_analysis", { analysisId }),
+  upscalePreview: (path: string, span: RangeArg | null, at: number, options: UpscaleOptions) =>
+    invoke<UpscalePreview>("upscale_preview", { path, span, at, options }),
+  /** Choose the models folder with the native dialog (reset = back to the default search). */
+  pickModelsDir: (reset: boolean) => invoke<Settings>("pick_models_dir", { reset }),
   onDropped: (f: (paths: string[]) => void): Promise<UnlistenFn> =>
     listen<string[]>("rmedia://dropped", (e) => f(e.payload)),
 };

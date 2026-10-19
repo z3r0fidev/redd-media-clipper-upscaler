@@ -102,9 +102,17 @@ impl Settings {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?)?;
-        std::fs::rename(tmp, path)
+        // A unique temporary name: two saves at once (the app and the CLI) must not rename
+        // each other's file away.
+        let nanos =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let tmp = path.with_extension(format!("json.{}-{nanos}.tmp", std::process::id()));
+        let written = std::fs::write(&tmp, serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?)
+            .and_then(|()| std::fs::rename(&tmp, &path));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        written
     }
 }
 

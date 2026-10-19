@@ -17,14 +17,18 @@ use rmedia_core::event::{EventSink, RunSummary};
 use rmedia_core::exec::{self, RunConfig, RunControl};
 use rmedia_core::input::{cliplist, manifest_csv, manifest_json};
 use rmedia_core::plan::{self, Caps, Issue, Plan};
+use rmedia_core::preset::PresetRegistry;
 use rmedia_core::preview::{self, PreviewCache, ProxyCodec};
 use rmedia_core::probe::{self, MediaInfo};
 use rmedia_core::request::{BatchRequest, Options, PartialOptions};
 use rmedia_core::settings::Settings;
 use rmedia_core::tools::{LocateOptions, Tools};
 use rmedia_core::upscale::capability::CheckMode;
+use rmedia_core::upscale::preview::{self as still, PreviewRequest};
+use rmedia_core::upscale::reframe::{self, ReframeAnalysis};
+use rmedia_core::upscale::{AnalysisState, UpscaleOptions};
 use rmedia_core::{EndSpec, Ts};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -100,6 +104,7 @@ pub struct AppState {
     plans: Mutex<HashMap<String, Plan>>,
     runs: Mutex<HashMap<String, RunControl>>,
     scans: Mutex<HashMap<String, CancellationToken>>,
+    analyses: Mutex<HashMap<String, CancellationToken>>,
     cache_dir: PathBuf,
     opened: Mutex<Vec<PathBuf>>,
 }
@@ -130,6 +135,7 @@ impl AppState {
             plans: Mutex::new(HashMap::new()),
             runs: Mutex::new(HashMap::new()),
             scans: Mutex::new(HashMap::new()),
+            analyses: Mutex::new(HashMap::new()),
             cache_dir,
             opened: Mutex::new(Vec::new()),
         })
@@ -411,6 +417,9 @@ impl AppState {
         for c in lock(&self.scans).values() {
             c.cancel();
         }
+        for c in lock(&self.analyses).values() {
+            c.cancel();
+        }
     }
 
     pub async fn preview_source(&self, path: &Path) -> OpResult<PreviewInfo> {
@@ -487,6 +496,8 @@ impl AppState {
             let current = lock(&self.settings);
             s.ffmpeg_path = current.ffmpeg_path.clone();
             s.ffprobe_path = current.ffprobe_path.clone();
+            // The models folder is code the app loads: it is chosen in Rust (`set_models_dir`).
+            s.models_dir = current.models_dir.clone();
             // A default output folder must be one the user picked (it is trusted after restart).
             if let Some(dir) = &s.defaults.output_dir
                 && current.defaults.output_dir.as_ref() != Some(dir)
@@ -498,6 +509,107 @@ impl AppState {
         s.save().map_err(|e| e.to_string())?;
         *lock(&self.settings) = s;
         Ok(())
+    }
+
+    /// The models folder can only be set here — from the native folder dialog in Rust — never by
+    /// the page. The engine capabilities are reloaded so the models are found again.
+    pub fn set_models_dir(&self, dir: Option<PathBuf>) -> OpResult<()> {
+        let mut s = lock(&self.settings).clone();
+        s.models_dir = match dir {
+            Some(d) => Some(std::fs::canonicalize(&d).map_err(|e| format!("{}: {e}", d.display()))?),
+            None => None,
+        };
+        s.save().map_err(|e| e.to_string())?;
+        *lock(&self.settings) = s;
+        *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        Ok(())
+    }
+
+    /// Built-in and user presets for the upscale view (`rmedia upscale --list-presets --json`).
+    pub fn list_presets(&self) -> Value {
+        let reg = PresetRegistry::load(rmedia_core::settings::config_dir().as_deref());
+        let presets: Vec<_> = reg.list().map(|(p, _)| p.clone()).collect();
+        serde_json::json!({ "default": reg.default_id(), "presets": presets, "problems": reg.problems() })
+    }
+
+    /// Smart-reframe analysis of one source (or range) for the crop overlay, through the same
+    /// cache as the render and the CLI. `None` when the job has nothing to analyse (another
+    /// reframe, matching shape, or no face model).
+    pub async fn analyze_reframe(
+        &self,
+        analysis_id: String,
+        path: &Path,
+        span: Option<RangeArg>,
+        options: &UpscaleOptions,
+        on_event: &(dyn Fn(AnalysisEvent) + Send + Sync),
+    ) -> OpResult<Option<ReframeAnalysis>> {
+        let path = self.require_allowed(path)?;
+        let (tools, caps) = self.engine()?;
+        let cancel = CancellationToken::new();
+        lock(&self.analyses).insert(analysis_id.clone(), cancel.clone());
+        let result = async {
+            let presets = PresetRegistry::load(rmedia_core::settings::config_dir().as_deref());
+            let spec =
+                still::single_job(&tools, &caps, presets, &path, span.map(RangeArg::span), options, &cancel)
+                    .await?;
+            if spec.up.analysis != AnalysisState::Pending {
+                return Ok(None);
+            }
+            let mut sent = -1.0;
+            let (a, _) = reframe::analyze_cached(&tools, &spec, &cancel, |f| {
+                // At most one event per percent.
+                if f - sent >= 0.01 || f >= 1.0 {
+                    sent = f;
+                    on_event(AnalysisEvent::Progress { fraction: f });
+                }
+            })
+            .await?;
+            Ok(Some((*a).clone()))
+        }
+        .await;
+        lock(&self.analyses).remove(&analysis_id);
+        if result.is_ok() {
+            on_event(AnalysisEvent::Done);
+        }
+        result.map_err(|e: rmedia_core::Error| e.to_string())
+    }
+
+    pub fn cancel_analysis(&self, analysis_id: &str) {
+        if let Some(c) = lock(&self.analyses).get(analysis_id) {
+            c.cancel();
+        }
+    }
+
+    /// The before/after still at source time `at`, as media-server URLs (the page never sees
+    /// the files' paths). Stills live in the app cache.
+    pub async fn upscale_preview(
+        &self,
+        path: &Path,
+        span: Option<RangeArg>,
+        at: f64,
+        options: &UpscaleOptions,
+    ) -> OpResult<UpscalePreview> {
+        let path = self.require_allowed(path)?;
+        let (tools, caps) = self.engine()?;
+        let presets = PresetRegistry::load(rmedia_core::settings::config_dir().as_deref());
+        let req = PreviewRequest {
+            path,
+            span: span.map(RangeArg::span),
+            at: Ts::from_secs_f64(at.max(0.0)),
+            options: options.clone(),
+        };
+        let out = self.cache_dir.join("upscale-preview");
+        let p = still::preview_frame(&tools, &caps, presets, &req, &out, &CancellationToken::new())
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(UpscalePreview {
+            before: self.media.register(&p.before).map_err(|e| e.to_string())?,
+            after: self.media.register(&p.after).map_err(|e| e.to_string())?,
+            size: p.size,
+            approximate: p.approximate,
+            crop_x: p.crop_x,
+            in_fallback: p.in_fallback,
+        })
     }
 
     /// Window closing: stop work and revoke every media URL.
@@ -515,6 +627,39 @@ pub struct PreviewInfo {
     pub direct_url: Option<String>,
     /// Seconds to subtract from the player's `currentTime` to get clip time.
     pub time_offset: f64,
+}
+
+/// A clip range from the page, in seconds of source time (`end: None` = to the end).
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct RangeArg {
+    pub start: f64,
+    pub end: Option<f64>,
+}
+
+impl RangeArg {
+    fn span(self) -> (Ts, EndSpec) {
+        let end = self.end.map_or(EndSpec::EndOfMedia, |e| EndSpec::At(Ts::from_secs_f64(e.max(0.0))));
+        (Ts::from_secs_f64(self.start.max(0.0)), end)
+    }
+}
+
+/// `analyze_reframe` channel events (contracts/tauri-commands.md).
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum AnalysisEvent {
+    Progress { fraction: f64 },
+    Done,
+}
+
+/// The before/after still as media-server URLs.
+#[derive(Debug, Clone, Serialize)]
+pub struct UpscalePreview {
+    pub before: String,
+    pub after: String,
+    pub size: (u32, u32),
+    pub approximate: bool,
+    pub crop_x: Option<u32>,
+    pub in_fallback: bool,
 }
 
 /// Containers/codecs both WebView2 and WebKitGTK commonly play; anything else uses a proxy. The

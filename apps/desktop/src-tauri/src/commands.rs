@@ -15,8 +15,10 @@ use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::ops::{self, AppState, OpResult, PreviewInfo};
+use crate::ops::{self, AnalysisEvent, AppState, OpResult, PreviewInfo, RangeArg, UpscalePreview};
+use rmedia_core::upscale::UpscaleOptions;
 use rmedia_core::upscale::capability::CheckMode;
+use rmedia_core::upscale::reframe::ReframeAnalysis;
 
 const VIDEO_EXTENSIONS: &[&str] = &rmedia_core::discover::VIDEO_EXTENSIONS;
 
@@ -211,4 +213,55 @@ pub fn get_settings(state: State<'_, AppState>) -> Settings {
 #[tauri::command]
 pub fn set_settings(state: State<'_, AppState>, settings: Settings) -> OpResult<()> {
     state.set_settings(settings)
+}
+
+/// Device presets for the upscale view.
+#[tauri::command]
+pub fn list_presets(state: State<'_, AppState>) -> Value {
+    state.list_presets()
+}
+
+#[tauri::command]
+pub async fn analyze_reframe(
+    state: State<'_, AppState>,
+    analysis_id: String,
+    path: PathBuf,
+    span: Option<RangeArg>,
+    options: UpscaleOptions,
+    on_event: Channel<AnalysisEvent>,
+) -> OpResult<Option<ReframeAnalysis>> {
+    state.analyze_reframe(analysis_id, &path, span, &options, &move |e| drop(on_event.send(e))).await
+}
+
+#[tauri::command]
+pub fn cancel_analysis(state: State<'_, AppState>, analysis_id: String) {
+    state.cancel_analysis(&analysis_id);
+}
+
+#[tauri::command]
+pub async fn upscale_preview(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    span: Option<RangeArg>,
+    at: f64,
+    options: UpscaleOptions,
+) -> OpResult<UpscalePreview> {
+    state.upscale_preview(&path, span, at, &options).await
+}
+
+/// Choose the models folder with the native dialog, or reset to the default search (`reset`).
+#[tauri::command]
+pub async fn pick_models_dir(app: AppHandle, state: State<'_, AppState>, reset: bool) -> OpResult<Settings> {
+    if reset {
+        state.set_models_dir(None)?;
+    } else {
+        let dialog = app.dialog().file().set_title("Choose the models folder");
+        let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
+            .await
+            .map_err(|e| e.to_string())?;
+        if let Some(dir) = picked.and_then(|p| p.into_path().ok()) {
+            state.set_models_dir(Some(dir))?;
+        }
+    }
+    Ok(state.get_settings())
 }

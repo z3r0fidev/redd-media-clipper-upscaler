@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use rmedia_core::event::{Event, EventSink, JobOutcome};
 use rmedia_core::settings::Settings;
-use rmedia_desktop::ops::AppState;
+use rmedia_core::upscale::{Reframe, TierChoice, UpscaleOptions};
+use rmedia_desktop::ops::{AnalysisEvent, AppState, RangeArg};
 use rmedia_testkit::{Fixture, fixture, require_ffmpeg, sha256};
 use serde_json::json;
 
@@ -32,8 +33,12 @@ async fn state(dir: &Path) -> AppState {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         let cfg = std::env::temp_dir().join(format!("rmedia-test-config-{}", std::process::id()));
-        // SAFETY: set once, before any test thread reads the variable.
-        unsafe { std::env::set_var("RMEDIA_CONFIG_DIR", cfg) };
+        let cache = std::env::temp_dir().join(format!("rmedia-test-cache-{}", std::process::id()));
+        // SAFETY: set once, before any test thread reads the variables.
+        unsafe {
+            std::env::set_var("RMEDIA_CONFIG_DIR", cfg);
+            std::env::set_var("RMEDIA_CACHE_DIR", cache);
+        }
     });
     AppState::new(Settings::default(), dir.join("cache")).await.unwrap()
 }
@@ -227,4 +232,193 @@ async fn export_carries_settings_defaults_and_saved_output_survives_restart() {
     restarted.allow(std::slice::from_ref(&src));
     let plan = restarted.plan(&queue).await.unwrap();
     assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+}
+
+/// The workspace's face model (`cargo xtask fetch-models`), if fetched.
+fn yunet() -> Option<PathBuf> {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../models").join(rmedia_core::models::YUNET);
+    p.is_file().then(|| std::fs::canonicalize(p).unwrap())
+}
+
+fn cpu(reframe: Reframe) -> UpscaleOptions {
+    UpscaleOptions { tier: TierChoice::Cpu, reframe, ..UpscaleOptions::default() }
+}
+
+/// T083: the presets the view offers.
+#[tokio::test(flavor = "multi_thread")]
+async fn presets_are_listed_with_the_default() {
+    let d = tempfile::tempdir().unwrap();
+    let st = state(d.path()).await;
+    let list = st.list_presets();
+    assert_eq!(list["default"], "phone-fill");
+    let ids: Vec<&str> =
+        list["presets"].as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap()).collect();
+    assert!(ids.len() >= 7 && ids.contains(&"phone-fill") && ids.contains(&"reddit-916"), "{ids:?}");
+    assert!(list["presets"][0]["devices"].is_array() && list["problems"].is_array());
+}
+
+/// T083: the before/after still is served by the media server; only opened sources qualify.
+#[tokio::test(flavor = "multi_thread")]
+async fn upscale_preview_serves_two_pngs_for_opened_sources_only() {
+    require_ffmpeg!();
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("a.mp4");
+    std::fs::copy(fixture(Fixture::TinySource), &src).unwrap();
+    let st = state(d.path()).await;
+    let opts = cpu(Reframe::Blur);
+    let err = st.upscale_preview(&src, None, 1.0, &opts).await.unwrap_err();
+    assert!(err.contains("was not opened"), "{err}");
+    st.allow(std::slice::from_ref(&src));
+    let p = st.upscale_preview(&src, None, 1.0, &opts).await.unwrap();
+    assert_eq!(p.size, (1080, 2340));
+    assert!(!p.approximate && !p.in_fallback);
+    for url in [&p.before, &p.after] {
+        assert!(url.starts_with("http://127.0.0.1:"), "{url}");
+        let (head, body) = http_get(url).await;
+        assert!(
+            head.starts_with("HTTP/1.1 200") && head.to_ascii_lowercase().contains("content-type: image/png"),
+            "{head}"
+        );
+        assert_eq!(&body[..8], b"\x89PNG\r\n\x1a\n");
+    }
+    // The page never gets a filesystem path: stills live in the app cache.
+    assert!(!p.before.contains(&*d.path().to_string_lossy()));
+    let range = Some(RangeArg { start: 0.5, end: Some(2.0) });
+    assert!(st.upscale_preview(&src, range, 2.5, &opts).await.unwrap_err().contains("outside"));
+}
+
+/// Minimal HTTP GET against the local media server: (status line and headers, body).
+async fn http_get(url: &str) -> (String, Vec<u8>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let rest = url.strip_prefix("http://").unwrap();
+    let (host, path) = rest.split_once('/').unwrap();
+    let mut s = tokio::net::TcpStream::connect(host).await.unwrap();
+    s.write_all(format!("GET /{path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n").as_bytes())
+        .await
+        .unwrap();
+    let mut buf = Vec::new();
+    s.read_to_end(&mut buf).await.unwrap();
+    let split = buf.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    (String::from_utf8_lossy(&buf[..split]).into_owned(), buf[split + 4..].to_vec())
+}
+
+/// T083: the desktop analysis reports progress, shares the CLI's cache, and can be cancelled.
+#[tokio::test(flavor = "multi_thread")]
+async fn analysis_reports_progress_shares_the_cli_cache_and_cancels() {
+    require_ffmpeg!();
+    let Some(model) = yunet() else {
+        eprintln!("skipped: the YuNet model is not in models/ (cargo xtask fetch-models)");
+        return;
+    };
+    if !cli_bin().is_file() {
+        panic!("build the CLI first (cargo build -p rmedia-cli) or set RMEDIA_CLI_BIN");
+    }
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("land.mp4");
+    std::fs::copy(fixture(Fixture::MovingMarker), &src).unwrap();
+    let st = state(d.path()).await;
+    // `<cache root>/models` is searched by the app and the CLI alike; the settings file is
+    // shared by every test of this process, so it is left alone.
+    let models = rmedia_core::settings::cache_root().unwrap().join("models");
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::copy(&model, models.join(rmedia_core::models::YUNET)).unwrap();
+    st.allow(std::slice::from_ref(&src));
+
+    // A cancelled analysis stops promptly.
+    let id = "cancel-me".to_string();
+    let started = std::time::Instant::now();
+    let smart = cpu(Reframe::Smart);
+    let (r, ()) = tokio::join!(st.analyze_reframe(id.clone(), &src, None, &smart, &|_| {}), async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        st.cancel_analysis(&id);
+    });
+    assert!(r.unwrap_err().to_lowercase().contains("cancel"));
+    assert!(started.elapsed().as_secs_f64() < 2.5, "{:?}", started.elapsed());
+
+    let events = Mutex::new(Vec::new());
+    let a = st
+        .analyze_reframe("a1".into(), &src, None, &cpu(Reframe::Smart), &|e| events.lock().unwrap().push(e))
+        .await
+        .unwrap()
+        .expect("a landscape source is analysed");
+    assert!(a.path.len() > 100 && a.crop.0 < a.source_size.0);
+    let events = events.into_inner().unwrap();
+    assert!(matches!(events.last(), Some(AnalysisEvent::Done)), "{events:?}");
+    assert!(events.iter().any(|e| matches!(e, AnalysisEvent::Progress { .. })));
+
+    // The CLI's dry run of the same job finds the analysis in the shared cache.
+    let o = Command::new(cli_bin())
+        .args(["upscale", "--tier", "cpu", "--dry-run", "--json"])
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let plan: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(plan["jobs"][0]["upscale"]["reframe_analysis"]["cache"], "hit", "{plan}");
+
+    // The preview now follows the path instead of the centred guess.
+    let p = st.upscale_preview(&src, None, 3.0, &cpu(Reframe::Smart)).await.unwrap();
+    assert!(!p.approximate, "{p:?}");
+}
+
+/// Security: the models folder is chosen in Rust only, never by the page.
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_from_the_page_cannot_set_the_models_folder() {
+    let d = tempfile::tempdir().unwrap();
+    let st = state(d.path()).await;
+    let mut s = st.get_settings();
+    s.models_dir = Some("/tmp/evil".into());
+    st.set_settings(s).unwrap();
+    assert_eq!(st.get_settings().models_dir, None);
+    st.set_models_dir(Some(d.path().to_path_buf())).unwrap();
+    assert_eq!(st.get_settings().models_dir.as_deref(), Some(d.path()));
+    st.set_models_dir(None).unwrap();
+    assert_eq!(st.get_settings().models_dir, None);
+}
+
+/// FR-022: an upscale queue run in the app and exported to `rmedia batch` gives identical files.
+#[tokio::test(flavor = "multi_thread")]
+async fn upscale_queue_and_exported_manifest_give_identical_outputs() {
+    require_ffmpeg!();
+    if !cli_bin().is_file() {
+        panic!("build the CLI first (cargo build -p rmedia-cli) or set RMEDIA_CLI_BIN");
+    }
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("a.mp4");
+    std::fs::copy(fixture(Fixture::TinySource), &src).unwrap();
+    let st = state(d.path()).await;
+    st.allow(std::slice::from_ref(&src));
+    let gui_out = d.path().join("gui");
+    let full = |reframe: &str| json!({"preset":"phone-fill","reframe":reframe,"tier":"cpu","hdr":"sdr","motion":"normal"});
+    let manifest = json!({"version":1,"defaults":{"output_dir": gui_out},"videos":[{"input": src, "clips":[
+        {"start":0.5,"end":2,"options":{"upscale": full("center")}},
+        {"start":0,"end":"end","options":{"upscale": full("blur")}},
+        {"start":1,"end":2,"name":"plain"}]}]});
+
+    let plan = st.plan(&manifest).await.unwrap();
+    assert!(!plan.has_errors(), "{:?}", plan.issues);
+    let summary = st.run(&plan.run_id, Arc::new(Collect::default())).await.unwrap();
+    assert_eq!(summary.succeeded, 3, "{summary:?}");
+
+    let export = d.path().join("queue.json");
+    st.allowed.lock().unwrap().allow_save(&export);
+    st.export_manifest(&manifest, &export).unwrap();
+    let cli_out = d.path().join("cli");
+    let text = std::fs::read_to_string(&export)
+        .unwrap()
+        .replace(&*gui_out.to_string_lossy(), &cli_out.to_string_lossy());
+    std::fs::write(&export, text).unwrap();
+    let o = Command::new(cli_bin())
+        .arg("batch")
+        .arg(&export)
+        .arg("-q")
+        .env("RMEDIA_STATE_DIR", d.path())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    for job in &summary.jobs {
+        let JobOutcome::Succeeded { output, .. } = &job.outcome else { panic!() };
+        let twin = cli_out.join(output.strip_prefix(&gui_out).unwrap());
+        assert_eq!(sha256(output), sha256(&twin), "{} differs between app and CLI", output.display());
+    }
 }

@@ -202,6 +202,7 @@ fn content_type(path: &Path) -> &'static str {
         Some("mov") => "video/quicktime",
         Some("mkv") => "video/x-matroska",
         Some("ogv") => "video/ogg",
+        Some("png") => "image/png",
         _ => "application/octet-stream",
     }
 }
