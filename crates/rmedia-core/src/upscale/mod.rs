@@ -238,6 +238,9 @@ pub enum Motion {
     Fast,
 }
 
+/// Highest x264/x265 CRF a user may set.
+pub const MAX_CRF: u8 = 51;
+
 /// Fully resolved upscale options for one job.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]

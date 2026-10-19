@@ -14,7 +14,8 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["input", "clips"],
+        "required": ["input"],
+        "description": "clips may be left out only when upscaling is on for the video (feature 002): the whole file is then one job",
         "properties": {
           "input": { "type": "string", "description": "Path; relative paths resolve against the manifest's directory" },
           "options": { "$ref": "#/$defs/options" },
@@ -56,7 +57,22 @@
         "container": { "type": "string" },
         "on_exists": { "enum": ["skip", "overwrite", "rename"] },
         "audio": { "oneOf": [ { "enum": ["all", "none"] }, { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "1-based audio track numbers" } ] },
-        "subtitles": { "enum": ["all", "none"] }
+        "subtitles": { "enum": ["all", "none"] },
+        "upscale": { "$ref": "#/$defs/upscale" }
+      }
+    },
+    "upscale": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Feature 002 (contracts/manifest-upscale.md). Present = upscaling on at this level unless enabled is false; layered defaults < video < clip per field. Upscaled outputs are always .mp4, so container must be mp4 or absent.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "preset": { "type": "string" },
+        "reframe": { "enum": ["smart", "center", "blur"] },
+        "tier": { "enum": ["auto", "cpu", "gpu", "ai"] },
+        "hdr": { "enum": ["sdr", "keep"] },
+        "motion": { "enum": ["calm", "normal", "fast"] },
+        "crf": { "type": ["integer", "null"], "minimum": 0, "maximum": 51, "description": "null resets to the preset's quality" }
       }
     }
   },

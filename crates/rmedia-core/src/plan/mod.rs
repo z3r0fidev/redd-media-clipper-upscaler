@@ -598,6 +598,14 @@ impl Planner<'_> {
             );
             return None;
         };
+        if let Some(crf) = u.crf.filter(|&c| c > crate::upscale::MAX_CRF) {
+            self.error(
+                origin,
+                IssueCode::InvalidInput,
+                format!("crf {crf} is out of range (0 to {})", crate::upscale::MAX_CRF),
+            );
+            return None;
+        }
         if u.hdr == HdrMode::Keep && !preset.hdr_capable {
             self.error(
                 origin,

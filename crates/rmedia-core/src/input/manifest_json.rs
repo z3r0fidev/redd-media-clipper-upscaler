@@ -25,7 +25,9 @@ struct RawVideo {
     input: PathBuf,
     #[serde(default)]
     options: PartialOptions,
-    clips: Vec<RawClip>,
+    /// May be left out when upscaling is on for the video: the whole file is one job.
+    #[serde(default)]
+    clips: Option<Vec<RawClip>>,
 }
 
 #[derive(Deserialize)]
@@ -78,15 +80,57 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
         issues.push(issue(path, "videos", "the manifest lists no videos".into()));
     }
     let defaults = resolve_dirs(&raw.defaults, &base).apply(cli);
+    // The manifest's own containers, to reject one that cannot hold an upscaled job; a container
+    // from the command line is only warned about by the planner (it may suit the plain clips).
+    let own = raw.defaults.apply(&Options { container: None, ..cli.clone() });
+    let mut container_issues = std::collections::BTreeSet::new();
     let mut sources = Vec::new();
     for (vi, v) in raw.videos.into_iter().enumerate() {
         let vpath = format!("videos[{vi}]");
-        if v.clips.is_empty() {
-            issues.push(issue(path, &format!("{vpath}.clips"), "no clips for this video".into()));
-        }
+        let video_own = v.options.apply(&own);
+        let whole = v.clips.is_none() && v.options.apply(&defaults).upscale.is_some();
+        let raw_clips = match v.clips {
+            Some(c) if c.is_empty() => {
+                issues.push(issue(path, &format!("{vpath}.clips"), "no clips for this video".into()));
+                c
+            }
+            Some(c) => c,
+            None if whole => Vec::new(),
+            None => {
+                issues.push(issue(
+                    path,
+                    &vpath,
+                    "no clips for this video (list clips, or turn upscaling on to process the whole video)"
+                        .into(),
+                ));
+                Vec::new()
+            }
+        };
         let mut clips = Vec::new();
-        for (ci, c) in v.clips.into_iter().enumerate() {
+        if whole {
+            check_container(&video_own, &v.options, &raw.defaults, &vpath, &mut container_issues);
+            clips.push(ClipRequest {
+                start: Ts::ZERO,
+                end: EndSpec::EndOfMedia,
+                name: None,
+                overrides: PartialOptions::default(),
+                origin: Origin::JsonPath { file: path.to_path_buf(), path: vpath.clone() },
+            });
+        }
+        for (ci, c) in raw_clips.into_iter().enumerate() {
             let cpath = format!("{vpath}.clips[{ci}]");
+            let clip_own = c.options.apply(&video_own);
+            if c.options.container.is_some() {
+                check_container(
+                    &clip_own,
+                    &c.options,
+                    &PartialOptions::default(),
+                    &cpath,
+                    &mut container_issues,
+                );
+            } else {
+                check_container(&clip_own, &v.options, &raw.defaults, &vpath, &mut container_issues);
+            }
             match clip(path, &cpath, c, &base) {
                 Ok(c) => clips.push(c),
                 Err(mut e) => issues.append(&mut e),
@@ -99,7 +143,33 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
             origin: Origin::JsonPath { file: path.to_path_buf(), path: format!("{vpath}.input") },
         });
     }
+    issues.extend(container_issues.into_iter().map(|(jpath, ext)| {
+        issue(path, &jpath, format!("upscaled outputs are always .mp4; container \"{ext}\" cannot be used"))
+    }));
     if issues.is_empty() { Ok(BatchRequest { defaults, sources }) } else { Err(issues) }
+}
+
+/// Records a non-mp4 container that the manifest sets for an upscaled job, at the options object
+/// that set it (`level` for a video or clip, else the manifest defaults).
+fn check_container(
+    resolved: &Options,
+    level: &PartialOptions,
+    defaults: &PartialOptions,
+    level_path: &str,
+    found: &mut std::collections::BTreeSet<(String, String)>,
+) {
+    let Some(ext) = resolved.container.as_deref() else { return };
+    if resolved.upscale.is_none() || ext.eq_ignore_ascii_case("mp4") {
+        return;
+    }
+    let at = if level.container.is_some() {
+        format!("{level_path}.options.container")
+    } else if defaults.container.is_some() {
+        "defaults.container".to_owned()
+    } else {
+        return;
+    };
+    found.insert((at, ext.to_owned()));
 }
 
 fn clip(file: &Path, jpath: &str, c: RawClip, base: &Path) -> Result<ClipRequest, Vec<Issue>> {
@@ -325,6 +395,91 @@ mod tests {
                 "videos[2].clips",
             ]
         );
+    }
+
+    fn resolved(req: &BatchRequest, v: usize, c: usize) -> Options {
+        let src = &req.sources[v];
+        src.clips[c].overrides.apply(&src.overrides.apply(&req.defaults))
+    }
+
+    fn paths(err: &[Issue]) -> Vec<String> {
+        err.iter()
+            .map(|i| match &i.origin {
+                Origin::JsonPath { path, .. } => path.clone(),
+                o => format!("{o:?}"),
+            })
+            .collect()
+    }
+
+    /// The quickstart manifest: `upscale` at every level, whole videos without `clips` (T075).
+    #[test]
+    fn upscale_at_every_level_and_whole_videos() {
+        let text = r#"{ "version": 1, "defaults": { "upscale": {} },
+          "videos": [ { "input": "low.mp4" },
+                      { "input": "land.mp4", "options": { "upscale": { "preset": "reddit-916" } },
+                        "clips": [ { "start": 1, "end": 5, "name": "pan" },
+                                   { "start": 6, "options": { "upscale": { "tier": "cpu" } } },
+                                   { "start": 7, "options": { "upscale": { "enabled": false } } } ] },
+                      { "input": "slides.mp4", "options": { "upscale": { "reframe": "blur", "tier": "cpu" } } } ] }"#;
+        let req = parse(Path::new("/m/m.json"), text, &Options::default()).unwrap();
+        let whole = &req.sources[0].clips;
+        assert_eq!(whole.len(), 1);
+        assert_eq!((whole[0].start, whole[0].end), (Ts::ZERO, EndSpec::EndOfMedia));
+        assert_eq!(resolved(&req, 0, 0).upscale.unwrap().preset, "phone-fill");
+        let pan = resolved(&req, 1, 0).upscale.unwrap();
+        assert_eq!(pan.preset, "reddit-916");
+        let cpu = resolved(&req, 1, 1).upscale.unwrap();
+        assert_eq!((cpu.preset.as_str(), cpu.tier), ("reddit-916", crate::upscale::TierChoice::Cpu));
+        assert_eq!(resolved(&req, 1, 2).upscale, None, "enabled:false at the clip");
+        let slides = resolved(&req, 2, 0).upscale.unwrap();
+        assert_eq!(
+            (slides.reframe, slides.tier),
+            (crate::upscale::Reframe::Blur, crate::upscale::TierChoice::Cpu)
+        );
+    }
+
+    #[test]
+    fn a_video_without_clips_needs_upscaling() {
+        let text = r#"{"version":1,"videos":[
+            {"input":"a.mp4"},
+            {"input":"b.mp4","options":{"upscale":{"enabled":false}}},
+            {"input":"c.mp4","options":{"upscale":{}}},
+            {"input":"d.mp4","clips":[]}]}"#;
+        let err = parse(Path::new("j.json"), text, &Options::default()).unwrap_err();
+        assert_eq!(paths(&err), ["videos[0]", "videos[1]", "videos[3].clips"]);
+        assert!(err[0].message.contains("turn upscaling on"), "{}", err[0].message);
+        // Turned on from the command line (`batch --upscale`), a bare video is whole-file.
+        let cli = Options { upscale: Some(crate::upscale::UpscaleOptions::default()), ..Options::default() };
+        let req = parse(Path::new("j.json"), r#"{"version":1,"videos":[{"input":"a.mp4"}]}"#, &cli).unwrap();
+        assert_eq!(req.sources[0].clips[0].end, EndSpec::EndOfMedia);
+    }
+
+    #[test]
+    fn upscaled_jobs_reject_a_manifest_container_other_than_mp4() {
+        let text = r#"{"version":1,"defaults":{"container":"mkv"},"videos":[
+            {"input":"a.mp4","clips":[{"start":0,"end":1}]},
+            {"input":"b.mp4","options":{"upscale":{}}},
+            {"input":"c.mp4","options":{"upscale":{}},"clips":[{"start":0,"end":1,"options":{"container":"webm"}},
+                                                         {"start":1,"end":2,"options":{"container":"MP4"}}]},
+            {"input":"d.mp4","options":{"upscale":{},"container":"mov"}}]}"#;
+        let err = parse(Path::new("j.json"), text, &Options::default()).unwrap_err();
+        assert_eq!(
+            paths(&err),
+            ["defaults.container", "videos[2].clips[0].options.container", "videos[3].options.container"]
+        );
+        assert!(err[0].message.contains("always .mp4"), "{}", err[0].message);
+        // A container from the command line is left to the planner (it may suit plain clips).
+        let cli = Options { container: Some("mkv".into()), ..Options::default() };
+        let ok = r#"{"version":1,"videos":[{"input":"a.mp4","clips":[{"start":0,"end":1}]},
+                                            {"input":"b.mp4","options":{"upscale":{}}}]}"#;
+        assert!(parse(Path::new("j.json"), ok, &cli).is_ok());
+    }
+
+    #[test]
+    fn unknown_upscale_fields_are_rejected() {
+        let text = r#"{"version":1,"videos":[{"input":"a.mp4","options":{"upscale":{"scale":2}}}]}"#;
+        let err = parse(Path::new("j.json"), text, &Options::default()).unwrap_err();
+        assert!(err[0].message.contains("unknown field `scale`"), "{}", err[0].message);
     }
 
     #[test]
