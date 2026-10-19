@@ -107,7 +107,7 @@ Steps:
 1. Open `land.mp4`.
 2. Choose "Upscale for phone". The before/after still appears within 5 s, and the crop rectangle
    follows the marker during playback.
-3. Add to queue and Run.
+3. Select **Upscale now** (or **Add to queue**, then Run).
 4. Export the manifest, then run `rmedia batch` on it. The output hash must match.
 
 ## US6: AI tier (machine with a discrete GPU)

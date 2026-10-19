@@ -15,23 +15,29 @@ export const upscale = $state({
   analyzing: false,
   progress: 0,
   analysisError: "",
+  /** Why smart framing has no crop path (no face model…), from the planner. */
+  analysisNote: "",
+  /** The saved choices are loaded (nothing is analysed or previewed before that). */
+  ready: false,
   preview: null as UpscalePreview | null,
   previewBusy: false,
   previewError: "",
 });
 
-let loaded = false;
+let loading = false;
 
-/** Presets and the saved choices, once per app start. */
+/** Presets and the saved choices, once per app start (retried until settings are known). */
 export async function initUpscale(): Promise<void> {
-  if (loaded) return;
-  loaded = true;
-  if (app.settings) upscale.options = resolveOptions(app.settings.upscale_defaults);
+  if (upscale.ready || loading || !app.settings) return;
+  loading = true;
   try {
+    upscale.options = resolveOptions(app.settings.upscale_defaults);
     upscale.presets = await api.listPresets();
+    upscale.ready = true;
   } catch (e) {
-    loaded = false;
     upscale.previewError = errorText(e);
+  } finally {
+    loading = false;
   }
 }
 
@@ -63,13 +69,20 @@ export interface ViewInput {
 
 let analysisKey = "";
 let analysisId: string | null = null;
+let previewPath = "";
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 let previewSeq = 0;
 let lastPreviewKey = "";
 
 /** Keeps the analysis and the still in step with the player (called from an effect). */
 export function syncView(v: ViewInput): void {
+  if (!upscale.ready) return;
   const o = upscale.options;
+  if (v.path !== previewPath) {
+    // Never show another video's stills.
+    previewPath = v.path;
+    clearPreview();
+  }
   // The analysis depends on what is framed, not on the tier or quality.
   const aKey = JSON.stringify([v.path, v.range, o.preset, o.reframe, o.motion, o.hdr]);
   if (aKey !== analysisKey) {
@@ -86,19 +99,37 @@ export function syncView(v: ViewInput): void {
   previewTimer = setTimeout(() => void preview(v.path, v.range, at), 250);
 }
 
-/** Stops the analysis (leaving the view or the window). */
+/** Stops the analysis and forgets the still (leaving the view). */
 export function stopView(): void {
   if (analysisId) void api.cancelAnalysis(analysisId).catch(() => {});
   analysisId = null;
   analysisKey = "";
-  lastPreviewKey = "";
+  upscale.analyzing = false;
+  upscale.progress = 0;
+  previewPath = "";
+  clearPreview();
+}
+
+/** Runs the analysis again (after an error). */
+export function retryAnalysis(): void {
+  analysisKey = "";
+  upscale.analysisError = "";
+}
+
+function clearPreview(): void {
   clearTimeout(previewTimer);
+  previewSeq++;
+  lastPreviewKey = "";
+  upscale.preview = null;
+  upscale.previewError = "";
+  upscale.previewBusy = false;
 }
 
 async function analyze(v: ViewInput, key: string): Promise<void> {
   if (analysisId) void api.cancelAnalysis(analysisId).catch(() => {});
   upscale.analysis = null;
   upscale.analysisError = "";
+  upscale.analysisNote = "";
   upscale.progress = 0;
   if (upscale.options.reframe !== "smart") {
     upscale.analyzing = false;
@@ -109,11 +140,12 @@ async function analyze(v: ViewInput, key: string): Promise<void> {
   analysisId = id;
   upscale.analyzing = true;
   try {
-    const a = await api.analyzeReframe(id, v.path, v.range, $state.snapshot(upscale.options), (e) => {
+    const r = await api.analyzeReframe(id, v.path, v.range, $state.snapshot(upscale.options), (e) => {
       if (analysisId === id && e.type === "progress") upscale.progress = e.fraction;
     });
     if (analysisKey !== key) return;
-    upscale.analysis = a;
+    upscale.analysis = r.analysis;
+    upscale.analysisNote = r.note ?? "";
     // The still can now follow the path instead of the centred guess.
     lastPreviewKey = "";
   } catch (e) {
@@ -135,7 +167,11 @@ async function preview(path: string, range: RangeArg, at: number): Promise<void>
     upscale.preview = p;
     upscale.previewError = "";
   } catch (e) {
-    if (seq === previewSeq) upscale.previewError = errorText(e);
+    if (seq === previewSeq) {
+      upscale.previewError = errorText(e);
+      // Try again on the next sync rather than never.
+      lastPreviewKey = "";
+    }
   } finally {
     if (seq === previewSeq) upscale.previewBusy = false;
   }

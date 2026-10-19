@@ -7,12 +7,15 @@ generation and bridge tests are unchanged. Every command is a thin adapter over 
 |---|---|---|---|
 | `list_presets` | — | `{ default, presets: Preset[], problems }` | `preset::PresetRegistry::load` |
 | `doctor_recheck` (US3, done) | — | `DoctorReport` with `tiers`, `gpus`, `models`, `capability` | `doctor::check_capability(…, CheckMode::Recheck)`: runs the tier self-tests again (a few seconds, 180 s budget, no cancel command); a second call while one runs is refused |
-| `analyze_reframe` | `analysisId, path, span?, options: UpscaleOptions, onEvent: Channel<AnalysisEvent>` | `ReframeAnalysis` | `upscale::reframe::analyze` (cached; same cache as the render, research R10) |
+| `analyze_reframe` | `analysisId, path, span?: {start, end\|null}, options: UpscaleOptions, onEvent: Channel<AnalysisEvent>` | `{ analysis: ReframeAnalysis \| null, note: string \| null }` | `upscale::preview::planned_job` + `upscale::reframe::analyze_cached` (cached; same cache as the render and the CLI, research R10). Runs with the CPU tier (the analysis does not depend on the tier). `analysis` is `null` when there is nothing to analyse; `note` then gives the planner's reason (e.g. no face model). Starting an analysis cancels any other one. |
 | `cancel_analysis` | `analysisId` | — | cancel token |
-| `upscale_preview` | `path, at: Ts, options: UpscaleOptions` | `{ before: string, after: string }`: localhost media-server URLs of two PNG stills at the target size | `upscale::preview_frame`: one ffmpeg run of the job's graph limited to one frame at `at` |
+| `upscale_preview` | `path, span?, at: Ts, options: UpscaleOptions` | `{ before, after, size, approximate, crop_x, in_fallback }`: `before`/`after` are localhost media-server URLs of two PNG stills at the target size | `upscale::preview::preview_frame`: one ffmpeg run, a split graph giving the job's processing ("after") and a plain bicubic baseline with the same framing ("before"). A new preview cancels the previous one. A failed GPU preview is made once more on the CPU (`approximate`). |
+| `pick_models_dir` | `reset: bool` | `Settings` | Rust folder picker; saves `models_dir` and reloads the engine capabilities |
 
-- **`AnalysisEvent`:** `{ type: "progress", fraction }`, `{ type: "shot", shot }` or
-  `{ type: "done" }`.
+- **`AnalysisEvent`:** `{ type: "progress", fraction }` or `{ type: "done" }`. (Amended at the
+  US5 checkpoint: no `shot` event; the shots come in the returned analysis.)
+- **Times from the page** (`at`, `span`) must be finite, between 0 and 10,000,000 s; anything
+  else is refused.
 - **`upscale_preview` timing:** it must return within 5 s for a typical 1080p source (US5
   scenario 1).
   - Smart reframe uses the cached analysis' x at `at` when there is one.
@@ -48,4 +51,6 @@ generation and bridge tests are unchanged. Every command is a thin adapter over 
 - "Add to queue".
 
 **Defaults:** taken from `upscale_defaults`. With them, SC-007 takes 3 interactions after opening a
-video: select the video, choose "Upscale for phone", then Run.
+video: select the video, choose "Upscale for phone", then **Upscale now**. "Upscale now" (owner
+decision, 2026-10-19) adds the job to the queue and runs only that job; "Add to queue" leaves it
+for a later Run. The range is the player's In/Out marks, or the whole video.

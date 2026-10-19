@@ -12,6 +12,7 @@ use std::sync::Arc;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
+use super::graph::GraphInput;
 use super::reframe::{self, ReframeAnalysis};
 use super::{AnalysisState, Reframe, UpscaleOptions, UpscaleSpec, graph};
 use crate::error::{Error, Result};
@@ -26,6 +27,8 @@ use crate::tools::Tools;
 
 /// Stills kept in the preview folder (two per preview); older ones are removed.
 const KEEP_FILES: usize = 48;
+/// A temporary still this old belongs to a run that was killed.
+const STALE_PART: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// What to preview: a source (or a range of it), a time in it and the upscale options.
 #[derive(Debug, Clone)]
@@ -64,6 +67,19 @@ pub async fn single_job(
     options: &UpscaleOptions,
     cancel: &CancellationToken,
 ) -> Result<UpscaleSpec> {
+    Ok(planned_job(tools, caps, presets, path, span, options, cancel).await?.0)
+}
+
+/// [`single_job`] with the job's warnings (e.g. no face model, so smart reframe is blurred).
+pub async fn planned_job(
+    tools: &Tools,
+    caps: &Caps,
+    presets: PresetRegistry,
+    path: &Path,
+    span: Option<(Ts, EndSpec)>,
+    options: &UpscaleOptions,
+    cancel: &CancellationToken,
+) -> Result<(UpscaleSpec, Vec<String>)> {
     let (start, end) = span.unwrap_or((Ts::ZERO, EndSpec::EndOfMedia));
     let req = BatchRequest {
         // Nothing is written: an existing output must not make the plan skip the job.
@@ -91,14 +107,19 @@ pub async fn single_job(
     if !errors.is_empty() {
         return Err(Error::InvalidInput(errors.join("; ")));
     }
-    match p.jobs.pop().map(|j| j.spec) {
-        Some(JobSpec::Upscale(u)) => Ok(*u),
-        _ => Err(Error::InvalidInput("nothing to upscale".into())),
+    match p.jobs.pop() {
+        Some(job) => match job.spec {
+            JobSpec::Upscale(u) => Ok((*u, job.warnings)),
+            _ => Err(Error::InvalidInput("nothing to upscale".into())),
+        },
+        None => Err(Error::InvalidInput("nothing to upscale".into())),
     }
 }
 
 /// The before/after stills of `req` in `out_dir` (created if needed; the newest stills are
-/// kept). A request already rendered returns the same files without running ffmpeg.
+/// kept). A request already rendered returns the same files without running ffmpeg. If the
+/// GPU tier fails here, the stills are made once more on the CPU and flagged approximate (the
+/// render would fall back the same way).
 pub async fn preview_frame(
     tools: &Tools,
     caps: &Caps,
@@ -130,94 +151,133 @@ pub async fn preview_frame(
         _ => (None, false),
     };
     let still = graph::still_input(&up.graph, x, in_fallback);
-    let crop_x = (!in_fallback).then(|| still.geometry.crop.map(|c| c.x)).flatten();
-    let approximate = (smart && analysis.is_none()) || up.graph.keep_hdr;
-    let filter = graph::preview_pair(&still);
-
+    let pair = PreviewPair {
+        before: PathBuf::new(),
+        after: PathBuf::new(),
+        size: up.target,
+        approximate: (smart && analysis.is_none()) || up.graph.keep_hdr,
+        crop_x: (!in_fallback).then(|| still.geometry.crop.map(|c| c.x)).flatten(),
+        in_fallback,
+    };
     let source = crate::paths::canonicalize(&req.path)?;
-    let meta = std::fs::metadata(&source)?;
-    let mtime = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_nanos());
-    let mut h = Sha256::new();
-    for part in [
-        source.to_string_lossy().as_bytes(),
-        &meta.len().to_le_bytes(),
-        &mtime.to_le_bytes(),
-        &req.at.as_micros().to_le_bytes(),
-        filter.as_bytes(),
-        tools.version.text().as_bytes(),
-    ] {
-        h.update((part.len() as u64).to_le_bytes());
-        h.update(part);
+    let still_req = Still { tools, source: &source, at: req.at, out_dir, cancel };
+    match still_req.render(&still, pair.clone()).await {
+        Err(Error::EngineFailed { message, .. }) if still.gpu.is_some() && !cancel.is_cancelled() => {
+            tracing::warn!("GPU preview failed ({message}); using the CPU");
+            let cpu = GraphInput { gpu: None, ..still };
+            still_req.render(&cpu, PreviewPair { approximate: true, ..pair }).await
+        }
+        other => other,
     }
-    let key = hex(&h.finalize()[..12]);
-    std::fs::create_dir_all(out_dir)?;
-    let before = out_dir.join(format!("{key}-before.png"));
-    let after = out_dir.join(format!("{key}-after.png"));
-    let pair = PreviewPair { before, after, size: up.target, approximate, crop_x, in_fallback };
-    if pair.before.is_file() && pair.after.is_file() {
-        return Ok(pair);
-    }
+}
 
-    let probe = crate::probe::probe(tools, &source, cancel).await?;
-    let seek = req.at + crate::preview::time_offset(&probe);
-    let unique = format!(
-        "{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos())
-    );
-    let part =
-        |p: &Path| p.with_file_name(format!(".{}.{unique}.part", p.file_name().unwrap().to_string_lossy()));
-    let (before_part, after_part) = (part(&pair.before), part(&pair.after));
-    let mut args: Vec<OsString> =
-        ["-hide_banner", "-nostdin", "-n", "-loglevel", "error"].map(OsString::from).to_vec();
-    if let Some(device) = up.graph.gpu {
-        args.extend(
-            ["-init_hw_device", &format!("vulkan=vk:{device}"), "-filter_hw_device", "vk"]
-                .map(OsString::from),
+/// One still pair to render: the source, the time and where the files go.
+struct Still<'a> {
+    tools: &'a Tools,
+    source: &'a Path,
+    at: Ts,
+    out_dir: &'a Path,
+    cancel: &'a CancellationToken,
+}
+
+impl Still<'_> {
+    /// Renders (or finds) the pair for this graph input; files are named by everything that
+    /// changes their pixels.
+    async fn render(&self, still: &GraphInput, mut pair: PreviewPair) -> Result<PreviewPair> {
+        let filter = graph::preview_pair(still);
+        let meta = std::fs::metadata(self.source)?;
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_nanos());
+        let mut h = Sha256::new();
+        for part in [
+            self.source.to_string_lossy().as_bytes(),
+            &meta.len().to_le_bytes(),
+            &mtime.to_le_bytes(),
+            &self.at.as_micros().to_le_bytes(),
+            filter.as_bytes(),
+            self.tools.version.text().as_bytes(),
+        ] {
+            h.update((part.len() as u64).to_le_bytes());
+            h.update(part);
+        }
+        let key = hex(&h.finalize()[..12]);
+        std::fs::create_dir_all(self.out_dir)?;
+        pair.before = self.out_dir.join(format!("{key}-before.png"));
+        pair.after = self.out_dir.join(format!("{key}-after.png"));
+        if pair.before.is_file() && pair.after.is_file() {
+            // Recently shown stills are the last to be evicted.
+            for f in [&pair.before, &pair.after] {
+                let _ = std::fs::File::options()
+                    .append(true)
+                    .open(f)
+                    .and_then(|file| file.set_modified(std::time::SystemTime::now()));
+            }
+            return Ok(pair);
+        }
+
+        let probe = crate::probe::probe(self.tools, self.source, self.cancel).await?;
+        let seek = self.at + crate::preview::time_offset(&probe);
+        let unique = format!(
+            "{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos())
         );
-    }
-    args.extend(["-protocol_whitelist", INPUT_PROTOCOLS, "-ss"].map(OsString::from));
-    args.push(seek.ffmpeg().into());
-    args.push("-i".into());
-    args.push(file_arg(&source));
-    args.extend(["-filter_complex", filter.as_str()].map(OsString::from));
-    for (label, file) in [("[after]", &after_part), ("[before]", &before_part)] {
-        args.extend(
-            ["-map", label, "-frames:v", "1", "-c:v", "png", "-f", "image2", "-update", "1"]
-                .map(OsString::from),
-        );
-        args.push(file_arg(file));
-    }
-    let out = run_capture(&tools.ffmpeg.path, &args, cancel).await;
-    let written = out.and_then(|o| {
-        let ok = o.status.success()
-            && [&before_part, &after_part].iter().all(|f| std::fs::metadata(f).is_ok_and(|m| m.len() > 0));
-        if ok {
+        let part = |p: &Path| {
+            p.with_file_name(format!(".{}.{unique}.part", p.file_name().unwrap().to_string_lossy()))
+        };
+        let (before_part, after_part) = (part(&pair.before), part(&pair.after));
+        let mut args: Vec<OsString> =
+            ["-hide_banner", "-nostdin", "-n", "-loglevel", "error"].map(OsString::from).to_vec();
+        if let Some(device) = still.gpu {
+            args.extend(
+                ["-init_hw_device", &format!("vulkan=vk:{device}"), "-filter_hw_device", "vk"]
+                    .map(OsString::from),
+            );
+        }
+        args.extend(["-protocol_whitelist", INPUT_PROTOCOLS, "-ss"].map(OsString::from));
+        args.push(seek.ffmpeg().into());
+        args.push("-i".into());
+        args.push(file_arg(self.source));
+        args.extend(["-filter_complex", filter.as_str()].map(OsString::from));
+        for (label, file) in [("[after]", &after_part), ("[before]", &before_part)] {
+            args.extend(
+                ["-map", label, "-frames:v", "1", "-c:v", "png", "-f", "image2", "-update", "1"]
+                    .map(OsString::from),
+            );
+            args.push(file_arg(file));
+        }
+        let out = run_capture(&self.tools.ffmpeg.path, &args, self.cancel).await;
+        let written = out.and_then(|o| {
+            let ok = o.status.success()
+                && [&before_part, &after_part]
+                    .iter()
+                    .all(|f| std::fs::metadata(f).is_ok_and(|m| m.len() > 0));
+            if ok {
+                Ok(())
+            } else {
+                Err(Error::EngineFailed {
+                    message: format!("could not render the preview at {}", self.at),
+                    stderr_tail: o.stderr_tail,
+                })
+            }
+        });
+        let committed = written.and_then(|()| {
+            std::fs::rename(&before_part, &pair.before)?;
+            std::fs::rename(&after_part, &pair.after)?;
             Ok(())
-        } else {
-            Err(Error::EngineFailed {
-                message: format!("could not render the preview at {}", req.at),
-                stderr_tail: o.stderr_tail,
-            })
+        });
+        for f in [&before_part, &after_part] {
+            if f.exists() {
+                remove_with_retry(f);
+            }
         }
-    });
-    let committed = written.and_then(|()| {
-        std::fs::rename(&before_part, &pair.before)?;
-        std::fs::rename(&after_part, &pair.after)?;
-        Ok(())
-    });
-    for f in [&before_part, &after_part] {
-        if f.exists() {
-            remove_with_retry(f);
-        }
+        committed?;
+        evict(self.out_dir, &[&pair.before, &pair.after]);
+        Ok(pair)
     }
-    committed?;
-    evict(out_dir, &[&pair.before, &pair.after]);
-    Ok(pair)
 }
 
 /// The crop x at source time `at` from an analysis, or that `at` is in a fallback range.
@@ -230,16 +290,25 @@ fn frame_crop(a: &Arc<ReframeAnalysis>, at: Ts) -> (Option<u32>, bool) {
     (x, false)
 }
 
-/// Removes the oldest stills beyond [`KEEP_FILES`] (never the ones just made).
+/// Removes the least recently used stills beyond [`KEEP_FILES`] (never `keep`), and temporary
+/// files left by a run that was killed (older than [`STALE_PART`]).
 fn evict(dir: &Path, keep: &[&PathBuf]) {
     let Ok(rd) = std::fs::read_dir(dir) else { return };
-    let mut files: Vec<(std::time::SystemTime, PathBuf)> = rd
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "png"))
-        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
-        .collect();
+    let now = std::time::SystemTime::now();
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for e in rd.flatten() {
+        let p = e.path();
+        let Some(modified) = e.metadata().ok().filter(|m| m.is_file()).and_then(|m| m.modified().ok()) else {
+            continue;
+        };
+        match p.extension().and_then(|x| x.to_str()) {
+            Some("png") => files.push((modified, p)),
+            Some("part") if now.duration_since(modified).is_ok_and(|age| age > STALE_PART) => {
+                remove_with_retry(&p);
+            }
+            _ => {}
+        }
+    }
     files.sort_by(|a, b| b.0.cmp(&a.0));
     for (_, p) in files.into_iter().skip(KEEP_FILES) {
         if !keep.contains(&&p) {
@@ -272,6 +341,32 @@ mod tests {
             detections: 0,
             samples: 0,
         })
+    }
+
+    #[test]
+    fn eviction_keeps_the_newest_stills_and_sweeps_stale_parts() {
+        let d = tempfile::tempdir().unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        let mut paths = Vec::new();
+        for i in 0..KEEP_FILES + 3 {
+            let p = d.path().join(format!("{i:03}.png"));
+            std::fs::write(&p, b"x").unwrap();
+            // 000 is the oldest.
+            let t = old + std::time::Duration::from_secs(i as u64);
+            std::fs::File::options().append(true).open(&p).unwrap().set_modified(t).unwrap();
+            paths.push(p);
+        }
+        let stale = d.path().join(".a.png.1-2.part");
+        let fresh = d.path().join(".b.png.1-3.part");
+        for p in [&stale, &fresh] {
+            std::fs::write(p, b"x").unwrap();
+        }
+        std::fs::File::options().append(true).open(&stale).unwrap().set_modified(old).unwrap();
+        evict(d.path(), &[&paths[0]]);
+        assert!(paths[0].exists(), "kept even though it is the oldest");
+        assert!(!paths[1].exists() && !paths[2].exists(), "the oldest beyond the newest 48 go");
+        assert!(paths[3..].iter().all(|p| p.exists()));
+        assert!(!stale.exists() && fresh.exists(), "only stale temporary files are removed");
     }
 
     #[test]

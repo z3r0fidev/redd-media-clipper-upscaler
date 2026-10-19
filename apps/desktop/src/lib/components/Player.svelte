@@ -39,7 +39,7 @@
   // Upscale view: the range is the In/Out marks (or the whole video); the overlay follows the
   // playhead every frame while playing.
   const upscaling = $derived(app.view === "upscale" && !!path && mode !== "empty" && mode !== "error");
-  const range = $derived({ start: inPt ?? 0, end: inPt == null ? null : outPt });
+  const range = $derived({ start: inPt ?? 0, end: outPt });
   let stageW = $state(0);
   let stageH = $state(0);
   let overlayT = $state(0);
@@ -59,15 +59,18 @@
   });
 
   $effect(() => {
-    if (!upscaling || !path) return;
+    // Wait until the source has loaded (its duration bounds the range).
+    if (!upscaling || !path || mode === "loading" || !(duration > 0)) return;
     const v = { path, range: { ...range }, at: current, playing, duration };
-    // Re-sync when the options or the finished analysis change, too.
+    // Re-sync when the options, the saved choices or the finished analysis change, too.
     void upscale.options;
+    void upscale.ready;
     void upscale.analysis?.key;
     untrack(() => syncView(v));
   });
   $effect(() => {
-    if (upscaling) untrack(() => void initUpscale());
+    // Retried when the settings arrive (the saved choices come from them).
+    if (upscaling && app.settings) untrack(() => void initUpscale());
     else stopView();
   });
   $effect(() => {
@@ -294,9 +297,9 @@
     </div>
   {:else}
     <header class="pane-head">
-      <div class="tabs" role="tablist" aria-label="What to do with this video">
-        <button role="tab" aria-selected={app.view === "clip"} class:on={app.view === "clip"} onclick={() => (app.view = "clip")}>Clip</button>
-        <button role="tab" aria-selected={app.view === "upscale"} class:on={app.view === "upscale"} onclick={() => (app.view = "upscale")}>Upscale for phone</button>
+      <div class="tabs" role="group" aria-label="What to do with this video">
+        <button aria-pressed={app.view === "clip"} class:on={app.view === "clip"} onclick={() => (app.view = "clip")}>Clip</button>
+        <button aria-pressed={app.view === "upscale"} class:on={app.view === "upscale"} onclick={() => (app.view = "upscale")}>Upscale for phone</button>
       </div>
       <h2 title={path}>{path ? baseName(path) : ""}</h2>
       {#if mode === "direct"}
@@ -341,7 +344,7 @@
       {#if rect}
         <div class="crop" style="left: {rect.left}px; top: {rect.top}px; width: {rect.width}px; height: {rect.height}px" aria-hidden="true"></div>
       {:else if blurredHere}
-        <span class="crop-note">Whole frame over a blurred background here</span>
+        <span class="crop-note" role="status">Whole frame over a blurred background here</span>
       {/if}
       {#if mode === "error"}
         <div class="overlay">
@@ -410,6 +413,7 @@
     </div>
 
     {#if upscaling && path}
+      {#if segments.length}<p class="legend faint"><span class="swatch" aria-hidden="true"></span>Hatched: no single face fits, so the whole frame is shown over a blurred copy</p>{/if}
       <UpscaleView {path} {range} />
     {:else}
     <div class="clipbar">
@@ -445,9 +449,11 @@
   .thumbs.loading { background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
   @keyframes shimmer { to { background-position: -200% 0; } }
   @keyframes fade { from { opacity: 0; } }
-  .crop { position: absolute; border: 2px solid #fff; border-radius: 3px; box-shadow: 0 0 0 9999px rgba(7, 8, 12, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.4); pointer-events: none; z-index: 1; }
-  .crop-note { position: absolute; left: 50%; bottom: var(--space-3); transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; font-size: 11.5px; color: #fff; background: rgba(7, 8, 12, 0.7); pointer-events: none; z-index: 1; }
-  .fallback { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--warn) 55%, transparent) 0 4px, transparent 4px 8px); border-top: 2px solid var(--warn); pointer-events: none; }
+  .crop { position: absolute; border: 2px solid #fff; border-radius: 3px; box-shadow: 0 0 0 9999px rgba(7, 8, 12, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.6); pointer-events: none; z-index: 1; }
+  .crop-note { position: absolute; left: 50%; bottom: var(--space-3); transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; font-size: 12px; color: #fff; background: rgba(7, 8, 12, 0.7); pointer-events: none; z-index: 1; }
+  .fallback { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--warn) 55%, transparent) 0 4px, transparent 4px 8px); border-top: 3px solid var(--warn); pointer-events: none; }
+  .legend { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .swatch { width: 16px; height: 10px; border-top: 3px solid var(--warn); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--warn) 55%, transparent) 0 3px, transparent 3px 6px); }
   .tabs { display: flex; padding: 2px; gap: 2px; border-radius: var(--radius-m); background: var(--surface-2); border: 1px solid var(--border); flex-shrink: 0; }
   .tabs button { height: 26px; padding: 0 10px; font-size: 12.5px; border: 0; background: transparent; color: var(--text-2); }
   .tabs button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 600; }

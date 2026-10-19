@@ -285,6 +285,14 @@ async fn upscale_preview_serves_two_pngs_for_opened_sources_only() {
     assert!(!p.before.contains(&*d.path().to_string_lossy()));
     let range = Some(RangeArg { start: 0.5, end: Some(2.0) });
     assert!(st.upscale_preview(&src, range, 2.5, &opts).await.unwrap_err().contains("outside"));
+    for bad in [f64::NAN, f64::INFINITY, -1.0, 1e300] {
+        assert!(
+            st.upscale_preview(&src, None, bad, &opts).await.unwrap_err().contains("invalid time"),
+            "{bad}"
+        );
+        let range = Some(RangeArg { start: 0.0, end: Some(bad) });
+        assert!(st.upscale_preview(&src, range, 1.0, &opts).await.is_err(), "{bad}");
+    }
 }
 
 /// Minimal HTTP GET against the local media server: (status line and headers, body).
@@ -334,12 +342,24 @@ async fn analysis_reports_progress_shares_the_cli_cache_and_cancels() {
     });
     assert!(r.unwrap_err().to_lowercase().contains("cancel"));
     assert!(started.elapsed().as_secs_f64() < 2.5, "{:?}", started.elapsed());
+    // A forced tier that is not available here does not stop the analysis (it is tier-free).
+    let ai = UpscaleOptions { tier: TierChoice::Ai, ..cpu(Reframe::Smart) };
+    let first = st.analyze_reframe("ai".into(), &src, None, &ai, &|_| {});
+    let second = async {
+        // A newer analysis cancels the older one: the view shows one source at a time.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        st.analyze_reframe("newer".into(), &src, None, &cpu(Reframe::Smart), &|_| {}).await
+    };
+    let (first, second) = tokio::join!(first, second);
+    assert!(first.unwrap_err().to_lowercase().contains("cancel"));
+    assert!(second.unwrap().analysis.is_some());
 
     let events = Mutex::new(Vec::new());
     let a = st
         .analyze_reframe("a1".into(), &src, None, &cpu(Reframe::Smart), &|e| events.lock().unwrap().push(e))
         .await
         .unwrap()
+        .analysis
         .expect("a landscape source is analysed");
     assert!(a.path.len() > 100 && a.crop.0 < a.source_size.0);
     let events = events.into_inner().unwrap();

@@ -11,7 +11,7 @@ Last updated: 2026-10-19.
 | Feature | State | Available now |
 |---|---|---|
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, not yet tagged | `clip`, `batch`, `scan`, `doctor`, desktop app |
-| 002 Mobile upscaling and smart reframe | In progress (81/112 tasks); user stories 1–4 done | `rmedia upscale` (CPU and GPU tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck` |
+| 002 Mobile upscaling and smart reframe | In progress (92/112 tasks); user stories 1–5 done | `rmedia upscale` (CPU and GPU tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Planned; no specification yet | Nothing (research only: `research/05-gif-export.md`) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -27,9 +27,10 @@ Last updated: 2026-10-19.
 | 4 US2 Smart reframe | T042–T061 | Follow faces (YuNet), shot detection, smooth crop path, `--crop-path`, `--motion`, analysis cache |
 | 5 US3 GPU tier | T062–T073 | Vulkan GPU tier (libplacebo), machine capability record and self-tests, `auto` with a speed guard, one CPU fallback with demotion, `doctor` tiers/GPUs/models and `--recheck`, desktop **Check again** |
 | 6 US4 Batch and `clip --upscale` | T074–T081 | `upscale` in JSON manifests (every level, whole videos without `clips`) and CSV (`upscale_*` columns), `batch --upscale` and upscale flags as fills, `clip --upscale` in one pass, default output folders always skipped by scans |
+| 7 US5 Desktop upscale view | T082–T092 | "Upscale for phone" view: crop overlay and blurred ranges on the player, before/after still, preset/framing/quality pickers, "Upscale now" (one job) and "Add to queue", models folder in Settings |
 
 The checkpoint reviews (senior-code-reviewer, security-auditor) for every finished phase are done
-and their findings are fixed. 263 tests pass (6 ignored).
+and their findings are fixed. 269 workspace tests pass (6 ignored).
 
 ### Next and pending
 
@@ -38,14 +39,14 @@ and their findings are fixed. 263 tests pass (6 ignored).
 | 1 | US2 Smart reframe | T042–T061 | Follow faces (YuNet via `cargo xtask fetch-models`), shot detection, smooth crop path, `--crop-path`, `--motion`, analysis cache. | Done (2026-10-16) |
 | 2 | US3 GPU tier and capability record | T062–T073 | Vulkan GPU tier, self-test and capability record, `doctor` tiers, GPUs and models, `doctor --recheck`, automatic fallback to CPU | Done (2026-10-19) |
 | 3 | US4 Batch and `clip --upscale` | T074–T081 | Upscale from manifests and `clip --upscale`; partial-clip tests carried over from the US1 review; `batch` runs the machine check when it has upscale jobs | Done (2026-10-19) |
-| 4 | US5 Desktop upscale view | T082–T092 | Upscale view in the desktop app | ▶ Next |
-| 5 | US6 AI worker | T093–T105 | `rmedia-sr` worker with ncnn for AI upscaling | Planned |
+| 4 | US5 Desktop upscale view | T082–T092 | Upscale view in the desktop app | Done (2026-10-19) |
+| 5 | US6 AI worker | T093–T105 | `rmedia-sr` worker with ncnn for AI upscaling | ▶ Next |
 | 6 | Polish, docs, packaging | T106–T112 | Final review pass, documentation, installers include models | Planned |
 
 Each phase ends with a checkpoint: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`,
 `cargo test --workspace`, the quickstart section for the story, and the two reviews.
 
-US5 and US6 are not available in any build. Documentation elsewhere marks these as planned.
+US6 is not available in any build. Documentation elsewhere marks these as planned.
 
 ### Owner validation (cannot be automated)
 

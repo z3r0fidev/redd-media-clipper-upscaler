@@ -52,7 +52,9 @@
   plan picks the CPU. A forced GPU fails without falling back or demoting.
 - Forced GPU output: 1080x2340 HEVC `hvc1`, BT.709 tags. With `VK_DRIVER_FILES`/`VK_ICD_FILENAMES`
   pointed at a missing file: `--tier gpu` exits 3 `TIER_UNAVAILABLE` ("no Vulkan device").
-- Windows: `cargo check --target x86_64-pc-windows-gnu --workspace --all-targets` with
+- Windows: `CC_x86_64_pc_windows_gnu=gcc AR_x86_64_pc_windows_gnu=ar cargo check --target
+  x86_64-pc-windows-gnu --workspace --all-targets` (the `CC` override lets tract-linalg's build
+  script assemble without MinGW; nothing is linked) with
   `-D warnings` passes (registry code compiles); not run on Windows hardware.
 - **Known limits:**
   - Windows driver fingerprint misses drivers registered only under the display-adapter key
@@ -79,3 +81,39 @@
   - Folders named `clips` or `upscaled` inside a scanned tree are always skipped (a note says so;
     pass the folder directly to use it).
   - Dry runs may run the machine check (once per hardware or app change), as `upscale` already did.
+
+## US5 checkpoint (2026-10-19)
+
+- quickstart › US5 on Linux X11 (a private Xvfb display, debug build, bundled n9.0.2):
+  - Opened `land.mp4` (moving marker): the YuNet model finds no face in a magenta square, so the
+    whole video is marked as a blurred-background range (hatched on the timeline, note on the
+    video). Correct behaviour for that fixture.
+  - Opened `face.mp4` (a real face moving left to right, 8 s): "Upscale for phone" shows the
+    before/after at 1080x2340 and the crop rectangle on the face; at 6 s the rectangle has
+    followed it. Analysis plus first still in a few seconds; `us5_preview.rs` measures ≈1 s for a
+    1080p still.
+  - "Upscale now" → `upscaled/face_phone-fill.mp4` HEVC hvc1 1080x2340; run panel "Done · CPU
+    tier". `rmedia upscale face.mp4 -o cli/` gives the same sha256 (FR-022), as does the bridge
+    test with an exported manifest through `rmedia batch`.
+  - Not checked by hand: Wayland, Windows. The overlay geometry follows `object-fit: contain`
+    from the analysis' display size.
+- Reviews: senior-code-reviewer (0 critical; 2 high fixed: the analysis no longer depends on the
+  tier, and previews are cancelled when superseded or on close; 6 medium fixed: stale stills
+  cleared on source change and on leaving the view, preview errors retried, GPU preview retried
+  on the CPU, sync waits for the source and the saved choices, "Upscale now" checks it can run
+  before queueing, analysing state reset), security-auditor (0 critical/high; 3 medium fixed:
+  one analysis at a time with id checks, one preview at a time, preview URLs capped and evicted
+  stills forgotten by the media server; low fixed: time inputs validated, settings saves
+  serialised, `jobs` clamped to 1–64, `.part` sweep and LRU touch), premium-ui-designer
+  (accessibility and copy applied: toggle-button groups with `aria-pressed`, visible slider
+  focus with value text and PageUp/PageDown, plain-language labels and notes, legend for
+  hatched ranges, analysis errors with **Try again**).
+- **Known limits:**
+  - The "before" still uses `zscale`; an ffmpeg without it (never the bundled one) cannot preview.
+  - CSP `img-src`/`media-src http://127.0.0.1:*` allow any local port (accepted; see the
+    security model).
+  - Models from a chosen models folder are hashed into the cache key but not pinned to a known
+    hash.
+  - Each smart preview reads the face model to compute the cache key (fast for YuNet).
+  - The `< 5 s` preview assertion is wall-clock based and may need slack on a loaded CI runner.
+

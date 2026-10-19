@@ -37,6 +37,12 @@ export interface PresetList {
   problems: { file: string; message: string }[];
 }
 
+/** The analysis behind the crop overlay, or why there is none (e.g. no face model). */
+export interface ReframeResult {
+  analysis: ReframeAnalysis | null;
+  note: string | null;
+}
+
 export type AnalysisEvent = { type: "progress"; fraction: number } | { type: "done" };
 
 /** Before/after stills as local media-server URLs. */
@@ -103,7 +109,7 @@ export const api = {
   analyzeReframe(analysisId: string, path: string, span: RangeArg | null, options: UpscaleOptions, onEvent: (e: AnalysisEvent) => void) {
     const ch = new Channel<AnalysisEvent>();
     ch.onmessage = onEvent;
-    return invoke<ReframeAnalysis | null>("analyze_reframe", { analysisId, path, span, options, onEvent: ch });
+    return invoke<ReframeResult>("analyze_reframe", { analysisId, path, span, options, onEvent: ch });
   },
   cancelAnalysis: (analysisId: string) => invoke<void>("cancel_analysis", { analysisId }),
   upscalePreview: (path: string, span: RangeArg | null, at: number, options: UpscaleOptions) =>

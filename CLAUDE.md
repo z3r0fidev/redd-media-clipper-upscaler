@@ -9,9 +9,10 @@ for Reddit (003). Spec-driven via Spec Kit.
   04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
-- Active feature: `specs/002-mobile-upscale/` (81/112 tasks; Setup, Foundational incl. refactors A1–A5,
-  US1 CPU tier, US2 smart reframe, US3 GPU tier + capability record and US4 batch/`clip --upscale`
-  are done). Next: US5 desktop upscale view (T082–T092; start with a plan-mode pass).
+- Active feature: `specs/002-mobile-upscale/` (92/112 tasks; Setup, Foundational incl. refactors A1–A5,
+  US1 CPU tier, US2 smart reframe, US3 GPU tier + capability record, US4 batch/`clip --upscale`
+  and US5 desktop "Upscale for phone" view are done). Next: US6 AI worker (T093–T105; start with a
+  plan-mode pass; needs a discrete GPU for its owner checks).
   Polish. Progress: `specs/002-mobile-upscale/progress.md`; roadmap: `docs/roadmap.md`.
   001 (`specs/001-video-clipping/`) is implemented. Planned: 003 GIF export (research/05, no spec yet).
 - Git: no remote and no `main` branch yet; work is on `001-video-clipping` and `002-mobile-upscale`.

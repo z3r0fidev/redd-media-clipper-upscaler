@@ -78,8 +78,14 @@ Further rules:
 | `frame_at` | `path`, `t: number`, `height: number` | JPEG bytes (`ArrayBuffer`, via `ipc::Response`) | `height` clamped to 32–1080; `t` is clip time |
 | `thumbnails` | `path`, `n: number` | `string[]` (`data:image/jpeg;base64,…`) | `n` clamped to 1–60; cached |
 | `pick_engine` | `reset: boolean` | `DoctorReport` | `reset: false` opens a native picker for the ffmpeg program; ffprobe must sit next to it. `reset: true` returns to automatic lookup. Saved to settings. |
+| `doctor_recheck` | — | `DoctorReport` | Runs the machine check (tier self-tests) again; one at a time |
+| `list_presets` | — | `{default, presets: Preset[], problems: {file, message}[]}` | Built-in and user presets (002 US5) |
+| `analyze_reframe` | `analysisId` (1–64 chars), `path`, `span: {start, end\|null} \| null`, `options: UpscaleOptions`, `onEvent: Channel<AnalysisEvent>` | `{analysis: ReframeAnalysis \| null, note: string \| null}` | Requires an allowed path. Smart-reframe analysis for the crop overlay, through the same cache as the render and the CLI; runs with the CPU tier. A new analysis cancels the running one. `analysis` is null when there is nothing to analyse; `note` says why. |
+| `cancel_analysis` | `analysisId` | — | |
+| `upscale_preview` | `path`, `span`, `at: number`, `options: UpscaleOptions` | `{before, after, size, approximate, crop_x, in_fallback}` | Requires an allowed path. Two PNG stills at the preset size, served by the media server (`image/png`); written under the app cache (`upscale-preview/`, newest 48 kept). A new preview cancels the running one. Times must be finite and 0–10,000,000 s. |
+| `pick_models_dir` | `reset: boolean` | `Settings` | Native folder picker for the models folder (or back to the default search). Reloads the engine capabilities. |
 | `get_settings` | — | `Settings` | |
-| `set_settings` | `settings: Settings` | — | Saved atomically. `ffmpeg_path` / `ffprobe_path` from the page are **ignored**; only `pick_engine` changes them. A changed `defaults.output_dir` must already be allowed (picked with `pick_folder`), otherwise: `choose the output folder with Choose…`. |
+| `set_settings` | `settings: Settings` | — | Saved atomically. `ffmpeg_path` / `ffprobe_path` and `models_dir` from the page are **ignored**; only `pick_engine` and `pick_models_dir` change them. `jobs` is clamped to 1–64. A changed `defaults.output_dir` must already be allowed (picked with `pick_folder`), otherwise: `choose the output folder with Choose…`. |
 
 ### The Queue Is a v1 Manifest
 
@@ -100,6 +106,8 @@ config folder):
 | `defaults` | `PartialOptions` | `{}` |
 | `jobs` | number (optional) | unset (half the CPU cores, 1–4) |
 | `proxy_cache_max_mb` | number | `5120` |
+| `models_dir` | string (optional) | unset (`models/` next to rmedia, then `<cache>/models`); set only by `pick_models_dir` |
+| `upscale_defaults` | `PartialUpscale` | `{}` (the upscale view's last choices; never turns upscaling on for clips) |
 
 Unknown fields are rejected.
 
@@ -112,6 +120,7 @@ Streaming uses `tauri::ipc::Channel<T>`:
 | `scan` → `onEvent` | `ScanEvent` | `progress {visited, candidates, probed}`, `found {video: MediaInfo}`, `rejected {rejected: {path, reason, detail}}` |
 | `run` → `onEvent` | `Event` | `run_started`, `job_started`, `job_progress`, `job_warning`, `job_finished`, `run_progress`, `run_finished {summary}`. Field shapes match the [CLI NDJSON events](json-output.md#run-events-ndjson), but without `schema`, and the last event is `run_finished` (the CLI renames it `summary`). |
 | `ensure_proxy` → `onProgress` | `number` | 0–1 |
+| `analyze_reframe` → `onEvent` | `AnalysisEvent` | `progress {fraction}` (at most one per percent), then `done` |
 
 App event (Tauri event system, which is why the `listen` capability is granted):
 

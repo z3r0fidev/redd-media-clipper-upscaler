@@ -5,7 +5,7 @@
 //! the native dialogs, drag-and-drop, a picked folder (and what scanning it found), or a manifest
 //! the user opened. Anything else is refused, so a compromised page cannot read arbitrary files.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,7 +26,7 @@ use rmedia_core::tools::{LocateOptions, Tools};
 use rmedia_core::upscale::capability::CheckMode;
 use rmedia_core::upscale::preview::{self as still, PreviewRequest};
 use rmedia_core::upscale::reframe::{self, ReframeAnalysis};
-use rmedia_core::upscale::{AnalysisState, UpscaleOptions};
+use rmedia_core::upscale::{AnalysisState, Reframe, TierChoice, UpscaleOptions};
 use rmedia_core::{EndSpec, Ts};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -105,6 +105,12 @@ pub struct AppState {
     runs: Mutex<HashMap<String, RunControl>>,
     scans: Mutex<HashMap<String, CancellationToken>>,
     analyses: Mutex<HashMap<String, CancellationToken>>,
+    /// The preview being rendered (a new one cancels it: only the latest is shown).
+    preview: Mutex<Option<CancellationToken>>,
+    /// Preview stills registered with the media server, oldest first (capped).
+    preview_files: Mutex<VecDeque<PathBuf>>,
+    /// Held across read-modify-save of the settings, so concurrent saves never lose a field.
+    settings_save: Mutex<()>,
     cache_dir: PathBuf,
     opened: Mutex<Vec<PathBuf>>,
 }
@@ -136,6 +142,9 @@ impl AppState {
             runs: Mutex::new(HashMap::new()),
             scans: Mutex::new(HashMap::new()),
             analyses: Mutex::new(HashMap::new()),
+            preview: Mutex::new(None),
+            preview_files: Mutex::new(VecDeque::new()),
+            settings_save: Mutex::new(()),
             cache_dir,
             opened: Mutex::new(Vec::new()),
         })
@@ -175,6 +184,7 @@ impl AppState {
 
     /// Engine paths can only be set here — from the native file dialog in Rust — never by the page.
     pub fn set_engine_path(&self, ffmpeg: Option<PathBuf>) -> OpResult<()> {
+        let _saving = lock(&self.settings_save);
         let mut s = lock(&self.settings).clone();
         match ffmpeg {
             Some(p) => {
@@ -420,6 +430,9 @@ impl AppState {
         for c in lock(&self.analyses).values() {
             c.cancel();
         }
+        if let Some(c) = lock(&self.preview).as_ref() {
+            c.cancel();
+        }
     }
 
     pub async fn preview_source(&self, path: &Path) -> OpResult<PreviewInfo> {
@@ -492,6 +505,9 @@ impl AppState {
     /// Saves settings from the page. Engine paths are never taken from the page (they would let
     /// it choose an executable); they change only through `set_engine_path`.
     pub fn set_settings(&self, mut s: Settings) -> OpResult<()> {
+        let _saving = lock(&self.settings_save);
+        // The page may not start an unbounded number of engine processes at once.
+        s.jobs = s.jobs.map(|j| j.clamp(1, 64));
         {
             let current = lock(&self.settings);
             s.ffmpeg_path = current.ffmpeg_path.clone();
@@ -514,6 +530,7 @@ impl AppState {
     /// The models folder can only be set here — from the native folder dialog in Rust — never by
     /// the page. The engine capabilities are reloaded so the models are found again.
     pub fn set_models_dir(&self, dir: Option<PathBuf>) -> OpResult<()> {
+        let _saving = lock(&self.settings_save);
         let mut s = lock(&self.settings).clone();
         s.models_dir = match dir {
             Some(d) => Some(std::fs::canonicalize(&d).map_err(|e| format!("{}: {e}", d.display()))?),
@@ -533,8 +550,9 @@ impl AppState {
     }
 
     /// Smart-reframe analysis of one source (or range) for the crop overlay, through the same
-    /// cache as the render and the CLI. `None` when the job has nothing to analyse (another
-    /// reframe, matching shape, or no face model).
+    /// cache as the render and the CLI. `analysis` is `None` when the job has nothing to analyse
+    /// (another reframe, matching shape, or no face model; `note` then says why). Starting an
+    /// analysis cancels any other: the view shows one source at a time.
     pub async fn analyze_reframe(
         &self,
         analysis_id: String,
@@ -542,18 +560,35 @@ impl AppState {
         span: Option<RangeArg>,
         options: &UpscaleOptions,
         on_event: &(dyn Fn(AnalysisEvent) + Send + Sync),
-    ) -> OpResult<Option<ReframeAnalysis>> {
+    ) -> OpResult<ReframeResult> {
+        if analysis_id.is_empty() || analysis_id.len() > 64 {
+            return Err("invalid analysis id".into());
+        }
+        let span = span.map(RangeArg::span).transpose()?;
         let path = self.require_allowed(path)?;
         let (tools, caps) = self.engine()?;
         let cancel = CancellationToken::new();
-        lock(&self.analyses).insert(analysis_id.clone(), cancel.clone());
+        {
+            let mut running = lock(&self.analyses);
+            if running.contains_key(&analysis_id) {
+                return Err("this analysis is already running".into());
+            }
+            for c in running.values() {
+                c.cancel();
+            }
+            running.insert(analysis_id.clone(), cancel.clone());
+        }
+        // The analysis does not depend on the tier; the CPU tier always plans (an unavailable
+        // tier must not stop the crop path from being found).
+        let options = UpscaleOptions { tier: TierChoice::Cpu, ..options.clone() };
         let result = async {
             let presets = PresetRegistry::load(rmedia_core::settings::config_dir().as_deref());
-            let spec =
-                still::single_job(&tools, &caps, presets, &path, span.map(RangeArg::span), options, &cancel)
-                    .await?;
+            let (spec, warnings) =
+                still::planned_job(&tools, &caps, presets, &path, span, &options, &cancel).await?;
             if spec.up.analysis != AnalysisState::Pending {
-                return Ok(None);
+                let note =
+                    (options.reframe == Reframe::Smart && !warnings.is_empty()).then(|| warnings.join(" · "));
+                return Ok(ReframeResult { analysis: None, note });
             }
             let mut sent = -1.0;
             let (a, _) = reframe::analyze_cached(&tools, &spec, &cancel, |f| {
@@ -564,7 +599,7 @@ impl AppState {
                 }
             })
             .await?;
-            Ok(Some((*a).clone()))
+            Ok(ReframeResult { analysis: Some((*a).clone()), note: None })
         }
         .await;
         lock(&self.analyses).remove(&analysis_id);
@@ -589,27 +624,46 @@ impl AppState {
         at: f64,
         options: &UpscaleOptions,
     ) -> OpResult<UpscalePreview> {
+        let span = span.map(RangeArg::span).transpose()?;
+        let at = seconds(at)?;
         let path = self.require_allowed(path)?;
         let (tools, caps) = self.engine()?;
         let presets = PresetRegistry::load(rmedia_core::settings::config_dir().as_deref());
-        let req = PreviewRequest {
-            path,
-            span: span.map(RangeArg::span),
-            at: Ts::from_secs_f64(at.max(0.0)),
-            options: options.clone(),
-        };
+        let req = PreviewRequest { path, span, at, options: options.clone() };
         let out = self.cache_dir.join("upscale-preview");
-        let p = still::preview_frame(&tools, &caps, presets, &req, &out, &CancellationToken::new())
+        // Only the latest preview matters: the one before it stops.
+        let cancel = CancellationToken::new();
+        if let Some(previous) = lock(&self.preview).replace(cancel.clone()) {
+            previous.cancel();
+        }
+        let p = still::preview_frame(&tools, &caps, presets, &req, &out, &cancel)
             .await
             .map_err(|e| e.to_string())?;
         Ok(UpscalePreview {
-            before: self.media.register(&p.before).map_err(|e| e.to_string())?,
-            after: self.media.register(&p.after).map_err(|e| e.to_string())?,
+            before: self.register_preview(&p.before)?,
+            after: self.register_preview(&p.after)?,
             size: p.size,
             approximate: p.approximate,
             crop_x: p.crop_x,
             in_fallback: p.in_fallback,
         })
+    }
+
+    /// Serves a preview still, forgetting the oldest ones (their files are evicted too).
+    fn register_preview(&self, file: &Path) -> OpResult<String> {
+        let url = self.media.register(file).map_err(|e| e.to_string())?;
+        // Kept canonical: that is the key the media server registered it under.
+        let file = std::fs::canonicalize(file).map_err(|e| e.to_string())?;
+        let mut files = lock(&self.preview_files);
+        if !files.contains(&file) {
+            files.push_back(file);
+        }
+        while files.len() > MAX_PREVIEW_URLS {
+            if let Some(old) = files.pop_front() {
+                self.media.forget(&old);
+            }
+        }
+        Ok(url)
     }
 
     /// Window closing: stop work and revoke every media URL.
@@ -637,10 +691,32 @@ pub struct RangeArg {
 }
 
 impl RangeArg {
-    fn span(self) -> (Ts, EndSpec) {
-        let end = self.end.map_or(EndSpec::EndOfMedia, |e| EndSpec::At(Ts::from_secs_f64(e.max(0.0))));
-        (Ts::from_secs_f64(self.start.max(0.0)), end)
+    fn span(self) -> OpResult<(Ts, EndSpec)> {
+        let end = match self.end {
+            None => EndSpec::EndOfMedia,
+            Some(e) => EndSpec::At(seconds(e)?),
+        };
+        Ok((seconds(self.start)?, end))
     }
+}
+
+/// Preview stills kept servable (the core keeps 48 files: 24 pairs).
+const MAX_PREVIEW_URLS: usize = 48;
+
+/// A time from the page: finite, not negative, at most about 115 days.
+fn seconds(t: f64) -> OpResult<Ts> {
+    if t.is_finite() && (0.0..=1e7).contains(&t) {
+        Ok(Ts::from_secs_f64(t))
+    } else {
+        Err(format!("invalid time {t}"))
+    }
+}
+
+/// `analyze_reframe`'s result: the analysis, or why there is none.
+#[derive(Debug, Clone, Serialize)]
+pub struct ReframeResult {
+    pub analysis: Option<ReframeAnalysis>,
+    pub note: Option<String>,
 }
 
 /// `analyze_reframe` channel events (contracts/tauri-commands.md).

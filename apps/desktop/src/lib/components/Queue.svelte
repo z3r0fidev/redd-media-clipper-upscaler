@@ -165,7 +165,7 @@
               aria-label="End"
             />
             <span class="len mono faint">{lengthOf(c, v.input)}</span>
-            {#if isUpscale(c)}<span class="pill up" title="Upscaled for phones: {upscaleLabel(c)}">↑ {upscaleLabel(c)}</span>{/if}
+            {#if isUpscale(c)}<span class="pill up" title="Upscaled for phones: {upscaleLabel(c)}" aria-label="Upscale: {upscaleLabel(c)}"><span aria-hidden="true">↑</span> {upscaleLabel(c)}</span>{/if}
             <input type="text" class="n" placeholder="name" value={c.name ?? ""} onchange={(e) => (app.queue = updateClip(app.queue, v.input, i, { name: e.currentTarget.value }))} aria-label="Clip name" />
             <button class="icon ghost" aria-label="Remove clip" onclick={() => (app.queue = removeClip(app.queue, v.input, i))}>×</button>
           </div>

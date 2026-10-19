@@ -3,7 +3,8 @@
 ## Overview
 
 The rmedia desktop app lets you choose videos, find the moments you want in a built-in player, mark
-clips with the keyboard, and cut them all in one run. Use it when you want to watch the footage
+clips with the keyboard, and cut them all in one run. It can also make a video ready for a phone
+held upright: see [Upscale for Phones](#upscale-for-phones). Use it when you want to watch the footage
 while you choose clips. Use the [command-line tool](cli-guide.md) when you already know the times
 or want to automate the work.
 
@@ -12,7 +13,7 @@ The window has three panes and a run panel:
 | Area | Position | What it does |
 |---|---|---|
 | **Sources** | Left | The videos you have opened. |
-| **Player** | Centre | Plays the selected source and marks clips. |
+| **Player** | Centre | Plays the selected source. The **Clip** and **Upscale for phone** buttons at its top switch between marking clips and upscaling. |
 | **Queue** | Right | The clips waiting to be cut, with per-video options. |
 | **Run panel** | Bottom (appears during a run) | Progress, results and cancel buttons. |
 
@@ -305,6 +306,57 @@ The folders depend on the operating system's standard per-user folders, for exam
 [Configuration › File locations](../administration/configuration.md#file-locations).
 
 > **Unverified:** The Windows folders have not been checked on a Windows machine.
+
+## Upscale for Phones
+
+Select a video, then select **Upscale for phone** at the top of the player. rmedia makes a copy that
+fills a phone screen held upright: it frames the picture for the screen's shape, scales it up, and
+saves it as an `.mp4` file in an `upscaled` folder next to the video. The original is never changed.
+
+The quickest way: select the video, select **Upscale for phone**, then select **Upscale now**.
+
+### What you see
+
+* **The player** shows the part of the picture that will be kept as a white rectangle. With
+  **Follow faces**, the rectangle moves with the person while the video plays.
+* **Hatched parts of the timeline** are where no single face fits the screen. There the phone shows
+  the whole picture over a blurred copy of it.
+* **The phone-shaped picture** beside the player compares the result at the playhead. Drag across
+  it (or use the arrow keys after selecting it) to see **Before** (plain enlarging) and **After**
+  (rmedia's upscale). It updates when you pause, seek or change a setting. **Centred until
+  analysed** means rmedia is still finding faces; the picture updates when it is done.
+
+### Choices
+
+| Setting | Choices | Default |
+|---|---|---|
+| **Phone screen** | The device presets (for example **Phone fill**, 1080×2340, for most current iPhones, Pixels and Galaxys; **Reddit 9:16**). The phones each preset is for are listed under it. | Phone fill |
+| **Framing** | **Follow faces** (pans with the person; blurred background where nobody fits), **Centre** (crops the middle), **Show all** (the whole picture over a blurred copy) | Follow faces |
+| **Camera movement** | **Calm**, **Normal**, **Fast**: how quickly the frame may pan (Follow faces only) | Normal |
+| **Quality** | **Automatic** (the fastest option that works on this computer), **Standard** (processor), **Graphics card**, **AI** | Automatic |
+
+Choices that are not available on your computer are marked **unavailable**; the line under the
+picker says why. Your choices are remembered for next time.
+
+To upscale only part of a video, mark **In** and **Out** in the player first. The line next to the
+buttons shows **Whole video** or the part that will be used.
+
+### Upscale now or later
+
+* **Upscale now** adds the job to the queue and runs only that job. Other queued clips keep waiting.
+* **Add to queue** keeps it for later. Queued upscales show a badge such as `phone-fill · smart`.
+  Select **Run** in the queue to process everything.
+
+The run panel shows each upscale's stage (**Finding faces**, **Upscaling**, **Checking**) and, when
+it is done, the quality tier used and any parts that used the blurred background. An exported
+queue (**Export…**) runs the same jobs with `rmedia batch` and gives identical files.
+
+### Face model
+
+**Follow faces** needs the face model file. In a source checkout, download it with
+`cargo xtask fetch-models` (packaged builds will include it; not yet available). If it is missing,
+the framing line says so and rmedia uses the blurred background instead. To use a model in another folder, open
+**Settings**, and under **Upscaling quality tiers** select **Models folder › Choose…**.
 
 ## Change Settings
 

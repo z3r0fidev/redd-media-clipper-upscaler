@@ -102,6 +102,16 @@ impl MediaServer {
         reg.by_path.clear();
     }
 
+    /// Forgets one file: its URL stops working (an evicted preview still).
+    pub fn forget(&self, path: &Path) {
+        // Registered under its canonical path; the file itself may already be gone.
+        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let mut reg = self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(id) = reg.by_path.remove(&canonical) {
+            reg.by_id.remove(&id);
+        }
+    }
+
     /// Registers a regular file and returns its URL. Re-registering a path returns the same URL.
     pub fn register(&self, path: &Path) -> std::io::Result<String> {
         let canonical = std::fs::canonicalize(path)?;

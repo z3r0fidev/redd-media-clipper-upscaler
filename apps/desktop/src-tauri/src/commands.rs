@@ -15,10 +15,11 @@ use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::ops::{self, AnalysisEvent, AppState, OpResult, PreviewInfo, RangeArg, UpscalePreview};
+use crate::ops::{
+    self, AnalysisEvent, AppState, OpResult, PreviewInfo, RangeArg, ReframeResult, UpscalePreview,
+};
 use rmedia_core::upscale::UpscaleOptions;
 use rmedia_core::upscale::capability::CheckMode;
-use rmedia_core::upscale::reframe::ReframeAnalysis;
 
 const VIDEO_EXTENSIONS: &[&str] = &rmedia_core::discover::VIDEO_EXTENSIONS;
 
@@ -229,7 +230,7 @@ pub async fn analyze_reframe(
     span: Option<RangeArg>,
     options: UpscaleOptions,
     on_event: Channel<AnalysisEvent>,
-) -> OpResult<Option<ReframeAnalysis>> {
+) -> OpResult<ReframeResult> {
     state.analyze_reframe(analysis_id, &path, span, &options, &move |e| drop(on_event.send(e))).await
 }
 
