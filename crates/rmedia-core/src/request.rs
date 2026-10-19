@@ -150,7 +150,15 @@ impl PartialOptions {
             audio: pick(opts.streams.audio == base.streams.audio).then(|| opts.streams.audio.clone()),
             subtitles: pick(opts.streams.subtitles == base.streams.subtitles)
                 .then_some(opts.streams.subtitles),
-            upscale: PartialUpscale::diff(opts.upscale.as_ref(), base.upscale.as_ref()),
+            upscale: match (&base.upscale, &base.upscale_fill) {
+                // `apply` starts a re-enabling layer from the fill, so diff against it too.
+                (None, Some(fill)) if opts.upscale.is_some() => {
+                    PartialUpscale::diff(opts.upscale.as_ref(), Some(fill))
+                        .map(|p| PartialUpscale { enabled: None, ..p })
+                        .or_else(|| Some(PartialUpscale::default()))
+                }
+                _ => PartialUpscale::diff(opts.upscale.as_ref(), base.upscale.as_ref()),
+            },
         }
     }
 
@@ -392,6 +400,55 @@ mod tests {
             serde_json::json!({"upscale":{"preset":"reddit-916","crf":20}})
         );
         assert_eq!(d.apply(&plain), base);
+    }
+
+    /// A diff against options that carry a command-line fill round-trips too.
+    #[test]
+    fn upscale_diff_round_trips_over_a_fill() {
+        use crate::upscale::UpscaleOptions;
+        let base = Options {
+            upscale_fill: Some(UpscaleOptions { preset: "duo".into(), ..UpscaleOptions::default() }),
+            ..Options::default()
+        };
+        for json in [
+            r#"{"upscale":{}}"#,
+            r#"{"upscale":{"preset":"phone-fill"}}"#,
+            r#"{"upscale":{"tier":"cpu"}}"#,
+            "{}",
+        ] {
+            let opts = layer(json).apply(&base);
+            assert_eq!(PartialOptions::diff(&opts, &base).apply(&base), opts, "round trip of {json}");
+        }
+    }
+
+    #[test]
+    fn capability_check_is_needed_unless_every_upscale_is_forced_cpu() {
+        let req = |d: &str, clips: &[&str]| BatchRequest {
+            defaults: layer(d).apply(&Options::default()),
+            sources: vec![SourceRequest {
+                path: "a.mp4".into(),
+                clips: clips
+                    .iter()
+                    .map(|c| ClipRequest {
+                        start: Ts::ZERO,
+                        end: EndSpec::EndOfMedia,
+                        name: None,
+                        overrides: layer(c),
+                        origin: Origin::Cli,
+                    })
+                    .collect(),
+                overrides: PartialOptions::default(),
+                origin: Origin::Cli,
+            }],
+        };
+        assert!(!req("{}", &["{}"]).needs_capability_check(), "plain clips");
+        assert!(req(r#"{"upscale":{}}"#, &["{}"]).needs_capability_check(), "auto");
+        assert!(!req(r#"{"upscale":{"tier":"cpu"}}"#, &["{}", "{}"]).needs_capability_check(), "forced cpu");
+        assert!(
+            req(r#"{"upscale":{"tier":"cpu"}}"#, &["{}", r#"{"upscale":{"tier":"gpu"}}"#])
+                .needs_capability_check()
+        );
+        assert!(!req(r#"{"upscale":{}}"#, &[r#"{"upscale":{"enabled":false}}"#]).needs_capability_check());
     }
 
     #[test]

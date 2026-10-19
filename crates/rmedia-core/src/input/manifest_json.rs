@@ -476,6 +476,17 @@ mod tests {
     }
 
     #[test]
+    fn container_check_skips_jobs_that_are_not_upscaled() {
+        // A video-level mkv is fine for its plain clip; the whole video with mkv is not.
+        let text = r#"{"version":1,"videos":[
+            {"input":"a.mp4","options":{"container":"mkv","upscale":{}},
+             "clips":[{"start":0,"end":1,"options":{"upscale":{"enabled":false}}}]},
+            {"input":"b.mp4","options":{"container":"mkv","upscale":{}}}]}"#;
+        let err = parse(Path::new("j.json"), text, &Options::default()).unwrap_err();
+        assert_eq!(paths(&err), ["videos[1].options.container"]);
+    }
+
+    #[test]
     fn unknown_upscale_fields_are_rejected() {
         let text = r#"{"version":1,"videos":[{"input":"a.mp4","options":{"upscale":{"scale":2}}}]}"#;
         let err = parse(Path::new("j.json"), text, &Options::default()).unwrap_err();

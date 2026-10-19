@@ -19,7 +19,7 @@ object, which is added to the `options` definition in `manifest.schema.json`:
     "tier":    { "enum": ["auto", "cpu", "gpu", "ai"] },
     "hdr":     { "enum": ["sdr", "keep"] },
     "motion":  { "enum": ["calm", "normal", "fast"] },
-    "crf":     { "type": "integer", "minimum": 0, "maximum": 51 }
+    "crf":     { "type": ["integer", "null"], "minimum": 0, "maximum": 51 }
   }
 }
 ```
@@ -31,8 +31,12 @@ object, which is added to the `options` definition in `manifest.schema.json`:
 - **Whole-video entries:** `clips` may be omitted when upscaling is enabled for the video. The video
   is then processed whole, as if it had one clip `{ "start": 0, "end": "end" }`. If `clips` is
   missing and upscaling is not enabled, the error is reported at the video's JSON path, as in 001.
-- **Ignored or forced options:** `mode` is ignored for upscale jobs, and `container` must be `mp4`
-  or absent.
+- **Ignored or forced options:** `mode` is ignored for upscale jobs. A `container` other than `mp4`
+  set by the manifest on a job that is upscaled is an error at the `options` object that set it
+  (`defaults.container`, `videos[i].options.container`, …). A `--container` given on the command
+  line is only a warning (`upscaled outputs are always .mp4`), because it may suit the plain clips.
+- **`crf: null`** resets a crf set at a higher level to the preset's own quality (so an exported
+  manifest can express every change, FR-022).
 
 **Example:**
 ```json
@@ -50,10 +54,16 @@ object, which is added to the `options` definition in `manifest.schema.json`:
 New optional columns: `upscale_preset`, `upscale_reframe`, `upscale_tier`, `upscale_hdr`,
 `upscale_motion`, `upscale_crf`.
 
-- **Turning upscaling on:** a non-empty upscale cell enables upscaling for that row. A row with only
-  `input` and an upscale column, and empty `start`/`end`/`duration`, processes the whole video.
-- **Turning it off:** `upscale_preset` set to `off` disables upscaling for that row.
+- **Turning upscaling on:** a non-empty upscale cell enables upscaling for that row (`batch
+  --upscale` enables it for every row). A row with upscaling on and empty `start`/`end`/`duration`
+  processes the whole video; the `start` column may then be left out of the header.
+- **Turning it off:** `upscale_preset` set to `off` disables upscaling for that row; it cannot be
+  combined with other `upscale_*` values in the same row.
+- **Values:** the same words as JSON (case-insensitive), `upscale_crf` 0–51; errors name the line.
 - **Unknown columns:** still rejected, as in 001.
+- **Writing:** a CSV export adds the `upscale_*` columns only when some row is upscaled, and writes
+  every field of such a row (and `off` for the others), so the file does not depend on the defaults
+  it is later read with.
 
 ## Desktop export
 

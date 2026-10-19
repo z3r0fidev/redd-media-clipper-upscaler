@@ -110,6 +110,26 @@ Options:
   -h, --help                   Print help
 ```
 
+### Clip and Upscale in One Pass
+
+`--upscale` makes every clip phone-ready while it is cut: one ffmpeg process per clip, no
+intermediate file. It accepts the upscale flags of [`rmedia upscale`](#upscale-options) (`--preset`,
+`--reframe`, `--tier`, `--hdr`, `--motion`, `--crf`); `--crop-path` and `--no-analyze` are
+`upscale`-only. Those flags without `--upscale` are a usage error (exit 2:
+`error: --preset needs --upscale`). `--mode` does not apply (upscaling always
+re-encodes) and outputs are always `.mp4`.
+
+- Names: `{source}_{index:03}_{name-or-range}_{preset}.mp4` in `clips/` next to the source. With
+  `-o` and several sources: `{source}/{source}_{index:03}_{name-or-range}_{preset}.mp4`.
+- A clip from 0 to the end of the video is a whole-video upscale: `{source}_{preset}.mp4` in
+  `upscaled/`.
+- Folder scans skip both `clips/` and `upscaled/` (or the `-o` folder).
+
+```bash
+rmedia clip land.mp4 -s 0 -e 4 --upscale --preset reddit-feed-45
+# ✓ …/clips/land_001_00-00-00.000_00-00-04.000_reddit-feed-45.mp4   (1080x1350, H.264)
+```
+
 ### Argument Rules (from clap)
 
 | Rule | Detail |
@@ -136,7 +156,9 @@ Implemented in `commands/scan.rs` › `expand_inputs`:
 - rmedia's own outputs are excluded from folder scans so re-runs never clip earlier clips:
   - With `-o DIR`, that folder is excluded by real path. If `-o` is one of the scanned folders,
     the command fails with exit 3.
-  - Without `-o`, every folder named `clips` (case-insensitive) is skipped, and a note is printed.
+  - Every folder named `clips` or `upscaled` (rmedia's default output folders, case-insensitive)
+    is skipped, with or without `-o`, and a note is printed. Pass such a folder directly to use
+    its videos.
 - A video reached twice (as a file and through a folder, for example) is clipped once.
 - If no inputs remain: `error: no input videos (folders contained no videos)`, exit 3.
 
@@ -235,9 +257,17 @@ Notes:
   `warning: <origin>: <path> not found; skipping its N clip(s)`. If none remain, exit 3. Without
   this flag, a missing source is a `SOURCE_MISSING` plan error and nothing runs (exit 3).
 - `-j` is 1–64. The default is the same as `clip`.
+- **Upscaling** (feature 002) follows the manifest's `upscale` options
+  ([File Formats › Upscaling](file-formats.md#upscaling-in-manifests)). The upscale flags
+  `--preset`, `--reframe`, `--tier`, `--hdr`, `--motion` and `--crf` fill the fields of the videos
+  that the manifest upscales, under the manifest's own values; on their own they never turn
+  upscaling on. `--upscale` turns it on for every video (a manifest `"enabled": false` still wins).
+  The GPU check runs only when some job is upscaled on a tier other than a forced `cpu`.
 
 ```bash
 rmedia batch jobs.json
+rmedia batch phone.json --preset reddit-916      # fills videos with "upscale": {}
+rmedia batch jobs.csv --upscale --tier cpu       # every row upscaled on the CPU
 rmedia batch jobs.csv --dry-run --json
 rmedia batch jobs.csv --json > run.ndjson
 ```
@@ -296,8 +326,8 @@ $ rmedia scan v
 
 Makes each input video phone-ready: it scales and reframes the whole video to a device preset's
 screen size, re-encodes it and verifies the result. Added in the unreleased 0.2.0-dev
-([release notes](../releases/0.2.0-dev.md)). The CPU and GPU tiers and smart reframe exist; the AI
-tier, batch/manifest upscaling and `clip --upscale` are planned ([Roadmap](../roadmap.md)).
+([release notes](../releases/0.2.0-dev.md)). The CPU and GPU tiers, smart reframe, manifest
+upscaling (`batch`) and `clip --upscale` exist; the AI tier is planned ([Roadmap](../roadmap.md)).
 
 ```text
 rmedia upscale [OPTIONS] [INPUT]...
@@ -306,7 +336,8 @@ rmedia upscale --list-presets [--json]
 
 Each input is processed whole, one job per video. Inputs are files, folders (scanned with the
 `scan` options) or `--inputs-from FILE|-`. `INPUT` is required unless `--inputs-from` or
-`--list-presets` is given. To upscale part of a video, cut it first with `rmedia clip`.
+`--list-presets` is given. To upscale part of a video, use `rmedia clip … --upscale` (one pass,
+no intermediate file) or a manifest.
 
 ### Upscale Options
 
@@ -331,7 +362,7 @@ and `-q` are accepted, with these differences from `clip`:
 - Outputs are always `.mp4`. Another `--container` is ignored with the warning
   `upscaled outputs are always .mp4`.
 - The default output folder is `upscaled/` next to each source (`-o` replaces it). While
-  scanning folders, the `upscaled/` folders and the `-o` folder are excluded.
+  scanning folders, folders named `upscaled` or `clips` and the `-o` folder are excluded.
 - The default name is `{source}_{preset}.mp4`. The name template also accepts `{preset}`, which
   is valid only for upscale jobs.
 

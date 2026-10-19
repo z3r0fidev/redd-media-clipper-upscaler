@@ -31,7 +31,9 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
         },
     };
     if !args.upscale && args.up.any() {
-        eprintln!("error: {} only apply with --upscale", args.up.given().join(", "));
+        let given = args.up.given();
+        let verb = if given.len() == 1 { "needs" } else { "need" };
+        eprintln!("error: {} {verb} --upscale", given.join(", "));
         return exit::USAGE;
     }
     let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
@@ -39,15 +41,13 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };
-    // A clip from the start with no end is a whole video, which goes to `upscaled/`.
-    let default_dirs: &[&str] = if args.upscale { &["clips", "upscaled"] } else { &["clips"] };
     let inputs = match super::scan::expand_inputs(
         &found.0,
         &args.inputs,
         args.inputs_from.as_deref(),
         &args.scan,
         args.common.output_dir.as_deref(),
-        default_dirs,
+        "clips",
         &out,
     )
     .await

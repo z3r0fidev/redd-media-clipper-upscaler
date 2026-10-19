@@ -443,13 +443,19 @@ rmedia batch jobs.json || echo "rmedia exited with $?"
 ## Make Videos Phone-Ready
 
 > **Availability:** `rmedia upscale` is in development (0.2.0-dev, branch `002-mobile-upscale`)
-> and is not in the 0.1.0 packages. Smart reframe, GPU and AI quality tiers, upscaling from
-> `clip` or `batch`, and the desktop upscale view are planned and not available. See the
+> and is not in the 0.1.0 packages. Smart reframe, the GPU tier, `clip --upscale` and manifest
+> upscaling exist there; the AI tier and the desktop upscale view are planned. See the
 > [Roadmap](../roadmap.md).
 
 `rmedia upscale` scales each video to the screen size of a phone and re-encodes it, so it fills
 the screen without black bars. Each video is processed whole. To upscale only a part of a video,
-cut it first with `rmedia clip`.
+add `--upscale` to `rmedia clip` (it cuts and upscales in one pass), or list the clips in a
+manifest with an `upscale` object:
+
+```bash
+rmedia clip game.mp4 -s 1:10 -e 1:40 --upscale --preset reddit-916
+rmedia batch phone.json --preset reddit-916   # fills videos the manifest upscales
+```
 
 ```bash
 # the default preset (phone-fill, 1080x2340)

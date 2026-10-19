@@ -28,7 +28,7 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
         args.inputs_from.as_deref(),
         &args.scan,
         args.common.output_dir.as_deref(),
-        &["upscaled"],
+        "upscaled",
         &out,
     )
     .await

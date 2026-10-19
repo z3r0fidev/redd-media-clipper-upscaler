@@ -212,9 +212,12 @@ fn upscale_folder_and_inputs_from_skip_output_folders() {
     };
     let dir = videos.to_str().unwrap();
     assert_eq!(sources(&run(&[dir])), ["a.mp4", "b.mp4"], "upscaled/ is skipped");
-    // With -o, that folder is skipped instead (and default-named folders are scanned).
+    // With -o, that folder is skipped too; default-named folders always are (`clips/` as well).
+    std::fs::create_dir_all(videos.join("clips")).unwrap();
+    copy(Fixture::TinySource, &videos.join("clips"), "a_001_x.mp4");
     let doc = run(&[dir, "-o", videos.join("mine").to_str().unwrap()]);
-    assert_eq!(sources(&doc), ["a.mp4", "a_phone-fill.mp4"]);
+    assert_eq!(sources(&doc), ["a.mp4"]);
+    assert_eq!(sources(&run(&[dir])), ["a.mp4", "b.mp4"]);
     // A list of paths, relative to the list file.
     std::fs::write(d.path().join("list.txt"), "videos/a.mp4\n# comment\nvideos/mine/b.mp4\n").unwrap();
     let doc = run(&["--inputs-from", d.path().join("list.txt").to_str().unwrap()]);
@@ -252,7 +255,7 @@ fn clip_upscale_uses_the_preset_and_clip_names() {
         .output()
         .unwrap();
     assert_eq!(o.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&o.stderr).contains("--preset only apply with --upscale"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("--preset needs --upscale"));
     // Many sources into one folder: the clips keep their per-source sub-folder.
     let b = copy(Fixture::TinySource, d.path(), "b.mp4");
     let o = rmedia(d.path())
@@ -309,4 +312,36 @@ fn batch_upscale_flags_are_defaults_under_the_manifest() {
         doc["jobs"][2]["output"]
     );
     assert_eq!(entries(d.path()), ["a.mp4", "b.mp4", "c.mp4", "m.json"]);
+
+    // The flags also fill a layer that turns upscaling back on below an `enabled: false`; a named
+    // clip of the whole video keeps its name; crf out of range is an input error.
+    std::fs::write(
+        &m,
+        r#"{"version":1,"videos":[
+            {"input":"a.mp4","options":{"upscale":{"enabled":false}},
+             "clips":[{"start":0,"name":"full","options":{"upscale":{}}}]}]}"#,
+    )
+    .unwrap();
+    let doc = run(&["--upscale", "--preset", "duo", "--reframe", "center"]);
+    assert_eq!(preset(&doc, 0).as_deref(), Some("duo"));
+    assert!(
+        doc["jobs"][0]["output"].as_str().unwrap().ends_with("clips/a_001_full_duo.mp4"),
+        "{}",
+        doc["jobs"][0]["output"]
+    );
+    std::fs::write(&m, r#"{"version":1,"videos":[{"input":"a.mp4","options":{"upscale":{"crf":60}}}]}"#)
+        .unwrap();
+    let o = rmedia(d.path()).arg("batch").arg(&m).args(["--dry-run"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(3), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("crf 60 is out of range"));
+    // Flags that nothing uses are reported.
+    std::fs::write(&m, r#"{"version":1,"videos":[{"input":"a.mp4","clips":[{"start":0,"end":1}]}]}"#)
+        .unwrap();
+    let o = rmedia(d.path()).arg("batch").arg(&m).args(["--dry-run", "--tier", "cpu"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("--tier had no effect"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
 }

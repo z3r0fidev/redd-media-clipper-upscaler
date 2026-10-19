@@ -34,10 +34,12 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
     }
     // Upscale flags fill the fields of videos the manifest upscales; only --upscale turns
     // upscaling on for every video (a manifest `enabled: false` still wins).
+    if args.upscale || args.up.any() {
+        // Also the base of a layer that turns upscaling back on below an `enabled: false`.
+        defaults.upscale_fill = Some(args.up.options());
+    }
     if args.upscale {
         defaults.upscale = Some(args.up.options());
-    } else if args.up.any() {
-        defaults.upscale_fill = Some(args.up.options());
     }
 
     let ext = manifest.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
@@ -53,6 +55,14 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
         Ok(r) => r,
         Err(issues) => return out.issues(&issues),
     };
+
+    if args.up.any() && !req.resolved().any(|o| o.upscale.is_some()) {
+        // stderr even with --json; the flags only fill videos the manifest upscales.
+        eprintln!(
+            "warning: {} had no effect: the manifest upscales no video (add an \"upscale\" object, or use --upscale)",
+            args.up.given().join(", ")
+        );
+    }
 
     if args.continue_on_missing {
         let (present, missing): (Vec<_>, Vec<_>) = req.sources.into_iter().partition(|s| s.path.exists());

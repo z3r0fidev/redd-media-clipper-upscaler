@@ -114,7 +114,7 @@ Schema: `specs/001-video-clipping/contracts/manifest.schema.json`. Parser:
 | `videos` | array, ≥ 1 | Yes | |
 | `videos[].input` | string | Yes | Relative paths resolve against the manifest's folder |
 | `videos[].options` | options object | No | Per-video overrides |
-| `videos[].clips` | array, ≥ 1 | Yes | |
+| `videos[].clips` | array, ≥ 1 | Yes, unless upscaling is on for the video | Left out with upscaling on: the whole video is one job (see [Upscaling](#upscaling-in-manifests)) |
 | `clips[].start` | time | Yes | Number of seconds or a grammar string. **No** `+`. |
 | `clips[].end` | time | No | Number = position. String = `end`, `+DURATION` (a duration), or a position. |
 | `clips[].duration` | time | No | Number or string; a leading `+` is optional. Not allowed together with `end`. |
@@ -134,6 +134,44 @@ A clip with neither `end` nor `duration` runs to the end of the video.
 | `on_exists` | `"skip"` \| `"overwrite"` \| `"rename"` | |
 | `audio` | `"all"` \| `"none"` \| array of 1-based track numbers | |
 | `subtitles` | `"all"` \| `"none"` | |
+| `upscale` | upscale object | Feature 002; see [Upscaling in manifests](#upscaling-in-manifests) |
+
+### Upscaling in Manifests
+
+Contract: `specs/002-mobile-upscale/contracts/manifest-upscale.md`. The manifest stays at
+version 1; 001 manifests run unchanged.
+
+```json
+{ "version": 1, "defaults": { "upscale": {} },
+  "videos": [ { "input": "low.mp4" },
+              { "input": "land.mp4", "options": { "upscale": { "preset": "reddit-916" } },
+                "clips": [ { "start": 1, "end": 5, "name": "pan" } ] },
+              { "input": "slides.mp4", "options": { "upscale": { "reframe": "blur", "tier": "cpu" } } } ] }
+```
+
+This writes `upscaled/low_phone-fill.mp4` (1080x2340), `clips/land_001_pan_reddit-916.mp4`
+(1080x1920) and `upscaled/slides_phone-fill.mp4` (1080x2340).
+
+| Key | Values | Notes |
+|---|---|---|
+| `enabled` | `true` \| `false` | `false` turns upscaling off at this level |
+| `preset` | preset id | See `rmedia upscale --list-presets` |
+| `reframe` | `"smart"` \| `"center"` \| `"blur"` | |
+| `tier` | `"auto"` \| `"cpu"` \| `"gpu"` \| `"ai"` | |
+| `hdr` | `"sdr"` \| `"keep"` | |
+| `motion` | `"calm"` \| `"normal"` \| `"fast"` | |
+| `crf` | 0–51 or `null` | `null` resets a crf set at a higher level to the preset's |
+
+- An `upscale` object turns upscaling on at its level (`{}` with the defaults), unless it says
+  `"enabled": false`. Fields layer defaults < video < clip, one by one; unknown fields are
+  rejected.
+- A video without `clips` is valid only when upscaling is on for it; otherwise the error is at
+  `videos[i]`: `no clips for this video (list clips, or turn upscaling on to process the whole video)`.
+- `mode` does not apply to upscaled jobs. A `container` other than `mp4` that the manifest sets
+  for an upscaled job is an error at the object that set it, for example
+  `videos[3].options.container: upscaled outputs are always .mp4; container "mov" cannot be used`.
+- `rmedia batch` upscale flags fill the fields of upscaled videos under these values; `--upscale`
+  turns upscaling on for every video ([CLI reference](cli-reference.md#rmedia-batch)).
 
 ### Strictness and Errors
 
@@ -185,8 +223,14 @@ match13.mp4,12:00,end,,,accurate,
 | `name` | No | Clip name |
 | `mode` | No | `fast` \| `accurate` (case-insensitive) |
 | `output` | No | Output folder for this clip (relative → manifest's folder) |
+| `upscale_preset` | No | Preset id, or `off` to turn upscaling off for the row (feature 002) |
+| `upscale_reframe`, `upscale_tier`, `upscale_hdr`, `upscale_motion` | No | Same words as the JSON `upscale` object (case-insensitive) |
+| `upscale_crf` | No | 0–51 |
 
 - Without `end` and `duration`, a clip runs to the end of the video.
+- Any non-empty `upscale_*` cell turns upscaling on for the row. A row with upscaling on and empty
+  `start`, `end` and `duration` is the whole video; the `start` column may then be left out of the
+  header. `upscale_preset=off` cannot be combined with other `upscale_*` values.
 - Rows that share an `input` are grouped into one source, in order of first appearance.
 - CSV cannot express container, name template, on-exists or stream selection. CLI flags supply
   those (`--container`, `--name`, `--on-exists`); stream selection is unavailable for CSV.
@@ -197,7 +241,9 @@ match13.mp4,12:00,end,,,accurate,
   `malformed row: …`.
 
 **CSV export** from the desktop app resolves each clip's options (defaults < video < clip) and
-writes `mode` and `output` on every row. Other options are not written.
+writes `mode` and `output` on every row. When some row is upscaled, the six `upscale_*` columns are
+added and filled in full (`off` for plain rows), so the file reads the same with any CLI defaults.
+Other options are not written.
 
 **Equivalence (FR-007):** a JSON and a CSV manifest with the same content produce the same jobs.
 This was verified by running `rmedia batch jobs.json --dry-run --json` and the CSV equivalent;

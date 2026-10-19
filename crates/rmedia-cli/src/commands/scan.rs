@@ -125,6 +125,9 @@ async fn scan_with_options(
     }
 }
 
+/// The folders rmedia writes to by default (`clip` → `clips/`, `upscale` → `upscaled/`).
+pub const DEFAULT_OUTPUT_DIRS: [&str; 2] = ["clips", "upscaled"];
+
 /// Expands `clip` inputs: files as given, folders scanned, plus `--inputs-from` (file or stdin).
 pub async fn expand_inputs(
     tools: &Tools,
@@ -132,7 +135,7 @@ pub async fn expand_inputs(
     inputs_from: Option<&str>,
     flags: &ScanFlags,
     output_dir: Option<&Path>,
-    default_dirs: &[&str],
+    default_dir: &str,
     out: &Output,
 ) -> Result<Vec<PathBuf>, u8> {
     let mut all: Vec<PathBuf> = inputs.iter().map(|p| absolute(p)).collect();
@@ -158,26 +161,23 @@ pub async fn expand_inputs(
         // Never treat our own outputs as new sources on a re-run.
         // Compared as real paths / exact names — never as globs (folder names may contain `[`, `*`).
         let mut opts = flags.options();
-        match output_dir.map(absolute) {
-            Some(o) => {
-                let same = |d: &PathBuf| {
-                    std::fs::canonicalize(d)
-                        .ok()
-                        .zip(std::fs::canonicalize(&o).ok())
-                        .is_some_and(|(a, b)| a == b)
-                };
-                if dirs.iter().any(same) {
-                    return Err(out.input_error(&format!(
-                        "the output folder {} is also a scanned input folder; outputs would be mixed \
-                         with the sources and picked up again. Use a sub-folder, e.g. -o {}",
-                        o.display(),
-                        o.join(default_dirs[0]).display()
-                    )));
-                }
-                opts.exclude_dirs.push(o)
+        if let Some(o) = output_dir.map(absolute) {
+            let same = |d: &PathBuf| {
+                std::fs::canonicalize(d).ok().zip(std::fs::canonicalize(&o).ok()).is_some_and(|(a, b)| a == b)
+            };
+            if dirs.iter().any(same) {
+                return Err(out.input_error(&format!(
+                    "the output folder {} is also a scanned input folder; outputs would be mixed \
+                     with the sources and picked up again. Use a sub-folder, e.g. -o {}",
+                    o.display(),
+                    o.join(default_dir).display()
+                )));
             }
-            None => opts.exclude_dir_names.extend(default_dirs.iter().map(|d| (*d).to_owned())),
+            opts.exclude_dirs.push(o);
         }
+        // Every default output folder, whichever command wrote it, so no command picks up
+        // another's outputs (`clip --upscale` writes to both).
+        opts.exclude_dir_names.extend(DEFAULT_OUTPUT_DIRS.iter().map(|d| (*d).to_owned()));
         let found = scan_with_options(tools, &dirs, &opts, out).await?;
         if !out.quiet && !out.json {
             eprintln!(
@@ -196,7 +196,7 @@ pub async fn expand_inputs(
                 "note: skipped {} folder(s) named {} (rmedia's default output folders); \
                  pass such a folder directly to use its videos as sources",
                 found.excluded_named.len(),
-                default_dirs.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(" or ")
+                DEFAULT_OUTPUT_DIRS.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(" or ")
             );
         }
         sources.extend(found.videos.into_iter().map(|v| v.path));

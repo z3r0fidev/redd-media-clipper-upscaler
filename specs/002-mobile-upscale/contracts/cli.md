@@ -55,14 +55,22 @@ record, and it writes `--crop-path FILE` when that flag is given.
 
 ## `rmedia clip … --upscale`
 
-`clip` accepts `--upscale` plus every upscale option above. Every clip is then cut and upscaled in
-one pass (FR-018). Upscale options without `--upscale` are a usage error (exit 2).
+`clip` accepts `--upscale` plus every upscale option above except `--crop-path` and `--no-analyze`.
+Every clip is then cut and upscaled in one pass (FR-018). Upscale options without `--upscale` are a
+usage error (exit 2).
+- Names: `{source}_{index:03}_{name-or-range}_{preset}.mp4` in `<source dir>/clips/`; with `-o`
+  and several sources, `{source}/{source}_{index:03}_{name-or-range}_{preset}.mp4`. A clip from 0
+  to the end is a whole video (`{source}_{preset}.mp4` in `upscaled/`).
+- Folder scans skip both `clips/` and `upscaled/` (or the `-o` folder).
 
 ## `rmedia batch`
 
 Upscaling follows the manifest's `upscale` fields ([manifest-upscale.md](./manifest-upscale.md)).
-`batch` also accepts the upscale flags, which act as command-line defaults; layering is unchanged
-from 001.
+`batch` also accepts the upscale flags (except `--crop-path`/`--no-analyze`) and `--upscale`:
+- The flags fill the fields of the videos that the manifest upscales, under the manifest's own
+  values. On their own they never turn upscaling on.
+- `--upscale` turns upscaling on for every video (a manifest `"enabled": false` still wins), with
+  the flags as its settings.
 
 ## `rmedia doctor`
 

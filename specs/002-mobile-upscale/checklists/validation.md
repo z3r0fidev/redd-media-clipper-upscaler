@@ -59,3 +59,23 @@
     (`doctor --recheck` after a driver update).
   - A verify failure on the GPU tier is not retried on the CPU.
   - GPU output may differ slightly between GPUs and drivers.
+
+## US4 checkpoint (2026-10-19)
+
+- quickstart › US4 (bundled n9.0.2, CPU tier): `rmedia batch m.json` → `upscaled/low_phone-fill.mp4`
+  1080x2340 hvc1, `clips/land_001_pan_reddit-916.mp4` 1080x1920 avc1,
+  `upscaled/slides_phone-fill.mp4` 1080x2340 hvc1 in 36.6 s; `rmedia clip land.mp4 -s 0 -e 4
+  --upscale --preset reddit-feed-45` → 1080x1350 avc1 in 4.2 s. No `.part`, scratch folder or
+  intermediate clip left.
+- Partial clips (MP4 with chapters, MPEG-TS starting at 10 s; 2–6 s): duration 4.0 s ± 0.05,
+  first video frame at 0, audio within one frame of video, chapters dropped. One render stage per
+  job.
+- One video failing (source removed after planning) → the other completes; summary 1/1, exit 1.
+- Reviews: senior-code-reviewer (0 critical/high; 2 medium fixed: `batch --upscale` flags lost
+  under an `enabled:false` → re-enable, unused `batch` flags silent) and security-auditor (0
+  critical/high; 1 medium fixed: every scan now skips both `clips/` and `upscaled/` plus `-o`).
+- **Known limits:**
+  - A CSV row cannot say "the preset's crf": an empty `upscale_crf` inherits a CLI `--crf`.
+  - Folders named `clips` or `upscaled` inside a scanned tree are always skipped (a note says so;
+    pass the folder directly to use it).
+  - Dry runs may run the machine check (once per hardware or app change), as `upscale` already did.

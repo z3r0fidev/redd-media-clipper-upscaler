@@ -17,11 +17,11 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 | 3 US1 MVP: CPU tier, `rmedia upscale` | T022–T041 | 20/20 | done | done (1 high, 6 medium fixed) | done (1 medium, 5 low addressed) | see log |
 | 4 US2 Smart reframe | T042–T061 | 20/20 | done | done (1 high, 6 medium fixed) | done (2 low, 3 info fixed) | 363b860, 68bd4b6, 4be74aa, + |
 | 5 US3 GPU tier, capability | T062–T073 | 12/12 | done | done (3 high, 6 medium fixed) | done (3 medium, 6 low addressed) | (US3 commit) |
-| 6 US4 Batch, `clip --upscale` | T074–T081 | 0/8 | ▶ next | required | required (discovery, paths) | |
-| 7 US5 Desktop view | T082–T092 | 0/11 | pending | required | required (IPC surface) | |
+| 6 US4 Batch, `clip --upscale` | T074–T081 | 8/8 | done | done (2 medium, 7 low fixed or noted) | done (1 medium, 4 low; 3 fixed) | 549aa1e, c4a1833, dffb353, 8b01477 |
+| 7 US5 Desktop view | T082–T092 | 0/11 | ▶ next | required | required (IPC surface) | |
 | 8 US6 AI worker | T093–T105 | 0/13 | pending | required | required (FFI, pipes) | |
 | 9 Polish | T106–T112 | 0/7 | pending | final pass | — | |
-| **Total** | | **73/112** | | | | |
+| **Total** | | **81/112** | | | | |
 
 Status values: `pending`, `▶ next`, `in progress`, `checkpoint`, `done`.
 
@@ -56,3 +56,4 @@ Project-wide roadmap: `docs/roadmap.md` (must agree with this page).
 | 2026-10-15 | Session close | No code changes. Docs brought up to date (`docs/` CLI reference, JSON output, configuration, architecture, user guides, release notes 0.2.0-dev, new `docs/roadmap.md`); `cargo test --workspace` re-run: 182 passed, 0 failed, 3 ignored. Next: US2 (T042–T061), plan-mode pass first. No git remote and no `main` branch yet (owner to decide). | see git log |
 | 2026-10-16 | US2 | Smart reframe: YuNet under tract, cuts, smoothed crop path, sendcmd graph, cache, `--crop-path`. SC-004 100% inside; SC-005 analysis 10.7 s vs 79 s render. Reviews fixed. | 3433696 |
 | 2026-10-19 | US3 | GPU tier (libplacebo, VMAF parity), capability record and self-tests, auto/forced selection with speed guard, one CPU fallback with demotion, `doctor` tiers and `--recheck`, desktop Check again. Reviews fixed (async probes via `exec::process`, inconclusive checks not stored, demote after CPU success). 244 tests pass (6 ignored). | (this commit) |
+| 2026-10-19 | US4 | `upscale` in JSON (every level, whole videos without `clips`, container check) and CSV (`upscale_*`, `off`, whole-video rows) manifests; `Options.upscale_fill` for `batch` flags and `batch --upscale`; `crf: null`; `clip --upscale` in one pass; scans always skip `clips/` and `upscaled/`. Reviews fixed (fill kept under re-enable, unused batch flags warned, diff over a fill, CSV messages escaped, named whole-video clips keep their name). 263 tests pass (6 ignored). | 549aa1e, c4a1833, dffb353, 8b01477, (this commit) |

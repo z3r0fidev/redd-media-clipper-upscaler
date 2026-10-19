@@ -198,7 +198,7 @@ fn upscale_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<Par
     ) -> Option<T> {
         let v = v?;
         serde_json::from_value(serde_json::Value::String(v.to_ascii_lowercase()))
-            .map_err(|_| issues.push(format!("{col} must be one of {allowed}, not \"{v}\"")))
+            .map_err(|_| issues.push(format!("{col} must be one of {allowed}, not {v:?}")))
             .ok()
     }
     let [preset, reframe, tier, hdr, motion, crf] = cells else { unreachable!("six upscale columns") };
@@ -211,7 +211,7 @@ fn upscale_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<Par
     let crf = crf.map(|c| match c.parse::<u8>() {
         Ok(n) if n <= MAX_CRF => Some(n),
         _ => {
-            issues.push(format!("upscale_crf must be a whole number from 0 to {MAX_CRF}, not \"{c}\""));
+            issues.push(format!("upscale_crf must be a whole number from 0 to {MAX_CRF}, not {c:?}"));
             None
         }
     });
@@ -297,7 +297,8 @@ pub fn write(req: &BatchRequest) -> String {
             ];
             if upscaled {
                 match &o.upscale {
-                    // Written in full so the row does not depend on the defaults it is read with.
+                    // Written in full so the row does not depend on the defaults it is read with
+                    // (except an unset crf: CSV cannot say "the preset's", so it is inherited).
                     Some(u) => row.extend([
                         u.preset.clone(),
                         word(&u.reframe),
@@ -482,6 +483,9 @@ mod tests {
         );
         let again = parse(Path::new("/m/j.csv"), &written, &Options::default()).unwrap();
         assert_eq!((up(&again, 0, 0), up(&again, 1, 0)), (up(&req, 0, 0), up(&req, 1, 0)));
+        for (a, b) in req.sources.iter().zip(&again.sources) {
+            assert_eq!((a.clips[0].start, a.clips[0].end), (b.clips[0].start, b.clips[0].end));
+        }
         // Even when read with upscaling on from the command line.
         let cli = Options { upscale: Some(crate::upscale::UpscaleOptions::default()), ..Options::default() };
         assert_eq!(up(&parse(Path::new("/m/j.csv"), &written, &cli).unwrap(), 1, 0), None);

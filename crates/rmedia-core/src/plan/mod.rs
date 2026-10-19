@@ -325,6 +325,8 @@ impl Planner<'_> {
             None => None,
         };
         let whole = clip.start == Ts::ZERO && clip.end == EndSpec::EndOfMedia;
+        // Named like a whole-video upscale unless the user named the clip (names stay distinct).
+        let whole_video = whole && clip.name.is_none();
         // Upscaling always re-encodes, so it cuts like accurate mode (and `mode` is ignored).
         let mode = if up.is_some() { Mode::Accurate } else { opts.mode };
 
@@ -444,13 +446,15 @@ impl Planner<'_> {
         let out_dir = match &opts.output_dir {
             Some(d) if d.is_absolute() => d.clone(),
             Some(d) => std::path::absolute(d).unwrap_or_else(|_| d.clone()),
-            None => source_dir.join(if up.is_some() && whole { "upscaled" } else { "clips" }),
+            None => source_dir.join(if up.is_some() && whole_video { "upscaled" } else { "clips" }),
         };
         let template = match &up {
-            Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE && whole => UPSCALE_NAME_TEMPLATE,
+            Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE && whole_video => UPSCALE_NAME_TEMPLATE,
             Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE => UPSCALE_CLIP_NAME_TEMPLATE,
             // Whole-video names are unique per folder already; clips keep their sub-folder.
-            Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE && whole => UPSCALE_NAME_TEMPLATE,
+            Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE && whole_video => {
+                UPSCALE_NAME_TEMPLATE
+            }
             Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE => UPSCALE_MULTI_CLIP_NAME_TEMPLATE,
             _ => opts.name_template.as_str(),
         };
