@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{ExitStatus, Stdio};
 
 use process_wrap::tokio::ChildWrapper;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::BufReader;
 
 use super::JobCtx;
 use super::process::{self, Group};
@@ -38,21 +38,24 @@ impl WorkerReport {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
             && v["type"] == "error"
         {
-            let s = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
+            // The worker is less trusted: no control characters reach terminals or logs.
+            let s = |k: &str| {
+                v[k].as_str().unwrap_or_default().chars().filter(|c| !c.is_control()).take(500).collect()
+            };
             self.error = Some((s("code"), s("message")));
         }
         if self.tail.len() == TAIL_LINES {
             self.tail.remove(0);
         }
-        self.tail.push(line);
+        self.tail.push(line.chars().filter(|c| !c.is_control()).collect());
     }
 }
 
 async fn worker_report(stderr: Option<tokio::process::ChildStderr>) -> WorkerReport {
     let mut report = WorkerReport::default();
     if let Some(stderr) = stderr {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
+        let mut reader = BufReader::new(stderr);
+        while let Ok(Some(line)) = process::next_line_bounded(&mut reader, MAX_LINE * 4).await {
             report.feed(&line);
         }
     }
@@ -117,8 +120,8 @@ pub(super) async fn run(
     if let Some(stdout) = stages.children[ENCODE].stdout().take() {
         tokio::spawn(async move {
             let mut parser = ProgressParser::default();
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            let mut reader = BufReader::new(stdout);
+            while let Ok(Some(line)) = process::next_line_bounded(&mut reader, MAX_LINE).await {
                 if let Some(block) = parser.feed(&line) {
                     let _ = tx.send(block);
                 }
@@ -139,7 +142,7 @@ pub(super) async fn run(
             let (i, r) = tokio::select! {
                 () = cancel.cancelled(), if !cancelled => {
                     cancelled = true;
-                    kill_running(pgid, [d, w, e], &running, &mut killed);
+                    kill_running(pgid, [d, w, e], &mut status, &mut killed);
                     continue;
                 }
                 block = progress.recv(), if progress_open => {
@@ -156,8 +159,7 @@ pub(super) async fn run(
             let st = r?;
             status[i] = Some(st);
             if !st.success() && !cancelled {
-                let still = [status[0].is_none(), status[1].is_none(), status[2].is_none()];
-                kill_running(pgid, [d, w, e], &still, &mut killed);
+                kill_running(pgid, [d, w, e], &mut status, &mut killed);
             }
         }
     }
@@ -175,6 +177,7 @@ pub(super) async fn run(
         failed(DECODE),
         failed(WORKER).then(|| report.error.as_ref().map(|e| e.0.as_str())),
         failed(ENCODE),
+        status[ENCODE].is_some_and(|s| s.success()),
     );
     match cause {
         None => Ok(()),
@@ -193,15 +196,24 @@ pub(super) async fn run(
     }
 }
 
-/// Kills the stages still running and marks them killed. On Unix the whole group goes first:
-/// ffmpeg #1 leads it, and its id stays the group's while any member is unreaped (callers stop
-/// once all three are reaped, so the id cannot have been reused).
+/// Kills the stages still running and marks them killed. A stage that has already exited (but
+/// was not reaped yet) keeps its own status: its failure may be the cause. On Unix the whole
+/// group goes: ffmpeg #1 leads it, and its id stays the group's while any member is unreaped
+/// (callers stop once all three are reaped, so the id cannot have been reused).
 fn kill_running(
     pgid: u32,
-    children: [&mut Box<dyn ChildWrapper>; 3],
-    running: &[bool; 3],
+    mut children: [&mut Box<dyn ChildWrapper>; 3],
+    status: &mut [Option<ExitStatus>; 3],
     killed: &mut [bool; 3],
 ) {
+    for (i, child) in children.iter_mut().enumerate() {
+        if status[i].is_none()
+            && let Ok(Some(st)) = child.try_wait()
+        {
+            status[i] = Some(st);
+        }
+    }
+    let running = [status[0].is_none(), status[1].is_none(), status[2].is_none()];
     #[cfg(unix)]
     if running.iter().any(|r| *r) {
         process::kill_group(pgid);
@@ -219,8 +231,13 @@ fn kill_running(
 /// Which stage caused a failure. A stage downstream of a failure sees a closed pipe and fails
 /// too; the worker's error code tells the two apart (`WRITE`: ffmpeg #2 stopped reading;
 /// `SHORT_FRAME`/`READ`: ffmpeg #1 stopped mid-frame). `worker` is `Some(code)` when the worker
-/// failed (`None` inside when it reported no error line, e.g. a crash).
-fn blame(decode: bool, worker: Option<Option<&str>>, encode: bool) -> Option<usize> {
+/// failed (`None` inside when it reported no error line, e.g. a crash). When ffmpeg #2 finished
+/// cleanly (`encode_ok`), stages upstream that only lost their reader are not failures (the
+/// verify stage checks the output's length).
+fn blame(decode: bool, worker: Option<Option<&str>>, encode: bool, encode_ok: bool) -> Option<usize> {
+    if encode_ok && matches!(worker, None | Some(Some("WRITE"))) {
+        return None;
+    }
     match worker {
         Some(Some("WRITE")) if encode => Some(ENCODE),
         Some(Some("SHORT_FRAME" | "READ")) if decode => Some(DECODE),
@@ -244,17 +261,24 @@ mod tests {
 
     #[test]
     fn the_first_cause_is_blamed_not_the_closed_pipe() {
-        assert_eq!(blame(false, None, false), None);
-        assert_eq!(blame(false, Some(Some("GPU_RUNTIME")), false), Some(WORKER));
-        assert_eq!(blame(true, Some(None), false), Some(WORKER), "a crashed worker breaks ffmpeg #1's pipe");
-        assert_eq!(blame(false, Some(Some("WRITE")), true), Some(ENCODE), "ffmpeg #2 stopped reading");
+        assert_eq!(blame(false, None, false, true), None);
+        assert_eq!(blame(false, Some(Some("GPU_RUNTIME")), false, true), Some(WORKER));
         assert_eq!(
-            blame(true, Some(Some("SHORT_FRAME")), false),
+            blame(true, Some(None), false, false),
+            Some(WORKER),
+            "a crashed worker breaks ffmpeg #1's pipe"
+        );
+        assert_eq!(blame(false, Some(Some("WRITE")), true, false), Some(ENCODE), "ffmpeg #2 stopped reading");
+        assert_eq!(
+            blame(true, Some(Some("SHORT_FRAME")), false, false),
             Some(DECODE),
             "ffmpeg #1 stopped mid-frame"
         );
-        assert_eq!(blame(true, None, false), Some(DECODE));
-        assert_eq!(blame(false, None, true), Some(ENCODE));
+        assert_eq!(blame(true, None, false, false), Some(DECODE));
+        assert_eq!(blame(false, None, true, false), Some(ENCODE));
+        // ffmpeg #2 finished early (its -t): the producers only lost their reader.
+        assert_eq!(blame(true, Some(Some("WRITE")), false, true), None);
+        assert_eq!(blame(true, None, false, true), None);
     }
 
     #[test]

@@ -248,9 +248,12 @@ fn fit_offset(g: &GraphInput) -> (u32, u32) {
 pub const AI_CROP_CMD: &str = "reframe-crop.cmd";
 pub const AI_FALLBACK_CMD: &str = "reframe-fallback.cmd";
 
-/// Temporal smoothing after the AI scale (FR-011): chosen by measurement in T104 (research
-/// R13); `None` until then.
-const AI_DEFLICKER: Option<&str> = None;
+/// Temporal smoothing after the AI scale (FR-011), chosen by measurement (T104, research R13):
+/// temporal-only `hqdn3d`, which backs off where pixels change a lot. On a static, noisy source
+/// it cut the frame-to-frame difference by 35 % (1.10 → 0.72) and cost 0.07 VMAF on moving
+/// content; a 3-frame `tmix` cut it by 45 % but cost 17 VMAF (ghosting), and a motion-masked
+/// `tmix` drops the first frame (`tblend`).
+const AI_DEFLICKER: Option<&str> = Some("hqdn3d=0:0:3:3");
 
 /// AI tier, ffmpeg #1 (research R13): `[0:v]` → `[v]`, the framed picture at source scale as
 /// full-range BT.709 RGB at the constant frame `rate` (`n/d`), for the worker. Smart reframe
@@ -687,16 +690,16 @@ mod tests {
         let rate = "30000/1001";
         let center = input((480, 854), (1080, 2340), Reframe::Center);
         insta::assert_snapshot!(ai_decode(&center, rate), @"[0:v]fps=30000/1001,crop=394:854:44:0,zscale=min=709:tin=709:pin=709:rin=limited:p=709:t=709:r=full,format=gbrp,format=rgb24[v]");
-        insta::assert_snapshot!(ai_finish(&center, &stage(&center), rate), @"[1:v]zscale=w=1080:h=2340:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited,setsar=1,format=yuv420p[v]");
+        insta::assert_snapshot!(ai_finish(&center, &stage(&center), rate), @"[1:v]zscale=w=1080:h=2340:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited,hqdn3d=0:0:3:3,setsar=1,format=yuv420p[v]");
         // Smart reframe: the crop moves in ffmpeg #1, the fallback switches in ffmpeg #2 (whole
         // frame, classically scaled, over the blurred background).
         let s = smart(true);
         insta::assert_snapshot!(ai_decode(&s, rate), @"[0:v]fps=30000/1001,sendcmd=f=reframe-crop.cmd,crop@trk=w=332:h=720:x=470:y=0,zscale=min=709:tin=709:pin=709:rin=limited:p=709:t=709:r=full,format=gbrp,format=rgb24[v]");
-        insta::assert_snapshot!(ai_finish(&s, &stage(&s), rate), @"[1:v]sendcmd=f=reframe-fallback.cmd,zscale=w=1080:h=2340:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited[crop];[0:v]fps=30000/1001,split[bg0][fg0];[bg0]scale=108:234:force_original_aspect_ratio=increase,crop=108:234,zscale=min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,gblur=sigma=3,eq=brightness=-0.08,scale=1080:2340,setsar=1[bg];[fg0]zscale=w=1080:h=608:f=lanczos:min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,cas=0.7[fg];[bg][fg]overlay=0:866[pad];[crop][pad]overlay@fb=0:0:enable=0,setsar=1,format=yuv420p[v]");
+        insta::assert_snapshot!(ai_finish(&s, &stage(&s), rate), @"[1:v]sendcmd=f=reframe-fallback.cmd,zscale=w=1080:h=2340:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited,hqdn3d=0:0:3:3[crop];[0:v]fps=30000/1001,split[bg0][fg0];[bg0]scale=108:234:force_original_aspect_ratio=increase,crop=108:234,zscale=min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,gblur=sigma=3,eq=brightness=-0.08,scale=1080:2340,setsar=1[bg];[fg0]zscale=w=1080:h=608:f=lanczos:min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,cas=0.7[fg];[bg][fg]overlay=0:866[pad];[crop][pad]overlay@fb=0:0:enable=0,setsar=1,format=yuv420p[v]");
         // Blurred background: only the picture goes through the worker (shrunk to half the
         // foreground: the 1080p source is bigger than it); the background comes from the source.
         let b = input((1920, 1080), (1080, 2340), Reframe::Blur);
         insta::assert_snapshot!(ai_decode(&b, rate), @"[0:v]fps=30000/1001,zscale=w=540:h=304:f=lanczos:min=709:tin=709:pin=709:rin=limited:p=709:t=709:r=full,format=gbrp,format=rgb24[v]");
-        insta::assert_snapshot!(ai_finish(&b, &stage(&b), rate), @"[1:v]zscale=w=1080:h=608:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited[fg];[0:v]fps=30000/1001,scale=108:234:force_original_aspect_ratio=increase,crop=108:234,zscale=min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,gblur=sigma=3,eq=brightness=-0.08,scale=1080:2340,setsar=1[bg];[bg][fg]overlay=0:866,setsar=1,format=yuv420p[v]");
+        insta::assert_snapshot!(ai_finish(&b, &stage(&b), rate), @"[1:v]zscale=w=1080:h=608:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited,hqdn3d=0:0:3:3[fg];[0:v]fps=30000/1001,scale=108:234:force_original_aspect_ratio=increase,crop=108:234,zscale=min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,gblur=sigma=3,eq=brightness=-0.08,scale=1080:2340,setsar=1[bg];[bg][fg]overlay=0:866,setsar=1,format=yuv420p[v]");
     }
 }

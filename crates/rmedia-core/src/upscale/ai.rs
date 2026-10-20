@@ -17,6 +17,23 @@ pub const WORKER: &str = "rmedia-sr";
 /// Scales the models come in.
 pub const SCALES: [u32; 3] = [2, 3, 4];
 
+/// SHA-256 of every model file the AI tier runs (as pinned in `xtask/models.lock.json`). ncnn
+/// parses models in C++, so only these exact files are used, wherever they are found; the
+/// worker checks them again on the bytes it loads.
+pub const PINNED: [(&str, &str); 6] = [
+    ("realesr-animevideov3-x2.param", "b88ff4f00ebf019a7fdac17fdd45a7fd3665d37509efc5baf2e4da2e24420a04"),
+    ("realesr-animevideov3-x2.bin", "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d"),
+    ("realesr-animevideov3-x3.param", "d1a5755008791d09b57e3425fc9dd0bd26b00fdf79c606210bc0e693f8230881"),
+    ("realesr-animevideov3-x3.bin", "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d"),
+    ("realesr-animevideov3-x4.param", "850a248e7c14c27e5bd8cf7265113a9441036a7db63963bb8aa5169d788a435e"),
+    ("realesr-animevideov3-x4.bin", "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d"),
+];
+
+/// The pinned SHA-256 of model file `name`.
+pub fn pinned_sha(name: &str) -> Option<&'static str> {
+    PINNED.iter().find(|(n, _)| *n == name).map(|(_, h)| *h)
+}
+
 /// What the worker runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiModel {
@@ -63,9 +80,18 @@ impl AiEngine {
         }
     }
 
-    /// The worker argv for frames of `input` size scaled by `scale` on `device`.
+    /// The worker argv for frames of `input` size scaled by `scale` on `device`. Real models
+    /// carry their pinned hashes, which the worker checks on the bytes it loads.
     pub fn args(&self, scale: u32, device: Option<u32>, input: (u32, u32)) -> Vec<OsString> {
         let mut a: Vec<OsString> = vec!["--model".into(), self.model_arg(scale).unwrap_or_default()];
+        if matches!(self.model, AiModel::Files(_)) {
+            for (flag, ext) in [("--param-sha256", "param"), ("--bin-sha256", "bin")] {
+                if let Some(h) = pinned_sha(&format!("{MODEL}-x{scale}.{ext}")) {
+                    a.push(flag.into());
+                    a.push(h.into());
+                }
+            }
+        }
         for (k, v) in [
             ("--scale", scale.to_string()),
             ("--gpu", self.gpu_arg(device)),
@@ -84,6 +110,8 @@ impl AiEngine {
 pub fn locate_worker() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("RMEDIA_SR").filter(|v| !v.is_empty()) {
         let p = PathBuf::from(p);
+        // The same trust as the environment itself; logged so it is never a silent swap.
+        tracing::info!("AI worker from RMEDIA_SR: {}", p.display());
         return p.is_file().then_some(p);
     }
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
@@ -95,15 +123,28 @@ pub fn locate_worker() -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-/// The first folder holding every scale of the model (`.param` and `.bin`).
+/// The first folder holding every scale of the model (`.param` and `.bin`) with the pinned
+/// contents ([`PINNED`]); paths are absolute (the worker runs in a job's scratch folder).
 pub fn locate_models(dirs: &[PathBuf]) -> Option<BTreeMap<u32, PathBuf>> {
+    use sha2::{Digest, Sha256};
+    let pinned = |p: &Path| {
+        let name = p.file_name()?.to_str()?;
+        let bytes = std::fs::metadata(p)
+            .ok()
+            .filter(|m| m.is_file() && m.len() < 64 << 20)
+            .and(std::fs::read(p).ok())?;
+        (format!("{:x}", Sha256::digest(&bytes)) == pinned_sha(name)?).then_some(())
+    };
     dirs.iter().find_map(|d| {
+        let d = crate::paths::canonicalize(d).ok()?;
         SCALES
             .iter()
             .map(|s| {
                 let base = d.join(format!("{MODEL}-x{s}"));
-                let ok = ["param", "bin"].iter().all(|e| base.with_extension(e).is_file());
-                ok.then_some((*s, base))
+                ["param", "bin"]
+                    .iter()
+                    .all(|e| pinned(&base.with_extension(e)).is_some())
+                    .then_some((*s, base))
             })
             .collect::<Option<BTreeMap<_, _>>>()
     })
@@ -195,7 +236,17 @@ mod tests {
     }
 
     #[test]
-    fn models_need_every_scale_in_one_folder() {
+    fn pins_match_the_lock_file() {
+        let lock: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../xtask/models.lock.json")).unwrap();
+        for (name, sha) in PINNED {
+            assert_eq!(lock["models"][name]["sha256"], sha, "{name}");
+        }
+        assert_eq!(PINNED.len(), SCALES.len() * 2);
+    }
+
+    #[test]
+    fn only_a_complete_set_with_the_pinned_contents_is_used() {
         let d = tempfile::tempdir().unwrap();
         let (a, b) = (d.path().join("a"), d.path().join("b"));
         std::fs::create_dir_all(&a).unwrap();
@@ -205,12 +256,14 @@ mod tests {
                 std::fs::write(b.join(format!("{MODEL}-x{s}.{e}")), b"x").unwrap();
             }
         }
-        // `a` has only part of the set.
-        std::fs::write(a.join(format!("{MODEL}-x2.param")), b"x").unwrap();
-        std::fs::write(a.join(format!("{MODEL}-x2.bin")), b"x").unwrap();
-        let m = locate_models(&[a, b.clone()]).unwrap();
-        assert_eq!(m[&3], b.join(format!("{MODEL}-x3")));
-        assert_eq!(locate_models(&[d.path().to_path_buf()]), None);
+        assert_eq!(locate_models(std::slice::from_ref(&b)), None, "files that are not the pinned models are refused");
+        // The real models, when fetched (`cargo xtask fetch-models`).
+        let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models");
+        if real.join(format!("{MODEL}-x4.bin")).is_file() {
+            std::fs::write(a.join(format!("{MODEL}-x2.param")), b"x").unwrap();
+            let m = locate_models(&[a, b, real.clone()]).unwrap();
+            assert_eq!(m[&3], crate::paths::canonicalize(&real).unwrap().join(format!("{MODEL}-x3")));
+        }
     }
 
     #[test]
@@ -226,6 +279,10 @@ mod tests {
             [
                 "--model",
                 "/m/realesr-animevideov3-x2",
+                "--param-sha256",
+                "b88ff4f00ebf019a7fdac17fdd45a7fd3665d37509efc5baf2e4da2e24420a04",
+                "--bin-sha256",
+                "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d",
                 "--scale",
                 "2",
                 "--gpu",

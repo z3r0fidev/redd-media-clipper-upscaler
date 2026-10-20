@@ -20,6 +20,8 @@ unsafe extern "C" {
     fn ncnn_net_destroy(net: NetPtr);
     fn ncnn_net_get_option(net: NetPtr) -> OptionPtr;
     fn ncnn_net_set_vulkan_device(net: NetPtr, device_index: c_int);
+    fn ncnn_net_load_param_memory(net: NetPtr, mem: *const c_char) -> c_int;
+    fn ncnn_net_load_model_memory(net: NetPtr, mem: *const u8) -> usize;
     #[cfg(not(windows))]
     fn ncnn_net_load_param(net: NetPtr, path: *const c_char) -> c_int;
     #[cfg(not(windows))]
@@ -96,8 +98,14 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    /// Creates the instance. `None` when no Vulkan loader or driver is available.
+    /// Creates the instance. `None` when no Vulkan loader or driver is available, or when an
+    /// instance already exists (there is one owner, so it is destroyed once).
     pub fn init() -> Option<Gpu> {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static CREATED: AtomicBool = AtomicBool::new(false);
+        if CREATED.swap(true, Ordering::SeqCst) {
+            return None;
+        }
         // SAFETY: plain C call; failure is reported by the return value.
         (unsafe { rsr_gpu_init() } == 0).then_some(Gpu { _private: () })
     }
@@ -150,22 +158,57 @@ pub struct NetOptions {
 #[derive(Debug)]
 pub struct Net<'g> {
     ptr: NetPtr,
+    /// Weights loaded from memory: ncnn may keep pointers into them, so they live as long as the
+    /// net (`u32`s keep them 4-byte aligned, as ncnn requires).
+    _weights: Vec<u32>,
     _gpu: &'g Gpu,
 }
 
+/// Where a model comes from.
+#[derive(Debug)]
+pub enum ModelSource<'a> {
+    /// Files read by ncnn (its file reader stops at the end of a truncated file).
+    Files { param: &'a Path, bin: &'a Path },
+    /// Bytes whose SHA-256 matched the pinned model files: ncnn's memory reader has no length
+    /// limit, so only known-good bytes (whose sizes match their graph) are ever given to it.
+    Verified { param: Vec<u8>, bin: Vec<u8> },
+}
+
 impl<'g> Net<'g> {
-    /// Loads the graph `param` (text) and the weights `bin` onto the device. Files, not memory:
-    /// ncnn's file reader stops at the end of a truncated file, its memory reader does not.
-    pub fn load(gpu: &'g Gpu, opts: NetOptions, param: &Path, bin: &Path) -> Result<Net<'g>, String> {
-        let (param_c, bin_c) = (native_path(param)?, native_path(bin)?);
+    /// Loads a model onto the device.
+    pub fn load(gpu: &'g Gpu, opts: NetOptions, source: ModelSource<'_>) -> Result<Net<'g>, String> {
+        enum Prepared {
+            Files(Vec<NativeChar>, Vec<NativeChar>, String),
+            Memory(CString),
+        }
+        let mut weights = Vec::new();
+        let prepared = match source {
+            ModelSource::Files { param, bin } => Prepared::Files(
+                native_path(param)?,
+                native_path(bin)?,
+                format!("{} / {}", param.display(), bin.display()),
+            ),
+            ModelSource::Verified { param, bin } => {
+                weights = vec![0u32; bin.len().div_ceil(4)];
+                for (dst, src) in weights.iter_mut().zip(bin.chunks(4)) {
+                    let mut b = [0u8; 4];
+                    b[..src.len()].copy_from_slice(src);
+                    *dst = u32::from_ne_bytes(b);
+                }
+                Prepared::Memory(
+                    CString::new(param).map_err(|_| "the model graph contains a NUL byte".to_owned())?,
+                )
+            }
+        };
         // SAFETY: ncnn_net_create returns a fresh net (or null on allocation failure, checked).
         let ptr = unsafe { ncnn_net_create() };
         if ptr.is_null() {
             return Err("could not create the network".into());
         }
-        let net = Net { ptr, _gpu: gpu };
+        let net = Net { ptr, _weights: weights, _gpu: gpu };
         // SAFETY: `net.ptr` is valid; its option struct is set before anything loads; the paths
-        // are NUL-terminated and outlive the calls.
+        // and the graph text are NUL-terminated and outlive the calls; the weights are verified
+        // bytes kept alive (and aligned) by `net._weights`.
         unsafe {
             let opt = ncnn_net_get_option(net.ptr);
             ncnn_option_set_use_vulkan_compute(opt, 1);
@@ -180,11 +223,21 @@ impl<'g> Net<'g> {
                 ncnn_option_set_use_winograd_convolution(opt, 0);
             }
             ncnn_net_set_vulkan_device(net.ptr, opts.device as c_int);
-            if load_param(net.ptr, &param_c) != 0 {
-                return Err(format!("the model graph {} could not be loaded", param.display()));
-            }
-            if load_model(net.ptr, &bin_c) != 0 {
-                return Err(format!("the model weights {} could not be loaded", bin.display()));
+            match &prepared {
+                Prepared::Files(param_c, bin_c, names) => {
+                    if load_param(net.ptr, param_c) != 0 || load_model(net.ptr, bin_c) != 0 {
+                        return Err(format!("the model {names} could not be loaded"));
+                    }
+                }
+                Prepared::Memory(param) => {
+                    if ncnn_net_load_param_memory(net.ptr, param.as_ptr()) != 0 {
+                        return Err("the model graph could not be loaded".into());
+                    }
+                    let read = ncnn_net_load_model_memory(net.ptr, net._weights.as_ptr().cast());
+                    if read == 0 || read > net._weights.len() * 4 {
+                        return Err("the model weights do not match the graph".into());
+                    }
+                }
             }
         }
         Ok(net)
@@ -198,10 +251,15 @@ impl<'g> Net<'g> {
         frame: &[u8],
         size: (u32, u32),
         roi: (u32, u32, u32, u32),
-    ) -> Result<(Vec<u8>, (u32, u32)), String> {
+        expected: (u32, u32),
+    ) -> Result<Vec<u8>, String> {
         let (w, h) = size;
         let (x, y, rw, rh) = roi;
-        assert!(frame.len() >= (w * h * 3) as usize && x + rw <= w && y + rh <= h, "roi inside the frame");
+        let inside = |a: u32, b: u32, max: u32| a.checked_add(b).is_some_and(|e| e <= max);
+        assert!(
+            frame.len() >= w as usize * h as usize * 3 && inside(x, rw, w) && inside(y, rh, h),
+            "roi inside the frame"
+        );
         let input = Mat(
             // SAFETY: `frame` holds w·h packed RGB pixels (asserted) and the roi lies inside it.
             unsafe {
@@ -229,6 +287,9 @@ impl<'g> Net<'g> {
             // SAFETY: valid net.
             unsafe { ncnn_extractor_create(self.ptr) },
         );
+        if ex.0.is_null() {
+            return Err("out of memory for the extractor".into());
+        }
         let mut out = Mat(std::ptr::null_mut());
         // SAFETY: valid extractor and mat; blob names are NUL-terminated; ncnn writes a new mat
         // (owned by us, freed by Mat's Drop) into `out.0`.
@@ -244,8 +305,12 @@ impl<'g> Net<'g> {
         }
         // SAFETY: valid output mat.
         let (ow, oh, oc) = unsafe { (ncnn_mat_get_w(out.0), ncnn_mat_get_h(out.0), ncnn_mat_get_c(out.0)) };
-        if ow <= 0 || oh <= 0 || oc != 3 {
-            return Err(format!("the model returned an unexpected {ow}×{oh}×{oc} output"));
+        // Checked before anything is allocated for it.
+        if oc != 3 || (ow, oh) != (expected.0 as c_int, expected.1 as c_int) {
+            return Err(format!(
+                "the model made {ow}×{oh}×{oc} from {rw}×{rh}, not {}×{}×3 (wrong --scale for this model?)",
+                expected.0, expected.1
+            ));
         }
         let to_byte = [255.0f32; 3];
         let mut pixels = vec![0u8; ow as usize * oh as usize * 3];
@@ -254,7 +319,7 @@ impl<'g> Net<'g> {
             ncnn_mat_substract_mean_normalize(out.0, std::ptr::null(), to_byte.as_ptr());
             ncnn_mat_to_pixels(out.0, pixels.as_mut_ptr(), PIXEL_RGB, ow * 3);
         }
-        Ok((pixels, (ow as u32, oh as u32)))
+        Ok(pixels)
     }
 }
 
@@ -264,6 +329,11 @@ impl Drop for Net<'_> {
         unsafe { ncnn_net_destroy(self.ptr) }
     }
 }
+
+#[cfg(not(windows))]
+type NativeChar = c_char;
+#[cfg(windows)]
+type NativeChar = u16;
 
 #[cfg(not(windows))]
 fn native_path(p: &Path) -> Result<Vec<c_char>, String> {
@@ -344,10 +414,16 @@ pub fn protocol_stream() -> Box<dyn Write + Send> {
                 return Box::new(std::io::stderr());
             }
             let null = libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC);
-            if null >= 0 {
-                libc::dup2(null, 2);
-                libc::close(null);
+            if null < 0 || libc::dup2(null, 2) < 0 {
+                // ncnn's diagnostics would reach the protocol channel: keep plain stderr and
+                // let the core skip non-JSON lines.
+                if null >= 0 {
+                    libc::close(null);
+                }
+                libc::close(copy);
+                return Box::new(std::io::stderr());
             }
+            libc::close(null);
             libc::fcntl(copy, libc::F_SETFD, libc::FD_CLOEXEC);
             Box::new(std::fs::File::from_raw_fd(copy))
         }
@@ -362,14 +438,14 @@ pub fn protocol_stream() -> Box<dyn Write + Send> {
             if copy < 0 {
                 return Box::new(std::io::stderr());
             }
+            let handle = libc::get_osfhandle(copy);
+            if handle == -1 {
+                return Box::new(std::io::stderr());
+            }
             let null = libc::open(c"NUL".as_ptr(), libc::O_WRONLY);
             if null >= 0 {
                 libc::dup2(null, 2);
                 libc::close(null);
-            }
-            let handle = libc::get_osfhandle(copy);
-            if handle == -1 {
-                return Box::new(std::io::stderr());
             }
             Box::new(std::fs::File::from_raw_handle(handle as _))
         }

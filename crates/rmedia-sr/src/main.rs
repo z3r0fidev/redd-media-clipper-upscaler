@@ -162,12 +162,14 @@ fn stream(job: &Job, up: &mut dyn Upscaler, proto: &mut Protocol) -> Result<(), 
     // Detached threads: on an upscaler error the worker exits at once (the core is killing the
     // pipeline anyway), without waiting for a reader blocked on stdin.
     let reader = std::thread::spawn(move || read_frames(in_len, &free_rx, &full_tx));
-    let writer = std::thread::spawn(move || write_frames(&done_rx));
+    // Written frames come back for reuse: memory stays at a few frames each way.
+    let (spent_tx, spent_rx) = sync_channel::<Vec<u8>>(QUEUE + 1);
+    let writer = std::thread::spawn(move || write_frames(&done_rx, &spent_tx));
     let started = Instant::now();
     let mut last = started;
     let mut frames = 0u64;
     for frame in full_rx.iter() {
-        let mut out = vec![0u8; out_len];
+        let mut out = spent_rx.try_recv().unwrap_or_else(|_| vec![0u8; out_len]);
         up.process(&frame, &mut out)?;
         let _ = free_tx.send(frame);
         if done_tx.send(out).is_err() {
@@ -215,10 +217,11 @@ fn read_frames(len: usize, free: &Receiver<Vec<u8>>, full: &SyncSender<Vec<u8>>)
     Ok(())
 }
 
-fn write_frames(done: &Receiver<Vec<u8>>) -> Result<(), Failure> {
+fn write_frames(done: &Receiver<Vec<u8>>, spent: &SyncSender<Vec<u8>>) -> Result<(), Failure> {
     let mut stdout = std::io::stdout().lock();
     for frame in done.iter() {
         stdout.write_all(&frame).map_err(|e| Failure::Io("WRITE", format!("writing frames: {e}")))?;
+        let _ = spent.try_send(frame);
     }
     stdout.flush().map_err(|e| Failure::Io("WRITE", format!("writing frames: {e}")))
 }

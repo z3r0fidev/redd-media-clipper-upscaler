@@ -46,6 +46,8 @@ jobs:
       - name: Stage bundled programs and models (pinned FFmpeg, ncnn and models; release CLI and AI worker)
         run: |
           cargo xtask fetch-tools --target ${{ matrix.triple }}
+          # Never reuse cached archives or libraries for a release: fetch and verify afresh.
+          rm -rf third_party target/xtask-archives
           cargo xtask fetch-ncnn --target ${{ matrix.triple }}
           cargo xtask fetch-models
           cargo xtask stage-cli --target ${{ matrix.triple }}

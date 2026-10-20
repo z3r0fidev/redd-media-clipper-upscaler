@@ -213,6 +213,18 @@ fn the_real_model_upscales_on_a_gpu_and_refuses_software_devices() {
         / a.stdout.len() as f64;
     assert!(diff < 2.0, "tiled output differs by {diff:.2} per byte on average");
 
+    // Pinned hashes: the right ones load (from the checked bytes), a wrong one is refused.
+    let (ps, bs) = (
+        "b88ff4f00ebf019a7fdac17fdd45a7fd3665d37509efc5baf2e4da2e24420a04",
+        "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d",
+    );
+    let pinned = worker(&[&args[..], &["--param-sha256", ps, "--bin-sha256", bs]].concat(), &frames);
+    assert!(pinned.status.success(), "{}", String::from_utf8_lossy(&pinned.stderr));
+    assert_eq!(pinned.stdout, a.stdout, "memory and file loading give the same frames");
+    let wrong = worker(&[&args[..], &["--param-sha256", bs, "--bin-sha256", bs]].concat(), &frames);
+    assert_eq!(wrong.status.code(), Some(5));
+    assert!(error_code(&wrong) == "MODEL_LOAD");
+
     // A truncated weights file is a model error, not a crash.
     let dir = tempfile_dir();
     std::fs::copy(model("realesr-animevideov3-x2.param"), dir.join("t.param")).unwrap();

@@ -904,6 +904,12 @@ async fn ai_check(env: &ProbeEnv, deadline: Instant, cancel: &CancellationToken)
             Err(true) => return unavailable("the AI worker did not answer".into()),
             Err(false) => return None,
         };
+    if !listing.status.success() {
+        let why = sr_error(&listing.stderr_tail)
+            .or_else(|| listing.stderr_tail.lines().last().map(|l| clean(l, 200)))
+            .unwrap_or_else(|| "no output".into());
+        return unavailable(format!("the AI worker could not run: {why}"));
+    }
     let devices = parse_sr_devices(&String::from_utf8_lossy(&listing.stdout));
     let Some(device) = pick_sr_device(&devices) else {
         return unavailable(if devices.is_empty() {

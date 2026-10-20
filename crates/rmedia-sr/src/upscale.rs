@@ -2,7 +2,7 @@
 
 use crate::Failure;
 use crate::args::{Fp16, Job, Model};
-use crate::ffi::{DeviceInfo, Gpu, Net, NetOptions};
+use crate::ffi::{DeviceInfo, Gpu, ModelSource, Net, NetOptions};
 
 pub trait Upscaler {
     /// Upscales one packed RGB frame of the job's size into `out` (`scale²` times larger).
@@ -107,7 +107,13 @@ impl<'g> Sr<'g> {
             Fp16::Off => Some(false),
         };
         let opts = NetOptions { device: index, fp16, threads: job.threads, winograd: device.kind != 1 };
-        let net = Net::load(gpu, opts, &param, &bin).map_err(Failure::Model)?;
+        let source = match (&job.param_sha256, &job.bin_sha256) {
+            (Some(ps), Some(bs)) => {
+                ModelSource::Verified { param: verified(&param, ps)?, bin: verified(&bin, bs)? }
+            }
+            _ => ModelSource::Files { param: &param, bin: &bin },
+        };
+        let net = Net::load(gpu, opts, source).map_err(Failure::Model)?;
         let tile = if job.tile > 0 { job.tile } else { auto_tile(device.heap_budget_mb) };
         Ok(Sr { net, device, size: (job.width, job.height), scale: job.scale, tile })
     }
@@ -121,9 +127,24 @@ impl<'g> Sr<'g> {
     }
 }
 
+/// The bytes of `path` if their SHA-256 is `sha` (read once: what is checked is what loads).
+fn verified(path: &std::path::Path, sha: &str) -> Result<Vec<u8>, Failure> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path).map_err(|e| Failure::Model(format!("{}: {e}", path.display())))?;
+    if format!("{:x}", Sha256::digest(&bytes)) != sha {
+        return Err(Failure::Model(format!(
+            "{} is not the expected model file (SHA-256 differs)",
+            path.display()
+        )));
+    }
+    Ok(bytes)
+}
+
 /// The reference tool's input tile sizes by GPU memory budget.
 fn auto_tile(heap_mb: u32) -> u32 {
     match heap_mb {
+        // Unknown budget: a middle size rather than the slowest.
+        0 => 100,
         m if m > 1900 => 200,
         m if m > 550 => 100,
         m if m > 190 => 64,
@@ -145,17 +166,11 @@ impl Upscaler for Sr<'_> {
                 // The tile plus its context, clamped to the frame.
                 let (rx0, ry0) = (x0.saturating_sub(PAD), y0.saturating_sub(PAD));
                 let (rx1, ry1) = ((x1 + PAD).min(w), (y1 + PAD).min(h));
-                let (pixels, (ow, oh)) = self
+                let ow = (rx1 - rx0) * s;
+                let pixels = self
                     .net
-                    .run(frame, (w, h), (rx0, ry0, rx1 - rx0, ry1 - ry0))
+                    .run(frame, (w, h), (rx0, ry0, rx1 - rx0, ry1 - ry0), (ow, (ry1 - ry0) * s))
                     .map_err(Failure::Runtime)?;
-                if (ow, oh) != ((rx1 - rx0) * s, (ry1 - ry0) * s) {
-                    return Err(Failure::Runtime(format!(
-                        "the model upscaled {}×{} to {ow}×{oh}, not ×{s} (wrong --scale for this model?)",
-                        rx1 - rx0,
-                        ry1 - ry0
-                    )));
-                }
                 // Copy the tile's own part (without the context) into place.
                 let (cx, cy) = ((x0 - rx0) * s, (y0 - ry0) * s);
                 let (cw, ch) = ((x1 - x0) * s, (y1 - y0) * s);
@@ -186,6 +201,8 @@ mod tests {
             tile: 0,
             fp16: Fp16::Auto,
             threads: 1,
+            param_sha256: None,
+            bin_sha256: None,
         };
         let mut out = vec![0; 2 * 4 * 3];
         Nearest::new(&job).process(&[1, 2, 3, 4, 5, 6], &mut out).unwrap();
@@ -198,7 +215,8 @@ mod tests {
     fn tiles_cover_the_frame_and_software_devices_are_refused() {
         assert_eq!(spans(250, 100).collect::<Vec<_>>(), [(0, 100), (100, 200), (200, 250)]);
         assert_eq!(spans(64, 100).collect::<Vec<_>>(), [(0, 64)]);
-        assert_eq!((auto_tile(4000), auto_tile(600), auto_tile(200), auto_tile(0)), (200, 100, 64, 32));
+        assert_eq!((auto_tile(4000), auto_tile(600), auto_tile(200), auto_tile(100)), (200, 100, 64, 32));
+        assert_eq!(auto_tile(0), 100, "unknown budget");
         let d = |name: &str, kind| DeviceInfo {
             index: 0,
             name: name.into(),

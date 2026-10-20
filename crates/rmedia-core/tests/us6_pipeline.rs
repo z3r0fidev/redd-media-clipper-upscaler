@@ -343,3 +343,63 @@ async fn ai_framing_and_colours_match_the_cpu_tier() {
         assert!(db > 40.0, "{name}: AI-tier output differs from the CPU tier's ({db:.1} dB)");
     }
 }
+
+/// (video start, audio start if any, video duration) in seconds.
+fn av_times(path: &Path) -> (f64, Option<f64>, f64) {
+    let info = probe_json(path);
+    let streams = info["streams"].as_array().unwrap();
+    let v = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
+    let a = streams.iter().find(|s| s["codec_type"] == "audio");
+    let dur = f64_of(&v["duration"]);
+    let dur = if dur.is_nan() { f64_of(&info["format"]["duration"]) } else { dur };
+    (f64_of(&v["start_time"]), a.map(|a| f64_of(&a["start_time"])), dur)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ai_timing_holds_for_trimmed_offset_vfr_and_whole_videos() {
+    let _serial = SERIAL.lock().await;
+    require_engine!("libx265", "zscale", "bwdif");
+    let Some(w) = worker() else { return };
+    let d = tempfile::tempdir().unwrap();
+    let (tools, _) = engine();
+    let caps = ai_caps(&w);
+    // An MPEG-TS whose timestamps start at 10 s, cut from 1 s (approximate seek: -copyts and
+    // trim at absolute times); the same TS whole (its own start offsets); a VFR clip; an
+    // interlaced clip.
+    let cases = [
+        (Fixture::OffsetTs, 1.0, EndSpec::At(secs(3.0)), Some(2.0), "offset ts cut"),
+        (Fixture::OffsetTs, 0.0, EndSpec::EndOfMedia, None, "offset ts whole"),
+        (Fixture::VfrMp4, 2.0, EndSpec::At(secs(4.0)), Some(2.0), "vfr cut"),
+        (Fixture::Interlaced, 0.0, EndSpec::At(secs(2.0)), Some(2.0), "interlaced cut"),
+    ];
+    for (kind, start, end, len, name) in cases {
+        let out = d.path().join(name.replace(' ', "-"));
+        let src = fixture(kind);
+        let p = make_plan(&request(&src, vec![clip(start, end)], opts(&out, Reframe::Center)), &tools, &caps)
+            .await;
+        assert!(p.issues.is_empty(), "{name}: {:?}", p.issues);
+        let (summary, _) = run_plan(p, tools.clone(), &d.path().join("state")).await;
+        let JobOutcome::Succeeded { output, .. } = &summary.jobs[0].outcome else {
+            panic!("{name}: {:?}", summary.jobs[0].outcome)
+        };
+        let (vs, as_, vd) = av_times(output);
+        let tolerance = 0.07;
+        let expected = len.unwrap_or_else(|| av_times(&src).2);
+        assert!((vd - expected).abs() <= tolerance, "{name}: video lasts {vd:.3}, expected {expected:.3}");
+        let (svs, sas, _) = av_times(&src);
+        let Some(sas) = sas else { continue };
+        let as_ = as_.unwrap_or_else(|| panic!("{name}: audio kept"));
+        // A cut starts both at 0; a whole video keeps the source's audio/video offset.
+        let offset = if len.is_some() { 0.0 } else { sas - svs };
+        assert!(
+            ((as_ - vs) - offset).abs() <= tolerance,
+            "{name}: audio starts {:.3} s after video, expected {offset:.3}",
+            as_ - vs
+        );
+        eprintln!(
+            "{name}: video {vd:.3} s, audio-video start {:.3} s (source offset {:.3})",
+            as_ - vs,
+            sas - svs
+        );
+    }
+}

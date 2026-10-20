@@ -33,7 +33,15 @@ pub struct Job {
     pub tile: u32,
     pub fp16: Fp16,
     pub threads: u32,
+    /// Pinned SHA-256 of the model files: when given, the files are read once, checked and
+    /// loaded from those bytes.
+    pub param_sha256: Option<String>,
+    pub bin_sha256: Option<String>,
 }
+
+/// Largest output frame accepted (megapixels): far above any phone preset, far below what
+/// would exhaust memory with a few frames in flight.
+pub const MAX_OUTPUT_MPX: u64 = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
@@ -52,6 +60,7 @@ pub fn parse(args: &[String]) -> Result<Mode, String> {
     }
     let (mut model, mut scale, mut gpu, mut width, mut height) = (None, None, None, None, None);
     let (mut tile, mut fp16, mut threads, mut frames, mut selftest) = (0, Fp16::Auto, 4, None, false);
+    let (mut param_sha256, mut bin_sha256) = (None, None);
     let mut it = args.iter();
     while let Some(flag) = it.next() {
         if flag == "--selftest" {
@@ -74,6 +83,8 @@ pub fn parse(args: &[String]) -> Result<Mode, String> {
             "--height" => height = Some(number(flag, value, 1, MAX_SIDE)?),
             "--tile" => tile = if value == "0" { 0 } else { number(flag, value, 32, 4096)? },
             "--threads" => threads = number(flag, value, 1, 64)?,
+            "--param-sha256" => param_sha256 = Some(sha(flag, value)?),
+            "--bin-sha256" => bin_sha256 = Some(sha(flag, value)?),
             "--frames" => frames = Some(number(flag, value, 1, 64)?),
             "--fp16" => {
                 fp16 = match value.as_str() {
@@ -96,7 +107,16 @@ pub fn parse(args: &[String]) -> Result<Mode, String> {
         tile,
         fp16,
         threads,
+        param_sha256,
+        bin_sha256,
     };
+    let out = u64::from(job.width) * u64::from(job.height) * u64::from(job.scale * job.scale);
+    if out > MAX_OUTPUT_MPX * 1_000_000 {
+        return Err(format!("output frames over {MAX_OUTPUT_MPX} megapixels are not supported"));
+    }
+    if job.param_sha256.is_some() != job.bin_sha256.is_some() {
+        return Err("--param-sha256 and --bin-sha256 go together".into());
+    }
     if job.gpu.is_none() && job.model != Model::Nearest {
         return Err("--gpu none is only accepted with a builtin model".into());
     }
@@ -105,6 +125,12 @@ pub fn parse(args: &[String]) -> Result<Mode, String> {
         (false, Some(_)) => Err("--frames is only for --selftest".into()),
         (false, None) => Ok(Mode::Run(job)),
     }
+}
+
+fn sha(flag: &str, value: &str) -> Result<String, String> {
+    (value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()))
+        .then(|| value.to_owned())
+        .ok_or_else(|| format!("{flag} takes 64 lowercase hex digits"))
 }
 
 fn number(flag: &str, value: &str, min: u32, max: u32) -> Result<u32, String> {
@@ -139,6 +165,8 @@ mod tests {
             "--model builtin:nearest --scale 2 --gpu none --width 2 --height 2 --frames 3",
             "--model builtin:nearest --scale 2 --gpu none --width 2 --height 2 --bogus 1",
             "--version extra",
+            "--model builtin:nearest --scale 4 --gpu none --width 8192 --height 8192",
+            "--model /m --scale 2 --gpu 0 --width 2 --height 2 --param-sha256 abc",
         ] {
             assert!(parse(&args(bad)).is_err(), "{bad}");
         }

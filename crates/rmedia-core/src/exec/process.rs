@@ -261,11 +261,43 @@ pub(crate) async fn kill(child: &mut dyn ChildWrapper) {
     let _ = Box::into_pin(child.kill()).await;
 }
 
+/// Reads one line (without its `\n`), keeping at most `max` bytes of it: the rest of a longer
+/// line is read and dropped, so a child printing endless text without a newline cannot make us
+/// buffer it. `None` at end of input.
+pub(crate) async fn next_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
+    r: &mut R,
+    max: usize,
+) -> std::io::Result<Option<String>> {
+    let mut kept: Vec<u8> = Vec::new();
+    let mut seen = false;
+    loop {
+        let buf = r.fill_buf().await?;
+        if buf.is_empty() {
+            return Ok(seen.then(|| String::from_utf8_lossy(&kept).into_owned()));
+        }
+        seen = true;
+        let (chunk, done) = match buf.iter().position(|b| *b == b'\n') {
+            Some(i) => (&buf[..i], Some(i + 1)),
+            None => (buf, None),
+        };
+        let room = max.saturating_sub(kept.len());
+        kept.extend_from_slice(&chunk[..chunk.len().min(room)]);
+        let used = done.unwrap_or(buf.len());
+        r.consume(used);
+        if done.is_some() {
+            if kept.last() == Some(&b'\r') {
+                kept.pop();
+            }
+            return Ok(Some(String::from_utf8_lossy(&kept).into_owned()));
+        }
+    }
+}
+
 pub(crate) async fn collect_stderr(stderr: Option<tokio::process::ChildStderr>) -> String {
     let Some(stderr) = stderr else { return String::new() };
     let mut tail: VecDeque<String> = VecDeque::with_capacity(STDERR_TAIL_LINES);
-    let mut lines = BufReader::new(stderr).lines();
-    while let Ok(Some(mut line)) = lines.next_line().await {
+    let mut reader = BufReader::new(stderr);
+    while let Ok(Some(mut line)) = next_line_bounded(&mut reader, MAX_LINE_CHARS * 4).await {
         if line.len() > MAX_LINE_CHARS {
             let cut = (0..=MAX_LINE_CHARS).rev().find(|i| line.is_char_boundary(*i)).unwrap_or(0);
             line.truncate(cut);
@@ -276,4 +308,20 @@ pub(crate) async fn collect_stderr(stderr: Option<tokio::process::ChildStderr>) 
         tail.push_back(line);
     }
     tail.into_iter().collect::<Vec<_>>().join("\n")
+}
+
+#[cfg(test)]
+mod line_tests {
+    use super::next_line_bounded;
+
+    #[tokio::test]
+    async fn long_lines_are_cut_without_buffering_them() {
+        let mut big = vec![b'x'; 100_000];
+        big.extend_from_slice(b"\nnext\r\nlast");
+        let mut r = tokio::io::BufReader::with_capacity(64, &big[..]);
+        assert_eq!(next_line_bounded(&mut r, 10).await.unwrap().unwrap(), "xxxxxxxxxx");
+        assert_eq!(next_line_bounded(&mut r, 10).await.unwrap().unwrap(), "next");
+        assert_eq!(next_line_bounded(&mut r, 10).await.unwrap().unwrap(), "last");
+        assert_eq!(next_line_bounded(&mut r, 10).await.unwrap(), None);
+    }
 }
