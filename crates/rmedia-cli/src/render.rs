@@ -254,6 +254,12 @@ fn job_doc(j: &PlannedJob) -> Value {
     if let JobSpec::Upscale(u) = &j.spec {
         m.insert("kind".into(), json!("upscale"));
         m.insert("upscale".into(), u.up.to_json());
+        if let Some(p) = j.pipeline() {
+            m.insert(
+                "pipeline".into(),
+                json!([display_args(&p.decode), display_args(&p.worker), display_args(&p.encode)]),
+            );
+        }
         if let Some(cwd) = &j.scratch {
             m.insert("cwd".into(), json!(lossy(cwd)));
         }

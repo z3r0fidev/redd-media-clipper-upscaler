@@ -23,7 +23,7 @@ vi.mock("../api", () => ({
 const { app } = await import("./app.svelte");
 const { initUpscale, retryAnalysis, setOptions, stopView, syncView, upscale } = await import("./upscale.svelte");
 
-const still = (name: string) => ({ before: `${name}-b`, after: `${name}-a`, size: [1080, 2340], approximate: false, crop_x: 0, in_fallback: false });
+const still = (name: string) => ({ before: `${name}-b`, after: `${name}-a`, size: [1080, 2340], approximate: false, crop_x: 0, in_fallback: false, classical: false });
 const view = (path: string, at = 1) => ({ path, range: { start: 0, end: null }, at, playing: false, duration: 10 });
 const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();

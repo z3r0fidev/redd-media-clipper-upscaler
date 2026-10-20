@@ -99,6 +99,9 @@ enum Flavor {
     /// Same framing and colours, bicubic scaling, no denoise or sharpening (what a plain
     /// upscaler gives; the quality bar of SC-002 is measured against it).
     Baseline,
+    /// The AI tier's source-side chain: no denoise (the model removes compression noise
+    /// itself) and a constant frame rate, so ffmpeg #2 can time the worker's raw frames.
+    Ai,
 }
 
 /// Builds the filtergraph.
@@ -209,22 +212,104 @@ fn build_with(g: &GraphInput, flavor: Flavor) -> String {
 /// `head` feeds the picture in (a label or a filter chain ending in `,`); `end` follows the
 /// final overlay (an output label, or more filters and a label).
 fn blur_pad(g: &GraphInput, head: &str, end: &str, flavor: Flavor) -> String {
-    let (w, h) = g.geometry.target;
     let (fw, fh) = g.geometry.fit;
-    let (bw, bh) = (even(f64::from(w) / 10.0), even(f64::from(h) / 10.0));
-    let (ox, oy) = ((w - fw) / 2 / 2 * 2, (h - fh) / 2 / 2 * 2);
+    let (ox, oy) = fit_offset(g);
     // The background gets the same colour conversion as the foreground (at 1/10 size, cheap),
     // and overlay keeps 10 bits when HDR is kept (it defaults to 8-bit yuv420).
-    let bg_colour = colour_tail(g);
     let overlay_fmt = if g.keep_hdr { ":format=yuv420p10" } else { "" };
     format!(
-        "{head}split[bg0][fg0];\
-         [bg0]scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}{bg_colour},gblur=sigma=3,\
-         eq=brightness=-0.08,scale={w}:{h},setsar=1[bg];\
-         [fg0]{}[fg];\
-         [bg][fg]overlay={ox}:{oy}{overlay_fmt}{end}",
+        "{head}split[bg0][fg0];[bg0]{}[bg];[fg0]{}[fg];[bg][fg]overlay={ox}:{oy}{overlay_fmt}{end}",
+        blur_background(g),
         scaler(g, fw, fh, flavor)
     )
+}
+
+/// The blurred, darkened copy filling the target: scaled to 1/10 size (cheap), converted like
+/// the foreground, blurred, darkened and scaled back up.
+fn blur_background(g: &GraphInput) -> String {
+    let (w, h) = g.geometry.target;
+    let (bw, bh) = (even(f64::from(w) / 10.0), even(f64::from(h) / 10.0));
+    format!(
+        "scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}{},gblur=sigma=3,\
+         eq=brightness=-0.08,scale={w}:{h},setsar=1",
+        colour_tail(g)
+    )
+}
+
+/// Where the foreground sits on the blurred background.
+fn fit_offset(g: &GraphInput) -> (u32, u32) {
+    let (w, h) = g.geometry.target;
+    let (fw, fh) = g.geometry.fit;
+    ((w - fw) / 2 / 2 * 2, (h - fh) / 2 / 2 * 2)
+}
+
+/// `sendcmd` files of the AI tier: the crop moves in ffmpeg #1, the fallback overlay is
+/// switched in ffmpeg #2 (each ffmpeg gets only its own filter's commands).
+pub const AI_CROP_CMD: &str = "reframe-crop.cmd";
+pub const AI_FALLBACK_CMD: &str = "reframe-fallback.cmd";
+
+/// Temporal smoothing after the AI scale (FR-011): chosen by measurement in T104 (research
+/// R13); `None` until then.
+const AI_DEFLICKER: Option<&str> = None;
+
+/// AI tier, ffmpeg #1 (research R13): `[0:v]` → `[v]`, the framed picture at source scale as
+/// full-range BT.709 RGB at the constant frame `rate` (`n/d`), for the worker. Smart reframe
+/// moves the crop with `reframe-crop.cmd`; the blurred background is added by ffmpeg #2, so
+/// the worker only upscales the picture itself.
+pub fn ai_decode(g: &GraphInput, rate: &str) -> String {
+    let pre = pre_chain_at(g, Flavor::Ai, Some(rate));
+    let overflow = g.geometry.overflow != Overflow::None;
+    let framing = match (g.reframe, &g.track, g.geometry.crop) {
+        (Reframe::Smart, Some(t), Some(c)) if overflow => {
+            Some(format!("sendcmd=f={AI_CROP_CMD},crop@trk=w={}:h={}:x={}:y={}", c.w, c.h, t.x0, c.y))
+        }
+        (Reframe::Blur, _, _) if overflow => None,
+        (_, _, Some(c)) => Some(format!("crop={}:{}:{}:{}", c.w, c.h, c.x, c.y)),
+        _ => None,
+    };
+    // After tone-mapping the frames are BT.709 already.
+    let input = if g.tonemap { "min=709:tin=709:pin=709:rin=limited" } else { g.colour_in.as_str() };
+    let st = super::ai::stage(g);
+    let size =
+        if st.shrunk { format!("w={}:h={}:f=lanczos:", st.input.0, st.input.1) } else { String::new() };
+    let rgb = format!("zscale={size}{input}:p=709:t=709:r=full,format=gbrp,format=rgb24");
+    let chain: Vec<String> = std::iter::once(pre).chain(framing).chain(std::iter::once(rgb)).collect();
+    format!("[0:v]{}[v]", chain.join(","))
+}
+
+/// AI tier, ffmpeg #2: the worker's frames `[1:v]` (RGB at `stage.output()`) scaled to the
+/// target (or the fitted foreground) as BT.709 limited-range video, over the blurred background
+/// made from the source `[0:v]` where the reframe needs one. Smart reframe's fallback ranges
+/// show the whole frame classically scaled over the background (`reframe-fallback.cmd`).
+pub fn ai_finish(g: &GraphInput, stage: &super::ai::AiStage, rate: &str) -> String {
+    let tail = "setsar=1,format=yuv420p";
+    let to = |(w, h): (u32, u32)| {
+        let mut s =
+            format!("zscale=w={w}:h={h}:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited");
+        if let Some(d) = AI_DEFLICKER {
+            s.push(',');
+            s.push_str(d);
+        }
+        s
+    };
+    let overflow = g.geometry.overflow != Overflow::None;
+    let source = pre_chain_at(g, Flavor::Ai, Some(rate));
+    match (g.reframe, &g.track) {
+        (Reframe::Smart, Some(t)) if overflow && t.fallback && g.geometry.crop.is_some() => format!(
+            "[1:v]sendcmd=f={AI_FALLBACK_CMD},{}[crop];{};[crop][pad]overlay@fb=0:0:enable=0,{tail}[v]",
+            to(g.geometry.target),
+            blur_pad(g, &format!("[0:v]{source},"), "[pad]", Flavor::Render)
+        ),
+        (Reframe::Blur, _) if overflow => {
+            let (ox, oy) = fit_offset(g);
+            format!(
+                "[1:v]{}[fg];[0:v]{source},{}[bg];[bg][fg]overlay={ox}:{oy},{tail}[v]",
+                to(stage.fit),
+                blur_background(g)
+            )
+        }
+        _ => format!("[1:v]{},{tail}[v]", to(g.geometry.target)),
+    }
 }
 
 /// The analysis decode graph (research R6): the clip at analysis size, scene-cut scores
@@ -255,6 +340,11 @@ pub fn analysis_graph(g: &GraphInput, size: (u32, u32)) -> String {
 
 /// Trim, deinterlace, square pixels, tone-map, denoise, frame-rate cap — at source resolution.
 fn pre_chain(g: &GraphInput, flavor: Flavor) -> String {
+    pre_chain_at(g, flavor, None)
+}
+
+/// [`pre_chain`]; the AI flavour forces the constant frame `rate` (`n/d`).
+fn pre_chain_at(g: &GraphInput, flavor: Flavor, rate: Option<&str>) -> String {
     let mut f: Vec<String> = Vec::new();
     if let Some((start, end)) = g.trim {
         let end = end.map(|e| format!(":end={}", e.ffmpeg())).unwrap_or_default();
@@ -274,8 +364,13 @@ fn pre_chain(g: &GraphInput, flavor: Flavor) -> String {
     if flavor == Flavor::Render {
         f.push(DENOISE.into());
     }
-    if let Some(fps) = g.fps_cap {
-        f.push(format!("fps={fps}"));
+    match (flavor, rate) {
+        (Flavor::Ai, Some(r)) => f.push(format!("fps={r}")),
+        _ => {
+            if let Some(fps) = g.fps_cap {
+                f.push(format!("fps={fps}"));
+            }
+        }
     }
     // A filter chain cannot be empty (the baseline of a plain source has nothing to do here).
     if f.is_empty() {
@@ -584,5 +679,24 @@ mod tests {
             );
         }
         assert!(!pair.contains("[v]") && !pair.contains("[0:v]["), "{pair}");
+    }
+
+    #[test]
+    fn ai_graphs_frame_at_source_scale_and_compose_after_the_worker() {
+        use crate::upscale::ai::stage;
+        let rate = "30000/1001";
+        let center = input((480, 854), (1080, 2340), Reframe::Center);
+        insta::assert_snapshot!(ai_decode(&center, rate), @"[0:v]fps=30000/1001,crop=394:854:44:0,zscale=min=709:tin=709:pin=709:rin=limited:p=709:t=709:r=full,format=gbrp,format=rgb24[v]");
+        insta::assert_snapshot!(ai_finish(&center, &stage(&center), rate), @"[1:v]zscale=w=1080:h=2340:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited,setsar=1,format=yuv420p[v]");
+        // Smart reframe: the crop moves in ffmpeg #1, the fallback switches in ffmpeg #2 (whole
+        // frame, classically scaled, over the blurred background).
+        let s = smart(true);
+        insta::assert_snapshot!(ai_decode(&s, rate), @"[0:v]fps=30000/1001,sendcmd=f=reframe-crop.cmd,crop@trk=w=332:h=720:x=470:y=0,zscale=min=709:tin=709:pin=709:rin=limited:p=709:t=709:r=full,format=gbrp,format=rgb24[v]");
+        insta::assert_snapshot!(ai_finish(&s, &stage(&s), rate), @"[1:v]sendcmd=f=reframe-fallback.cmd,zscale=w=1080:h=2340:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited[crop];[0:v]fps=30000/1001,split[bg0][fg0];[bg0]scale=108:234:force_original_aspect_ratio=increase,crop=108:234,zscale=min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,gblur=sigma=3,eq=brightness=-0.08,scale=1080:2340,setsar=1[bg];[fg0]zscale=w=1080:h=608:f=lanczos:min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,cas=0.7[fg];[bg][fg]overlay=0:866[pad];[crop][pad]overlay@fb=0:0:enable=0,setsar=1,format=yuv420p[v]");
+        // Blurred background: only the picture goes through the worker (shrunk to half the
+        // foreground: the 1080p source is bigger than it); the background comes from the source.
+        let b = input((1920, 1080), (1080, 2340), Reframe::Blur);
+        insta::assert_snapshot!(ai_decode(&b, rate), @"[0:v]fps=30000/1001,zscale=w=540:h=304:f=lanczos:min=709:tin=709:pin=709:rin=limited:p=709:t=709:r=full,format=gbrp,format=rgb24[v]");
+        insta::assert_snapshot!(ai_finish(&b, &stage(&b), rate), @"[1:v]zscale=w=1080:h=608:f=lanczos:tin=709:pin=709:rin=full:m=709:t=709:p=709:r=limited[fg];[0:v]fps=30000/1001,scale=108:234:force_original_aspect_ratio=increase,crop=108:234,zscale=min=709:tin=709:pin=709:rin=limited:m=709:t=709:p=709:r=limited,gblur=sigma=3,eq=brightness=-0.08,scale=1080:2340,setsar=1[bg];[bg][fg]overlay=0:866,setsar=1,format=yuv420p[v]");
     }
 }

@@ -54,6 +54,9 @@ pub struct PreviewPair {
     pub crop_x: Option<u32>,
     /// The time lies in a range shown over the blurred background.
     pub in_fallback: bool,
+    /// The AI tier: the "after" still is the classical CPU scaler standing in (running the
+    /// worker for a still would not fit the 5 s budget on most GPUs); the render is sharper.
+    pub classical: bool,
 }
 
 /// Plans one upscale job for `path` (the whole video, or `span`), with the planner's checks,
@@ -158,6 +161,7 @@ pub async fn preview_frame(
         approximate: (smart && analysis.is_none()) || up.graph.keep_hdr,
         crop_x: (!in_fallback).then(|| still.geometry.crop.map(|c| c.x)).flatten(),
         in_fallback,
+        classical: up.tier.tier == super::tier::Tier::Ai,
     };
     let source = crate::paths::canonicalize(&req.path)?;
     let still_req = Still { tools, source: &source, at: req.at, out_dir, cancel };

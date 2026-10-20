@@ -77,6 +77,14 @@ pub fn common_args() -> Vec<OsString> {
 
 /// The input and the source range: `[-copyts] [-ss] -i file:<input> [-ss] [-t]`.
 pub fn input_args(spec: &ClipSpec) -> Vec<OsString> {
+    let (mut a, out) = input_parts(spec);
+    a.extend(out);
+    a
+}
+
+/// [`input_args`] in two parts: through `-i file:<input>`, and the output-side `-ss`/`-t`
+/// (which must follow any further input, or they would apply to it).
+fn input_parts(spec: &ClipSpec) -> (Vec<OsString>, Vec<OsString>) {
     let mut a = Vec::new();
     let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
     if spec.trim.is_some() {
@@ -88,14 +96,15 @@ pub fn input_args(spec: &ClipSpec) -> Vec<OsString> {
     push(&["-protocol_whitelist", INPUT_PROTOCOLS]);
     a.push("-i".into());
     a.push(file_arg(&spec.input));
-    let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
+    let mut out = Vec::new();
+    let mut push = |items: &[&str]| out.extend(items.iter().map(OsString::from));
     if let Some(ss) = spec.output_seek.filter(|t| *t > Ts::ZERO) {
         push(&["-ss", &ss.ffmpeg()]);
     }
     if let Some(d) = spec.duration {
         push(&["-t", &d.ffmpeg()]);
     }
-    a
+    (a, out)
 }
 
 pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
@@ -154,6 +163,9 @@ pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
 /// One-pass upscale: the clip's input and range, the upscale filtergraph for video, the clip's
 /// audio and subtitle streams, chapters and metadata, and the preset's encoder (research R2, R5).
 pub fn upscale_args(spec: &UpscaleSpec, output: &Path) -> Vec<OsString> {
+    if spec.up.ai.is_some() {
+        return ai_args(spec, output).encode;
+    }
     let (cut, up) = (&spec.cut, &spec.up);
     let mut a = common_args();
     if let Some(device) = up.graph.gpu {
@@ -166,8 +178,65 @@ pub fn upscale_args(spec: &UpscaleSpec, output: &Path) -> Vec<OsString> {
         ]);
     }
     a.extend(input_args(cut));
+    a.extend(["-filter_complex".into(), OsString::from(graph::build(&up.graph))]);
+    encode_tail(spec, &mut a, output);
+    a
+}
+
+/// The AI tier's three argvs (research R13): ffmpeg #1 writes the framed picture as raw RGB to
+/// stdout, the worker upscales it, ffmpeg #2 reads it on stdin as its second input (the source
+/// stays the first, for audio, subtitles, chapters and the blurred background) and encodes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiArgs {
+    pub decode: Vec<OsString>,
+    pub worker: Vec<OsString>,
+    pub encode: Vec<OsString>,
+}
+
+/// The AI pipeline of an AI-tier job. Panics if the job has no AI engine (`up.ai`).
+pub fn ai_args(spec: &UpscaleSpec, output: &Path) -> AiArgs {
+    let (cut, up) = (&spec.cut, &spec.up);
+    let engine = up.ai.as_ref().expect("an AI-tier job has its engine");
+    let stage = crate::upscale::ai::stage(&up.graph);
+    let rate = up.rate();
+
+    let mut decode: Vec<OsString> =
+        ["-hide_banner", "-nostdin", "-loglevel", "warning"].iter().map(OsString::from).collect();
+    decode.extend(input_args(cut));
+    for s in
+        ["-filter_complex", &graph::ai_decode(&up.graph, &rate), "-map", "[v]", "-fps_mode", "passthrough"]
+    {
+        decode.push(s.into());
+    }
+    decode.extend(["-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"].iter().map(OsString::from));
+
+    let worker = engine.args(stage.scale, up.tier.device, stage.input);
+
+    let (out_w, out_h) = stage.output();
+    let (source, range) = input_parts(cut);
+    let mut encode = common_args();
+    encode.extend(source);
+    let mut raw: Vec<String> =
+        ["-f", "rawvideo", "-pix_fmt", "rgb24"].iter().map(|s| (*s).to_owned()).collect();
+    raw.extend(["-video_size".into(), format!("{out_w}x{out_h}"), "-framerate".into(), rate.clone()]);
+    // A whole video whose audio starts first: the frames start where the source's video does.
+    if up.cmd_offset > 0.0 {
+        raw.extend(["-itsoffset".into(), format!("{:.6}", up.cmd_offset)]);
+    }
+    raw.extend(["-i".into(), "pipe:0".into()]);
+    encode.extend(raw.into_iter().map(OsString::from));
+    encode.extend(range);
+    encode.extend(["-filter_complex".into(), OsString::from(graph::ai_finish(&up.graph, &stage, &rate))]);
+    encode_tail(spec, &mut encode, output);
+    AiArgs { decode, worker, encode }
+}
+
+/// Everything after the filtergraph: the video label, the clip's other streams, chapters and
+/// metadata (from the source, input 0), the preset's encoder, audio, subtitles and the output.
+fn encode_tail(spec: &UpscaleSpec, a: &mut Vec<OsString>, output: &Path) {
+    let (cut, up) = (&spec.cut, &spec.up);
     let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
-    push(&["-filter_complex", &graph::build(&up.graph), "-map", "[v]"]);
+    push(&["-map", "[v]"]);
     for m in cut.streams.maps.iter().filter(|m| m.kind != StreamKind::Video) {
         push(&["-map", &format!("0:{}", m.index)]);
     }
@@ -197,7 +266,6 @@ pub fn upscale_args(spec: &UpscaleSpec, output: &Path) -> Vec<OsString> {
     }
     push(&["-movflags", "+faststart", "-f", "mp4"]);
     a.push(file_arg(output));
-    a
 }
 
 fn has(spec: &ClipSpec, kind: StreamKind) -> bool {

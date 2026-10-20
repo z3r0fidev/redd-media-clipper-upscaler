@@ -34,6 +34,14 @@ pub fn to_sendcmd(a: &ReframeAnalysis, offset: f64) -> String {
     lines.iter().map(|(t, _, cmd)| format!("{t:.6} {cmd};\n")).collect()
 }
 
+/// The AI tier's two command files (crop moves for ffmpeg #1, fallback toggles for ffmpeg #2):
+/// the lines of `to_sendcmd(a, offset)` for each filter.
+pub fn split_for_ai(a: &ReframeAnalysis, offset: f64) -> (String, String) {
+    let all = to_sendcmd(a, offset);
+    let pick = |target: &str| all.lines().filter(|l| l.contains(target)).map(|l| format!("{l}\n")).collect();
+    (pick("crop@trk"), pick("overlay@fb"))
+}
+
 /// `(source seconds, crop x)` sampled at `hz`, for JSON and the desktop overlay.
 pub fn keyframes(a: &ReframeAnalysis, hz: f64) -> Vec<(f64, i32)> {
     let Some(last) = a.path.len().checked_sub(1) else { return Vec::new() };

@@ -49,6 +49,8 @@ pub struct Caps {
     pub face: Option<crate::upscale::reframe::detect::DetectorSpec>,
     /// Where reframe analyses are cached (`None`: no cache).
     pub reframe_cache: Option<PathBuf>,
+    /// The AI tier's worker and models (`None`: not installed; the AI tier cannot run).
+    pub ai: Option<crate::upscale::ai::AiEngine>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -126,6 +128,14 @@ impl PlannedJob {
         match &self.spec {
             JobSpec::Clip(c) => ffargs::clip_args(c, &self.temp),
             JobSpec::Upscale(u) => ffargs::upscale_args(u, &self.temp),
+        }
+    }
+
+    /// The AI tier's three argvs (`None` for other jobs). `args()` is the last of them.
+    pub fn pipeline(&self) -> Option<ffargs::AiArgs> {
+        match &self.spec {
+            JobSpec::Upscale(u) if u.up.ai.is_some() => Some(ffargs::ai_args(u, &self.temp)),
+            _ => None,
         }
     }
 
@@ -631,6 +641,25 @@ impl Planner<'_> {
             }
         };
         let v = media.first_video()?;
+        if tier.tier == Tier::Ai {
+            if self.caps.ai.is_none() {
+                self.error(
+                    origin,
+                    IssueCode::TierUnavailable,
+                    "the ai tier is not available on this machine: the AI worker (rmedia-sr) or its models are not installed"
+                        .to_owned(),
+                );
+                return None;
+            }
+            if u.hdr == HdrMode::Keep && v.is_hdr() {
+                self.error(
+                    origin,
+                    IssueCode::HdrUnsupported,
+                    "the AI tier makes SDR output; use --hdr sdr or another tier to keep HDR".to_owned(),
+                );
+                return None;
+            }
+        }
         let encoder = match preset.video.codec {
             VideoCodec::Hevc => "libx265",
             VideoCodec::H264 => "libx264",
@@ -739,6 +768,11 @@ impl Planner<'_> {
             (None, Some(f)) => f,
             (None, None) => 30.0,
         };
+        let frame_rate = match (fps_cap, v.frame_rate) {
+            (Some(c), _) => (c, 1),
+            (None, Some((n, d))) if n > 0 && d > 0 => (n, d),
+            _ => (30, 1),
+        };
         let graph = GraphInput {
             trim: cut.trim.map(|t| (t.start, t.end)),
             deinterlace: v.is_interlaced(),
@@ -790,6 +824,7 @@ impl Planner<'_> {
             threads,
             maxrate_kbps: estimate::maxrate_for_limit(&preset, &est, len, audio_kbps),
         });
+        let ai = (tier.tier == Tier::Ai).then(|| self.caps.ai.clone()).flatten();
         let expected_video =
             if whole { v.duration.or(media.duration) } else { Some(cut.requested.end - cut.requested.start) };
         UpscalePlan {
@@ -811,6 +846,8 @@ impl Planner<'_> {
             video_args,
             audio_copy,
             fps_out,
+            frame_rate,
+            ai,
             expected_video,
             estimate: est,
             limit_warnings,

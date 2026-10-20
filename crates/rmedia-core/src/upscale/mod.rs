@@ -1,5 +1,6 @@
 //! Upscaling jobs (feature 002): options, planning and the per-job upscale plan.
 
+pub mod ai;
 pub mod capability;
 pub mod encode;
 pub mod estimate;
@@ -77,6 +78,10 @@ pub struct UpscalePlan {
     /// Every mapped audio stream is AAC and the preset allows copying it.
     pub audio_copy: bool,
     pub fps_out: f64,
+    /// `fps_out` as a rational (the AI tier's constant frame rate).
+    pub frame_rate: (u32, u32),
+    /// The AI tier's worker and models (`None` for the other tiers).
+    pub ai: Option<ai::AiEngine>,
     /// Video length the output must have (the source's video stream, or the clip span).
     pub expected_video: Option<crate::time::Ts>,
     pub estimate: Estimate,
@@ -178,6 +183,11 @@ impl UpscalePlan {
             "limit_warnings": self.limit_warnings,
             "reframe_analysis": self.analysis_json(),
         })
+    }
+
+    /// The AI tier's frame rate for ffmpeg (`n/d`).
+    pub fn rate(&self) -> String {
+        format!("{}/{}", self.frame_rate.0, self.frame_rate.1)
     }
 }
 

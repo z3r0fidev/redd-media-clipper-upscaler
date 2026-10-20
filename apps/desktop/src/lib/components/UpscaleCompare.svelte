@@ -39,6 +39,8 @@
     <p class="err" role="alert">{upscale.previewError}</p>
   {:else if p?.approximate}
     <span class="badge" title="The crop follows the subject once the analysis is done">Centred until analysed</span>
+  {:else if p?.classical}
+    <span class="badge" title="The AI result is rendered with the video; this still uses the standard scaler">Preview: standard scaler</span>
   {:else if p?.in_fallback}
     <span class="badge" title="No single subject fits here, so the whole frame is shown over a blurred copy">Blurred background here</span>
   {/if}

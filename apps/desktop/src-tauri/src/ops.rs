@@ -646,6 +646,7 @@ impl AppState {
             approximate: p.approximate,
             crop_x: p.crop_x,
             in_fallback: p.in_fallback,
+            classical: p.classical,
         })
     }
 
@@ -736,6 +737,8 @@ pub struct UpscalePreview {
     pub approximate: bool,
     pub crop_x: Option<u32>,
     pub in_fallback: bool,
+    /// AI tier: the "after" still comes from the standard scaler.
+    pub classical: bool,
 }
 
 /// Containers/codecs both WebView2 and WebKitGTK commonly play; anything else uses a proxy. The

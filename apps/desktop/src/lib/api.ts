@@ -53,6 +53,8 @@ export interface UpscalePreview {
   approximate: boolean;
   crop_x: number | null;
   in_fallback: boolean;
+  /** AI tier: the "after" still comes from the standard scaler (the render is sharper). */
+  classical: boolean;
 }
 
 export const api = {

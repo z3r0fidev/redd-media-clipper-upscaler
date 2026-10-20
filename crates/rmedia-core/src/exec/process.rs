@@ -32,18 +32,55 @@ pub struct ProcessOutput {
     pub stderr_tail: String,
 }
 
+/// How a child joins a process group (Unix).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Group {
+    /// Leads its own group; the wrapper kills and reaps the whole group (single tools).
+    Own,
+    /// Leads a group other pipeline stages join; each stage is reaped on its own.
+    Lead,
+    /// Joins the group led by this pid.
+    Join(u32),
+}
+
 fn build(program: &Path, args: &[OsString], cwd: Option<&Path>) -> CommandWrap {
+    build_with(program, args, cwd, Stdio::null(), Group::Own)
+}
+
+fn build_with(
+    program: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    stdin: Stdio,
+    group: Group,
+) -> CommandWrap {
     let mut cmd = tokio::process::Command::new(program);
-    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.args(args).stdin(stdin).stdout(Stdio::piped()).stderr(Stdio::piped());
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
     #[cfg(target_os = "linux")]
     set_parent_death_signal(&mut cmd);
+    // process_wrap's group wrapper reaps every member when the leader is waited for, which
+    // would take the other stages' exit statuses: pipeline groups are set here instead.
+    #[cfg(unix)]
+    match group {
+        Group::Own => {}
+        Group::Lead => {
+            cmd.process_group(0);
+        }
+        Group::Join(pgid) => {
+            cmd.process_group(pgid as i32);
+        }
+    }
 
     let mut wrap = CommandWrap::from(cmd);
     #[cfg(unix)]
-    wrap.wrap(process_wrap::tokio::ProcessGroup::leader());
+    if group == Group::Own {
+        wrap.wrap(process_wrap::tokio::ProcessGroup::leader());
+    }
+    #[cfg(not(unix))]
+    let _ = group;
     #[cfg(windows)]
     {
         wrap.wrap(process_wrap::tokio::JobObject);
@@ -74,7 +111,41 @@ fn set_parent_death_signal(cmd: &mut tokio::process::Command) {
 }
 
 fn spawn(program: &Path, args: &[OsString], cwd: Option<&Path>) -> Result<Box<dyn ChildWrapper>> {
-    build(program, args, cwd).spawn().map_err(|e| {
+    spawned(program, build(program, args, cwd).spawn())
+}
+
+/// Spawns one stage of a pipeline (the AI tier, US6): `stdin` is the previous stage's stdout;
+/// stdout and stderr are piped. On Unix every stage is in the group of the first (`Group::Lead`
+/// then `Group::Join(first pid)`), so [`kill_group`] stops them all at once; on Windows each has
+/// its own kill-on-close Job Object and is killed one by one.
+pub(crate) fn spawn_stage(
+    program: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    stdin: Stdio,
+    group: Group,
+) -> Result<Box<dyn ChildWrapper>> {
+    spawned(program, build_with(program, args, cwd, stdin, group).spawn())
+}
+
+/// SIGKILLs every process in the group `pgid` (pipelines). Errors are ignored: the group may
+/// be gone already.
+#[cfg(unix)]
+#[allow(unsafe_code)]
+pub(crate) fn kill_group(pgid: u32) {
+    if let Ok(pgid) = libc::pid_t::try_from(pgid)
+        && pgid > 1
+    {
+        // SAFETY: killpg only sends a signal; the group is one this run created and has not
+        // fully reaped yet (callers stop calling once every stage is reaped).
+        unsafe {
+            libc::killpg(pgid, libc::SIGKILL);
+        }
+    }
+}
+
+fn spawned(program: &Path, r: std::io::Result<Box<dyn ChildWrapper>>) -> Result<Box<dyn ChildWrapper>> {
+    r.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             Error::EngineMissing(format!("{} not found", program.display()))
         } else {
@@ -185,12 +256,12 @@ where
     Ok(ProcessOutput { status, stdout: Vec::new(), stderr_tail })
 }
 
-async fn kill(child: &mut dyn ChildWrapper) {
+pub(crate) async fn kill(child: &mut dyn ChildWrapper) {
     // Kills the whole process group / job, then reaps the child.
     let _ = Box::into_pin(child.kill()).await;
 }
 
-async fn collect_stderr(stderr: Option<tokio::process::ChildStderr>) -> String {
+pub(crate) async fn collect_stderr(stderr: Option<tokio::process::ChildStderr>) -> String {
     let Some(stderr) = stderr else { return String::new() };
     let mut tail: VecDeque<String> = VecDeque::with_capacity(STDERR_TAIL_LINES);
     let mut lines = BufReader::new(stderr).lines();

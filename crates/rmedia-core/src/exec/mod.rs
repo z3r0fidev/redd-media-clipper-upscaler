@@ -7,6 +7,7 @@
 mod clip;
 pub mod commit;
 pub mod journal;
+mod pipeline;
 pub mod process;
 pub mod progress;
 mod upscale;

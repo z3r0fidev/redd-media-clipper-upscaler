@@ -36,8 +36,20 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
     }
     ctx.stage("render", of - 1, of, if analyse { 0.7 } else { 0.9 });
     if let (Some(a), Some(dir), Some(_)) = (spec.up.analysis(), ctx.scratch_dir(), spec.up.graph.track) {
-        std::fs::write(dir.join("reframe.cmd"), reframe::sendcmd::to_sendcmd(a, spec.up.cmd_offset))
-            .map_err(|e| Error::OutputUnwritable { path: dir.join("reframe.cmd"), message: e.to_string() })?;
+        let files = if spec.up.ai.is_some() {
+            // The AI tier moves the crop in ffmpeg #1 and switches the fallback in ffmpeg #2.
+            let (crop, fallback) = reframe::sendcmd::split_for_ai(a, spec.up.cmd_offset);
+            vec![
+                (crate::upscale::graph::AI_CROP_CMD, crop),
+                (crate::upscale::graph::AI_FALLBACK_CMD, fallback),
+            ]
+        } else {
+            vec![("reframe.cmd", reframe::sendcmd::to_sendcmd(a, spec.up.cmd_offset))]
+        };
+        for (name, text) in files {
+            std::fs::write(dir.join(name), text)
+                .map_err(|e| Error::OutputUnwritable { path: dir.join(name), message: e.to_string() })?;
+        }
     }
     let mut tier_fallback = false;
     if let Err(e) = render(&spec, ctx, total).await {
@@ -87,8 +99,12 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
 
 /// One render attempt in the scratch directory (so the graph can name its files relatively).
 async fn render(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>, total: Ts) -> Result<()> {
-    let args = upscale_args(spec, ctx.temp);
     let cwd = ctx.scratch_dir();
+    if let Some(engine) = &spec.up.ai {
+        let args = crate::plan::ffargs::ai_args(spec, ctx.temp);
+        return super::pipeline::run(ctx, &engine.worker, &args, cwd, total).await;
+    }
+    let args = upscale_args(spec, ctx.temp);
     let out = ctx.run_ffmpeg_in(cwd, &args, total).await?;
     if out.status.success() { Ok(()) } else { Err(classify_failure(&out.stderr_tail, ctx.output)) }
 }
