@@ -1,0 +1,27 @@
+[package]
+name = "rmedia-sr"
+description = "rmedia AI upscaling worker: a frame filter over ncnn + Vulkan, driven by rmedia-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "rmedia-sr"
+path = "src/main.rs"
+
+[dependencies]
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[build-dependencies]
+cc = "1.2"
+
+[lints]
+workspace = true

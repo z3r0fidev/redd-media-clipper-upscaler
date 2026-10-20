@@ -53,7 +53,7 @@
 - Forced GPU output: 1080x2340 HEVC `hvc1`, BT.709 tags. With `VK_DRIVER_FILES`/`VK_ICD_FILENAMES`
   pointed at a missing file: `--tier gpu` exits 3 `TIER_UNAVAILABLE` ("no Vulkan device").
 - Windows: `CC_x86_64_pc_windows_gnu=gcc AR_x86_64_pc_windows_gnu=ar cargo check --target
-  x86_64-pc-windows-gnu --workspace --all-targets` (the `CC` override lets tract-linalg's build
+  x86_64-pc-windows-gnu --workspace --all-targets --exclude rmedia-sr` (the `CC` override lets tract-linalg's build
   script assemble without MinGW; nothing is linked) with
   `-D warnings` passes (registry code compiles); not run on Windows hardware.
 - **Known limits:**

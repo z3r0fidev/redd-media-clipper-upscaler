@@ -39,6 +39,14 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Format
         run: cargo fmt --all -- --check
+      # rmedia-sr (the AI worker, US6) links the prebuilt ncnn; build.rs stops without it.
+      - name: Cache ncnn
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: third_party/ncnn
+          key: ncnn-${{ matrix.triple }}-${{ hashFiles('xtask/models.lock.json') }}
+      - name: Fetch pinned ncnn (sha256-verified)
+        run: cargo xtask fetch-ncnn --target ${{ matrix.triple }}
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Fetch pinned engine (sha256-verified)
@@ -70,8 +78,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       # 002 tests need filters/encoders a distro build may lack (zscale, libvmaf, ...); they skip
-      # here through testkit::require_engine and run for real in the bundled-engine jobs.
-      - run: cargo test --workspace
+      # here through testkit::require_engine and run for real in the bundled-engine jobs. The AI
+      # worker (prebuilt ncnn) is built and tested in the bundled-engine jobs only.
+      - run: cargo test --workspace --exclude rmedia-sr
         env:
           RMEDIA_ALLOW_MISSING_FEATURES: "1"
 
@@ -83,7 +92,8 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup target add x86_64-pc-windows-gnu
-      - run: cargo check --workspace --all-targets --target x86_64-pc-windows-gnu
+      # rmedia-sr links the MSVC build of ncnn; it is checked by the Windows test job instead.
+      - run: cargo check --workspace --all-targets --target x86_64-pc-windows-gnu --exclude rmedia-sr
 
   desktop:
     name: desktop app (${{ matrix.os }})

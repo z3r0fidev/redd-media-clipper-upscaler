@@ -131,7 +131,7 @@ jobs use the runner's preinstalled Node.
 |---|---|---|
 | `test` (bundled engine) | `ubuntu-22.04`, `windows-latest` | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo xtask fetch-tools`; `cargo test --workspace`; `cargo test --workspace --release -- --ignored bench` (with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to the bundled engine) |
 | `minimum-engine` | `ubuntu-24.04` | Installs distro `ffmpeg` (6.1, the minimum supported); `cargo test --workspace` |
-| `windows-check-gnu` | `ubuntu-22.04` | `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu` (type-checks Windows code paths from Linux) |
+| `windows-check-gnu` | `ubuntu-22.04` | `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu --exclude rmedia-sr` (type-checks Windows code paths from Linux; the AI worker links MSVC ncnn and is built by the Windows test job) |
 | `desktop` | `ubuntu-22.04`, `windows-latest` | Linux webview dependencies; `fetch-tools` + `stage-cli` (tauri-build requires the sidecars to exist); `gen-bindings` then `git diff --exit-code` on the bindings; `npm ci`, `npm run check`, `npm test`, `npm run build`; Linux only: desktop backend tests and the notices check; Windows only: `cargo build` of the desktop backend |
 | `deny` | `ubuntu-22.04` | `cargo-deny` for `Cargo.toml` and for `apps/desktop/src-tauri/Cargo.toml` |
 

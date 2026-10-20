@@ -10,6 +10,7 @@ pipeline (Principle IV).
 rmedia-sr --model <DIR>/<name> --scale {2|3|4} --gpu <INDEX> --width W --height H
           [--tile N] [--fp16 auto|on|off] [--threads N]
 rmedia-sr --list-gpus                    # JSON on stdout, software devices marked
+                                         # {"devices":[{"index","name","kind","software","fp16","heap_budget_mb"}]}
 rmedia-sr --selftest --model … --scale … --gpu … --width W --height H [--frames 8]
 rmedia-sr --version
 ```
@@ -19,6 +20,10 @@ rmedia-sr --version
 - `--gpu` is required. The test-only value `none` is accepted only with a `builtin:*` model
   (`builtin:nearest` does CPU nearest-neighbour ×s, so the pipeline can be tested without a GPU). A software Vulkan device (llvmpipe, lavapipe, SwiftShader, CPU type) is
   rejected with exit code 3.
+- `--tile 0` (default) picks the input tile side from the device's memory budget (200/100/64/32,
+  as the reference tool); tiles overlap by 10 source pixels so seams match whole-frame output.
+- `--fp16 auto` keeps ncnn's choice for the device. Winograd convolution is turned off on
+  integrated GPUs (about 2× faster on Intel Xe, research R13).
 
 ## Data
 
@@ -31,13 +36,17 @@ rmedia-sr --version
 ## stderr: JSON lines
 
 ```
-{"type":"device","index":0,"name":"…","kind":"discrete","fp16":true}
+{"type":"device","index":0,"name":"…","kind":"discrete","fp16":true,"tile":200}
 {"type":"progress","frames":120,"fps":7.9}
-{"type":"selftest","frames":8,"sec_per_frame":0.127,"sec_per_mpx":0.31}
-{"type":"error","code":"VK_OUT_OF_MEMORY","message":"…"}
+{"type":"selftest","frames":8,"width":480,"height":270,"scale":2,"sec_per_frame":0.127,"sec_per_mpx":0.98}
+{"type":"error","code":"SHORT_FRAME","message":"…"}
 ```
 
-`progress` is emitted at most every 250 ms.
+`progress` is emitted at most every 250 ms, plus once at the end. Error codes: `USAGE` (2);
+`NO_VULKAN`, `NO_DEVICE`, `SOFTWARE_DEVICE` (3); `SHORT_FRAME`, `READ`, `WRITE` (4); `MODEL_LOAD`
+(5); `GPU_RUNTIME` (6). ncnn's own diagnostics are discarded (stderr is redirected to the null
+device after the worker keeps a copy for its JSON lines), so every stderr line is JSON.
+`--selftest` runs one untimed warm-up frame (pipeline creation), then times `--frames` frames.
 
 ## Exit codes
 
@@ -46,7 +55,7 @@ rmedia-sr --version
 | 0 | ok |
 | 2 | usage |
 | 3 | GPU unavailable or software device |
-| 4 | input error |
+| 4 | input/output error (short final frame, closed pipe) |
 | 5 | model load failure |
 | 6 | GPU runtime error |
 | 130/137 | killed |

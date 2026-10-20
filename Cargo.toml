@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/rmedia-core", "crates/rmedia-cli", "crates/rmedia-testkit", "xtask"]
+members = ["crates/rmedia-core", "crates/rmedia-cli", "crates/rmedia-sr", "crates/rmedia-testkit", "xtask"]
 # The desktop app is its own workspace (own Cargo.lock; needs webkit2gtk), so CLI-only builds stay light.
 exclude = ["apps/desktop/src-tauri"]
 
