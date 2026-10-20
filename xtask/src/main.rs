@@ -400,27 +400,30 @@ fn gen_bindings() -> Result<()> {
     Ok(())
 }
 
-/// Builds the release CLI and copies it to `binaries/rmedia-<triple>[.exe]`, so installers ship it
-/// next to the bundled engine (Tauri sidecar naming).
+/// Builds the release CLI and the AI worker and copies them to `binaries/rmedia-<triple>[.exe]`
+/// and `binaries/rmedia-sr-<triple>[.exe]`, so installers ship them next to the bundled engine
+/// (Tauri sidecar naming). The worker needs `cargo xtask fetch-ncnn --target <triple>` first.
 fn stage_cli(target: &str) -> Result<()> {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let host = target == host_triple();
     let mut cmd = Command::new(&cargo);
-    cmd.args(["build", "--release", "-p", "rmedia-cli"]).current_dir(root());
+    cmd.args(["build", "--release", "-p", "rmedia-cli", "-p", "rmedia-sr"]).current_dir(root());
     if !host {
         cmd.args(["--target", target]);
     }
     run(&mut cmd)?;
     let exe = if target.contains("windows") { ".exe" } else { "" };
-    let built = if host {
-        root().join(format!("target/release/rmedia{exe}"))
-    } else {
-        root().join(format!("target/{target}/release/rmedia{exe}"))
-    };
-    let dest = root().join(format!("binaries/rmedia-{target}{exe}"));
     std::fs::create_dir_all(root().join("binaries"))?;
-    std::fs::copy(&built, &dest).with_context(|| format!("copy {}", built.display()))?;
-    println!("staged {}", dest.display());
+    for name in ["rmedia", "rmedia-sr"] {
+        let built = if host {
+            root().join(format!("target/release/{name}{exe}"))
+        } else {
+            root().join(format!("target/{target}/release/{name}{exe}"))
+        };
+        let dest = root().join(format!("binaries/{name}-{target}{exe}"));
+        std::fs::copy(&built, &dest).with_context(|| format!("copy {}", built.display()))?;
+        println!("staged {}", dest.display());
+    }
     Ok(())
 }
 

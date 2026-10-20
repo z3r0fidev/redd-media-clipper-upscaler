@@ -43,9 +43,11 @@ jobs:
           workspaces: |
             . -> target
             apps/desktop/src-tauri -> target
-      - name: Stage bundled programs (pinned FFmpeg, release CLI)
+      - name: Stage bundled programs and models (pinned FFmpeg, ncnn and models; release CLI and AI worker)
         run: |
           cargo xtask fetch-tools --target ${{ matrix.triple }}
+          cargo xtask fetch-ncnn --target ${{ matrix.triple }}
+          cargo xtask fetch-models
           cargo xtask stage-cli --target ${{ matrix.triple }}
       - name: Tests must pass before packaging
         shell: bash
@@ -68,11 +70,14 @@ jobs:
         run: |
           ref=$(echo "${GITHUB_REF_NAME}" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-*$//')
           name=rmedia-cli-${ref}-${{ matrix.triple }}
-          mkdir -p "dist/$name/licenses"
+          mkdir -p "dist/$name/licenses" "dist/$name/models"
           cp binaries/rmedia-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia${{ matrix.exe }}"
+          cp binaries/rmedia-sr-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-sr${{ matrix.exe }}"
+          cp models/face_detection_yunet_2026may.onnx models/realesr-animevideov3-x?.param models/realesr-animevideov3-x?.bin "dist/$name/models/"
           cp binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffmpeg${{ matrix.exe }}"
           cp binaries/rmedia-ffprobe-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffprobe${{ matrix.exe }}"
-          cp THIRD_PARTY_NOTICES.md licenses/FFMPEG-NOTICE.md licenses/FFMPEG-LICENSE.txt "dist/$name/licenses/"
+          cp THIRD_PARTY_NOTICES.md licenses/FFMPEG-NOTICE.md licenses/FFMPEG-LICENSE.txt licenses/NCNN-NOTICE.md \
+            licenses/NCNN-LICENSE.txt licenses/GLSLANG-LICENSE.txt "dist/$name/licenses/"
           cp README.md "dist/$name/"
           cd dist && if [ "${{ runner.os }}" = "Windows" ]; then 7z a "$name.zip" "$name" >/dev/null; else tar -czf "$name.tar.gz" "$name"; fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

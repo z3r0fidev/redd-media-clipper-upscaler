@@ -31,14 +31,19 @@ impl ModelSet {
     }
 }
 
-/// Model folders in lookup order: `settings.models_dir`, then `models/` beside the executable
-/// (installers put them there; a development build also looks in the workspace's `models/`),
-/// then `<cache root>/models`.
+/// Model folders in lookup order: `settings.models_dir`, then the installed `models/` (beside
+/// the executable on Windows; `<prefix>/lib/rmedia/models` for the Linux packages, whose
+/// programs are in `<prefix>/bin`; a development build also looks in the workspace's
+/// `models/`), then `<cache root>/models`.
 pub fn search_dirs(settings: &Settings) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     dirs.extend(settings.models_dir.clone());
     if let Some(exe_dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
         dirs.push(exe_dir.join("models"));
+        // deb and AppImage: programs in usr/bin, Tauri resources in usr/lib/<product name>.
+        if cfg!(target_os = "linux") && exe_dir.ends_with("bin") {
+            dirs.extend(exe_dir.parent().map(|p| p.join("lib/rmedia/models")));
+        }
         // Development builds only: target/<profile>/ (and …/deps/ for tests) → workspace models/.
         for up in exe_dir.ancestors().skip(1).take(if cfg!(debug_assertions) { 3 } else { 0 }) {
             if up.join("Cargo.toml").is_file() && up.join("models").is_dir() {

@@ -119,9 +119,11 @@ jobs:
           workspaces: |
             . -> target
             apps/desktop/src-tauri -> target
-      - name: Stage sidecars (tauri-build requires the bundled programs to exist)
+      - name: Stage sidecars and models (tauri-build requires the bundled files to exist)
         run: |
           cargo xtask fetch-tools --target ${{ matrix.triple }}
+          cargo xtask fetch-ncnn --target ${{ matrix.triple }}
+          cargo xtask fetch-models
           cargo xtask stage-cli --target ${{ matrix.triple }}
       - name: Generated TypeScript bindings are up to date
         shell: bash
