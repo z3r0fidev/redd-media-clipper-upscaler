@@ -799,13 +799,24 @@ impl Planner<'_> {
         let audio_copy = preset.audio.copy_if_aac && whole && audio.iter().all(|s| s.codec == "aac");
         let audio_kbps = (!audio.is_empty()).then_some(preset.audio.bitrate_k);
         let len = cut.requested.end.saturating_sub(cut.requested.start).as_secs_f64();
-        let est = estimate::estimate(
+        let mut est = estimate::estimate(
             &preset,
             fps_out,
             len,
             audio_kbps,
             estimate::encode_fps(tier.tier, self.caps.capability.as_ref(), target),
         );
+        // The AI worker runs alongside the encoder: the slower of the two sets the time.
+        let ai_rate = self.caps.capability.as_ref().and_then(|r| r.tiers.ai.sec_per_mpx);
+        if let (Tier::Ai, Some(spm)) = (tier.tier, ai_rate) {
+            let st = crate::upscale::ai::stage(&graph);
+            let mpx = f64::from(st.input.0) * f64::from(st.input.1) / 1e6;
+            let ai = crate::upscale::capability::ai_secs(f64::from(spm), len * fps_out, mpx);
+            est.secs = est.secs.max(ai);
+            if let Some(w) = crate::upscale::tier::ai_too_slow(ai, len) {
+                warnings.push(w);
+            }
+        }
         let limit_warnings = estimate::limit_warnings(&preset, &est, len);
         for w in &limit_warnings {
             self.issues.push(Issue {

@@ -115,6 +115,23 @@ pub fn select(
     Ok(TierDecision { suggest: decision.suggest.or(suggest), ..decision })
 }
 
+/// A forced AI job predicted to take more than this many times the clip's length gets a
+/// warning with the estimate (research R13).
+pub const AI_SLOW_FACTOR: f64 = 10.0;
+
+/// The warning for a forced AI job of `clip_secs` predicted to take `predicted_secs`, if it is
+/// that slow: "too slow: estimated 45 min for this clip".
+pub fn ai_too_slow(predicted_secs: f64, clip_secs: f64) -> Option<String> {
+    (clip_secs > 0.0 && predicted_secs > AI_SLOW_FACTOR * clip_secs).then(|| {
+        let est = if predicted_secs < 90.0 {
+            format!("{} s", predicted_secs.round())
+        } else {
+            format!("{} min", (predicted_secs / 60.0).round())
+        };
+        format!("too slow: estimated {est} for this clip on the AI tier (the GPU tier is much faster)")
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,7 +172,7 @@ mod tests {
                 .contains("no Vulkan device")
         );
         assert!(select(TierChoice::Gpu, None, src).is_err());
-        assert!(select(TierChoice::Ai, Some(&gpu), src).unwrap_err().contains("not built yet"));
+        assert!(select(TierChoice::Ai, Some(&gpu), src).unwrap_err().contains("no AI check has run"));
         let cpu = select(TierChoice::Cpu, None, src).unwrap();
         assert_eq!((cpu.tier, cpu.forced), (Tier::Cpu, true));
     }
@@ -184,5 +201,26 @@ mod tests {
         assert_eq!(select(TierChoice::Auto, Some(&ai), (1280, 720)).unwrap().suggest, None);
         assert_eq!(select(TierChoice::Auto, Some(&record(true, false)), (480, 854)).unwrap().suggest, None);
         assert_eq!(select(TierChoice::Ai, Some(&ai), (480, 854)).unwrap().suggest, None);
+        // Even with no GPU tier and an AI tier that is available, auto stays on the CPU.
+        let only_ai = record(false, true);
+        let d = select(TierChoice::Auto, Some(&only_ai), (320, 240)).unwrap();
+        assert_eq!((d.tier, d.suggest), (Tier::Cpu, Some(Tier::Ai)));
+    }
+
+    #[test]
+    fn forced_ai_reports_why_it_is_unavailable_and_warns_when_too_slow() {
+        let mut r = record(true, false);
+        r.tiers.ai.reason = Some("too slow on Intel(R) Graphics (integrated): about 105 min".into());
+        let e = select(TierChoice::Ai, Some(&r), (480, 854)).unwrap_err();
+        assert!(e.contains("about 105 min"), "{e}");
+        let d = select(TierChoice::Ai, Some(&record(true, true)), (480, 854)).unwrap();
+        assert_eq!((d.tier, d.forced), (Tier::Ai, true));
+        assert_eq!(ai_too_slow(100.0, 10.0), None, "10x the clip is the limit");
+        assert_eq!(
+            ai_too_slow(2700.0, 60.0).as_deref(),
+            Some("too slow: estimated 45 min for this clip on the AI tier (the GPU tier is much faster)")
+        );
+        assert!(ai_too_slow(80.0, 5.0).unwrap().contains("estimated 80 s"));
+        assert_eq!(ai_too_slow(80.0, 0.0), None);
     }
 }

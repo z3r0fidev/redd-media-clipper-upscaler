@@ -110,15 +110,15 @@ impl Default for CapabilityRecord {
             tiers: TierStatus {
                 cpu: TierInfo { available: true, ..TierInfo::default() },
                 gpu: TierInfo { reason: Some("no GPU check has run".into()), ..TierInfo::default() },
-                ai: ai_not_built(),
+                ai: ai_not_checked(),
             },
             demoted: Vec::new(),
         }
     }
 }
 
-fn ai_not_built() -> TierInfo {
-    TierInfo { reason: Some("the AI tier is not built yet".into()), ..TierInfo::default() }
+fn ai_not_checked() -> TierInfo {
+    TierInfo { reason: Some("no AI check has run".into()), ..TierInfo::default() }
 }
 
 impl CapabilityRecord {
@@ -537,11 +537,13 @@ pub struct ProbeEnv {
     pub timeout: Duration,
     /// Limit for the whole check (listing, round trips and self-tests).
     pub budget: Duration,
+    /// The AI tier's worker and models, when installed (US6).
+    pub ai: Option<super::ai::AiEngine>,
 }
 
 impl ProbeEnv {
     pub fn new(preset: Preset) -> ProbeEnv {
-        ProbeEnv { preset, timeout: Duration::from_secs(60), budget: Duration::from_secs(180) }
+        ProbeEnv { preset, timeout: Duration::from_secs(60), budget: Duration::from_secs(180), ai: None }
     }
 }
 
@@ -733,7 +735,229 @@ fn clean(s: &str, max: usize) -> String {
 }
 
 /// Bumped when the self-tests or the tier graphs change, so stored speeds are measured again.
-const CHECK_REVISION: u32 = 2;
+const CHECK_REVISION: u32 = 3;
+
+// --- AI tier (US6) ---------------------------------------------------------------------------
+
+/// SC-009's reference job: 60 s of 480p (854x480) at 30 fps.
+const AI_REF_FRAMES: f64 = 1800.0;
+const AI_REF_MPX: f64 = 854.0 * 480.0 / 1e6;
+/// AI is offered only when the reference job is predicted to take at most this long.
+pub const AI_LIMIT_SECS: f64 = 600.0;
+/// Self-test frames (480x270, after an untimed warm-up frame).
+const AI_TEST_SIZE: (u32, u32) = (480, 270);
+const AI_TEST_FRAMES: u32 = 4;
+
+/// A device as the worker lists it (`rmedia-sr --list-gpus`; its indices are ncnn's, which can
+/// differ from ffmpeg's listing).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SrDevice {
+    pub index: u32,
+    pub name: String,
+    pub kind: String,
+    #[serde(default)]
+    pub software: bool,
+}
+
+/// Parses `--list-gpus` output: `{"devices":[…]}`.
+pub fn parse_sr_devices(stdout: &str) -> Vec<SrDevice> {
+    #[derive(Deserialize)]
+    struct Listing {
+        devices: Vec<SrDevice>,
+    }
+    serde_json::from_str::<Listing>(stdout.trim()).map(|l| l.devices).unwrap_or_default()
+}
+
+/// The AI tier's device: discrete first, then integrated, then virtual; never software.
+pub fn pick_sr_device(devices: &[SrDevice]) -> Option<&SrDevice> {
+    ["discrete", "integrated", "virtual"]
+        .iter()
+        .find_map(|k| devices.iter().find(|d| !d.software && d.kind == *k))
+}
+
+/// Seconds per input megapixel from the worker's `selftest` line (stderr JSON lines).
+pub fn parse_selftest(stderr: &str) -> Option<f64> {
+    stderr.lines().find_map(|l| {
+        let v: serde_json::Value = serde_json::from_str(l).ok()?;
+        (v["type"] == "selftest")
+            .then(|| v["sec_per_mpx"].as_f64())
+            .flatten()
+            .filter(|x| x.is_finite() && *x > 0.0)
+    })
+}
+
+/// The worker's error message from its stderr JSON lines.
+fn sr_error(stderr: &str) -> Option<String> {
+    stderr.lines().find_map(|l| {
+        let v: serde_json::Value = serde_json::from_str(l).ok()?;
+        (v["type"] == "error").then(|| v["message"].as_str().map(|m| clean(m, 200))).flatten()
+    })
+}
+
+/// The predicted processing time (s) of `frames` worker frames of `mpx` megapixels.
+pub fn ai_secs(sec_per_mpx: f64, frames: f64, mpx: f64) -> f64 {
+    sec_per_mpx * frames * mpx
+}
+
+/// The AI tier's status from a self-test on `device` (SC-009): available when 60 s of 480p is
+/// predicted to take at most 10 minutes; otherwise the measured estimate is the reason.
+pub fn ai_gate(device: &SrDevice, sec_per_mpx: f64) -> TierInfo {
+    let reference = ai_secs(sec_per_mpx, AI_REF_FRAMES, AI_REF_MPX);
+    let fps = (1.0 / (sec_per_mpx * AI_REF_MPX)) as f32;
+    let base = TierInfo {
+        device: Some(device.index),
+        fps: Some(fps),
+        sec_per_mpx: Some(sec_per_mpx as f32),
+        ..TierInfo::default()
+    };
+    if reference <= AI_LIMIT_SECS {
+        return TierInfo { available: true, ..base };
+    }
+    TierInfo {
+        reason: Some(format!(
+            "too slow on {} ({}): about {} min for 60 s of 480p (limit {} min)",
+            clean(&device.name, 120),
+            device.kind,
+            (reference / 60.0).ceil(),
+            (AI_LIMIT_SECS / 60.0).round()
+        )),
+        ..base
+    }
+}
+
+/// Identity of the AI tier's files for the fingerprint: the worker (path, size, mtime) and the
+/// SHA-256 of every model file.
+fn ai_identity(engine: Option<&super::ai::AiEngine>) -> Vec<String> {
+    let Some(e) = engine else { return vec!["none".into()] };
+    let meta = |p: &Path| {
+        std::fs::metadata(p).map_or_else(
+            |_| format!("{}: missing", p.display()),
+            |m| format!("{}: {} {:?}", p.display(), m.len(), m.modified().ok()),
+        )
+    };
+    let mut out = vec![meta(&e.worker)];
+    #[allow(irrefutable_let_patterns)] // the other variant exists in test builds only
+    if let super::ai::AiModel::Files(models) = &e.model {
+        for base in models.values() {
+            for ext in ["param", "bin"] {
+                let f = base.with_extension(ext);
+                let sha = std::fs::read(&f)
+                    .map_or_else(|_| "missing".to_owned(), |b| format!("{:x}", Sha256::digest(b)));
+                out.push(format!("{}: {sha}", f.display()));
+            }
+        }
+    }
+    out
+}
+
+/// Runs the worker within `timeout` and before `deadline`. `Err(true)` on a timeout,
+/// `Err(false)` when cancelled or out of budget.
+async fn run_worker(
+    worker: &Path,
+    args: &[String],
+    timeout: Duration,
+    deadline: Instant,
+    cancel: &CancellationToken,
+) -> Result<process::ProcessOutput, bool> {
+    let left = deadline.saturating_duration_since(Instant::now()).min(timeout);
+    if left.is_zero() || cancel.is_cancelled() {
+        return Err(false);
+    }
+    let argv: Vec<OsString> = args.iter().map(OsString::from).collect();
+    match tokio::time::timeout(left, process::run_capture(worker, &argv, cancel)).await {
+        Err(_) => Err(left == timeout),
+        Ok(Err(crate::Error::Cancelled)) => Err(false),
+        Ok(Err(e)) => Ok(process::ProcessOutput {
+            status: failed_status(),
+            stdout: Vec::new(),
+            stderr_tail: format!(
+                "{{\"type\":\"error\",\"message\":{}}}",
+                serde_json::Value::from(e.to_string())
+            ),
+        }),
+        Ok(Ok(out)) => Ok(out),
+    }
+}
+
+#[cfg(unix)]
+fn failed_status() -> std::process::ExitStatus {
+    use std::os::unix::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(1 << 8)
+}
+
+#[cfg(windows)]
+fn failed_status() -> std::process::ExitStatus {
+    use std::os::windows::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(1)
+}
+
+/// The AI tier's check: the worker's devices, then a self-test on the preferred one. `None`
+/// when the check was cut short (cancelled or out of budget): nothing learnt.
+async fn ai_check(env: &ProbeEnv, deadline: Instant, cancel: &CancellationToken) -> Option<TierInfo> {
+    let unavailable = |r: String| Some(TierInfo { reason: Some(r), ..TierInfo::default() });
+    let Some(engine) = &env.ai else {
+        return unavailable("the AI worker (rmedia-sr) or its models are not installed".into());
+    };
+    let listing =
+        match run_worker(&engine.worker, &["--list-gpus".into()], env.timeout, deadline, cancel).await {
+            Ok(out) => out,
+            Err(true) => return unavailable("the AI worker did not answer".into()),
+            Err(false) => return None,
+        };
+    let devices = parse_sr_devices(&String::from_utf8_lossy(&listing.stdout));
+    let Some(device) = pick_sr_device(&devices) else {
+        return unavailable(if devices.is_empty() {
+            "no Vulkan device for the AI tier".into()
+        } else {
+            "no hardware GPU for the AI tier (only software renderers)".into()
+        });
+    };
+    let scale = 2;
+    let model = engine.model_arg(scale).unwrap_or_default().to_string_lossy().into_owned();
+    let args: Vec<String> = [
+        "--selftest",
+        "--model",
+        &model,
+        "--scale",
+        &scale.to_string(),
+        "--gpu",
+        &device.index.to_string(),
+        "--width",
+        &AI_TEST_SIZE.0.to_string(),
+        "--height",
+        &AI_TEST_SIZE.1.to_string(),
+        "--frames",
+        &AI_TEST_FRAMES.to_string(),
+    ]
+    .iter()
+    .map(|s| (*s).to_owned())
+    .collect();
+    let base = TierInfo { device: Some(device.index), ..TierInfo::default() };
+    match run_worker(&engine.worker, &args, env.timeout, deadline, cancel).await {
+        Ok(out) => match parse_selftest(&out.stderr_tail) {
+            Some(spm) if out.status.success() => Some(ai_gate(device, spm)),
+            _ => Some(TierInfo {
+                reason: Some(format!(
+                    "AI self-test failed on {}: {}",
+                    clean(&device.name, 120),
+                    sr_error(&out.stderr_tail).unwrap_or_else(|| "no result".into())
+                )),
+                ..base
+            }),
+        },
+        // Not even five small frames in the time allowed: far beyond the limit.
+        Err(true) => Some(TierInfo {
+            reason: Some(format!(
+                "too slow on {} ({}): the self-test did not finish in {} s",
+                clean(&device.name, 120),
+                device.kind,
+                env.timeout.as_secs()
+            )),
+            ..base
+        }),
+        Err(false) => None,
+    }
+}
 
 /// The capability record for this machine (research R8):
 /// - the stored one when its fingerprint matches (unless `mode` is `Recheck`);
@@ -758,7 +982,7 @@ pub async fn ensure(
             .iter()
             .map(|d| format!("{}: {} ({:?}) ({})", d.index, d.name, d.kind, d.device_id))
             .collect(),
-        model_shas: Vec::new(),
+        model_shas: ai_identity(env.ai.as_ref()),
         drivers: driver_identity(),
         vk_env: vk_env(),
     });
@@ -815,12 +1039,19 @@ pub async fn ensure(
         },
         Some(index) => tier(self_test(tools, env, Some(index), deadline, cancel).await, Some(index)),
     };
+    let ai = match ai_check(env, deadline, cancel).await {
+        Some(t) => t,
+        None => {
+            conclusive = false;
+            TierInfo { reason: Some("the check did not finish".into()), ..TierInfo::default() }
+        }
+    };
     let record = CapabilityRecord {
         schema: 1,
         fingerprint: fp,
         checked_at: rfc3339(SystemTime::now()),
         devices,
-        tiers: TierStatus { cpu, gpu, ai: ai_not_built() },
+        tiers: TierStatus { cpu, gpu, ai },
         demoted: Vec::new(),
     };
     if !conclusive {
@@ -969,7 +1200,7 @@ mod tests {
             tiers: TierStatus {
                 cpu: TierInfo { available: true, fps: Some(48.0), ..Default::default() },
                 gpu: TierInfo { available: true, device: Some(0), fps: Some(55.0), ..Default::default() },
-                ai: ai_not_built(),
+                ai: ai_not_checked(),
             },
             ..CapabilityRecord::default()
         }
@@ -1079,5 +1310,52 @@ mod tests {
             t.join().unwrap();
         }
         assert_eq!(store.load().unwrap().devices.len(), 9, "no lost updates under the lock");
+    }
+
+    #[test]
+    fn ai_selftest_lines_and_devices_parse() {
+        let stderr = "{\"type\":\"device\",\"index\":0}\nnoise from a driver\n\
+            {\"type\":\"selftest\",\"frames\":4,\"sec_per_frame\":1.1,\"sec_per_mpx\":8.5588}\n";
+        assert_eq!(parse_selftest(stderr), Some(8.5588));
+        assert_eq!(parse_selftest("{\"type\":\"selftest\",\"sec_per_mpx\":0}"), None);
+        assert_eq!(parse_selftest(""), None);
+        let listing = r#"{"devices":[
+            {"index":0,"name":"Intel(R) Graphics (RPL-U)","kind":"integrated","software":false,"fp16":true},
+            {"index":1,"name":"llvmpipe (LLVM 20.1.2, 256 bits)","kind":"cpu","software":true}]}"#;
+        let d = parse_sr_devices(listing);
+        assert_eq!(pick_sr_device(&d).map(|d| d.index), Some(0));
+        let only_soft =
+            parse_sr_devices(r#"{"devices":[{"index":0,"name":"lavapipe","kind":"cpu","software":true}]}"#);
+        assert_eq!(pick_sr_device(&only_soft), None);
+        let both = parse_sr_devices(
+            r#"{"devices":[{"index":0,"name":"iGPU","kind":"integrated"},{"index":1,"name":"RTX","kind":"discrete"}]}"#,
+        );
+        assert_eq!(pick_sr_device(&both).map(|d| d.index), Some(1), "discrete first");
+        assert!(parse_sr_devices("not json").is_empty());
+    }
+
+    #[test]
+    fn ai_is_available_only_when_60s_of_480p_fits_in_10_minutes() {
+        let gpu = |kind: &str| SrDevice { index: 0, name: "GPU".into(), kind: kind.into(), software: false };
+        // 1800 frames × 0.40992 Mpx: the limit is 600 s ≈ 0.8132 s/Mpx.
+        let ok = ai_gate(&gpu("discrete"), 0.81);
+        assert!(ok.available && ok.reason.is_none(), "{ok:?}");
+        assert_eq!(ok.device, Some(0));
+        assert!((ok.fps.unwrap() - 3.01).abs() < 0.01, "{:?}", ok.fps);
+        let slow = ai_gate(&gpu("discrete"), 0.82);
+        assert!(!slow.available);
+        assert!(
+            slow.reason.as_deref().unwrap().contains("about 11 min for 60 s of 480p (limit 10 min)"),
+            "{slow:?}"
+        );
+        // This laptop's Intel iGPU (measured 2026-10-20): unavailable, with the measurement.
+        let igpu = ai_gate(&gpu("integrated"), 8.5588);
+        assert!(!igpu.available);
+        assert_eq!(
+            igpu.reason.as_deref(),
+            Some("too slow on GPU (integrated): about 106 min for 60 s of 480p (limit 10 min)")
+        );
+        assert_eq!(igpu.sec_per_mpx, Some(8.5588));
+        assert!((ai_secs(1.0, 1800.0, 0.5) - 900.0).abs() < 1e-9);
     }
 }

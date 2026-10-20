@@ -42,7 +42,8 @@ pub fn encode_fps(
     let measured = record.and_then(|r| match tier {
         Tier::Cpu => r.tiers.cpu.fps,
         Tier::Gpu => r.tiers.gpu.fps,
-        Tier::Ai => r.tiers.ai.fps,
+        // The AI pipeline encodes on the CPU; the worker's own time is added by the planner.
+        Tier::Ai => r.tiers.cpu.fps,
     });
     match measured {
         Some(fps) if fps > 0.0 => f64::from(fps) * SELF_TEST_PIXELS / (f64::from(size.0) * f64::from(size.1)),

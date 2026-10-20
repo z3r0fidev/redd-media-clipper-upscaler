@@ -40,7 +40,10 @@ pub async fn run(cli: &Cli, args: &DoctorArgs) -> u8 {
         if let Some(t) = &report.tiers {
             let line = |name: &str, info: &rmedia_core::upscale::capability::TierInfo| {
                 let state = if info.available { "yes" } else { "no" };
-                let fps = info.fps.map(|f| format!(", {f:.0} fps")).unwrap_or_default();
+                let fps = info
+                    .fps
+                    .map(|f| if f < 10.0 { format!(", {f:.1} fps") } else { format!(", {f:.0} fps") })
+                    .unwrap_or_default();
                 let why = info.reason.as_deref().map(|r| format!(" ({r})")).unwrap_or_default();
                 println!("tier:     {name:<4} {state}{fps}{why}");
             };

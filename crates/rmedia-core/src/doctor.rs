@@ -124,6 +124,17 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
         crate::models::YUNET.to_owned(),
         if caps.models.get(crate::models::YUNET).is_some() { "ok" } else { "missing" }.to_owned(),
     );
+    // The AI tier needs every scale of its model and the worker beside rmedia.
+    let ai_models =
+        crate::upscale::ai::locate_models(&crate::models::search_dirs(&crate::settings::Settings::load()));
+    report.models.insert(
+        format!("{} (x2, x3, x4)", crate::upscale::ai::MODEL),
+        if ai_models.is_some() { "ok" } else { "missing" }.to_owned(),
+    );
+    report.models.insert(
+        crate::upscale::ai::WORKER.to_owned(),
+        if crate::upscale::ai::locate_worker().is_some() { "ok" } else { "missing" }.to_owned(),
+    );
     let presets = crate::preset::PresetRegistry::load(crate::settings::config_dir().as_deref());
     report.preset_problems =
         presets.problems().iter().map(|p| format!("{}: {}", p.file.display(), p.message)).collect();
@@ -144,7 +155,8 @@ pub async fn check_capability(
     let presets = crate::preset::PresetRegistry::load(crate::settings::config_dir().as_deref());
     let preset = presets.get(crate::preset::DEFAULT_PRESET).cloned().expect("the default preset is built in");
     let store = CapabilityStore::in_state_dir(&state);
-    let Some(record) = ensure(tools, &store, &ProbeEnv::new(preset), mode, cancel).await else { return };
+    let env = ProbeEnv { ai: caps.ai.clone(), ..ProbeEnv::new(preset) };
+    let Some(record) = ensure(tools, &store, &env, mode, cancel).await else { return };
     report.tiers = Some(record.tiers.clone());
     report.gpus = record.devices.clone();
     report.capability = Some(CapabilitySummary {
@@ -164,8 +176,8 @@ pub fn caps(tools: &Tools) -> Result<Caps> {
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
             .map_err(|e| Error::EngineMissing(format!("cannot run ffmpeg: {e}")))
     };
-    let models =
-        crate::models::ModelSet::discover(&crate::settings::Settings::load(), &[crate::models::YUNET]);
+    let settings = crate::settings::Settings::load();
+    let models = crate::models::ModelSet::discover(&settings, &[crate::models::YUNET]);
     let face =
         models.get(crate::models::YUNET).cloned().map(crate::upscale::reframe::detect::DetectorSpec::Yunet);
     Ok(Caps {
@@ -174,6 +186,7 @@ pub fn caps(tools: &Tools) -> Result<Caps> {
         face,
         models,
         reframe_cache: crate::settings::cache_root().map(|c| c.join("reframe")),
+        ai: crate::upscale::ai::AiEngine::discover(&settings),
         ..Caps::default()
     })
 }
