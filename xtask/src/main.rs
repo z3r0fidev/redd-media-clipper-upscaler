@@ -1,5 +1,5 @@
 //! Developer tasks: `cargo xtask fetch-tools [--target TRIPLE]`, `cargo xtask pin-tools`,
-//! `cargo xtask fetch-models`.
+//! `cargo xtask fetch-models`, `cargo xtask fetch-ncnn [--target TRIPLE]`.
 //!
 //! Engine binaries are downloaded at build time from a pinned, SHA-256-verified URL and placed in
 //! `binaries/` using Tauri's sidecar naming (`rmedia-ffmpeg-<triple>[.exe]`). They are never
@@ -25,11 +25,18 @@ struct Lock {
 #[derive(Debug, Deserialize)]
 struct ModelLock {
     models: BTreeMap<String, PinnedModel>,
+    /// Prebuilt ncnn (static, Vulkan) per target triple, for the `rmedia-sr` worker (US6).
+    #[serde(default)]
+    ncnn: BTreeMap<String, Pinned>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PinnedModel {
-    url: String,
+    /// Direct download; or `archive` when the file only ships inside a release archive.
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    archive: Option<ArchiveMember>,
     sha256: String,
     /// Repository path of the licence text, copied into the notices.
     license: String,
@@ -37,6 +44,14 @@ struct PinnedModel {
     /// Fetched for tests only; never shipped, so not listed in the notices.
     #[serde(default)]
     test_only: bool,
+}
+
+/// A file inside a pinned release archive: the archive and the file are both SHA-256 verified.
+#[derive(Debug, Deserialize)]
+struct ArchiveMember {
+    url: String,
+    sha256: String,
+    member: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,9 +89,16 @@ fn main() -> Result<()> {
         }
         Some("notices") => notices(),
         Some("fetch-models") => fetch_models(),
+        Some("fetch-ncnn") => {
+            let target = match args.iter().position(|a| a == "--target") {
+                Some(i) => args.get(i + 1).context("--target needs a value")?.clone(),
+                None => host_triple().to_owned(),
+            };
+            fetch_ncnn(&target)
+        }
         _ => {
             eprintln!(
-                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models>"
+                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE]>"
             );
             std::process::exit(2);
         }
@@ -138,14 +160,7 @@ fn fetch_tools(target: &str) -> Result<()> {
     }
     let extract = work.join("x");
     std::fs::create_dir_all(&extract)?;
-    // bsdtar (Windows 10+) and GNU tar both handle these formats.
-    // On Windows use the system bsdtar (reads .zip); a GNU tar earlier on PATH (Git Bash) cannot.
-    let tar = if cfg!(windows) {
-        std::env::var("SystemRoot").map(|r| format!(r"{r}\System32\tar.exe")).unwrap_or_else(|_| "tar".into())
-    } else {
-        "tar".into()
-    };
-    run(Command::new(tar).arg("-xf").arg(&archive).arg("-C").arg(&extract))?;
+    run(Command::new(tar()).arg("-xf").arg(&archive).arg("-C").arg(&extract))?;
 
     let find = |name: &str| -> Result<PathBuf> {
         walk(&extract)
@@ -198,28 +213,124 @@ fn fetch_models() -> Result<()> {
         }
         let tmp = dir.join(format!(".{name}.download"));
         let _ = std::fs::remove_file(&tmp); // never write through a planted file or link
-        println!("downloading {name}: {}", pin.description);
-        run(Command::new("curl")
-            .args([
-                "-fL",
-                "--proto",
-                "=https",
-                "--proto-redir",
-                "=https",
-                "--retry",
-                "3",
-                "--silent",
-                "--show-error",
-                "-o",
-            ])
-            .arg(&tmp)
-            .arg(&pin.url))?;
+        println!("fetching {name}: {}", pin.description);
+        match (&pin.url, &pin.archive) {
+            (Some(url), None) => download(url, &tmp)?,
+            (None, Some(a)) => {
+                let extracted = fetch_archive(&a.url, &a.sha256)?;
+                let member = extracted.join(&a.member);
+                if a.member.contains("..") || !member.starts_with(&extracted) {
+                    bail!("bad archive member {:?} for {name}", a.member);
+                }
+                std::fs::copy(&member, &tmp).with_context(|| format!("{} not in {}", a.member, a.url))?;
+            }
+            _ => bail!("{name}: set exactly one of url and archive in models.lock.json"),
+        }
         let actual = file_sha256(&tmp)?;
         if actual != pin.sha256 {
             let _ = std::fs::remove_file(&tmp);
             bail!("checksum mismatch for {name}: expected {}, got {actual}", pin.sha256);
         }
         std::fs::rename(&tmp, &dest)?;
+    }
+    Ok(())
+}
+
+/// Downloads `url` to `dest` over HTTPS only.
+fn download(url: &str, dest: &Path) -> Result<()> {
+    run(Command::new("curl")
+        .args([
+            "-fL",
+            "--proto",
+            "=https",
+            "--proto-redir",
+            "=https",
+            "--retry",
+            "3",
+            "--silent",
+            "--show-error",
+            "-o",
+        ])
+        .arg(dest)
+        .arg(url))
+}
+
+/// Downloads and extracts a pinned archive once into `target/xtask-archives/<sha256>/`, verifying
+/// its SHA-256 first. Returns the extraction directory.
+fn fetch_archive(url: &str, sha256: &str) -> Result<PathBuf> {
+    let base = root().join("target/xtask-archives");
+    let done = base.join(format!("{sha256}.ok"));
+    let extract = base.join(sha256);
+    if done.is_file() && extract.is_dir() {
+        return Ok(extract);
+    }
+    let _ = std::fs::remove_dir_all(&extract);
+    std::fs::create_dir_all(&extract)?;
+    let archive = base.join(format!("{sha256}.download"));
+    let _ = std::fs::remove_file(&archive);
+    println!("downloading {url}");
+    download(url, &archive)?;
+    let actual = file_sha256(&archive)?;
+    if actual != sha256 {
+        let _ = std::fs::remove_file(&archive);
+        bail!("checksum mismatch for {url}: expected {sha256}, got {actual}");
+    }
+    if url.ends_with(".zip") && !cfg!(windows) {
+        // GNU tar cannot read .zip.
+        run(Command::new("unzip").arg("-q").arg(&archive).arg("-d").arg(&extract))?;
+    } else {
+        run(Command::new(tar()).arg("-xf").arg(&archive).arg("-C").arg(&extract))?;
+    }
+    let _ = std::fs::remove_file(&archive);
+    std::fs::write(&done, url)?;
+    Ok(extract)
+}
+
+/// bsdtar (Windows 10+) reads .zip and .tar.xz; GNU tar only the latter. On Windows use the system
+/// bsdtar; a GNU tar earlier on PATH (Git Bash) cannot read .zip.
+fn tar() -> String {
+    if cfg!(windows) {
+        std::env::var("SystemRoot").map(|r| format!(r"{r}\System32\tar.exe")).unwrap_or_else(|_| "tar".into())
+    } else {
+        "tar".into()
+    }
+}
+
+/// Installs the pinned prebuilt ncnn for `target` into `third_party/ncnn/<target>/` (include/ and
+/// lib/ of the release package), for `crates/rmedia-sr/build.rs`. Never committed.
+fn fetch_ncnn(target: &str) -> Result<()> {
+    let lock = read_model_lock()?;
+    let pin = lock.ncnn.get(target).with_context(|| format!("no pinned ncnn build for {target}"))?;
+    let dest = root().join("third_party/ncnn").join(target);
+    let stamp = dest.join(".sha256");
+    if std::fs::read_to_string(&stamp).is_ok_and(|s| s.trim() == pin.sha256) {
+        println!("ncnn for {target} already present");
+        return Ok(());
+    }
+    let extracted = fetch_archive(&pin.url, &pin.sha256)?;
+    // The package has one top-level folder (ncnn-<version>-<platform>/).
+    let top = std::fs::read_dir(&extracted)?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.is_dir())
+        .context("empty ncnn archive")?;
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(dest.parent().context("parent")?)?;
+    copy_dir(&top, &dest)?;
+    std::fs::write(&stamp, &pin.sha256)?;
+    println!("installed ncnn for {target} in {}", dest.display());
+    Ok(())
+}
+
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)?.flatten() {
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        if e.file_type()?.is_dir() {
+            copy_dir(&src, &dst)?;
+        } else if e.file_type()?.is_file() {
+            std::fs::copy(&src, &dst)?;
+        }
     }
     Ok(())
 }

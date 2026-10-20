@@ -1,5 +1,5 @@
 {
-  "comment": "Model files fetched by `cargo xtask fetch-models` into models/ (never committed). Pinned to a commit; SHA-256 verified. See research/09 §4 and specs/002-mobile-upscale/research.md R14.",
+  "comment": "Model files fetched by `cargo xtask fetch-models` into models/ (never committed), and the prebuilt ncnn fetched by `cargo xtask fetch-ncnn` into third_party/ncnn/<target>/. Pinned to a commit or release; SHA-256 verified (archive and extracted file). See research/09 §4 and specs/002-mobile-upscale/research.md R13, R14.",
   "models": {
     "face_detection_yunet_2026may.onnx": {
       "url": "https://media.githubusercontent.com/media/opencv/opencv_zoo/26cc381e4d2594bb9f47a26eb8fd96c94a13660d/models/face_detection_yunet/face_detection_yunet_2026may.onnx",
@@ -13,6 +13,76 @@
       "license": "licenses/models/test-face-PD.txt",
       "description": "NASA official astronaut portrait (public domain), test-only: real-face smart reframe test",
       "test_only": true
+    },
+    "realesr-animevideov3-x2.bin": {
+      "archive": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
+        "member": "models/realesr-animevideov3-x2.bin"
+      },
+      "sha256": "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d",
+      "license": "licenses/models/real-esrgan-BSD-3.txt",
+      "description": "Real-ESRGAN animevideov3 x2 (ncnn weights); AI tier (FR-010)"
+    },
+    "realesr-animevideov3-x2.param": {
+      "archive": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
+        "member": "models/realesr-animevideov3-x2.param"
+      },
+      "sha256": "b88ff4f00ebf019a7fdac17fdd45a7fd3665d37509efc5baf2e4da2e24420a04",
+      "license": "licenses/models/real-esrgan-BSD-3.txt",
+      "description": "Real-ESRGAN animevideov3 x2 (ncnn graph); AI tier (FR-010)"
+    },
+    "realesr-animevideov3-x3.bin": {
+      "archive": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
+        "member": "models/realesr-animevideov3-x3.bin"
+      },
+      "sha256": "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d",
+      "license": "licenses/models/real-esrgan-BSD-3.txt",
+      "description": "Real-ESRGAN animevideov3 x3 (ncnn weights); AI tier (FR-010)"
+    },
+    "realesr-animevideov3-x3.param": {
+      "archive": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
+        "member": "models/realesr-animevideov3-x3.param"
+      },
+      "sha256": "d1a5755008791d09b57e3425fc9dd0bd26b00fdf79c606210bc0e693f8230881",
+      "license": "licenses/models/real-esrgan-BSD-3.txt",
+      "description": "Real-ESRGAN animevideov3 x3 (ncnn graph); AI tier (FR-010)"
+    },
+    "realesr-animevideov3-x4.bin": {
+      "archive": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
+        "member": "models/realesr-animevideov3-x4.bin"
+      },
+      "sha256": "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d",
+      "license": "licenses/models/real-esrgan-BSD-3.txt",
+      "description": "Real-ESRGAN animevideov3 x4 (ncnn weights); AI tier (FR-010)"
+    },
+    "realesr-animevideov3-x4.param": {
+      "archive": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
+        "member": "models/realesr-animevideov3-x4.param"
+      },
+      "sha256": "850a248e7c14c27e5bd8cf7265113a9441036a7db63963bb8aa5169d788a435e",
+      "license": "licenses/models/real-esrgan-BSD-3.txt",
+      "description": "Real-ESRGAN animevideov3 x4 (ncnn graph); AI tier (FR-010)"
+    }
+  },
+  "ncnn": {
+    "x86_64-unknown-linux-gnu": {
+      "url": "https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-ubuntu-2204.zip",
+      "sha256": "4a2194be7d6ab715103a84ba34ddafecfe7173de3d55567f992266bb57bda8e7"
+    },
+    "x86_64-pc-windows-msvc": {
+      "url": "https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-windows-vs2022.zip",
+      "sha256": "5ed388b134c50ba8eb2e6605f3a16f692f26598d45113bc9794aa4857d691e26"
     }
   }
 }

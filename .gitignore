@@ -20,3 +20,5 @@ Thumbs.db
 .env*
 # Model files (fetched by `cargo xtask fetch-models`, never committed)
 /models/
+# Prebuilt ncnn for rmedia-sr (fetched by `cargo xtask fetch-ncnn`, never committed)
+/third_party/
