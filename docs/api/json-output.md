@@ -136,6 +136,7 @@ Real dry run (one fast clip, `argv` shown in full):
 | `kind` | `"upscale"` | Upscale jobs only (0.2.0-dev). Clip jobs have no `kind` key and keep the shape above |
 | `upscale` | object | Upscale jobs only; see [Upscale jobs](#upscale-jobs) |
 | `cwd` | string | Upscale jobs only: the job's scratch folder. Upscale jobs omit `mode` and `predicted` |
+| `pipeline` | string[][] | AI-tier upscale jobs only: the three argvs of the pipeline, in order: ffmpeg #1 (decode and frame, raw RGB to stdout), `rmedia-sr` (the AI worker), ffmpeg #2 (raw frames on stdin, compose and encode). `argv` is the third |
 
 ### Upscale jobs
 
@@ -163,8 +164,8 @@ the video. Real dry run, abridged (`argv` omitted):
 | `reframe` | What was requested: `smart`, `center` or `blur` |
 | `reframe_applied` | What is used. `smart` becomes `blur` without a face model, when the analysis fails, or when no face fits anywhere in the video; `center` when the video is taller than the target |
 | `motion` | `calm`, `normal` or `fast` |
-| `tier`, `tier_reason` | `cpu` or `gpu`, and why: for example `auto: Intel(R) Graphics (RPL-U) passed the self-test`, `auto: … measured slower than the CPU here (21 vs 35 fps); the CPU tier`, `auto: no Vulkan device; the classical CPU tier`, `forced: gpu`. `ai` is not built yet |
-| `suggest` | `null` today; reserved for suggesting the `ai` tier |
+| `tier`, `tier_reason` | `cpu`, `gpu` or `ai`, and why: for example `auto: Intel(R) Graphics (RPL-U) passed the self-test`, `auto: … measured slower than the CPU here (21 vs 35 fps); the CPU tier`, `auto: no Vulkan device; the classical CPU tier`, `forced: gpu`, `forced: ai` |
+| `suggest` | `"ai"` when the AI tier is available, was not chosen, and the source is under 720p; otherwise `null`. `auto` never picks AI itself |
 | `hdr` | `sdr` or `keep` |
 | `no_upscale_needed` | The source is already at or above the target size |
 | `estimate` | `{bytes, secs}`: rough output size and processing time |

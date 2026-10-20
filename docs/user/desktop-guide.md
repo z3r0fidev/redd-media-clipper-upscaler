@@ -338,6 +338,12 @@ The quickest way: select the video, select **Upscale for phone**, then select **
 Choices that are not available on your computer are marked **unavailable**; the line under the
 picker says why. Your choices are remembered for next time.
 
+**AI** recovers the most detail from blurry, low-resolution videos. It is offered only when the
+graphics card passed the AI self-test (Settings › **Check again** runs it); on most built-in
+graphics it is too slow and the line under the picker says how long a minute of video would take.
+**Automatic** never picks AI by itself. With AI chosen, the before/after picture is made with the
+standard scaler and is marked **Preview: standard scaler**; the finished video is sharper.
+
 To upscale only part of a video, mark **In** and **Out** in the player first. The line next to the
 buttons shows **Whole video** or the part that will be used.
 

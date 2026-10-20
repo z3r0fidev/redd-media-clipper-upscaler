@@ -697,14 +697,41 @@ Nothing is wrong. Choose `--reframe blur` to keep the whole frame instead.
 #### Cause
 
 You forced a tier this machine cannot run. The message ends with the reason, for example
-`no Vulkan device`, `no usable hardware GPU (only software renderers)` or `the AI tier is not
-built yet`. Nothing ran (exit code 3).
+`no Vulkan device`, `no usable hardware GPU (only software renderers)`, `the AI worker
+(rmedia-sr) or its models are not installed`, or, for AI, the measured speed: `too slow on
+Intel(R) Graphics (integrated): about 106 min for 60 s of 480p (limit 10 min)`. Nothing ran
+(exit code 3).
 
 #### Resolution
 
-1. Run `rmedia doctor` and read the `tier:` and `gpu:` lines.
+1. Run `rmedia doctor` and read the `tier:`, `gpu:` and `model:` lines.
 2. If you installed or updated a GPU driver, run `rmedia doctor --recheck`.
-3. Otherwise use `--tier cpu` or leave the default, `--tier auto`.
+3. The AI tier needs a graphics card fast enough for the self-test; integrated graphics usually
+   are not. Use `--tier gpu`, `--tier cpu` or leave the default, `--tier auto`.
+
+### "too slow: estimated N min for this clip on the AI tier"
+
+#### Cause
+
+You forced `--tier ai` and the self-test predicts the clip will take more than ten times its own
+length. It still runs.
+
+#### Resolution
+
+Cancel with Ctrl-C if that is too long, and use the GPU tier, which is much faster.
+
+### "the AI worker failed (GPU_RUNTIME): …"
+
+#### Cause
+
+The AI worker stopped during the job, usually because the graphics driver reset or ran out of
+memory. The job failed (forced AI jobs never fall back); no partial file is left.
+
+#### Resolution
+
+1. Close other programs using the graphics card and try again.
+2. Run `rmedia doctor --recheck`.
+3. Use `--tier gpu` for this video.
 
 ### "GPU tier failed (…); retried on CPU"
 

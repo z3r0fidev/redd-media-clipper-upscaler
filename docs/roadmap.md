@@ -28,9 +28,10 @@ Last updated: 2026-10-19.
 | 5 US3 GPU tier | T062–T073 | Vulkan GPU tier (libplacebo), machine capability record and self-tests, `auto` with a speed guard, one CPU fallback with demotion, `doctor` tiers/GPUs/models and `--recheck`, desktop **Check again** |
 | 6 US4 Batch and `clip --upscale` | T074–T081 | `upscale` in JSON manifests (every level, whole videos without `clips`) and CSV (`upscale_*` columns), `batch --upscale` and upscale flags as fills, `clip --upscale` in one pass, default output folders always skipped by scans |
 | 7 US5 Desktop upscale view | T082–T092 | "Upscale for phone" view: crop overlay and blurred ranges on the player, before/after still, preset/framing/quality pickers, "Upscale now" (one job) and "Add to queue", models folder in Settings |
+| 8 US6 AI tier | T093–T105 | `rmedia-sr` AI worker (ncnn + Vulkan, Real-ESRGAN, pinned models), three-process pipeline, self-test gate (60 s of 480p in ≤ 10 min), too-slow warning, anti-flicker, installers bundle the worker and models |
 
 The checkpoint reviews (senior-code-reviewer, security-auditor) for every finished phase are done
-and their findings are fixed. 269 workspace tests pass (6 ignored).
+and their findings are fixed. 296 workspace tests pass (10 ignored).
 
 ### Next and pending
 
@@ -40,13 +41,13 @@ and their findings are fixed. 269 workspace tests pass (6 ignored).
 | 2 | US3 GPU tier and capability record | T062–T073 | Vulkan GPU tier, self-test and capability record, `doctor` tiers, GPUs and models, `doctor --recheck`, automatic fallback to CPU | Done (2026-10-19) |
 | 3 | US4 Batch and `clip --upscale` | T074–T081 | Upscale from manifests and `clip --upscale`; partial-clip tests carried over from the US1 review; `batch` runs the machine check when it has upscale jobs | Done (2026-10-19) |
 | 4 | US5 Desktop upscale view | T082–T092 | Upscale view in the desktop app | Done (2026-10-19) |
-| 5 | US6 AI worker | T093–T105 | `rmedia-sr` worker with ncnn for AI upscaling | ▶ Next |
-| 6 | Polish, docs, packaging | T106–T112 | Final review pass, documentation, installers include models | Planned |
+| 5 | US6 AI worker | T093–T105 | `rmedia-sr` worker with ncnn for AI upscaling | Done (2026-10-20); quality and speed on a discrete GPU are an owner check |
+| 6 | Polish, docs, packaging | T106–T112 | Final review pass, documentation | ▶ Next |
 
 Each phase ends with a checkpoint: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`,
 `cargo test --workspace`, the quickstart section for the story, and the two reviews.
 
-US6 is not available in any build. Documentation elsewhere marks these as planned.
+All of 002 is on the `002-mobile-upscale` branch; no release includes it yet.
 
 ### Owner validation (cannot be automated)
 

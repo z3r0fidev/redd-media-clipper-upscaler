@@ -59,7 +59,7 @@ All fields are optional. A file containing `{}` is equivalent to the defaults.
 | `defaults` | object | `{}` | Defaults for new clips (see the next table). |
 | `jobs` | integer (0 to 65535) | not set | Clips processed at once. Not set means half the CPU cores, between 1 and 4. The **Clips at once** field in the UI accepts 1 to 64. |
 | `proxy_cache_max_mb` | integer | `5120` | Size cap of the preview cache in MB (multiplied by 1024 × 1024). The UI field has a minimum of 100. |
-| `models_dir` | path string | not set | Folder searched first for model files (face detector, AI upscaler weights). Not yet shown in the UI; used by features that are still planned (see [Roadmap](../roadmap.md)). |
+| `models_dir` | path string | not set | Folder searched first for model files (face detector, AI upscaler weights). Set in the desktop app with Settings › **Models folder** (a folder picker; the page cannot type a path). The AI tier uses a folder only when it holds all six Real-ESRGAN files (`realesr-animevideov3-x2/x3/x4` `.param` and `.bin`). |
 | `upscale_defaults` | object | `{}` | Last-used upscale choices (`enabled`, `preset`, `reframe`, `tier`, `hdr`, …). Reserved for the desktop upscale view (user story 5, planned); kept apart from `defaults` so clip runs never turn upscaling on. |
 
 > **Unverified:** Setting `jobs` to `0` by editing the file is not rejected on load, and its effect
@@ -229,6 +229,7 @@ The cache is safe to delete while the app is closed.
 |---|---|---|---|
 | `RMEDIA_FFMPEG` | `rmedia`, `rmedia-desktop`, test kit | Path to FFmpeg. Second in the [engine location order](#engine-location-order). In tests, the FFmpeg used to generate fixtures. | not set |
 | `RMEDIA_FFPROBE` | `rmedia`, `rmedia-desktop`, test kit | Path to ffprobe, as above. | not set |
+| `RMEDIA_SR` | `rmedia`, `rmedia-desktop` | Path to the AI worker `rmedia-sr`. Without it the worker is looked for next to the executable (and, in development builds, in the Cargo target folder). Added in 0.2.0-dev. | not set |
 | `RMEDIA_STATE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the state directory (crash journal parent). Used by the CLI tests. | per-user state directory |
 | `RMEDIA_CONFIG_DIR` | `rmedia`, `rmedia-desktop` | Folder that holds `settings.json` and the user device presets (`presets/*.json`, read by `rmedia upscale`). Used by tests. | per-user config directory |
 | `RMEDIA_CACHE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the cache root, which holds `preview/`, `reframe/` (smart-reframe analyses) and `models/`. Used by tests. Added in 0.2.0-dev. | per-user cache directory |
@@ -249,7 +250,7 @@ Linux the folder name is the lowercased application name (`rmedia`); on Windows 
 | Crash journal (`inflight/`) | `~/.local/state/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\data\` |
 | Preview cache (`preview/`) | `~/.cache/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\cache\` |
 | User device presets (`presets/*.json`) | `~/.config/rmedia/presets/` | `%APPDATA%\OpenLogic\rmedia\config\presets\` |
-| Model files (searched in order) | `models_dir` setting, `models/` beside the executable, `~/.cache/rmedia/models/` | same pattern; cache under `%LOCALAPPDATA%\OpenLogic\rmedia\cache\models\` |
+| Model files (searched in order) | `models_dir` setting, `models/` beside the executable, `/usr/lib/rmedia/models/` (deb; `usr/lib/rmedia/models/` inside the AppImage), `~/.cache/rmedia/models/` | same pattern; cache under `%LOCALAPPDATA%\OpenLogic\rmedia\cache\models\` |
 | Upscaled output (default) | `upscaled/` next to each source video | `upscaled\` next to each source video |
 | Program files (deb) | `/usr/bin/`, `/usr/lib/rmedia/licenses/` | See [Installation](installation.md) |
 | Clip output (default) | `clips/` next to each source video | `clips\` next to each source video |

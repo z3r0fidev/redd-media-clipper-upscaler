@@ -443,9 +443,8 @@ rmedia batch jobs.json || echo "rmedia exited with $?"
 ## Make Videos Phone-Ready
 
 > **Availability:** `rmedia upscale` is in development (0.2.0-dev, branch `002-mobile-upscale`)
-> and is not in the 0.1.0 packages. Smart reframe, the GPU tier, `clip --upscale` and manifest
-> upscaling exist there; the AI tier and the desktop upscale view are planned. See the
-> [Roadmap](../roadmap.md).
+> and is not in the 0.1.0 packages. Smart reframe, the GPU and AI tiers, `clip --upscale`,
+> manifest upscaling and the desktop upscale view exist there. See the [Roadmap](../roadmap.md).
 
 `rmedia upscale` scales each video to the screen size of a phone and re-encodes it, so it fills
 the screen without black bars. Each video is processed whole. To upscale only a part of a video,
@@ -510,12 +509,19 @@ crop may follow. The analysis is cached, so the render that follows a dry run re
 - `--hdr sdr` (default) converts HDR videos to standard range. `--hdr keep` keeps HDR on presets that
   support it; it stops with an error on other presets. HDR mastering metadata is not carried over.
 - `--crf N` overrides the preset's quality (lower is better and bigger).
-- `--tier auto|cpu|gpu` selects the quality tier. `auto` (the default) uses the GPU tier when
+- `--tier auto|cpu|gpu|ai` selects the quality tier. `auto` (the default) uses the GPU tier when
   `rmedia doctor` found a usable Vulkan GPU that is at least as fast as the CPU, and the CPU tier
   otherwise; the dry run says which and why. If an automatic GPU job fails, it is retried once on
   the CPU with a warning, and the GPU is not chosen again until the next check
-  (`rmedia doctor --recheck`). A forced `--tier gpu` never falls back. Both tiers give the same
-  quality; the GPU tier is only about speed. `ai` is not built yet.
+  (`rmedia doctor --recheck`). A forced `--tier gpu` never falls back. The CPU and GPU tiers give
+  the same quality; the GPU tier is only about speed.
+- `--tier ai` uses the AI upscaler (Real-ESRGAN), which recovers more detail from very
+  low-quality sources. It needs a graphics card that passed the AI self-test: `rmedia doctor`
+  shows `tier: ai yes` when a 60-second 480p video is predicted to take 10 minutes or less, and
+  otherwise says how long it would take. `auto` never picks AI by itself; the dry run suggests it
+  for sources under 720p. A forced AI job never falls back, and a clip predicted to take more
+  than ten times its own length gets a "too slow: estimated N min" warning. The AI tier makes
+  standard-range (SDR) output only, so `--hdr keep` cannot be combined with it.
 - Folder scanning options, `-o`, `--name` (also `{preset}`), `--on-exists`, `--no-audio`,
   `--audio`, `--no-subs`, `-j`, `--dry-run` and `--json` work as for `clip`. There is no `--mode`.
 

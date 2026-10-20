@@ -18,7 +18,7 @@ what the packages install, see [Installation](../administration/installation.md)
 `cargo xtask` is an alias for `cargo run --package xtask --` (`.cargo/config.toml`). Usage:
 
 ```text
-cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models>
+cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE]>
 ```
 
 | Task | What it does | Writes |
@@ -26,9 +26,10 @@ cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cl
 | `fetch-tools [--target T]` | Downloads the pinned FFmpeg archive for target `T` (default: host), verifies its SHA-256, extracts `ffmpeg` and `ffprobe`, and installs them with Tauri sidecar names | `binaries/rmedia-ffmpeg-<T>[.exe]`, `binaries/rmedia-ffprobe-<T>[.exe]`, `binaries/FFMPEG-LICENSE.txt`, `binaries/.<T>.sha256` |
 | `pin-tools` | Moves the pin to the newest BtbN autobuild of the **current release line** and records GitHub's asset SHA-256 digests | `xtask/tools.lock.json` |
 | `gen-bindings` | Regenerates the desktop app's TypeScript types from `rmedia-core` (ts-rs) | `apps/desktop/src/lib/bindings/` (deleted and recreated) |
-| `stage-cli [--target T]` | Builds `rmedia-cli` in release mode and copies it with sidecar naming | `binaries/rmedia-<T>[.exe]` |
+| `stage-cli [--target T]` | Builds `rmedia-cli` and the AI worker `rmedia-sr` in release mode and copies them with sidecar naming (needs `fetch-ncnn` first) | `binaries/rmedia-<T>[.exe]`, `binaries/rmedia-sr-<T>[.exe]` |
+| `fetch-ncnn [--target T]` | Downloads the pinned prebuilt ncnn 20260526 (static, Vulkan; `ubuntu-2204` or `windows-vs2022`) for target `T`, verifies its SHA-256 and installs it for `crates/rmedia-sr/build.rs`, which stops with "run `cargo xtask fetch-ncnn`" without it. Added in 0.2.0-dev (US6) | `third_party/ncnn/<T>/` (git-ignored) |
 | `notices` | Generates the third-party notices for every Rust crate and bundled npm package | `THIRD_PARTY_NOTICES.md` |
-| `fetch-models` | Downloads each model in `xtask/models.lock.json` (today: the YuNet face detector) with `curl` over HTTPS only, verifies its SHA-256, and replaces it through a temp file and rename. Files that already match are kept. Added in 0.2.0-dev. | `models/` (git-ignored; never committed) |
+| `fetch-models` | Downloads each model in `xtask/models.lock.json` (the YuNet face detector, the Real-ESRGAN animevideov3 x2/x3/x4 files taken from a pinned release archive, and a test-only portrait) with `curl` over HTTPS only, verifies the SHA-256 of each archive and file, and replaces it through a temp file and rename. Files that already match are kept. Added in 0.2.0-dev. | `models/` (git-ignored; never committed) |
 
 Supported targets are `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`. On Windows the host
 triple is `x86_64-pc-windows-msvc`; elsewhere it is `x86_64-unknown-linux-gnu`.
@@ -132,7 +133,7 @@ jobs use the runner's preinstalled Node.
 | `test` (bundled engine) | `ubuntu-22.04`, `windows-latest` | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo xtask fetch-tools`; `cargo test --workspace`; `cargo test --workspace --release -- --ignored bench` (with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to the bundled engine) |
 | `minimum-engine` | `ubuntu-24.04` | Installs distro `ffmpeg` (6.1, the minimum supported); `cargo test --workspace` |
 | `windows-check-gnu` | `ubuntu-22.04` | `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu --exclude rmedia-sr` (type-checks Windows code paths from Linux; the AI worker links MSVC ncnn and is built by the Windows test job) |
-| `desktop` | `ubuntu-22.04`, `windows-latest` | Linux webview dependencies; `fetch-tools` + `stage-cli` (tauri-build requires the sidecars to exist); `gen-bindings` then `git diff --exit-code` on the bindings; `npm ci`, `npm run check`, `npm test`, `npm run build`; Linux only: desktop backend tests and the notices check; Windows only: `cargo build` of the desktop backend |
+| `desktop` | `ubuntu-22.04`, `windows-latest` | Linux webview dependencies; `fetch-tools`, `fetch-ncnn`, `fetch-models` + `stage-cli` (tauri-build requires the sidecars and bundled models to exist); `gen-bindings` then `git diff --exit-code` on the bindings; `npm ci`, `npm run check`, `npm test`, `npm run build`; Linux only: desktop backend tests and the notices check; Windows only: `cargo build` of the desktop backend |
 | `deny` | `ubuntu-22.04` | `cargo-deny` for `Cargo.toml` and for `apps/desktop/src-tauri/Cargo.toml` |
 
 Generated-file gates: CI fails if `apps/desktop/src/lib/bindings` or `THIRD_PARTY_NOTICES.md`
@@ -183,15 +184,17 @@ Steps per platform:
 2. Linux: install `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev patchelf
    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base
    gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav`.
-3. Stage the bundled programs: `cargo xtask fetch-tools --target <T>` and
+3. Stage the bundled programs and models: `cargo xtask fetch-tools --target <T>`,
+   `cargo xtask fetch-ncnn --target <T>`, `cargo xtask fetch-models` and
    `cargo xtask stage-cli --target <T>`.
 4. Run `cargo test --workspace` against the bundled engine (`RMEDIA_REQUIRE_FFMPEG=1`).
 5. `npm ci` in `apps/desktop`.
 6. Linux: check that `THIRD_PARTY_NOTICES.md` is current. The file covers both platforms.
 7. `npx tauri build --bundles <bundles>` in `apps/desktop`.
 8. Assemble the standalone CLI archive `rmedia-cli-<ref>-<triple>` (`.tar.gz` on Linux, `.zip` via
-   `7z` on Windows) with `rmedia`, `rmedia-ffmpeg`, `rmedia-ffprobe`, `README.md`, and
-   `licenses/{THIRD_PARTY_NOTICES.md,FFMPEG-NOTICE.md,FFMPEG-LICENSE.txt}`.
+   `7z` on Windows) with `rmedia`, `rmedia-sr`, `rmedia-ffmpeg`, `rmedia-ffprobe`, `README.md`,
+   `models/` (YuNet and Real-ESRGAN x2/x3/x4) and `licenses/{THIRD_PARTY_NOTICES.md,
+   FFMPEG-NOTICE.md,FFMPEG-LICENSE.txt,NCNN-NOTICE.md,NCNN-LICENSE.txt,GLSLANG-LICENSE.txt}`.
 9. Upload the `.deb`, `.AppImage`, `.exe`, `.msi`, and archives as artifact `rmedia-<triple>`.
    The upload fails if no files are found.
 
@@ -203,9 +206,10 @@ relies on CI having passed on the tagged commit.
 ### Sidecars
 
 `tauri.conf.json` → `bundle.externalBin` lists `binaries/rmedia-ffmpeg`, `binaries/rmedia-ffprobe`,
-and `binaries/rmedia`. Tauri appends the target triple when it looks for each file and strips it in
-the installed package, so the installed names are `rmedia-ffmpeg`, `rmedia-ffprobe`, and `rmedia`,
-next to `rmedia-desktop`. This is why `fetch-tools` and `stage-cli` must run before any
+`binaries/rmedia` and `binaries/rmedia-sr` (the AI worker). Tauri appends the target triple when it
+looks for each file and strips it in the installed package, so the installed names are
+`rmedia-ffmpeg`, `rmedia-ffprobe`, `rmedia` and `rmedia-sr`, next to `rmedia-desktop`. This is why
+`fetch-tools`, `fetch-ncnn` and `stage-cli` must run before any
 `tauri build` or `tauri dev`, and before `cargo build` of the desktop crate (tauri-build checks that
 the files exist).
 
@@ -215,8 +219,13 @@ executable ([Engine location order](../administration/configuration.md#engine-lo
 ### Resources
 
 The license files are bundled as resources under `licenses/`: `THIRD_PARTY_NOTICES.md`,
-`FFMPEG-NOTICE.md`, and `FFMPEG-LICENSE.txt`. In the deb they install to
-`/usr/lib/rmedia/licenses/`.
+`FFMPEG-NOTICE.md`, `FFMPEG-LICENSE.txt`, `NCNN-NOTICE.md`, `NCNN-LICENSE.txt` and
+`GLSLANG-LICENSE.txt`. In the deb they install to `/usr/lib/rmedia/licenses/`.
+
+The models are bundled as resources under `models/` (YuNet and the six Real-ESRGAN files; never
+the test-only portrait), so `fetch-models` must also run before a desktop build. On Windows they
+land next to the executables; in the deb and AppImage in `<prefix>/lib/rmedia/models`, which the
+model search checks when the program runs from `<prefix>/bin`.
 
 ### Linux specifics
 

@@ -9,17 +9,18 @@ for Reddit (003). Spec-driven via Spec Kit.
   04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
-- Active feature: `specs/002-mobile-upscale/` (92/112 tasks; Setup, Foundational incl. refactors A1–A5,
-  US1 CPU tier, US2 smart reframe, US3 GPU tier + capability record, US4 batch/`clip --upscale`
-  and US5 desktop "Upscale for phone" view are done). Next: US6 AI worker (T093–T105; start with a
-  plan-mode pass; needs a discrete GPU for its owner checks).
-  Polish. Progress: `specs/002-mobile-upscale/progress.md`; roadmap: `docs/roadmap.md`.
+- Active feature: `specs/002-mobile-upscale/` (105/112 tasks; Setup, Foundational incl. refactors
+  A1–A5, US1 CPU tier, US2 smart reframe, US3 GPU tier + capability record, US4 batch/`clip
+  --upscale`, US5 desktop view and US6 AI tier are done; US6 owner checks need a discrete GPU).
+  Next: Polish (T106–T112). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn`
+  (and `fetch-models` for its GPU tests) before `cargo build --workspace`. Progress: `specs/002-mobile-upscale/progress.md`; roadmap: `docs/roadmap.md`.
   001 (`specs/001-video-clipping/`) is implemented. Planned: 003 GIF export (research/05, no spec yet).
 - Git: no remote and no `main` branch yet; work is on `001-video-clipping` and `002-mobile-upscale`.
 
 ## Stack
 - Rust 1.94 workspace: `crates/rmedia-core` (ALL media logic), `crates/rmedia-cli` (bin `rmedia`),
-  `crates/rmedia-testkit` (lavfi fixtures), `apps/desktop` (Tauri 2.x + Svelte 5 + TS), `xtask`.
+  `crates/rmedia-testkit` (lavfi fixtures), `crates/rmedia-sr` (AI worker over ncnn; `unsafe` only
+  in its `ffi.rs`), `apps/desktop` (Tauri 2.x + Svelte 5 + TS), `xtask`.
 - FFmpeg/ffprobe are subprocesses only (never linked); bundled as `rmedia-ffmpeg`/`rmedia-ffprobe`.
 
 ## Rules

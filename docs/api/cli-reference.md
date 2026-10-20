@@ -326,8 +326,8 @@ $ rmedia scan v
 
 Makes each input video phone-ready: it scales and reframes the whole video to a device preset's
 screen size, re-encodes it and verifies the result. Added in the unreleased 0.2.0-dev
-([release notes](../releases/0.2.0-dev.md)). The CPU and GPU tiers, smart reframe, manifest
-upscaling (`batch`) and `clip --upscale` exist; the AI tier is planned ([Roadmap](../roadmap.md)).
+([release notes](../releases/0.2.0-dev.md)). The CPU, GPU and AI tiers, smart reframe, manifest
+upscaling (`batch`) and `clip --upscale` exist ([Roadmap](../roadmap.md)).
 
 ```text
 rmedia upscale [OPTIONS] [INPUT]...
@@ -345,7 +345,7 @@ no intermediate file) or a manifest.
 |---|---|---|---|
 | `--preset ID` | an id from `--list-presets` | `phone-fill` | An unknown id is an input error (exit 3, `PRESET_UNKNOWN`) |
 | `--reframe` | `smart`, `center`, `blur` | `smart` | `smart` follows faces (needs the YuNet model, otherwise `blur` with a warning). `center` crops the middle; `blur` keeps the whole frame over a blurred background |
-| `--tier` | `auto`, `cpu`, `gpu`, `ai` | `auto` | `auto` takes the GPU tier when `doctor` found a usable Vulkan GPU that is not slower than the CPU and has not failed since, otherwise `cpu`. A forced tier the machine cannot run stops with `TIER_UNAVAILABLE` (exit 3); `ai` is not built yet |
+| `--tier` | `auto`, `cpu`, `gpu`, `ai` | `auto` | `auto` takes the GPU tier when `doctor` found a usable Vulkan GPU that is not slower than the CPU and has not failed since, otherwise `cpu`; it never takes `ai` (it suggests it under 720p). `ai` needs a GPU that passed the AI self-test (60 s of 480p predicted in 10 min or less) and SDR output. A forced tier the machine cannot run stops with `TIER_UNAVAILABLE` (exit 3) |
 | `--hdr` | `sdr`, `keep` | `sdr` | `sdr` tone-maps HDR sources. `keep` needs an HDR-capable preset, otherwise `HDR_UNSUPPORTED` (exit 3) |
 | `--motion` | `calm`, `normal`, `fast` | `normal` | Smart-reframe camera speed |
 | `--crf N` | 0 to 51 | the preset's value | Lower is better quality and a bigger file |
@@ -455,10 +455,12 @@ encoder:  libx265     yes
 filters:  all upscaling filters present
 tier:     cpu  yes, 35 fps
 tier:     gpu  yes, 21 fps
-tier:     ai   no (the AI tier is not built yet)
+tier:     ai   no, 0.3 fps (too slow on Intel(R) Graphics (RPL-U) (integrated): about 106 min for 60 s of 480p (limit 10 min))
 gpu:      0 Intel(R) Graphics (RPL-U) (integrated) — usable
 gpu:      1 llvmpipe (LLVM 20.1.2, 256 bits) (software) — not used: software renderer
 model:    face_detection_yunet_2026may.onnx ok
+model:    realesr-animevideov3 (x2, x3, x4) ok
+model:    rmedia-sr ok
 checked:  2026-10-19T05:51:14Z
 accurate mode can write: mp4, m4v, mov, mkv, ts, webm
 status:   ready

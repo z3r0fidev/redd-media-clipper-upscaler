@@ -117,3 +117,44 @@
   - Each smart preview reads the face model to compute the cache key (fast for YuNet).
   - The `< 5 s` preview assertion is wall-clock based and may need slack on a loaded CI runner.
 
+## US6 checkpoint (2026-10-20)
+
+- Machine: Intel Raptor Lake-P iGPU (Mesa ANV) + llvmpipe; no discrete GPU. Bundled ffmpeg n9.0.2.
+- `rmedia-sr --list-gpus`: the iGPU as `integrated`, llvmpipe as `cpu`/`software`; forcing the
+  llvmpipe index exits 3 `SOFTWARE_DEVICE`. Worker binary depends only on glibc (`ldd`).
+- `rmedia doctor --recheck`: `tier: ai no, 0.2 fps (too slow on Intel(R) Graphics (RPL-U)
+  (integrated): about 177 min for 60 s of 480p (limit 10 min))` (debug build; a release-build
+  self-test measured ≈ 8.6 s/Mpx, ≈ 106 min). `rmedia upscale --tier ai` exits 3
+  `TIER_UNAVAILABLE` with that reason.
+- Pipeline (`us6_pipeline.rs`, builtin nearest model, runs everywhere): 1080x2340 HEVC output,
+  durations and A/V offsets within one frame for input-seek, -copyts trim, whole-video (audio
+  offset kept within 17 ms), VFR and interlaced sources; cancel stops all three processes within
+  2 s with no `.part` or scratch left; a crashing worker is `ENGINE_FAILED` with its message;
+  AI-vs-CPU framing PSNR 49.6 dB (smart), 52.9 dB (partial fallback), 61.2 dB (blur), and
+  breaking the crop path or the fallback toggle drops it under 30 dB.
+- Real model on the iGPU (`us6_ai.rs --ignored`, gate bypassed): SC-002 AI 51.84 vs GPU tier
+  43.73 VMAF on the degraded 360p fixture (+8.1, target +3); static-source flicker AI 1.105 vs
+  GPU 1.900 (source 2.474) before the anti-flicker step. The 10 s render took 496 s here.
+- **Owner checks (discrete GPU):** run
+  `cargo test --release -p rmedia-core --test us6_ai -- --ignored --nocapture --test-threads 1`
+  (SC-002 AI, flicker, SC-009 ≤ 10 min and prediction within ±30 %), then
+  `rmedia doctor --recheck` should show `tier: ai yes`. Windows: CI's Windows job is the first
+  build of the MSVC-linked worker (CRT/OpenMP linking unverified here).
+- Reviews: senior-code-reviewer (0 critical; 1 high fixed: a stage that had already exited was
+  marked killed, so a worker error could be reported as ffmpeg #1's broken pipe; 3 medium fixed:
+  an early clean ffmpeg #2 exit no longer fails the job, timing tests for the other seek paths,
+  worker start errors reported). security-auditor (0 critical/high; 2 medium fixed: model files
+  pinned by SHA-256 and checked on the bytes the worker loads, bounded stderr/progress line
+  reads; low fixed: output size before allocation, null extractor, checked ROI arithmetic,
+  single GPU instance, dup2 checked, 64 Mpx frame cap, sanitised worker messages, RMEDIA_SR
+  logged, fresh release fetches, curl limits).
+- **Known limits:**
+  - The worker is crash-contained, not sandboxed (no seccomp/Landlock); pinned models limit what
+    ncnn parses.
+  - The worker inherits the environment (Vulkan loader variables, `LD_PRELOAD`), like ffmpeg.
+  - AI previews use the standard scaler (flagged `classical`).
+  - Smart reframe's fallback ranges are classically scaled on the AI tier (the background comes
+    from the source; only the tracked crop goes through the worker).
+  - A stuck GPU driver after a kill is waited for without a deadline.
+  - ffmpeg #2's overlay queue on long blur/fallback clips was not measured for memory.
+

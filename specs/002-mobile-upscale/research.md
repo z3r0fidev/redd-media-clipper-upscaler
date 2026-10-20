@@ -397,6 +397,28 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
   - Licences go in `licenses/models/`.
 - **Alternatives:** the same as in plan.md Complexity Tracking.
 
+### R13 measurements (US6, 2026-10-20, Intel RPL-U iGPU)
+
+- **ncnn options:** Winograd convolution off is ≈ 2× faster on this iGPU (1.9 → 0.95 s per
+  480x270 frame ×2); fp16 off or fp32 arithmetic is 2.5–3× slower. The worker turns Winograd off
+  on integrated GPUs only; discrete GPUs keep ncnn's defaults (to confirm on owner hardware).
+  The reference tool measured ≈ 0.64 s per frame at steady state for the same size.
+- **Model cost:** the x2/x3 graphs run the x4 network and downscale, so cost per input
+  megapixel does not depend on the scale; the gate uses seconds per input megapixel.
+- **Gate:** 4 frames of 480x270 after a warm-up; available when 1800 × 0.41 Mpx × s/Mpx ≤ 600 s.
+  This iGPU: 8.6 s/Mpx (release) → ≈ 106 min → unavailable, with that estimate as the reason.
+- **Quality (SC-002, degraded 360p → 1080x1920):** AI 51.84 VMAF, GPU tier 43.73 (+8.1).
+- **Flicker (static noisy source, mean frame difference of luma):** source 2.474, GPU tier 1.900,
+  AI 1.105. Candidates on the AI output: `hqdn3d=0:0:3:3` 0.715 (−35 %) at 51.77 VMAF on moving
+  content (−0.07); 3-frame `tmix` 0.609 at 34.59 VMAF (ghosting); motion-masked `tmix` 0.830 but
+  `tblend` drops the first frame. Chosen: temporal-only `hqdn3d=0:0:3:3`.
+- **Pipeline layout:** the blurred background (blur reframe, smart fallback ranges) is made from
+  the source in ffmpeg #2, so the worker only upscales the picture; inputs larger than half the
+  output are shrunk first so the model does ×2 of what is needed. Fallback ranges are therefore
+  classically scaled on the AI tier.
+- **Models pinned:** only the six files with the lock file's SHA-256s are used; the worker checks
+  the bytes it loads (ncnn's memory reader has no length bound, so only known-good bytes reach it).
+
 ## R14. Model files and lookup
 
 - Model files are never committed.
