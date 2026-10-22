@@ -97,7 +97,7 @@ impl PreviewCache {
         h.update(canonical.as_os_str().as_encoded_bytes());
         h.update(media.size.to_le_bytes());
         h.update(mtime.to_le_bytes());
-        format!("{:x}", h.finalize())[..32].to_owned()
+        crate::hex(&h.finalize())[..32].to_owned()
     }
 
     fn proxy_path(&self, media: &MediaInfo, codec: ProxyCodec) -> PathBuf {

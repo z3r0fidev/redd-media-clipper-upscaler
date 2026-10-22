@@ -821,7 +821,7 @@ pub fn fixture(kind: Fixture) -> PathBuf {
     let src = kind.derived_from().map(fixture);
     let mut h = Sha256::new();
     spec_hash(kind, &mut h);
-    let hash = format!("{:x}", h.finalize());
+    let hash = hex(&h.finalize());
     let dir = fixtures_root().join(&hash[..16]);
     let target = dir.join(kind.file_name());
     if target.exists() {
@@ -884,7 +884,11 @@ pub fn stream_types(path: &Path) -> Vec<String> {
 
 pub fn sha256(path: &Path) -> String {
     let data = std::fs::read(path).expect("read for sha256");
-    format!("{:x}", Sha256::digest(&data))
+    hex(&Sha256::digest(&data))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// PSNR (dB) between the first frame of `a` and the first frame of `b` at or after `b_time`

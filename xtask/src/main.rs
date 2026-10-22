@@ -957,7 +957,7 @@ fn license_texts(dir: &Path) -> Vec<String> {
 }
 
 fn file_sha256(path: &Path) -> Result<String> {
-    Ok(format!("{:x}", Sha256::digest(std::fs::read(path)?)))
+    Ok(Sha256::digest(std::fs::read(path)?).iter().map(|b| format!("{b:02x}")).collect())
 }
 
 fn run(cmd: &mut Command) -> Result<()> {

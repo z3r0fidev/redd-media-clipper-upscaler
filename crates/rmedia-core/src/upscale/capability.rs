@@ -233,7 +233,7 @@ pub fn fingerprint(i: &FingerprintInputs) -> String {
     put("models", &i.model_shas);
     put("drivers", &i.drivers);
     put("env", &i.vk_env);
-    format!("{:x}", h.finalize())
+    crate::hex(&h.finalize())
 }
 
 /// Identity of Vulkan driver manifests: each manifest's path and content hash, plus its
@@ -276,7 +276,12 @@ pub fn manifest_identity(manifests: &[PathBuf]) -> Vec<String> {
                     Err(_) => l.to_owned(),
                 }
             });
-            Some(format!("{} {:x} {}", m.display(), Sha256::digest(&text), lib.unwrap_or_default()))
+            Some(format!(
+                "{} {} {}",
+                m.display(),
+                crate::hex(&Sha256::digest(&text)),
+                lib.unwrap_or_default()
+            ))
         })
         .collect();
     out.sort();
@@ -842,7 +847,7 @@ fn ai_identity(engine: Option<&super::ai::AiEngine>) -> Vec<String> {
             for ext in ["param", "bin"] {
                 let f = base.with_extension(ext);
                 let sha = std::fs::read(&f)
-                    .map_or_else(|_| "missing".to_owned(), |b| format!("{:x}", Sha256::digest(b)));
+                    .map_or_else(|_| "missing".to_owned(), |b| crate::hex(&Sha256::digest(b)));
                 out.push(format!("{}: {sha}", f.display()));
             }
         }

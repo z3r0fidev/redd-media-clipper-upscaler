@@ -36,7 +36,7 @@ pub struct KeyInputs {
 pub fn key(k: &KeyInputs) -> String {
     use sha2::{Digest, Sha256};
     let canonical = serde_json::to_vec(k).expect("key inputs serialise");
-    format!("{:x}", Sha256::digest(canonical))
+    crate::hex(&Sha256::digest(canonical))
 }
 
 #[derive(Debug, Clone)]

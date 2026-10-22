@@ -175,7 +175,7 @@ impl YunetDetector {
         if bytes.len() as u64 > MAX_MODEL_BYTES {
             return Err(model_error(format!("{} is larger than 50 MB", path.display())));
         }
-        let sha = format!("{:x}", Sha256::digest(&bytes));
+        let sha = crate::hex(&Sha256::digest(&bytes));
         let model =
             tract_onnx::onnx().model_for_read(&mut std::io::Cursor::new(bytes)).map_err(model_error)?;
         Ok(YunetDetector { id: format!("yunet-2026may:{sha}"), model, plans: Default::default() })

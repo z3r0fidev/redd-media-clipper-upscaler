@@ -207,7 +207,7 @@ impl Still<'_> {
             h.update((part.len() as u64).to_le_bytes());
             h.update(part);
         }
-        let key = hex(&h.finalize()[..12]);
+        let key = crate::hex(&h.finalize()[..12]);
         std::fs::create_dir_all(self.out_dir)?;
         pair.before = self.out_dir.join(format!("{key}-before.png"));
         pair.after = self.out_dir.join(format!("{key}-after.png"));
@@ -319,10 +319,6 @@ fn evict(dir: &Path, keep: &[&PathBuf]) {
             remove_with_retry(&p);
         }
     }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]

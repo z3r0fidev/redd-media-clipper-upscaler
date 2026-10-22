@@ -133,7 +133,7 @@ pub fn locate_models(dirs: &[PathBuf]) -> Option<BTreeMap<u32, PathBuf>> {
             .ok()
             .filter(|m| m.is_file() && m.len() < 64 << 20)
             .and(std::fs::read(p).ok())?;
-        (format!("{:x}", Sha256::digest(&bytes)) == pinned_sha(name)?).then_some(())
+        (crate::hex(&Sha256::digest(&bytes)) == pinned_sha(name)?).then_some(())
     };
     dirs.iter().find_map(|d| {
         let d = crate::paths::canonicalize(d).ok()?;

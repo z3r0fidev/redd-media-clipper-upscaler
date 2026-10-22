@@ -131,7 +131,7 @@ impl<'g> Sr<'g> {
 fn verified(path: &std::path::Path, sha: &str) -> Result<Vec<u8>, Failure> {
     use sha2::{Digest, Sha256};
     let bytes = std::fs::read(path).map_err(|e| Failure::Model(format!("{}: {e}", path.display())))?;
-    if format!("{:x}", Sha256::digest(&bytes)) != sha {
+    if Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect::<String>() != sha {
         return Err(Failure::Model(format!(
             "{} is not the expected model file (SHA-256 differs)",
             path.display()
