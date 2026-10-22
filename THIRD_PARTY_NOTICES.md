@@ -70030,7 +70030,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### @tauri-apps/api 2.12.1
+### @tauri-apps/api 2.12.4
 
 License: Apache-2.0 OR MIT
 
