@@ -35,7 +35,9 @@ async fn bench_sc001_fast_clip_1080p_under_5s() {
 async fn bench_sc003_scan_10k_files_under_60s() {
     require_ffmpeg!();
     let src = fixture(Fixture::NoAudioMp4);
-    let root = tempfile::tempdir().unwrap();
+    // Next to the fixture: hard links cannot cross volumes (the Windows runners keep the
+    // workspace and the temp folder on different drives).
+    let root = tempfile::tempdir_in(src.parent().unwrap()).unwrap();
     for i in 0..10_000 {
         let dir = root.path().join(format!("d{}", i % 50));
         std::fs::create_dir_all(&dir).unwrap();
