@@ -9,8 +9,9 @@ for Reddit (003). Spec-driven via Spec Kit.
   04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
-- Active feature: **003 GIF export for Reddit** — not started: no spec yet (research/05). Next step:
-  `/speckit-specify`, then plan mode, as for 002.
+- Active feature: **003 GIF export for Reddit** — spec drafted (`specs/003-gif-export/spec.md`,
+  6 stories; optional gifsicle and gifski engines per owner decision). Next step: plan mode, then
+  `/speckit-plan`, as for 002.
 - Done: 001 (`specs/001-video-clipping/`, 0.1.0) and 002 (`specs/002-mobile-upscale/`, 112/112,
   0.2.0 release candidate; owner checks left: two-phone gallery test, Reddit upload, +3 VMAF on
   real footage). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and
@@ -35,5 +36,5 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Commits: Conventional Commits.
 
 <!-- SPECKIT START -->
-Active plan: none (003 has no spec yet; the last plan was specs/002-mobile-upscale/plan.md)
+Active plan: none (003 has a spec but no plan yet; the last plan was specs/002-mobile-upscale/plan.md)
 <!-- SPECKIT END -->
