@@ -4,6 +4,12 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+  # Unmaintained, not vulnerable. A build-time proc-macro of gtk-rs 0.18 (glib-macros), which
+  # Tauri's Linux backend (gtk, webkit2gtk) depends on; no runtime code. Desktop app only; it goes
+  # away when Tauri leaves gtk-rs 0.18. Recheck on each Tauri upgrade.
+  { id = "RUSTSEC-2024-0370", reason = "build-time proc-macro of gtk-rs 0.18 via Tauri's Linux backend" },
+]
 
 [licenses]
 version = 2
