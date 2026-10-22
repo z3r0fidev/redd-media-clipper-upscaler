@@ -419,6 +419,18 @@ Tags: [V] = verified on the bundled engine or read from a primary source, [D] = 
 - **Models pinned:** only the six files with the lock file's SHA-256s are used; the worker checks
   the bytes it loads (ncnn's memory reader has no length bound, so only known-good bytes reach it).
 
+### R13 measurements on a discrete GPU (2026-10-22, Quadro M4000, owner run)
+
+- **Speed:** self-test 0.999 s/Mpx. 60 s of portrait 480x854 with the default preset took 600 s,
+  predicted 605 s (0.8 % off; SC-009 needs ±30 %).
+- **Quality and flicker:** SC-002 AI 50.40 vs GPU tier 42.23 VMAF (+8.17); flicker AI 0.746, GPU
+  tier 1.906, source 2.506. Both match the iGPU numbers.
+- **Gate reference (decision):** the gate keeps pricing the full 854x480 frame (0.41 Mpx), the
+  worst case over the framing modes (blur fit keeps the whole frame), although the default preset
+  crops a portrait 480p source to 394x854 (0.34 Mpx) and a landscape one further. The M4000 is
+  therefore not offered AI (737 s predicted), although this job met SC-009. Owner decision
+  2026-10-22: keep the worst case.
+
 ## R14. Model files and lookup
 
 - Model files are never committed.

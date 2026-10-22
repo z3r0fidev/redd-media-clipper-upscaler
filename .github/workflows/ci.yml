@@ -39,6 +39,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Format
         run: cargo fmt --all -- --check
+      # Every pinned archive has a mirror, and the FFmpeg pin has its GPL source release and notice.
+      - name: Pins are mirrored and sourced
+        run: cargo xtask check-pins
       # rmedia-sr (the AI worker, US6) links the prebuilt ncnn; build.rs stops without it.
       - name: Cache ncnn
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

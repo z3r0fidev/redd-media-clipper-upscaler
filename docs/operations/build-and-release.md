@@ -93,10 +93,29 @@ Prerequisites: `curl` and `tar` on PATH (Linux), or `curl` plus the system `tar.
    cargo test --workspace
    ```
 
-3. **Update `licenses/FFMPEG-NOTICE.md` by hand.** `pin-tools` does not touch it. The notice names
-   the exact build, release tag, and FFmpeg commit, and the GPL corresponding-source links point at
-   that tag.
-4. Commit `xtask/tools.lock.json` and `licenses/FFMPEG-NOTICE.md` together in a reviewed commit.
+3. **Publish the corresponding source** while the new autobuild tag still exists upstream (BtbN
+   deletes old tags along with their releases):
+
+   ```bash
+   gh workflow run ffmpeg-source.yml
+   ```
+
+   See [The FFmpeg source release](#the-ffmpeg-source-release).
+4. **Mirror the new archives and record the source release:**
+
+   ```bash
+   cargo xtask mirror mirror-$(date +%F)
+   ```
+
+   It uploads every pinned archive that has no mirror yet to a `mirror-<date>` pre-release of the
+   repository (creating it if needed), adds the URLs under `mirrors` in both lock files, and sets
+   `source` in `tools.lock.json` once the `ffmpeg-source-<version>` release exists. It needs `gh`
+   logged in with write access.
+5. **Update `licenses/FFMPEG-NOTICE.md` by hand.** The notice names the exact build, release tag
+   and FFmpeg commit, and links the source release.
+6. `cargo xtask check-pins` must pass (CI runs it on every push): every pinned archive has a
+   mirror, `source` is set, and the notice names the version, the release tag and the source
+   release. Commit `xtask/*.lock.json` and `licenses/FFMPEG-NOTICE.md` together in a reviewed commit.
 
 To move to a new FFmpeg release line (for example 9.0 to 9.1), `pin-tools` cannot help: it only
 searches the current line. Edit `version` in `tools.lock.json` to the new line first, then run
@@ -123,29 +142,37 @@ failed with a 404 on a fresh checkout. That build's archives were lost, because 
 used to delete them after extraction. FFmpeg was re-pinned to `autobuild-2026-10-21-13-06`, and
 `fetch-tools` now keeps every archive.
 
-To create the mirrors:
-
-1. `cargo xtask archive` downloads every pinned archive (FFmpeg and ncnn for both targets, and the
-   Real-ESRGAN release archive), checks each against its pin, and lists them with their SHA-256 and
-   path under `archives/` (about 480 MB in total).
-2. Upload those files to rmedia's own release storage (for example, assets of a `mirror-<date>`
-   release in the project repository).
-3. Add each uploaded URL under `mirrors` for its pin in `xtask/tools.lock.json` and
-   `xtask/models.lock.json`. The SHA-256 stays the same, so a mirror can never serve other bytes.
-4. To set up a machine without network access to the upstream releases, copy `archives/` from a
-   machine that has it. `fetch-*` use those copies after checking their hashes.
+Mirrors are created by `cargo xtask mirror <tag>` (step 4 above); `cargo xtask archive` only
+downloads and verifies every pinned archive into `archives/` (about 480 MB). To set up a machine
+without network access to the upstream releases, copy `archives/` from a machine that has it;
+`fetch-*` use those copies after checking their hashes.
 
 **Current mirror:** the public pre-release
 [`mirror-2026-10-22`](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/mirror-2026-10-22)
 holds all five pinned archives, and every pin lists it under `mirrors`. It was checked by fetching
 everything with the upstream URLs pointed at a host that does not exist (all five came from the
 mirror and matched), by breaking the mirror (the upstream URL was used), and by pointing a mirror
-at a different file (rejected: `checksum …, expected …`). Each re-pin needs a new mirror release:
-run `cargo xtask archive`, create `mirror-<date>` with those files, and add the URLs.
+at a different file (rejected: `checksum …, expected …`).
 
-> **Open:** The mirror distributes the FFmpeg binaries publicly, so the GPL v3 §6 source offer in
-> `licenses/FFMPEG-NOTICE.md` applies to it now. The corresponding-source mirror (FFmpeg at the
-> pinned commit, the BtbN build scripts and the third-party library sources) is not uploaded yet.
+### The FFmpeg source release
+
+The mirror distributes the FFmpeg binaries publicly, so the GPL v3 §6 source offer in
+`licenses/FFMPEG-NOTICE.md` applies. `.github/workflows/ffmpeg-source.yml` (run by hand) publishes
+the complete corresponding source of the pinned build as the pre-release
+`ffmpeg-source-<version>`:
+
+- `ffmpeg-<version>.tar.xz`: FFmpeg at the pinned commit (taken from `version`, on
+  `release/<line>`).
+- `FFmpeg-Builds-<release>.tar.xz`: BtbN's build scripts at the pinned autobuild tag.
+- `<stage>_<hash>.tar.xz`: every library source, fetched by BtbN's own `download.sh` in BtbN's base
+  image (a superset: every target and variant BtbN builds).
+- `SHA256SUMS`.
+
+**Current source release:**
+[`ffmpeg-source-n9.0.2-31-gc89d6ee1ca`](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/ffmpeg-source-n9.0.2-31-gc89d6ee1ca)
+(130 files, about 2.1 GB; FFmpeg commit `c89d6ee1ca848314270155ceb13b1cab3744fc3c`, BtbN commit
+`937868360a21d711ec94a33f5591d345ad9b7754`). Its `SHA256SUMS` and a sample of the files (FFmpeg,
+the build scripts, x264) were checked after publishing.
 
 Installer size is another open owner decision. The static GPL binaries are about 172 MB each; a
 shared or trimmed custom build would reduce it (`research.md` R9, `validation.md`).

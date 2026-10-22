@@ -148,6 +148,8 @@
   - The availability gate is stricter than this job: it prices the full 854x480 frame (0.41 Mpx,
     the blur-fit worst case), while the default preset crops this portrait source to 394x854
     (0.34 Mpx). For the M4000 it predicts 737 s and does not offer AI.
+    **Owner decision (2026-10-22): keep the worst-case gate.** It never offers AI on a card that
+    would exceed 10 minutes in some framing mode.
   - The GPU tier measured 6.2 fps against the CPU's 7.1 fps here, so auto picks the CPU tier.
 - **Owner checks (discrete GPU):** build the worker, then run the tests with the bundled FFmpeg
   (the system one usually lacks libvmaf; a missing feature now fails the run):

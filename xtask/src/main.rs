@@ -1,5 +1,6 @@
 //! Developer tasks: `cargo xtask fetch-tools [--target TRIPLE]`, `cargo xtask pin-tools`,
-//! `cargo xtask fetch-models`, `cargo xtask fetch-ncnn [--target TRIPLE]`, `cargo xtask archive`.
+//! `cargo xtask fetch-models`, `cargo xtask fetch-ncnn [--target TRIPLE]`, `cargo xtask archive`,
+//! `cargo xtask mirror <tag>`, `cargo xtask check-pins`.
 //!
 //! Engine binaries are downloaded at build time from a pinned, SHA-256-verified URL and placed in
 //! `binaries/` using Tauri's sidecar naming (`rmedia-ffmpeg-<triple>[.exe]`). They are never
@@ -23,6 +24,10 @@ struct Lock {
     comment: String,
     release: String,
     version: String,
+    /// The release holding this build's complete corresponding source (GPL v3 §6), published by
+    /// `.github/workflows/ffmpeg-source.yml`; `cargo xtask mirror` fills it in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
     targets: BTreeMap<String, Pinned>,
 }
 
@@ -106,9 +111,13 @@ fn main() -> Result<()> {
             fetch_ncnn(&target)
         }
         Some("archive") => archive_all(),
+        Some("mirror") => {
+            mirror(args.get(1).context("usage: cargo xtask mirror <tag>, e.g. mirror-2026-10-22")?)
+        }
+        Some("check-pins") => check_pins(),
         _ => {
             eprintln!(
-                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive>"
+                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins>"
             );
             std::process::exit(2);
         }
@@ -400,12 +409,17 @@ fn pin_tools() -> Result<()> {
         );
     }
     lock.release = tag;
+    lock.source = None; // a new build needs its own source release
     std::fs::write(root().join("xtask/tools.lock.json"), serde_json::to_string_pretty(&lock)? + "\n")?;
     println!("pinned {} ({})", lock.version, lock.release);
     // Keep the new builds now: the autobuild release will be deleted upstream.
     for pin in lock.targets.values() {
         pinned_archive(&pin.url, &pin.mirrors, &pin.sha256)?;
     }
+    println!(
+        "next, while the autobuild tag still exists: `gh workflow run ffmpeg-source.yml`, then \
+         `cargo xtask mirror mirror-<date>`, update licenses/FFMPEG-NOTICE.md, `cargo xtask check-pins`"
+    );
     Ok(())
 }
 
@@ -426,8 +440,173 @@ fn archive_all() -> Result<()> {
         let size = std::fs::metadata(&kept)?.len();
         println!("{sha256}  {:>5} MB  {}", size >> 20, kept.strip_prefix(root()).unwrap_or(&kept).display());
     }
-    println!("upload these as mirror assets, then list their URLs under `mirrors` in the lock files");
+    println!("upload these with `cargo xtask mirror <tag>`");
     Ok(())
+}
+
+/// Every pinned archive as (upstream url, sha256, mirrors), one entry per distinct archive.
+fn all_pins() -> Result<Vec<(String, String, Vec<String>)>> {
+    let tools = read_lock()?;
+    let models = read_model_lock()?;
+    let mut pins = BTreeMap::new();
+    for p in tools.targets.values().chain(models.ncnn.values()) {
+        pins.insert(p.sha256.clone(), (p.url.clone(), p.mirrors.clone()));
+    }
+    for a in models.models.values().filter_map(|m| m.archive.as_ref()) {
+        pins.insert(a.sha256.clone(), (a.url.clone(), a.mirrors.clone()));
+    }
+    Ok(pins.into_iter().map(|(sha, (url, mirrors))| (url, sha, mirrors)).collect())
+}
+
+fn gh(args: &[&str]) -> Result<String> {
+    let out = Command::new("gh").args(args).output().context("run gh (GitHub CLI)")?;
+    if !out.status.success() {
+        bail!("gh {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
+    }
+    Ok(String::from_utf8(out.stdout)?.trim().to_owned())
+}
+
+/// Uploads every pinned archive that has no mirror yet to the release `tag` of this repository
+/// (created as a pre-release when missing) and lists the uploaded URLs under `mirrors` in the lock
+/// files. Also records the FFmpeg source release when it exists. Needs `gh` with write access.
+fn mirror(tag: &str) -> Result<()> {
+    if !tag.starts_with("mirror-") || !tag.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b)) {
+        bail!("tag must look like mirror-<date>, got {tag:?}");
+    }
+    let repo = gh(&["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])?;
+    let missing: Vec<_> = all_pins()?.into_iter().filter(|(_, _, m)| m.is_empty()).collect();
+    if !missing.is_empty() {
+        let mut files = Vec::new();
+        for (url, sha, _) in &missing {
+            files.push(pinned_archive(url, &[], sha)?);
+        }
+        if gh(&["release", "view", tag, "-R", &repo, "--json", "tagName"]).is_err() {
+            gh(&[
+                "release",
+                "create",
+                tag,
+                "-R",
+                &repo,
+                "--prerelease",
+                "--title",
+                &format!("Third-party archive mirror {tag}"),
+                "--notes",
+                "Copies of the archives pinned in `xtask/tools.lock.json` and `xtask/models.lock.json` \
+                 (`cargo xtask mirror`). `fetch-*` accept a file only when its SHA-256 matches the pin. \
+                 Not an rmedia release. FFmpeg licence and source: licenses/FFMPEG-NOTICE.md.",
+            ])?;
+        }
+        let present = gh(&["release", "view", tag, "-R", &repo, "--json", "assets", "-q", ".assets[].name"])?;
+        let mut upload = vec!["release", "upload", tag, "-R", &repo];
+        let names: Vec<String> = files.iter().map(|f| f.to_string_lossy().into_owned()).collect();
+        for (f, path) in files.iter().zip(&names) {
+            let name = f.file_name().and_then(|n| n.to_str()).context("file name")?;
+            if !present.lines().any(|l| l == name) {
+                upload.push(path);
+            }
+        }
+        if upload.len() > 5 {
+            println!("uploading {} archive(s) to {repo} {tag}", upload.len() - 5);
+            gh(&upload)?;
+        }
+        let base = format!("https://github.com/{repo}/releases/download/{tag}/");
+        for (url, sha, _) in &missing {
+            let name = url.rsplit('/').next().context("file name")?;
+            add_mirror(url, sha, &format!("{base}{name}"))?;
+        }
+    }
+    let mut lock = read_lock()?;
+    if lock.source.is_none() {
+        let source_tag = format!("ffmpeg-source-{}", lock.version);
+        match gh(&["release", "view", &source_tag, "-R", &repo, "--json", "url", "-q", ".url"]) {
+            Ok(url) => {
+                lock.source = Some(url);
+                std::fs::write(
+                    root().join("xtask/tools.lock.json"),
+                    serde_json::to_string_pretty(&lock)? + "\n",
+                )?;
+            }
+            Err(_) => println!("no release {source_tag} yet: run `gh workflow run ffmpeg-source.yml` first"),
+        }
+    }
+    check_pins()
+}
+
+/// Lists `mirror` under `mirrors` for every pin of `url` with `sha256` in both lock files. The
+/// models lock is edited as text, keeping its layout; both are re-read to confirm the result.
+fn add_mirror(url: &str, sha256: &str, mirror: &str) -> Result<()> {
+    let mut lock = read_lock()?;
+    for p in lock.targets.values_mut().filter(|p| p.url == url && p.sha256 == sha256) {
+        p.mirrors.push(mirror.to_owned());
+    }
+    std::fs::write(root().join("xtask/tools.lock.json"), serde_json::to_string_pretty(&lock)? + "\n")?;
+    let path = root().join("xtask/models.lock.json");
+    std::fs::write(&path, with_mirror_text(&std::fs::read_to_string(&path)?, url, mirror)?)?;
+    let missing: Vec<_> = all_pins()?
+        .into_iter()
+        .filter(|(u, s, m)| u == url && s == sha256 && !m.iter().any(|x| x == mirror))
+        .collect();
+    if !missing.is_empty() {
+        bail!("could not add the mirror for {url}");
+    }
+    Ok(())
+}
+
+/// `text` (pretty-printed JSON) with `"mirrors": [mirror]` after each `"url": <url>,` line that
+/// has no mirrors yet, at the same indentation.
+fn with_mirror_text(text: &str, url: &str, mirror: &str) -> Result<String> {
+    let needle = format!("\"url\": {},\n", serde_json::to_string(url)?);
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(i) = rest.find(&needle) {
+        let line_start = rest[..i].rfind('\n').map_or(0, |n| n + 1);
+        let indent = &rest[line_start..i];
+        let (head, tail) = rest.split_at(i + needle.len());
+        out.push_str(head);
+        if !tail.trim_start().starts_with("\"mirrors\"") {
+            out.push_str(&format!(
+                "{indent}\"mirrors\": [\n{indent}  {}\n{indent}],\n",
+                serde_json::to_string(mirror)?
+            ));
+        }
+        rest = tail;
+    }
+    out.push_str(rest);
+    Ok(out)
+}
+
+/// CI check (offline): every pinned archive lists a mirror, the FFmpeg pin names its source
+/// release, and `licenses/FFMPEG-NOTICE.md` names the pinned build and that release.
+fn check_pins() -> Result<()> {
+    let mut problems = Vec::new();
+    for (url, _, mirrors) in all_pins()? {
+        if mirrors.is_empty() {
+            problems.push(format!("no mirror for {url} (cargo xtask mirror <tag>)"));
+        }
+    }
+    let lock = read_lock()?;
+    let notice = std::fs::read_to_string(root().join("licenses/FFMPEG-NOTICE.md"))?;
+    match &lock.source {
+        None => problems.push(format!(
+            "no source release for FFmpeg {} (gh workflow run ffmpeg-source.yml, then cargo xtask mirror <tag>)",
+            lock.version
+        )),
+        Some(s) if !notice.contains(s.as_str()) => {
+            problems.push(format!("licenses/FFMPEG-NOTICE.md does not link the source release {s}"))
+        }
+        Some(_) => {}
+    }
+    for v in [&lock.version, &lock.release] {
+        if !notice.contains(v.as_str()) {
+            problems.push(format!("licenses/FFMPEG-NOTICE.md does not name {v}"));
+        }
+    }
+    if problems.is_empty() {
+        println!("pins: every archive mirrored; FFmpeg {} source release and notice in place", lock.version);
+        Ok(())
+    } else {
+        bail!("pin check failed:\n  {}", problems.join("\n  "))
+    }
 }
 
 /// Regenerates the desktop app's TypeScript types from rmedia-core (ts-rs). CI fails if the
@@ -676,4 +855,57 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mirror_text_is_added_once_per_pin_in_the_pretty_layout() {
+        let pin = |m: &str| {
+            format!(
+                "{{\n  \"a\": {{\n    \"archive\": {{\n      \"url\": \"https://x/f.zip\",\n{m}      \"sha256\": \"00\"\n    }}\n  }}\n}}\n"
+            )
+        };
+        let mirrored = "      \"mirrors\": [\n        \"https://m/f.zip\"\n      ],\n";
+        let added = with_mirror_text(&pin(""), "https://x/f.zip", "https://m/f.zip").unwrap();
+        assert_eq!(added, pin(mirrored));
+        let v: serde_json::Value = serde_json::from_str(&added).unwrap();
+        assert_eq!(v["a"]["archive"]["mirrors"][0], "https://m/f.zip");
+        // Already mirrored: unchanged. Another URL: unchanged.
+        assert_eq!(with_mirror_text(&added, "https://x/f.zip", "https://m2/f.zip").unwrap(), added);
+        assert_eq!(with_mirror_text(&pin(""), "https://x/g.zip", "https://m/g.zip").unwrap(), pin(""));
+    }
+
+    /// Stripping the mirrors from the committed models lock and adding them back gives the same
+    /// file, so `cargo xtask mirror` writes exactly the reviewed layout.
+    #[test]
+    fn mirror_text_round_trips_the_models_lock() {
+        let real = std::fs::read_to_string(root().join("xtask/models.lock.json")).unwrap();
+        let lines: Vec<&str> = real.lines().collect();
+        let (mut stripped, mut mirrors) = (String::new(), Vec::new());
+        let mut i = 0;
+        while i < lines.len() {
+            if lines[i].trim_start().starts_with("\"mirrors\": [") {
+                assert!(lines[i + 2].trim() == "],", "one mirror per pin");
+                mirrors.push(lines[i + 1].trim().trim_matches('"').to_owned());
+                i += 3;
+                continue;
+            }
+            stripped.push_str(lines[i]);
+            stripped.push('\n');
+            i += 1;
+        }
+        let pins: ModelLock = serde_json::from_str(&real).unwrap();
+        let mut rebuilt = stripped;
+        for p in pins.ncnn.values() {
+            rebuilt = with_mirror_text(&rebuilt, &p.url, &p.mirrors[0]).unwrap();
+        }
+        for a in pins.models.values().filter_map(|m| m.archive.as_ref()) {
+            rebuilt = with_mirror_text(&rebuilt, &a.url, &a.mirrors[0]).unwrap();
+        }
+        assert!(!mirrors.is_empty());
+        assert_eq!(rebuilt, real);
+    }
 }
