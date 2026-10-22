@@ -3069,7 +3069,7 @@ dependencies = [
 name = "rmedia-desktop"
 version = "0.2.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "getrandom 0.3.4",
  "libc",
  "rmedia-core",
