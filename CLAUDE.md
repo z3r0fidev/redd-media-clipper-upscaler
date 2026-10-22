@@ -9,13 +9,16 @@ for Reddit (003). Spec-driven via Spec Kit.
   04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
-- Active feature: `specs/002-mobile-upscale/` (105/112 tasks; Setup, Foundational incl. refactors
-  A1–A5, US1 CPU tier, US2 smart reframe, US3 GPU tier + capability record, US4 batch/`clip
-  --upscale`, US5 desktop view and US6 AI tier are done; US6 owner checks need a discrete GPU).
-  Next: Polish (T106–T112). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn`
-  (and `fetch-models` for its GPU tests) before `cargo build --workspace`. Progress: `specs/002-mobile-upscale/progress.md`; roadmap: `docs/roadmap.md`.
-  001 (`specs/001-video-clipping/`) is implemented. Planned: 003 GIF export (research/05, no spec yet).
-- Git: no remote and no `main` branch yet; work is on `001-video-clipping` and `002-mobile-upscale`.
+- Active feature: **003 GIF export for Reddit** — not started: no spec yet (research/05). Next step:
+  `/speckit-specify`, then plan mode, as for 002.
+- Done: 001 (`specs/001-video-clipping/`, 0.1.0) and 002 (`specs/002-mobile-upscale/`, 112/112,
+  0.2.0 release candidate; owner checks left: two-phone gallery test, Reddit upload, +3 VMAF on
+  real footage). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and
+  `fetch-models` for its GPU tests) before `cargo build --workspace`. Roadmap: `docs/roadmap.md`.
+- Git: public remote `origin` (github.com/z3r0fidev/redd-media-clipper-upscaler), work on `main`.
+  CI must be green. Pinned third-party downloads are mirrored: after `cargo xtask pin-tools`,
+  run the `ffmpeg-source` workflow and `cargo xtask mirror mirror-<date>`; `cargo xtask
+  check-pins --online` must pass.
 
 ## Stack
 - Rust 1.94 workspace: `crates/rmedia-core` (ALL media logic), `crates/rmedia-cli` (bin `rmedia`),
@@ -32,5 +35,5 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Commits: Conventional Commits.
 
 <!-- SPECKIT START -->
-Active plan: specs/002-mobile-upscale/plan.md
+Active plan: none (003 has no spec yet; the last plan was specs/002-mobile-upscale/plan.md)
 <!-- SPECKIT END -->

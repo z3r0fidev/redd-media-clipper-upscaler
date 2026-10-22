@@ -4,15 +4,15 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-10-19.
+Last updated: 2026-10-22.
 
 ## Status at a Glance
 
 | Feature | State | Available now |
 |---|---|---|
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, not yet tagged | `clip`, `batch`, `scan`, `doctor`, desktop app |
-| 002 Mobile upscaling and smart reframe | In progress (92/112 tasks); user stories 1–5 done | `rmedia upscale` (CPU and GPU tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
-| 003 GIF export for Reddit | Planned; no specification yet | Nothing (research only: `research/05-gif-export.md`) |
+| 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0 release candidate, not yet tagged | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
+| 003 GIF export for Reddit | ▶ Next; no specification yet | Nothing (research only: `research/05-gif-export.md`) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -29,9 +29,11 @@ Last updated: 2026-10-19.
 | 6 US4 Batch and `clip --upscale` | T074–T081 | `upscale` in JSON manifests (every level, whole videos without `clips`) and CSV (`upscale_*` columns), `batch --upscale` and upscale flags as fills, `clip --upscale` in one pass, default output folders always skipped by scans |
 | 7 US5 Desktop upscale view | T082–T092 | "Upscale for phone" view: crop overlay and blurred ranges on the player, before/after still, preset/framing/quality pickers, "Upscale now" (one job) and "Add to queue", models folder in Settings |
 | 8 US6 AI tier | T093–T105 | `rmedia-sr` AI worker (ncnn + Vulkan, Real-ESRGAN, pinned models), three-process pipeline, self-test gate (60 s of 480p in ≤ 10 min), too-slow warning, anti-flicker, installers bundle the worker and models |
+| 9 Polish | T106–T112 | Docs audited against the code, 0.2.0 release notes and README, notices, quickstart on Linux and the desktop SC-007 check, CI green on GitHub (FFmpeg 6.x filter fix, Windows worker link and test fixes), archive mirror and FFmpeg source release, final reviews |
 
 The checkpoint reviews (senior-code-reviewer, security-auditor) for every finished phase are done
-and their findings are fixed. 296 workspace tests pass (10 ignored).
+and their findings are fixed. 299 workspace tests pass (10 ignored) on the bundled engine, and
+the suite also passes against the minimum FFmpeg 6.1.
 
 ### Next and pending
 
@@ -42,19 +44,20 @@ and their findings are fixed. 296 workspace tests pass (10 ignored).
 | 3 | US4 Batch and `clip --upscale` | T074–T081 | Upscale from manifests and `clip --upscale`; partial-clip tests carried over from the US1 review; `batch` runs the machine check when it has upscale jobs | Done (2026-10-19) |
 | 4 | US5 Desktop upscale view | T082–T092 | Upscale view in the desktop app | Done (2026-10-19) |
 | 5 | US6 AI worker | T093–T105 | `rmedia-sr` worker with ncnn for AI upscaling | Done (2026-10-20); quality and speed on a discrete GPU are an owner check |
-| 6 | Polish, docs, packaging | T106–T112 | Final review pass, documentation | ▶ Next |
+| 6 | Polish, docs, packaging | T106–T112 | Final review pass, documentation | Done (2026-10-22) |
 
 Each phase ends with a checkpoint: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`,
 `cargo test --workspace`, the quickstart section for the story, and the two reviews.
 
-All of 002 is on the `002-mobile-upscale` branch; no release includes it yet.
+All of 002 is on `main`; no tagged release includes it yet (0.2.0 is a release candidate).
 
 ### Owner validation (cannot be automated)
 
 - [ ] Two-phone gallery test (iPhone and Android): no bars, correct colours (SC-001).
 - [ ] Reddit test upload of `reddit-916` and `reddit-feed-45` outputs.
 - [ ] +3 VMAF over bicubic on real low-quality footage (SC-002 owner check).
-- [ ] Discrete-GPU run of the AI tier tests (T098, SC-002 AI, SC-009).
+- [x] Discrete-GPU run of the AI tier tests (T098, SC-002 AI, SC-009): Quadro M4000, all three
+  pass (2026-10-22).
 
 ### Decision recorded
 
@@ -80,16 +83,19 @@ owner on real footage.
 Planned. There is no specification, plan or task list yet. Research:
 `research/05-gif-export.md`. Direction from the research: a two-pass palette pipeline and a
 size-budget search, reusing the job model (multi-stage jobs, weighted progress, scratch folders)
-that feature 002 introduced. Next step when 002 allows: `speckit-specify`.
+that feature 002 introduced. Next step: `speckit-specify`.
 
 ## Release and Project Housekeeping
 
-- [ ] Tag `v0.1.0` and run the release workflow; publishing and code signing are manual.
+- [ ] Tag `v0.1.0` and `v0.2.0` and run the release workflow; publishing and code signing are
+  manual.
 - [ ] Decide the application licence (manifests declare `MIT OR Apache-2.0` as a placeholder).
-- [ ] Mirror the pinned FFmpeg archive and source to project storage (see
+- [x] Mirror the pinned third-party archives and publish the FFmpeg corresponding source
+  (`mirror-2026-10-22`, `ffmpeg-source-n9.0.2-31-gc89d6ee1ca`; see
   [Build and Release](operations/build-and-release.md)).
-- [ ] Add a git remote and decide how and when feature branches merge to `main`. There is no
-  remote and no `main` branch today; work lives on `001-video-clipping` and `002-mobile-upscale`.
+- [x] Add a git remote: public `origin` on GitHub, work on `main`, CI green.
+- [ ] Decide how the Windows installers provide the Visual C++ runtime the AI worker needs
+  (`vcruntime140`, `msvcp140`, `vcomp140`).
 - [ ] Manual desktop QA on Windows hardware (Windows paths and Job Object handling are unverified).
 
 ## Related

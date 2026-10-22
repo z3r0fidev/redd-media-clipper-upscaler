@@ -19,9 +19,9 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 | 5 US3 GPU tier, capability | T062–T073 | 12/12 | done | done (3 high, 6 medium fixed) | done (3 medium, 6 low addressed) | (US3 commit) |
 | 6 US4 Batch, `clip --upscale` | T074–T081 | 8/8 | done | done (2 medium, 7 low fixed or noted) | done (1 medium, 4 low; 3 fixed) | 549aa1e, c4a1833, dffb353, 8b01477 |
 | 7 US5 Desktop view | T082–T092 | 11/11 | done | done (2 high, 6 medium fixed) | done (3 medium fixed, 6 low fixed or noted) | a3bd070, beb4e7a, 95eaf77, + |
-| 8 US6 AI worker | T093–T105 | 13/13 | done (owner GPU run pending) | done (1 high, 3 medium fixed) | done (2 medium fixed, low fixed or noted) | b25a58a, 6112190, cf276c1, ed3a0f4, 584612d, 0520f70, + |
-| 9 Polish | T106–T112 | 0/7 | ▶ next | final pass | — | |
-| **Total** | | **105/112** | | | | |
+| 8 US6 AI worker | T093–T105 | 13/13 | done (owner GPU run: Quadro M4000, passed) | done (1 high, 3 medium fixed) | done (2 medium fixed, low fixed or noted) | b25a58a, 6112190, cf276c1, ed3a0f4, 584612d, 0520f70, + |
+| 9 Polish | T106–T112 | 7/7 | done | done (0 critical/high; 4 medium fixed, low fixed or noted) | done (0 critical/high; 2 medium fixed, low fixed or noted) | cd39190 … a3ce728 (CI fixes, docs audit, 0.2.0 notes, review fixes) |
+| **Total** | | **112/112** | | | | |
 
 Status values: `pending`, `▶ next`, `in progress`, `checkpoint`, `done`.
 

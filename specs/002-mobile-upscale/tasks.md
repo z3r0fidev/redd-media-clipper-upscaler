@@ -251,13 +251,13 @@ refactors A1–A5, which every story depends on.
 
 ## Phase 9: Polish & Cross-Cutting
 
-- [ ] T106 [P] User docs: upscaling sections in `docs/user/cli-guide.md`, `docs/user/desktop-guide.md`, GPU/AI/model problems in `docs/user/troubleshooting.md`
-- [ ] T107 [P] API and reference docs: `docs/api/cli-reference.md` (upscale, clip --upscale, doctor --recheck), `docs/api/json-output.md`, `docs/api/file-formats.md` (presets, manifest `upscale`, capability record, crop path), `docs/api/desktop-ipc.md`, `docs/reference/glossary.md`
-- [ ] T108 [P] Architecture and admin docs: `docs/architecture/overview.md` and `domains.md` (preset, upscale, reframe, capability, pipeline), `docs/administration/configuration.md` (user presets folder, `models_dir`, state and cache files, the `RMEDIA_CONFIG_DIR`/`RMEDIA_STATE_DIR`/`RMEDIA_CACHE_DIR` overrides), `docs/operations/build-and-release.md` (fetch-models, fetch-ncnn, packaging)
-- [ ] T109 [P] Release notes `docs/releases/0.2.0.md`; update `docs/README.md` and the repo `README.md`
-- [ ] T110 Regenerate `THIRD_PARTY_NOTICES.md` with `cargo xtask notices` (tract, fs4, ncnn, model licences)
-- [ ] T111 Run the full quickstart.md on Linux and, via CI artifacts, on Windows; record results, the SC-007 three-interaction check in the desktop app, and the owner checks (two-phone gallery test, Reddit upload, discrete-GPU AI) in `specs/002-mobile-upscale/checklists/validation.md`
-- [ ] T112 Final senior-code-reviewer pass over the workspace; fix findings; set the CLAUDE.md active feature to 003
+- [X] T106 [P] User docs: upscaling sections in `docs/user/cli-guide.md`, `docs/user/desktop-guide.md`, GPU/AI/model problems in `docs/user/troubleshooting.md`
+- [X] T107 [P] API and reference docs: `docs/api/cli-reference.md` (upscale, clip --upscale, doctor --recheck), `docs/api/json-output.md`, `docs/api/file-formats.md` (presets, manifest `upscale`, capability record, crop path), `docs/api/desktop-ipc.md`, `docs/reference/glossary.md`
+- [X] T108 [P] Architecture and admin docs: `docs/architecture/overview.md` and `domains.md` (preset, upscale, reframe, capability, pipeline), `docs/administration/configuration.md` (user presets folder, `models_dir`, state and cache files, the `RMEDIA_CONFIG_DIR`/`RMEDIA_STATE_DIR`/`RMEDIA_CACHE_DIR` overrides), `docs/operations/build-and-release.md` (fetch-models, fetch-ncnn, packaging)
+- [X] T109 [P] Release notes `docs/releases/0.2.0.md`; update `docs/README.md` and the repo `README.md`
+- [X] T110 Regenerate `THIRD_PARTY_NOTICES.md` with `cargo xtask notices` (tract, fs4, ncnn, model licences)
+- [X] T111 Run the full quickstart.md on Linux and, via CI artifacts, on Windows; record results, the SC-007 three-interaction check in the desktop app, and the owner checks (two-phone gallery test, Reddit upload, discrete-GPU AI) in `specs/002-mobile-upscale/checklists/validation.md`
+- [X] T112 Final senior-code-reviewer pass over the workspace; fix findings; set the CLAUDE.md active feature to 003
 
 ---
 

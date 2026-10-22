@@ -216,3 +216,22 @@ scripted parts of `quickstart.md` were run end to end.
   the MSVC C runtime of the worker's shim (LNK2038), mingw for the Windows type-check, models for
   the minimum-engine job, the pinned engine for the desktop backend tests, the Windows path
   separators in the clip JSON snapshots, and documented RUSTSEC-2024-0370 in `deny.toml`.
+  Later runs also fixed the Windows test paths (upscale outputs, scan, fingerprint) and two
+  benches: the SC-003 time bar is asserted only on machines with at least 12 threads (the 4-vCPU
+  runners took 121–213 s; the reference laptop takes 44 s in release), and the scan bench builds
+  its tree on the fixture's drive (Windows runners keep the workspace and temp on different
+  drives). CI is green on `c8d0f1f` and `165b023`: all 8 jobs, including the Windows tests and
+  the release benches on both platforms.
+- **Windows packaging (`release.yml` dispatch, run 39775658660, artifacts only, nothing
+  published):** after two workflow fixes (bash on both platforms; the runner's
+  `libunwind-14-dev` conflict), both packages build. Windows: tests 292 passed, 0 failed, 10
+  ignored before packaging; `rmedia_0.2.0_x64-setup.exe` (106 MiB) and
+  `rmedia_0.2.0_x64_en-US.msi` (148 MiB). Linux: 299 passed; `.deb` (167 MiB) and `.AppImage`
+  (288 MiB). The CLI archives are built for both.
+- **Finding, open owner decision:** the Windows installers do not carry the Visual C++ runtime
+  (`vcruntime140.dll`, `msvcp140.dll`, `vcomp140.dll`) that `rmedia-sr.exe` links against. The
+  runners have it installed system-wide, so CI cannot show the gap; on a clean Windows machine
+  without it the AI worker will not start (the CPU and GPU tiers do not need it). Options:
+  bundle the three DLLs next to the worker, run the VC++ redistributable from the installer, or
+  link the worker's runtime statically. Not run on Windows hardware: the installers themselves
+  and the desktop app.
