@@ -30,7 +30,9 @@ fn main() {
     let mut shim = cc::Build::new();
     shim.cpp(true).file("src/shim.cpp").include(&include).warnings(false);
     if target.contains("msvc") {
-        shim.flag("/std:c++17").static_crt(true);
+        // The prebuilt ncnn.lib uses the DLL C runtime (/MD), like Rust's own default; mixing in
+        // the static one fails to link (LNK2038 RuntimeLibrary mismatch).
+        shim.flag("/std:c++17").static_crt(false);
     } else {
         shim.flag("-std=c++17").cpp_link_stdlib(None);
     }
