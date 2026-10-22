@@ -6,6 +6,9 @@ name: FFmpeg source
 # download.sh, run in BtbN's base image). Run it after each `cargo xtask pin-tools`, while the
 # autobuild tag still exists upstream (BtbN deletes old tags). See
 # docs/operations/build-and-release.md › The FFmpeg source release.
+#
+# Two jobs: `build` runs BtbN's third-party scripts with a read-only token and uploads the files
+# as an artifact; `publish` holds the write token and only creates the release from them.
 on:
   workflow_dispatch:
 
@@ -13,11 +16,15 @@ permissions:
   contents: read
 
 jobs:
-  source:
+  build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     permissions:
-      contents: write # creates the release
+      contents: read
+    outputs:
+      release: ${{ steps.pin.outputs.release }}
+      version: ${{ steps.pin.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,6 +34,8 @@ jobs:
         run: |
           release=$(jq -r .release xtask/tools.lock.json)
           version=$(jq -r .version xtask/tools.lock.json)
+          scripts=$(jq -r .scripts_commit xtask/tools.lock.json)
+          [[ "$scripts" =~ ^[0-9a-f]{40}$ ]] || { echo "tools.lock.json has no scripts_commit"; exit 1; }
           # n9.0.2-31-gc89d6ee1ca -> commit c89d6ee1ca on release/9.0
           commit=${version##*-g}
           line=$(echo "${version#n}" | cut -d. -f1-2)
@@ -38,17 +47,21 @@ jobs:
             echo "version=$version"
             echo "commit=$commit"
             echo "line=$line"
+            echo "scripts=$scripts"
           } >> "$GITHUB_OUTPUT"
       - name: Free disk space
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
           df -h /
-      - name: BtbN build scripts at the pinned tag
+      - name: BtbN build scripts at the pinned tag and commit
         env:
           RELEASE: ${{ steps.pin.outputs.release }}
+          SCRIPTS: ${{ steps.pin.outputs.scripts }}
         run: |
           git clone --branch "$RELEASE" https://github.com/BtbN/FFmpeg-Builds.git btbn
-          git -C btbn rev-parse HEAD | tee btbn-commit.txt
+          # Tags can move: the source must be the scripts the shipped binaries were built from.
+          [ "$(git -C btbn rev-parse HEAD)" = "$SCRIPTS" ] || { echo "$RELEASE is not $SCRIPTS"; exit 1; }
+          echo "$SCRIPTS" > out-btbn-commit.txt
       - name: Library sources (BtbN download.sh)
         working-directory: btbn
         # vars.sh names BtbN's image after GITHUB_REPOSITORY, which Actions sets to this repo.
@@ -72,20 +85,45 @@ jobs:
           # download.sh writes <stage>_<hash>.tar.xz plus <stage>.tar.xz symlinks; keep the real files.
           find btbn/.cache/downloads -maxdepth 1 -type f -name '*.tar.xz' -exec cp {} out/ \;
           (cd out && sha256sum -- * > SHA256SUMS)
+          mkdir meta && mv out-btbn-commit.txt meta/btbn-commit.txt && cp ffmpeg-commit.txt meta/
           ls out | wc -l
           du -sh out
-      - name: Publish
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ffmpeg-source
+          path: |
+            out/
+            meta/
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # creates the release; no third-party code runs in this job
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-source
+      - name: Verify and publish
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE: ${{ steps.pin.outputs.release }}
-          VERSION: ${{ steps.pin.outputs.version }}
+          RELEASE: ${{ needs.build.outputs.release }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
+          (cd out && sha256sum -c --quiet SHA256SUMS)
+          if gh release view "ffmpeg-source-$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "ffmpeg-source-$VERSION is already published; nothing changed."
+            exit 0
+          fi
           {
             echo "Complete corresponding source (GPL v3 §6) of the FFmpeg build bundled with rmedia:"
             echo "BtbN/FFmpeg-Builds \`$RELEASE\`, FFmpeg \`$VERSION\` (\`linux64-gpl\` and \`win64-gpl\`)."
             echo
-            echo "- \`ffmpeg-$VERSION.tar.xz\`: FFmpeg at commit \`$(cat ffmpeg-commit.txt)\`."
-            echo "- \`FFmpeg-Builds-$RELEASE.tar.xz\`: the build scripts at commit \`$(cat btbn-commit.txt)\` (README explains how to build)."
+            echo "- \`ffmpeg-$VERSION.tar.xz\`: FFmpeg at commit \`$(cat meta/ffmpeg-commit.txt)\`."
+            echo "- \`FFmpeg-Builds-$RELEASE.tar.xz\`: the build scripts at commit \`$(cat meta/btbn-commit.txt)\` (README explains how to build)."
             echo "- \`<stage>_<hash>.tar.xz\`: each library source, as BtbN's \`download.sh\` fetched it for that commit (a superset: every target and variant)."
             echo "- \`SHA256SUMS\`: checksums of all of the above."
             echo

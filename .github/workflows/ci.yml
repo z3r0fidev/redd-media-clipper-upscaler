@@ -40,14 +40,10 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       # Every pinned archive has a mirror, and the FFmpeg pin has its GPL source release and notice.
-      - name: Pins are mirrored and sourced
-        run: cargo xtask check-pins
+      - name: Pins are mirrored and sourced, and every mirror answers
+        run: cargo xtask check-pins --online
       # rmedia-sr (the AI worker, US6) links the prebuilt ncnn; build.rs stops without it.
-      - name: Cache ncnn
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: third_party/ncnn
-          key: ncnn-${{ matrix.triple }}-${{ hashFiles('xtask/models.lock.json') }}
+      # No cache: the libraries are linked into the worker, so they are fetched and verified each run.
       - name: Fetch pinned ncnn (sha256-verified)
         run: cargo xtask fetch-ncnn --target ${{ matrix.triple }}
       - name: Clippy
