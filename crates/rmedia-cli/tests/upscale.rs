@@ -325,11 +325,7 @@ fn batch_upscale_flags_are_defaults_under_the_manifest() {
     .unwrap();
     let doc = run(&["--upscale", "--preset", "duo", "--reframe", "center"]);
     assert_eq!(preset(&doc, 0).as_deref(), Some("duo"));
-    assert!(
-        doc["jobs"][0]["output"].as_str().unwrap().ends_with("clips/a_001_full_duo.mp4"),
-        "{}",
-        doc["jobs"][0]["output"]
-    );
+    assert!(outputs(&doc)[0].ends_with("clips/a_001_full_duo.mp4"), "{}", doc["jobs"][0]["output"]);
     std::fs::write(&m, r#"{"version":1,"videos":[{"input":"a.mp4","options":{"upscale":{"crf":60}}}]}"#)
         .unwrap();
     let o = rmedia(d.path()).arg("batch").arg(&m).args(["--dry-run"]).output().unwrap();
