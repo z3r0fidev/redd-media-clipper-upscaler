@@ -191,17 +191,20 @@ pub fn caps(tools: &Tools) -> Result<Caps> {
     })
 }
 
-/// Parses `ffmpeg -filters` lines such as ` .S zscale   V->V   Apply resizing…` (the flags
-/// column is 2 or 3 characters depending on the ffmpeg version).
+/// Parses `ffmpeg -filters` rows such as ` .S zscale   V->V   Apply resizing…`. Rows are
+/// recognised by their shape, not by position: the flags column is 2 characters (9.x) or 3
+/// (6.x), and only 9.x prints a `------` line after the legend (`T.. = …`, `A = …`).
 pub fn parse_filters(text: &str) -> BTreeSet<String> {
     text.lines()
-        .skip_while(|l| !l.trim_start().starts_with("------"))
-        .skip(1)
         .filter_map(|l| {
             let mut parts = l.split_whitespace();
-            let _flags = parts.next()?;
+            let flags = parts.next()?;
             let name = parts.next()?;
-            parts.next().is_some_and(|io| io.contains("->")).then(|| name.to_owned())
+            let io = parts.next()?;
+            ((2..=3).contains(&flags.len())
+                && flags.chars().all(|c| matches!(c, '.' | 'T' | 'S' | 'C'))
+                && io.contains("->"))
+            .then(|| name.to_owned())
         })
         .collect()
 }
@@ -231,12 +234,26 @@ mod tests {
         assert_eq!(set.len(), 2);
     }
 
+    /// Real `ffmpeg -hide_banner -filters` heads: 9.0.2 (2 flag columns, a `------` line) and
+    /// the distro 6.1.1 of Ubuntu 24.04 (3 flag columns, no `------` line). The legend lines
+    /// (`T.. = …`, `A = …`, `| = …`) are not filters.
+    const FILTERS_N9: &str = "Filters:\n  T.. = Timeline support\n  .S. = Slice threading\n  A = Audio input/output\n  V = Video input/output\n  N = Dynamic number and/or type of input/output\n  | = Source or sink filter\n  ------\n TS aap               AA->A      Apply Affine Projection algorithm to first audio stream.\n TS cas               V->V       Contrast Adaptive Sharpen.\n .. nullsrc           |->V       Null video source, return unprocessed video frames.\n";
+    const FILTERS_N6: &str = "Filters:\n  T.. = Timeline support\n  .S. = Slice threading\n  ..C = Command support\n  A = Audio input/output\n  V = Video input/output\n  N = Dynamic number and/or type of input/output\n  | = Source or sink filter\n ... abench            A->A       Benchmark part of a filtergraph.\n TSC overlay           VV->V      Overlay a video source on top of the input.\n .SC zscale            V->V       Apply resizing, colorspace and bit depth conversion.\n ... nullsrc           |->V       Null video source, return unprocessed video frames.\n";
+
     #[test]
-    fn parses_filter_list_old_and_new_flag_columns() {
-        let n9 = "Filters:\n  T.. = Timeline support\n  ------\n TS cas               V->V       Contrast Adaptive Sharpen.\n .. nullsrc           |->V       Null video source.\n";
-        let n6 = "Filters:\n  ------\n .S. zscale            V->V       Apply resizing.\n TSC overlay           VV->V      Overlay a video.\n";
-        assert_eq!(parse_filters(n9), BTreeSet::from(["cas".to_owned(), "nullsrc".to_owned()]));
-        assert_eq!(parse_filters(n6), BTreeSet::from(["overlay".to_owned(), "zscale".to_owned()]));
-        assert!(parse_filters("no separator\n TS cas V->V x\n").is_empty());
+    fn parses_filter_lists_of_ffmpeg_9_and_6() {
+        let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>();
+        assert_eq!(parse_filters(FILTERS_N9), set(&["aap", "cas", "nullsrc"]));
+        assert_eq!(parse_filters(FILTERS_N6), set(&["abench", "nullsrc", "overlay", "zscale"]));
+        assert!(parse_filters("ffmpeg: unrecognized option '-filters'\n").is_empty());
+    }
+
+    #[test]
+    fn parses_the_encoder_list_of_ffmpeg_6() {
+        // 6.1.1: the same layout as 9.0 (a `------` line, 6 flag columns).
+        let n6 = "Encoders:\n V..... = Video\n A..... = Audio\n .....D = Supports direct rendering method 1\n ------\n V....D a64multi             Multicolor charset for Commodore 64 (codec a64_multi)\n V....D libx265              libx265 H.265 / HEVC (codec hevc)\n A....D aac                  AAC (Advanced Audio Coding)\n";
+        let set = parse_encoders(n6);
+        assert_eq!(set.len(), 3, "{set:?}");
+        assert!(set.contains("libx265") && set.contains("aac"));
     }
 }
