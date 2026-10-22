@@ -60,7 +60,10 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml   # desktop backend
 cd apps/desktop && npm ci && npm test && npm run check   # vitest + svelte-check
 ```
 
-Run the benches in release mode. Their thresholds assume optimized builds.
+Run the benches in release mode. Their thresholds assume optimized builds. The 002 SC-003 bar
+(CPU tier in at most twice the clip's duration) is defined for the 12-thread reference machine,
+so on machines with fewer threads, including the CI runners, the bench reports the time without
+asserting it.
 
 ### Test environment variables
 
@@ -139,7 +142,7 @@ All use real generated media and verify outputs with ffprobe.
 | `cancel.rs` | 2 | SC-007: cancelling a run is fast (under 2 s), leaves no partial files and no child engine processes; cancelling one job keeps the others |
 | `preview.rs` | 2 | Preview frames, proxies, and thumbnails; time offset equals the first video frame |
 | `snapshots_ffargs.rs` | 8 | Exact FFmpeg argv for each mode × container × stream layout, from committed ffprobe JSON. Paths are normalized so snapshots are platform-independent (`insta`) |
-| `bench.rs` | 2 (ignored) | SC-001: fast 1080p clip under 5 s; SC-003: scan of 10,000 files with 1,000 videos under 60 s |
+| `bench.rs` | 4 (ignored) | 001 SC-001: fast 1080p clip under 5 s; 001 SC-003: scan of 10,000 files with 1,000 videos under 60 s; 002 SC-003: CPU tier of 60 s 480p in at most 120 s (asserted on 12+ threads); 002 SC-005: smart-reframe analysis at most half the render time |
 
 ### CLI contract tests (`crates/rmedia-cli/tests`)
 
