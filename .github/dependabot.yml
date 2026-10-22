@@ -1,5 +1,7 @@
 version: 2
-# One grouped pull request per ecosystem and week (each one runs the full CI matrix).
+# One grouped pull request per ecosystem and week (each one runs the full CI matrix) for minor
+# and patch updates. Major updates are not grouped: each one gets its own pull request, because
+# it may need code changes.
 updates:
   - package-ecosystem: github-actions
     directory: /
@@ -8,6 +10,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: cargo
     directory: /
     schedule:
@@ -15,6 +18,7 @@ updates:
     groups:
       cargo-workspace:
         patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: cargo
     directory: /apps/desktop/src-tauri
     schedule:
@@ -22,6 +26,7 @@ updates:
     groups:
       cargo-desktop:
         patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /apps/desktop
     schedule:
@@ -29,3 +34,4 @@ updates:
     groups:
       npm-desktop:
         patterns: ["*"]
+        update-types: [minor, patch]
