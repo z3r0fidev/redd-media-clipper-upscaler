@@ -76,8 +76,11 @@ jobs:
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      # Only the engine differs from the bundled jobs: the app's pinned models are present too
-      # (smart reframe needs the face detector).
+      # Only the engine differs from the bundled jobs: the app's pinned models and the AI worker
+      # are present too (smart reframe needs the face detector; the AI pipeline tests run the
+      # worker's GPU-free built-in model through this ffmpeg).
+      - name: Fetch pinned ncnn (sha256-verified)
+        run: cargo xtask fetch-ncnn
       - name: Cache model files
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -85,10 +88,9 @@ jobs:
           key: models-${{ hashFiles('xtask/models.lock.json') }}
       - name: Fetch pinned models (sha256-verified)
         run: cargo xtask fetch-models
-      # 002 tests need filters/encoders a distro build may lack (zscale, libvmaf, ...); they skip
-      # here through testkit::require_engine and run for real in the bundled-engine jobs. The AI
-      # worker (prebuilt ncnn) is built and tested in the bundled-engine jobs only.
-      - run: cargo test --workspace --exclude rmedia-sr --no-fail-fast
+      # 002 tests need filters/encoders a distro build may lack (libvmaf, ...); they skip here
+      # through testkit::require_engine and run for real in the bundled-engine jobs.
+      - run: cargo test --workspace --no-fail-fast
         env:
           RMEDIA_ALLOW_MISSING_FEATURES: "1"
 
