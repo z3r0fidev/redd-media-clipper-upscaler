@@ -1,11 +1,12 @@
 # rmedia Architecture Overview
 
 **Status:** Feature 001 "Video Clipping Base" (version 0.1.0, commit `bd1eef8`) is described as
-built. Feature 002 user stories 1 to 3 (`rmedia upscale` with the CPU and GPU tiers, smart
-reframe and the machine capability record; branch `002-mobile-upscale`) are implemented and
-described under [Feature 002 foundations](#feature-002-foundations-implemented).
-Sections labelled **Planned** describe work that is not implemented: the rest of feature 002
-(user stories 4 to 6) and feature 003. See the [Roadmap](../roadmap.md).
+built. Feature 002 (user stories 1 to 6: `rmedia upscale` with the CPU, GPU and AI tiers, smart
+reframe, the machine capability record, batch and `clip --upscale`, and the desktop upscale view;
+unreleased, 0.2.0-dev) is implemented and described under
+[Feature 002 foundations](#feature-002-foundations-implemented) and in the
+[Domain Breakdown](domains.md#upscaling-feature-002). Sections labelled **Planned** describe work
+that is not implemented: feature 003. See the [Roadmap](../roadmap.md).
 
 ## Overview
 
@@ -297,16 +298,16 @@ The upscale job is one ffmpeg pass (`upscale/graph.rs` builds the `-filter_compl
 verify stage (`exec/upscale.rs`). Device presets are data (`preset/`): seven built-ins compiled
 into the binary plus user files in `<config>/presets/`.
 
-## Extension Points (Planned: Rest of Feature 002, and Feature 003)
+## Extension Points (Planned: Feature 003)
 
-**Planned** (plan.md › Forward Compatibility; not implemented):
+**Planned** (not implemented):
 
-- **002 user stories 4 to 6:** batch and `clip --upscale`, a desktop upscale view, and an AI
-  worker (`rmedia-sr`, ncnn). (Smart reframe, the GPU tier and the capability record are done.) Research:
-  `research/02-upscaling-engines.md`, `research/03-mobile-display-targets.md`, `research/06` to
-  `research/09`.
 - **003 GIF export:** `JobSpec::Gif` with a two-pass palette pipeline and a size-budget search,
-  reusing segment, executor, events and commit. Research: `research/05-gif-export.md`.
+  reusing segment, executor, events and commit. Research: `research/05-gif-export.md`. No spec yet.
+
+Feature 002 is implemented: user stories 1 to 6 (CPU tier, smart reframe, GPU tier and
+capability record, batch and `clip --upscale`, the desktop upscale view, and the AI tier with
+its `rmedia-sr` worker). See [Domain Breakdown › Upscaling](domains.md#upscaling-feature-002).
 
 **Refactors before adding job kinds** (plan.md, senior review A1–A5, 2026-10-06). All five were
 completed on 2026-10-14 as part of 002 phase 2 (tasks T007 to T021); the first table below

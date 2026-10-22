@@ -797,6 +797,19 @@ A warning such as `predicted size … exceeds the … limit` (preset limits, for
 video, choose a lower `--crf` value, or use a preset without the limit. For free space, free up
 disk space or choose another `-o` folder.
 
+### Other upscale notices
+
+These do not stop the run.
+
+- `the source is SDR; it stays SDR`: you asked to keep HDR (`--hdr keep`), but the source has none.
+  Nothing to fix.
+- `GPU preview failed (…); using the CPU` (desktop app): the before/after preview could not use the
+  GPU, so it was made on the CPU. The upscale itself still uses the tier you chose. If it keeps
+  happening, run `rmedia doctor --recheck`.
+- `could not store the capability record …` or `could not record the GPU failure in the capability
+  record`: rmedia could not write `capability.json` in its state folder, so the next run checks
+  the GPU again. Check that the state folder (see the configuration guide) is writable.
+
 ## Installation
 
 ### `rmedia` command not found

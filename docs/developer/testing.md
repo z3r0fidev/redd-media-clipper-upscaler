@@ -71,6 +71,10 @@ Run the benches in release mode. Their thresholds assume optimized builds.
 | `RMEDIA_STATE_DIR` | CLI tests | Each CLI test points the crash journal at a temporary directory. |
 | `RMEDIA_CONFIG_DIR` | desktop `bridge.rs` | Set once per test process to a temp folder so tests never touch the developer's real `settings.json`. |
 | `RMEDIA_CLI_BIN` | desktop `bridge.rs` | Path to the `rmedia` binary for the CLI parity test. Default: `target/debug/rmedia`. |
+| `RMEDIA_ALLOW_MISSING_FEATURES` | testkit | With `RMEDIA_REQUIRE_FFMPEG=1`, `1` lets tests that need an FFmpeg feature the engine lacks (for example libvmaf on a distro 6.1) skip instead of failing. The CI minimum-engine job sets it. |
+| `RMEDIA_US6_KEEP` | `us6_ai.rs` | A folder to copy the AI and classical renders into, for measuring anti-flicker candidates offline. |
+| `RMEDIA_SR` | the code under test | Path to the AI worker, overriding the lookup (logged; see the configuration guide). |
+| `RMEDIA_NCNN_DIR` | `rmedia-sr` build script | Build time: the ncnn package to link instead of `third_party/ncnn/<target>/`. |
 
 ## Test Kit (`crates/rmedia-testkit`)
 

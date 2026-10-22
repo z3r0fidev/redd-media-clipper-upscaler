@@ -1,7 +1,8 @@
 # `rmedia` CLI Reference
 
 This page documents every command and flag of the `rmedia` command-line tool, version 0.1.0, plus
-the `rmedia upscale` command that is on the `002-mobile-upscale` branch and not yet released.
+the upscaling of feature 002 (`rmedia upscale`, `clip --upscale`, `doctor --recheck`), which is
+unreleased (0.2.0-dev).
 Flags come from the clap definitions in `crates/rmedia-cli/src/main.rs`. Behaviour comes from
 `crates/rmedia-cli/src/commands/*.rs`. The help text below was captured from
 `target/debug/rmedia` built from the working tree after commit `bd1eef8`; the `upscale` additions
@@ -24,7 +25,7 @@ Global options are accepted before or after the subcommand.
 
 ```text
 $ rmedia --help
-Cut clips from videos — fast (no re-encode) or frame-accurate.
+Cut clips from videos and make them phone-ready: upscaled and reframed for portrait screens.
 
 Usage: rmedia [OPTIONS] <COMMAND>
 

@@ -18,7 +18,7 @@ what the packages install, see [Installation](../administration/installation.md)
 `cargo xtask` is an alias for `cargo run --package xtask --` (`.cargo/config.toml`). Usage:
 
 ```text
-cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE]>
+cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins>
 ```
 
 | Task | What it does | Writes |
@@ -27,9 +27,12 @@ cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cl
 | `pin-tools` | Moves the pin to the newest BtbN autobuild of the **current release line** and records GitHub's asset SHA-256 digests | `xtask/tools.lock.json` |
 | `gen-bindings` | Regenerates the desktop app's TypeScript types from `rmedia-core` (ts-rs) | `apps/desktop/src/lib/bindings/` (deleted and recreated) |
 | `stage-cli [--target T]` | Builds `rmedia-cli` and the AI worker `rmedia-sr` in release mode and copies them with sidecar naming (needs `fetch-ncnn` first) | `binaries/rmedia-<T>[.exe]`, `binaries/rmedia-sr-<T>[.exe]` |
-| `fetch-ncnn [--target T]` | Downloads the pinned prebuilt ncnn 20260526 (static, Vulkan; `ubuntu-2204` or `windows-vs2022`) for target `T`, verifies its SHA-256 and installs it for `crates/rmedia-sr/build.rs`, which stops with "run `cargo xtask fetch-ncnn`" without it. Added in 0.2.0-dev (US6) | `third_party/ncnn/<T>/` (git-ignored) |
+| `fetch-ncnn [--target T]` | Downloads the pinned prebuilt ncnn 20260526 (static, Vulkan; `ubuntu-2204` or `windows-vs2022`) for target `T`, verifies its SHA-256 and installs it for `crates/rmedia-sr/build.rs`, which stops with "run `cargo xtask fetch-ncnn`" without it. `RMEDIA_NCNN_DIR` (build time) points the build at another ncnn package instead. Added in 0.2.0-dev (US6) | `third_party/ncnn/<T>/` (git-ignored) |
 | `notices` | Generates the third-party notices for every Rust crate and bundled npm package | `THIRD_PARTY_NOTICES.md` |
 | `fetch-models` | Downloads each model in `xtask/models.lock.json` (the YuNet face detector, the Real-ESRGAN animevideov3 x2/x3/x4 files taken from a pinned release archive, and a test-only portrait) with `curl` over HTTPS only, verifies the SHA-256 of each archive and file, and replaces it through a temp file and rename. Files that already match are kept. Added in 0.2.0-dev. | `models/` (git-ignored; never committed) |
+| `archive` | Downloads every pinned archive (FFmpeg and ncnn for both targets, model release archives) and checks it against its pin; lists SHA-256, size and path | `archives/<sha256>/` (git-ignored) |
+| `mirror <tag>` | Uploads each pinned archive without a mirror to the release `<tag>` (a `mirror-<date>` pre-release, created if missing), adds the URLs under `mirrors` in both lock files, and records the `ffmpeg-source-<version>` release as `source`; needs `gh` with write access | `xtask/*.lock.json` |
+| `check-pins` | Offline check (CI): every pinned archive has a mirror, the FFmpeg pin has `source`, and `licenses/FFMPEG-NOTICE.md` names the version, release tag and source release | nothing |
 
 Supported targets are `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`. On Windows the host
 triple is `x86_64-pc-windows-msvc`; elsewhere it is `x86_64-unknown-linux-gnu`.
@@ -189,11 +192,11 @@ jobs use the runner's preinstalled Node.
 
 | Job | Runners | Steps |
 |---|---|---|
-| `test` (bundled engine) | `ubuntu-22.04`, `windows-latest` | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo xtask fetch-tools`; `cargo test --workspace`; `cargo test --workspace --release -- --ignored bench` (with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to the bundled engine) |
-| `minimum-engine` | `ubuntu-24.04` | Installs distro `ffmpeg` (6.1, the minimum supported); `cargo test --workspace` |
-| `windows-check-gnu` | `ubuntu-22.04` | `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu --exclude rmedia-sr` (type-checks Windows code paths from Linux; the AI worker links MSVC ncnn and is built by the Windows test job) |
-| `desktop` | `ubuntu-22.04`, `windows-latest` | Linux webview dependencies; `fetch-tools`, `fetch-ncnn`, `fetch-models` + `stage-cli` (tauri-build requires the sidecars and bundled models to exist); `gen-bindings` then `git diff --exit-code` on the bindings; `npm ci`, `npm run check`, `npm test`, `npm run build`; Linux only: desktop backend tests and the notices check; Windows only: `cargo build` of the desktop backend |
-| `deny` | `ubuntu-22.04` | `cargo-deny` for `Cargo.toml` and for `apps/desktop/src-tauri/Cargo.toml` |
+| `test` (bundled engine) | `ubuntu-22.04`, `windows-latest` | `cargo fmt --all -- --check`; `cargo xtask check-pins`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo xtask fetch-tools`; `cargo test --workspace`; `cargo test --workspace --release -- --ignored bench` (with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to the bundled engine) |
+| `minimum-engine` | `ubuntu-24.04` | Installs distro `ffmpeg` (6.1, the minimum supported); `cargo xtask fetch-models`; `cargo test --workspace --exclude rmedia-sr` with `RMEDIA_ALLOW_MISSING_FEATURES=1` (tests needing a feature 6.1 lacks, such as libvmaf, skip) |
+| `windows-check-gnu` | `ubuntu-22.04` | Installs mingw-w64 (tract-linalg compiles C); `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu --exclude rmedia-sr` (type-checks Windows code paths from Linux; the AI worker links MSVC ncnn and is built by the Windows test job) |
+| `desktop` | `ubuntu-22.04`, `windows-latest` | Linux webview dependencies; `fetch-tools`, `fetch-ncnn`, `fetch-models` + `stage-cli` (tauri-build requires the sidecars and bundled models to exist); `gen-bindings` then `git diff --exit-code` on the bindings; `npm ci`, `npm run check`, `npm test`, `npm run build`; Linux only: desktop backend tests (against the staged pinned engine; no distro FFmpeg is installed) and the notices check; Windows only: `cargo build` of the desktop backend |
+| `deny` | `ubuntu-22.04` | `cargo-deny` for `Cargo.toml` and for `apps/desktop/src-tauri/Cargo.toml`; `deny.toml` ignores one advisory, RUSTSEC-2024-0370 (unmaintained build-time proc-macro of gtk-rs 0.18, via Tauri's Linux backend), with its reason |
 
 Generated-file gates: CI fails if `apps/desktop/src/lib/bindings` or `THIRD_PARTY_NOTICES.md`
 differ from freshly generated output. Regenerate and commit them with `cargo xtask gen-bindings` and

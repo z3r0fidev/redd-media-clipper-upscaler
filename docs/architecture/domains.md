@@ -252,12 +252,13 @@ at most 8 connections, and one request per connection. Full list:
 **Invariant:** all time parsing goes through the core (`parse_time` / `parse_end`), giving one
 grammar everywhere (`lib/time.ts`).
 
-## Upscaling (feature 002, user stories 1 to 3)
+## Upscaling (feature 002)
 
-**Responsibility:** make a whole video phone-ready on the CPU or GPU tier, driven by a device
-preset.
-Code is in `crates/rmedia-core/src/{upscale,preset,models.rs}` and `exec/upscale.rs`. Available
-from `rmedia upscale` only; branch `002-mobile-upscale`, unreleased.
+**Responsibility:** make a video phone-ready on the CPU, GPU or AI tier, driven by a device
+preset: from `rmedia upscale`, from `rmedia clip --upscale` and batch manifests (an `upscale`
+block), and from the desktop upscale view.
+Code is in `crates/rmedia-core/src/{upscale,preset,models.rs}`, `exec/upscale.rs` and
+`exec/pipeline.rs`, plus the AI worker crate `crates/rmedia-sr`. Unreleased (0.2.0-dev).
 
 | Item | Location |
 |---|---|
@@ -272,6 +273,14 @@ from `rmedia upscale` only; branch `002-mobile-upscale`, unreleased.
 | Model file lookup (`models_dir` setting, `models/` beside the executable, cache `models/`) | `models.rs` |
 | Executor: analyze (smart), render, verify; emits `job_stage`; one CPU retry after an automatic GPU failure | `exec/upscale.rs` |
 | Smart-reframe analysis: decode, YuNet, cuts, subject choice, crop path, sendcmd, cache | `upscale/reframe/*` |
+| Manifest `upscale` block (JSON and CSV columns), `clip --upscale` (cut and upscale in one pass) | `input/manifest_json.rs`, `input/manifest_csv.rs`, `plan/mod.rs`, `plan/ffargs.rs` |
+| Before/after preview frames (two PNGs; the standard scaler stands in for the AI tier) | `upscale/preview.rs` |
+| AI tier: worker and model lookup with pinned SHA-256s (`PINNED`), scale choice, the `rmedia-sr` arguments | `upscale/ai.rs` |
+| AI graphs: ffmpeg #1 frames the picture and writes rgb24; ffmpeg #2 scales to the target, de-flickers (`hqdn3d=0:0:3:3`), adds the blurred background and encodes | `upscale/graph.rs` (`ai_decode`, `ai_finish`) |
+| The 3-process pipeline ffmpeg #1 → `rmedia-sr` → ffmpeg #2 over OS pipes: one process group on Unix (`killpg`), a Job Object per process on Windows; which stage to blame for a failure | `exec/pipeline.rs` |
+| AI gate: `rmedia-sr --list-gpus` and `--selftest`; available when 60 s of 854x480 is predicted at 10 minutes or less | `upscale/capability.rs` (`ai_check`, `ai_gate`) |
+| The worker: ncnn with Vulkan, frames on stdin/stdout, JSON lines on stderr, exit codes 2–6; `unsafe` only in `ffi.rs` | `crates/rmedia-sr` ([protocol](../../specs/002-mobile-upscale/contracts/rmedia-sr-protocol.md)) |
+| Desktop: upscale options, preview, crop-path preview and queue commands | `apps/desktop/src-tauri/src/ops.rs`, `commands.rs` |
 
 **Invariants**
 
@@ -291,6 +300,11 @@ from `rmedia upscale` only; branch `002-mobile-upscale`, unreleased.
 - The job runs in a scratch folder next to the output (`.<stem>.rmedia-<run>-<job>.d`) that is
   journaled and removed on success, failure and cancel.
 - The CPU tier is deterministic for identical inputs, options and engine on one machine.
+- The AI tier is never chosen automatically (it is suggested for sources under 720p); forcing it
+  on a clip predicted at more than 10 times its length warns "too slow". The worker loads only
+  the six pinned model files and checks the bytes it loads.
+- rmedia copies no frame bytes on the AI tier: the three processes are joined by OS pipes, and a
+  cancel stops all three within 2 seconds.
 
 The 001 refactors A1 to A5 are in place: outcomes carry a `JobMeasure` (`clip` or `upscale`), jobs
 can run several stages with weighted progress, and issue codes are a typed enum
@@ -303,7 +317,9 @@ can run several stages with weighted progress, and issue codes are a typed enum
 | `cargo xtask fetch-tools [--target TRIPLE]` | Downloads the pinned BtbN build from `xtask/tools.lock.json`, verifies its SHA-256, and installs `binaries/rmedia-ffmpeg-<triple>` / `rmedia-ffprobe-<triple>`. A stamp file records the archive and binary hashes. |
 | `cargo xtask pin-tools` | Pins the newest BtbN autobuild using GitHub asset digests |
 | `cargo xtask gen-bindings` | Runs `cargo test -p rmedia-core --features ts` to export TypeScript into `apps/desktop/src/lib/bindings` |
-| `cargo xtask stage-cli [--target TRIPLE]` | Builds the release CLI and copies it to `binaries/rmedia-<triple>[.exe]` (Tauri sidecar naming) |
+| `cargo xtask stage-cli [--target TRIPLE]` | Builds the release CLI and the AI worker and copies them to `binaries/rmedia-<triple>[.exe]` and `binaries/rmedia-sr-<triple>[.exe]` (Tauri sidecar naming) |
+| `cargo xtask fetch-ncnn [--target TRIPLE]` | Installs the pinned prebuilt ncnn into `third_party/ncnn/<triple>/` for the worker's build |
+| `cargo xtask archive` / `mirror <tag>` / `check-pins` | Keep every pinned archive in `archives/`, upload missing ones to a mirror release and record the URLs, and check (in CI) that every pin is mirrored and the FFmpeg source release and notice are in place |
 | `cargo xtask notices` | Writes `THIRD_PARTY_NOTICES.md` from cargo and npm metadata, including license texts |
 | `cargo xtask fetch-models` | Downloads the models pinned in `xtask/models.lock.json` into `models/`, verifying SHA-256; verified files are kept. Models are never committed. |
 

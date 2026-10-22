@@ -359,8 +359,8 @@ queue (**Export…**) runs the same jobs with `rmedia batch` and gives identical
 
 ### Face model
 
-**Follow faces** needs the face model file. In a source checkout, download it with
-`cargo xtask fetch-models` (packaged builds will include it; not yet available). If it is missing,
+**Follow faces** needs the face model file. The installers include it. In a source checkout, download it with
+`cargo xtask fetch-models`. If it is missing,
 the framing line says so and rmedia uses the blurred background instead. To use a model in another folder, open
 **Settings**, and under **Upscaling quality tiers** select **Models folder › Choose…**.
 

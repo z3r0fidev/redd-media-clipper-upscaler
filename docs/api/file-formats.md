@@ -304,10 +304,41 @@ skipped and reported (`warning: preset file … ignored: …`, and `problems` in
 ```
 
 This is the built-in `reddit-916` preset. `id` is lowercase letters, digits and hyphens (at most 40
-characters). `video.codec` is `hevc` or `h264`. Manifest `upscale` fields
-(`specs/002-mobile-upscale/contracts/manifest-upscale.md`) are planned (user story 4) and are not
-accepted yet. The `{preset}` name-template placeholder is valid only for upscale jobs; the default
-template for upscale is `{source}_{preset}.{ext}`.
+characters). `video.codec` is `hevc` or `h264`. Manifests choose a preset in their `upscale` block (see
+[Upscaling in Manifests](#upscaling-in-manifests)). The `{preset}` name-template placeholder is
+valid only for upscale jobs; the default template for upscale is `{source}_{preset}.{ext}`.
+
+## Capability Record (`capability.json`)
+
+Unreleased (0.2.0-dev). What this machine can run, written by `rmedia doctor` and by the first
+upscale after a change, in the state directory
+([Configuration](../administration/configuration.md)) as `capability.json`, under the lock file
+`capability.lock`. It is rewritten when its `fingerprint` (rmedia, engine and worker versions,
+the Vulkan device listing, driver manifests and `VK_*` variables, model hashes) no longer matches,
+or on `doctor --recheck`. Deleting it is safe: the next run checks again. The format is the JSON
+Schema in `specs/002-mobile-upscale/contracts/capability-record.schema.json` (schema version 1).
+
+| Key | Meaning |
+|---|---|
+| `schema` | `1` |
+| `fingerprint` | SHA-256 (hex) of everything the result depends on |
+| `checked_at` | When the checks ran (RFC 3339) |
+| `devices` | The Vulkan devices found: `index`, `name`, `kind` (`integrated`, `discrete`, `virtual`, `cpu`, `software`, `other`), `device_id`, `usable` and, when not usable, `reason` |
+| `tiers` | `cpu`, `gpu` and `ai`, each with `available` and, as measured, `reason`, `device`, `fps` (self-test frames per second) and, for `ai`, `sec_per_mpx` |
+| `demoted` | Tiers turned off after a failure during a real job: `tier`, `error`, `at` |
+
+## Crop Path (`--crop-path`)
+
+Unreleased (0.2.0-dev). `rmedia upscale --crop-path FILE` writes the smart-reframe crop of one
+video as JSON:
+
+```json
+{ "schema": 1, "fps": 3.0, "crop": [886, 1920], "x": [0, 0, 12, 25, 31] }
+```
+
+`crop` is the crop window `[width, height]` in source pixels and `x` the window's left edge for
+each analysed frame, `fps` frames per second of source time from the start of the clip. The
+desktop app draws the same path in its crop-path preview.
 
 ## Option Layering
 

@@ -60,7 +60,7 @@ All fields are optional. A file containing `{}` is equivalent to the defaults.
 | `jobs` | integer (0 to 65535) | not set | Clips processed at once. Not set means half the CPU cores, between 1 and 4. The **Clips at once** field in the UI accepts 1 to 64. |
 | `proxy_cache_max_mb` | integer | `5120` | Size cap of the preview cache in MB (multiplied by 1024 × 1024). The UI field has a minimum of 100. |
 | `models_dir` | path string | not set | Folder searched first for model files (face detector, AI upscaler weights). Set in the desktop app with Settings › **Models folder** (a folder picker; the page cannot type a path). The AI tier uses a folder only when it holds all six Real-ESRGAN files (`realesr-animevideov3-x2/x3/x4` `.param` and `.bin`). |
-| `upscale_defaults` | object | `{}` | Last-used upscale choices (`enabled`, `preset`, `reframe`, `tier`, `hdr`, …). Reserved for the desktop upscale view (user story 5, planned); kept apart from `defaults` so clip runs never turn upscaling on. |
+| `upscale_defaults` | object | `{}` | Last-used upscale choices (`enabled`, `preset`, `reframe`, `tier`, `hdr`, …). The desktop upscale view starts from these and saves each change here; kept apart from `defaults` so clip runs never turn upscaling on. |
 
 > **Unverified:** Setting `jobs` to `0` by editing the file is not rejected on load, and its effect
 > was not tested. Use values from 1 to 64, the range the UI and CLI accept.

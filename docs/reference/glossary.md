@@ -27,8 +27,14 @@ to avoid.
 | **job kind** | The work a job does: `JobSpec::Clip` or `JobSpec::Upscale` (0.2.0-dev); `Gif` (003) is planned | `plan::JobSpec` | |
 | **preset (device preset)** | A data file that describes an upscale target: size, codec, quality, platform limits. Seven are built in; users add JSON files to `<config>/presets/`. | `preset/`, `--list-presets` | profile |
 | **reframe** | How a video of one shape fills a screen of another: `smart` (follow faces), `center` or `blur` | `upscale::Reframe` | |
-| **tier** | The engine quality level of an upscale: `cpu` (available), `gpu` and `ai` (planned) | `upscale::Tier` | |
-| **upscale** | Make a video phone-ready: scale and reframe to a preset's screen size and re-encode. `rmedia upscale` | `exec/upscale.rs` | |
+| **tier** | The engine quality level of an upscale: `cpu` (classical filters), `gpu` (Vulkan with libplacebo) or `ai` (Real-ESRGAN in the `rmedia-sr` worker). `auto` picks CPU or GPU, never AI. | `upscale::Tier` | |
+| **upscale** | Make a video phone-ready: scale and reframe to a preset's screen size and re-encode. `rmedia upscale`, `clip --upscale`, a manifest `upscale` block | `exec/upscale.rs` | |
+| **capability record** | What this machine can run: each tier's availability, measured speed and reason, the GPUs found, and a fingerprint of the drivers and versions. Stored in `<state>/capability.json`; checked again when the fingerprint changes or on `doctor --recheck`. | `upscale/capability.rs` | |
+| **self-test** | The short measured run behind a tier's availability: a GPU tier render, or the AI worker's 480x270 test (seconds per megapixel), which predicts the time for 60 s of 480p | `upscale/capability.rs` | benchmark |
+| **crop path** | Smart reframe's crop position over time (one point per analysed frame), written by `--crop-path` and drawn by the desktop preview | `upscale/reframe/` | camera path |
+| **fallback range** | A time range where smart reframe found no face to follow and shows the whole frame over a blurred background instead | `fallback_ranges` in JSON | |
+| **AI worker (`rmedia-sr`)** | The bundled program that runs the AI model on the GPU, reading and writing raw frames through pipes between two ffmpeg processes | `crates/rmedia-sr` | |
+| **mirror (archive mirror)** | The project's own copy of a pinned third-party archive (a `mirror-<date>` release), tried before the upstream URL; the pinned SHA-256 decides what is accepted | `xtask/*.lock.json` `mirrors` | |
 | **journal (in-flight journal, crash journal)** | A per-run file under `<state dir>/inflight/` listing temp files, locked while the run lives. The next run deletes temp files of dead runs. | `exec/journal.rs` | lock file |
 | **keyframe snap** | Fast mode starting at the last keyframe K ≤ requested start, found by scanning packets with ffprobe | `probe::keyframe_at_or_before` | |
 | **manifest** | A batch file listing videos and their clips with layered options, in JSON (versioned, strict) or CSV (one row per clip). The desktop queue is a v1 manifest. | `input/manifest_json.rs`, `input/manifest_csv.rs` | job list |
