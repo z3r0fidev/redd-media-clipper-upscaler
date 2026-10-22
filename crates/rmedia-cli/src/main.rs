@@ -21,7 +21,11 @@ pub mod exit {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "rmedia", version, about = "Cut clips from videos — fast (no re-encode) or frame-accurate.")]
+#[command(
+    name = "rmedia",
+    version,
+    about = "Cut clips from videos and make them phone-ready: upscaled and reframed for portrait screens."
+)]
 pub struct Cli {
     /// Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH).
     #[arg(long, global = true, value_name = "PATH")]
