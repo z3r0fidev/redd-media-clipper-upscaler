@@ -135,8 +135,10 @@
 - Real model on the iGPU (`us6_ai.rs --ignored`, gate bypassed): SC-002 AI 51.84 vs GPU tier
   43.73 VMAF on the degraded 360p fixture (+8.1, target +3); static-source flicker AI 1.105 vs
   GPU 1.900 (source 2.474) before the anti-flicker step. The 10 s render took 496 s here.
-- **Owner checks (discrete GPU):** run
-  `cargo test --release -p rmedia-core --test us6_ai -- --ignored --nocapture --test-threads 1`
+- **Owner checks (discrete GPU):** build the worker, then run the tests with the bundled FFmpeg
+  (the system one usually lacks libvmaf; a missing feature now fails the run):
+  `cargo build --release -p rmedia-sr` then
+  `RMEDIA_FFMPEG=$PWD/binaries/rmedia-ffmpeg-x86_64-unknown-linux-gnu RMEDIA_FFPROBE=$PWD/binaries/rmedia-ffprobe-x86_64-unknown-linux-gnu cargo test --release -p rmedia-core --test us6_ai -- --ignored --nocapture --test-threads 1`
   (SC-002 AI, flicker, SC-009 ≤ 10 min and prediction within ±30 %), then
   `rmedia doctor --recheck` should show `tier: ai yes`. Windows: CI's Windows job is the first
   build of the MSVC-linked worker (CRT/OpenMP linking unverified here).

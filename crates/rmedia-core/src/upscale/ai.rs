@@ -256,7 +256,11 @@ mod tests {
                 std::fs::write(b.join(format!("{MODEL}-x{s}.{e}")), b"x").unwrap();
             }
         }
-        assert_eq!(locate_models(std::slice::from_ref(&b)), None, "files that are not the pinned models are refused");
+        assert_eq!(
+            locate_models(std::slice::from_ref(&b)),
+            None,
+            "files that are not the pinned models are refused"
+        );
         // The real models, when fetched (`cargo xtask fetch-models`).
         let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models");
         if real.join(format!("{MODEL}-x4.bin")).is_file() {

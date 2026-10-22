@@ -3,8 +3,14 @@
 //! them on a mid-range discrete GPU (checklists/validation.md › US6):
 //!
 //! ```text
-//! cargo test --release -p rmedia-core --test us6_ai -- --ignored --nocapture --test-threads 1
+//! cargo build --release -p rmedia-sr
+//! RMEDIA_FFMPEG=$PWD/binaries/rmedia-ffmpeg-x86_64-unknown-linux-gnu \
+//! RMEDIA_FFPROBE=$PWD/binaries/rmedia-ffprobe-x86_64-unknown-linux-gnu \
+//!   cargo test --release -p rmedia-core --test us6_ai -- --ignored --nocapture --test-threads 1
 //! ```
+//!
+//! Running them is a request for the numbers, so a missing FFmpeg feature fails instead of
+//! skipping (the system FFmpeg usually has no libvmaf; the bundled one has).
 //!
 //! They bypass the availability gate (so they also run, slowly, on an integrated GPU for
 //! development numbers); SC-009 then fails there, as it should.
@@ -22,14 +28,35 @@ use rmedia_core::request::Options;
 use rmedia_core::upscale::ai::{AiEngine, AiModel, locate_models, locate_worker};
 use rmedia_core::upscale::capability::{TierInfo, parse_selftest, parse_sr_devices, pick_sr_device};
 use rmedia_core::upscale::{Reframe, TierChoice, UpscaleOptions};
-use rmedia_testkit::{Fixture, fixture, require_engine, vmaf};
+use rmedia_testkit::{Fixture, fixture, vmaf};
 
 /// SC-002 for the AI tier: VMAF points over the GPU tier on the degraded 360p fixture.
 const AI_MARGIN: f64 = 3.0;
 
+/// Fails (never skips) when the engine lacks a feature these measurements need.
+fn need(features: &[&str]) {
+    assert!(
+        rmedia_testkit::require_engine(features),
+        "the FFmpeg in use lacks one of {features:?}: point RMEDIA_FFMPEG and RMEDIA_FFPROBE at the bundled \
+         binaries/rmedia-ffmpeg-* and rmedia-ffprobe-* (see the top of this file)"
+    );
+}
+
+/// The worker built in this profile: test binaries run from `target/<profile>/deps/`, and the
+/// shipped lookup only looks there in debug builds.
+fn built_worker() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let p = exe.parent()?.parent()?.join(format!("rmedia-sr{}", std::env::consts::EXE_SUFFIX));
+    p.is_file().then_some(p)
+}
+
 /// The worker, its models from the workspace `models/`, and the GPU it would use.
 fn real_engine() -> (AiEngine, u32, String) {
-    let worker = locate_worker().expect("rmedia-sr is built (cargo build -p rmedia-sr)");
+    let profile = if cfg!(debug_assertions) { "" } else { " --release" };
+    let worker = locate_worker()
+        .or_else(built_worker)
+        .unwrap_or_else(|| panic!("rmedia-sr is not built: run `cargo build{profile} -p rmedia-sr`"));
+    eprintln!("AI worker: {}", worker.display());
     let models = locate_models(&[Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models")])
         .expect("models fetched (cargo xtask fetch-models)");
     let out = std::process::Command::new(&worker).arg("--list-gpus").output().expect("run rmedia-sr");
@@ -122,7 +149,7 @@ fn classical(caps: &Caps) -> TierChoice {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a Vulkan GPU, the AI models and GPU minutes"]
 async fn ai_beats_the_gpu_tier_on_degraded_360p() {
-    require_engine!("libx264", "zscale", "libvmaf");
+    need(&["libx264", "zscale", "libvmaf"]);
     let (engine, device, _) = real_engine();
     let caps = ai_caps(&engine, device, None);
     let d = tempfile::tempdir().unwrap();
@@ -193,7 +220,7 @@ pub fn flicker(path: &Path) -> f64 {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a Vulkan GPU, the AI models and GPU minutes"]
 async fn ai_does_not_flicker_more_than_the_gpu_tier() {
-    require_engine!("libx264", "zscale");
+    need(&["libx264", "zscale"]);
     let (engine, device, _) = real_engine();
     let caps = ai_caps(&engine, device, None);
     let d = tempfile::tempdir().unwrap();
@@ -211,7 +238,7 @@ async fn ai_does_not_flicker_more_than_the_gpu_tier() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a mid-range discrete GPU, the AI models and up to 10 GPU minutes"]
 async fn sixty_seconds_of_480p_in_ten_minutes_as_predicted() {
-    require_engine!("libx265", "zscale");
+    need(&["libx265", "zscale"]);
     let (ai, device, name) = real_engine();
     let spm = self_test(&ai, device);
     let caps = ai_caps(&ai, device, Some(spm));
