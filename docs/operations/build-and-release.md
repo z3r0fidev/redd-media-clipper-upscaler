@@ -45,19 +45,25 @@ triple is `x86_64-pc-windows-msvc`; elsewhere it is `x86_64-unknown-linux-gnu`.
 | Field | Current value |
 |---|---|
 | Source | BtbN/FFmpeg-Builds, GPL flavour (`linux64-gpl`, `win64-gpl`) |
-| `release` | `autobuild-2026-10-05-13-07` |
-| `version` | `n9.0.2-22-g46d8f462ee` |
-| Linux archive | `…-linux64-gpl-9.0.tar.xz`, SHA-256 `31674015…61314` |
-| Windows archive | `…-win64-gpl-9.0.zip`, SHA-256 `1385d57b…877cf` |
+| `release` | `autobuild-2026-10-21-13-06` |
+| `version` | `n9.0.2-31-gc89d6ee1ca` |
+| Linux archive | `…-linux64-gpl-9.0.tar.xz`, SHA-256 `22120095…97bde` |
+| Windows archive | `…-win64-gpl-9.0.zip`, SHA-256 `48c50bfe…9befa` |
+| `mirrors` (per target, optional) | Our own copies of the same archive, tried before `url` |
 
 ### How `fetch-tools` verifies
 
 1. If `binaries/.<target>.sha256` exists and matches the archive hash plus the **current** SHA-256
    of both installed binaries, the task does nothing (`already present (verified)`). A tampered or
    corrupted binary fails this check and is replaced.
-2. Otherwise it downloads the archive with `curl -fL --retry 3` into `target/xtask-tools/`.
-3. It compares the archive SHA-256 with the pin and stops on mismatch:
-   `checksum mismatch for <url>: expected <hash>, got <hash>`.
+2. Otherwise it takes the archive from `archives/<sha256>/` (gitignored) when the copy kept there
+   still matches the pin. If not, it downloads from each `mirrors` URL and then `url` (HTTPS only,
+   `curl -fL --retry 3`) until one matches the pin, and keeps that copy in `archives/`. When no
+   source matches, it stops with `no source of <file> matches the pin:` and one line per source
+   (a 404, or `checksum <hash>, expected <hash>`).
+3. Archives are never deleted after extraction, so a pin keeps working on this machine after the
+   upstream release is gone. `fetch-ncnn` and `fetch-models` (for model release archives) use the
+   same store and the same `mirrors` field in `xtask/models.lock.json`.
 4. It extracts with `tar -xf`. On Windows it uses `%SystemRoot%\System32\tar.exe` (bsdtar, which
    reads `.zip`), because a GNU tar earlier on PATH (Git Bash) cannot.
 5. It copies `bin/ffmpeg` and `bin/ffprobe` from the archive, sets mode `0755` on Unix, copies the
@@ -76,7 +82,8 @@ Prerequisites: `curl` and `tar` on PATH (Linux), or `curl` plus the system `tar.
    It reads the five most recent BtbN releases, takes the first whose tag starts with `autobuild-`,
    and selects the `ffmpeg-n<line>…-{linux64,win64}-gpl-<line>` assets for the **same major.minor
    line** as the current pin (currently 9.0). It records each asset's `digest` field from the GitHub
-   API as the SHA-256.
+   API as the SHA-256, then downloads both archives into `archives/` at once, because the
+   autobuild release will be deleted upstream.
 2. Fetch and test with the new build:
 
    ```bash
@@ -111,9 +118,27 @@ From `specs/001-video-clipping/research.md` R9 (audit M3):
   alongside the rmedia release downloads before the first public release, to satisfy the GPL v3 §6
   source offer.
 
-> **Unverified / open:** Neither mirror exists yet. `tools.lock.json` still points at
-> `github.com/BtbN/...`, and there is no release storage configured. Treat both mirrors as release
-> blockers.
+**What happened (2026-10-22):** BtbN deleted `autobuild-2026-10-05-13-07`, and `fetch-tools`
+failed with a 404 on a fresh checkout. That build's archives were lost, because `fetch-tools`
+used to delete them after extraction. FFmpeg was re-pinned to `autobuild-2026-10-21-13-06`, and
+`fetch-tools` now keeps every archive.
+
+To create the mirrors:
+
+1. `cargo xtask archive` downloads every pinned archive (FFmpeg and ncnn for both targets, and the
+   Real-ESRGAN release archive), checks each against its pin, and lists them with their SHA-256 and
+   path under `archives/` (about 480 MB in total).
+2. Upload those files to rmedia's own release storage (for example, assets of a `mirror-<date>`
+   release in the project repository).
+3. Add each uploaded URL under `mirrors` for its pin in `xtask/tools.lock.json` and
+   `xtask/models.lock.json`. The SHA-256 stays the same, so a mirror can never serve other bytes.
+4. To set up a machine without network access to the upstream releases, copy `archives/` from a
+   machine that has it. `fetch-*` use those copies after checking their hashes.
+
+> **Open:** No mirror is uploaded yet; there is no remote or release storage configured. Until
+> there is, `archives/` on the maintainer's machine is the only copy of the current pins, and the
+> FFmpeg pin breaks for fresh checkouts again when BtbN deletes `autobuild-2026-10-21-13-06`. The
+> GPL corresponding-source mirror is still a release blocker too.
 
 Installer size is another open owner decision. The static GPL binaries are about 172 MB each; a
 shared or trimmed custom build would reduce it (`research.md` R9, `validation.md`).

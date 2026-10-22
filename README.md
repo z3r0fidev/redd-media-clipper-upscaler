@@ -38,7 +38,7 @@ Check with:
 ```console
 $ rmedia doctor
 ffmpeg:   /usr/bin/rmedia-ffmpeg (bundled)
-version:  n9.0.2-22-g46d8f462ee-20261005
+version:  n9.0.2-31-gc89d6ee1ca-20261021
 status:   ready
 ```
 

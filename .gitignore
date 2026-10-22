@@ -22,3 +22,5 @@ Thumbs.db
 /models/
 # Prebuilt ncnn for rmedia-sr (fetched by `cargo xtask fetch-ncnn`, never committed)
 /third_party/
+# Verified copies of pinned archives (`cargo xtask archive`), never committed
+/archives/

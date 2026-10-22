@@ -158,7 +158,7 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
 ### Supply Chain (T8)
 
 - The FFmpeg build is pinned by URL and SHA-256 in `xtask/tools.lock.json` (BtbN
-  `autobuild-2026-10-05-13-07`, `n9.0.2-22-g46d8f462ee`, GPL). `cargo xtask fetch-tools`
+  `autobuild-2026-10-21-13-06`, `n9.0.2-31-gc89d6ee1ca`, GPL). `cargo xtask fetch-tools`
   verifies the archive hash and records the binaries' hashes in a stamp file. The binaries are
   never committed.
 - `deny.toml` (cargo-deny): yanked crates denied, a license allowlist, wildcard versions denied,

@@ -37,7 +37,7 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
   "type": "doctor",
   "ffmpeg": { "path": "/work/binaries/rmedia-ffmpeg-x86_64-unknown-linux-gnu", "source": "config" },
   "ffprobe": { "path": "/work/binaries/rmedia-ffprobe-x86_64-unknown-linux-gnu", "source": "config" },
-  "version": "n9.0.2-22-g46d8f462ee-20261005",
+  "version": "n9.0.2-31-gc89d6ee1ca-20261021",
   "encoders": { "aac": true, "libopus": true, "libvpx-vp9": true, "libx264": true, "libx265": true },
   "filters": { "bwdif": true, "cas": true, "gblur": true, "hqdn3d": true, "libplacebo": true,
                "libvmaf": true, "scdet": true, "sendcmd": true, "tonemap": true, "zscale": true },

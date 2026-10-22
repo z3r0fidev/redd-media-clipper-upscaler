@@ -1,10 +1,14 @@
 //! Developer tasks: `cargo xtask fetch-tools [--target TRIPLE]`, `cargo xtask pin-tools`,
-//! `cargo xtask fetch-models`, `cargo xtask fetch-ncnn [--target TRIPLE]`.
+//! `cargo xtask fetch-models`, `cargo xtask fetch-ncnn [--target TRIPLE]`, `cargo xtask archive`.
 //!
 //! Engine binaries are downloaded at build time from a pinned, SHA-256-verified URL and placed in
 //! `binaries/` using Tauri's sidecar naming (`rmedia-ffmpeg-<triple>[.exe]`). They are never
 //! committed (Constitution, Technical & Licensing Constraints). Model files follow the same rule:
 //! `xtask/models.lock.json` pins them by URL and SHA-256, and they land in `models/`.
+//!
+//! Every pinned archive is kept in `archives/<sha256>/` (gitignored), because upstream builds can
+//! disappear (BtbN deletes old FFmpeg autobuilds). A pin may list `mirrors`, our own copies of the
+//! same bytes, tried before the upstream `url`; whatever the source, the SHA-256 must match.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -50,6 +54,8 @@ struct PinnedModel {
 #[derive(Debug, Deserialize)]
 struct ArchiveMember {
     url: String,
+    #[serde(default)]
+    mirrors: Vec<String>,
     sha256: String,
     member: String,
 }
@@ -57,6 +63,9 @@ struct ArchiveMember {
 #[derive(Debug, Serialize, Deserialize)]
 struct Pinned {
     url: String,
+    /// Our own copies of the archive, tried before `url` (same SHA-256).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    mirrors: Vec<String>,
     sha256: String,
 }
 
@@ -96,9 +105,10 @@ fn main() -> Result<()> {
             };
             fetch_ncnn(&target)
         }
+        Some("archive") => archive_all(),
         _ => {
             eprintln!(
-                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE]>"
+                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive>"
             );
             std::process::exit(2);
         }
@@ -133,31 +143,10 @@ fn fetch_tools(target: &str) -> Result<()> {
         return Ok(());
     }
 
+    let archive = pinned_archive(&pin.url, &pin.mirrors, &pin.sha256)?;
     let work = root().join("target/xtask-tools");
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work)?;
-    let archive = work.join(pin.url.rsplit('/').next().context("url file name")?);
-    println!("downloading {}", pin.url);
-    run(Command::new("curl")
-        .args([
-            "-fL",
-            "--proto",
-            "=https",
-            "--proto-redir",
-            "=https",
-            "--retry",
-            "3",
-            "--silent",
-            "--show-error",
-            "-o",
-        ])
-        .arg(&archive)
-        .arg(&pin.url))?;
-
-    let actual = format!("{:x}", Sha256::digest(std::fs::read(&archive)?));
-    if actual != pin.sha256 {
-        bail!("checksum mismatch for {}: expected {}, got {actual}", pin.url, pin.sha256);
-    }
     let extract = work.join("x");
     std::fs::create_dir_all(&extract)?;
     run(Command::new(tar()).arg("-xf").arg(&archive).arg("-C").arg(&extract))?;
@@ -217,7 +206,7 @@ fn fetch_models() -> Result<()> {
         match (&pin.url, &pin.archive) {
             (Some(url), None) => download(url, &tmp)?,
             (None, Some(a)) => {
-                let extracted = fetch_archive(&a.url, &a.sha256)?;
+                let extracted = fetch_archive(&a.url, &a.mirrors, &a.sha256)?;
                 let member = extracted.join(&a.member);
                 if a.member.contains("..") || !member.starts_with(&extracted) {
                     bail!("bad archive member {:?} for {name}", a.member);
@@ -259,33 +248,59 @@ fn download(url: &str, dest: &Path) -> Result<()> {
         .arg(url))
 }
 
-/// Downloads and extracts a pinned archive once into `target/xtask-archives/<sha256>/`, verifying
-/// its SHA-256 first. Returns the extraction directory.
-fn fetch_archive(url: &str, sha256: &str) -> Result<PathBuf> {
+/// The pinned archive, kept as `archives/<sha256>/<file name>`: reused while its hash matches,
+/// otherwise downloaded from each mirror and then `url` until one matches the pin.
+fn pinned_archive(url: &str, mirrors: &[String], sha256: &str) -> Result<PathBuf> {
+    if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        bail!("bad sha256 {sha256:?} for {url}");
+    }
+    let name = url
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty() && !n.starts_with('.') && !n.contains(['\\', ':']))
+        .with_context(|| format!("no file name in {url}"))?;
+    let dir = root().join("archives").join(sha256);
+    let kept = dir.join(name);
+    if file_sha256(&kept).is_ok_and(|h| h == sha256) {
+        return Ok(kept);
+    }
+    std::fs::create_dir_all(&dir)?;
+    let tmp = dir.join(format!(".{name}.download"));
+    let mut failures = Vec::new();
+    for source in mirrors.iter().map(String::as_str).chain([url]) {
+        let _ = std::fs::remove_file(&tmp); // never write through a planted file or link
+        println!("downloading {source}");
+        match download(source, &tmp).and_then(|()| file_sha256(&tmp)) {
+            Ok(h) if h == sha256 => {
+                std::fs::rename(&tmp, &kept)?;
+                return Ok(kept);
+            }
+            Ok(h) => failures.push(format!("{source}: checksum {h}, expected {sha256}")),
+            Err(e) => failures.push(format!("{source}: {e:#}")),
+        }
+    }
+    let _ = std::fs::remove_file(&tmp);
+    bail!("no source of {name} matches the pin:\n  {}", failures.join("\n  "))
+}
+
+/// Extracts a pinned archive ([`pinned_archive`]) once into `target/xtask-archives/<sha256>/`.
+/// Returns the extraction directory.
+fn fetch_archive(url: &str, mirrors: &[String], sha256: &str) -> Result<PathBuf> {
     let base = root().join("target/xtask-archives");
     let done = base.join(format!("{sha256}.ok"));
     let extract = base.join(sha256);
     if done.is_file() && extract.is_dir() {
         return Ok(extract);
     }
+    let archive = pinned_archive(url, mirrors, sha256)?;
     let _ = std::fs::remove_dir_all(&extract);
     std::fs::create_dir_all(&extract)?;
-    let archive = base.join(format!("{sha256}.download"));
-    let _ = std::fs::remove_file(&archive);
-    println!("downloading {url}");
-    download(url, &archive)?;
-    let actual = file_sha256(&archive)?;
-    if actual != sha256 {
-        let _ = std::fs::remove_file(&archive);
-        bail!("checksum mismatch for {url}: expected {sha256}, got {actual}");
-    }
     if url.ends_with(".zip") && !cfg!(windows) {
         // GNU tar cannot read .zip.
         run(Command::new("unzip").arg("-q").arg(&archive).arg("-d").arg(&extract))?;
     } else {
         run(Command::new(tar()).arg("-xf").arg(&archive).arg("-C").arg(&extract))?;
     }
-    let _ = std::fs::remove_file(&archive);
     std::fs::write(&done, url)?;
     Ok(extract)
 }
@@ -311,7 +326,7 @@ fn fetch_ncnn(target: &str) -> Result<()> {
         println!("ncnn for {target} already present");
         return Ok(());
     }
-    let extracted = fetch_archive(&pin.url, &pin.sha256)?;
+    let extracted = fetch_archive(&pin.url, &pin.mirrors, &pin.sha256)?;
     // The package has one top-level folder (ncnn-<version>-<platform>/).
     let top = std::fs::read_dir(&extracted)?
         .flatten()
@@ -379,6 +394,7 @@ fn pin_tools() -> Result<()> {
             triple.to_owned(),
             Pinned {
                 url: asset["browser_download_url"].as_str().unwrap_or_default().to_owned(),
+                mirrors: Vec::new(),
                 sha256: digest.to_owned(),
             },
         );
@@ -386,6 +402,31 @@ fn pin_tools() -> Result<()> {
     lock.release = tag;
     std::fs::write(root().join("xtask/tools.lock.json"), serde_json::to_string_pretty(&lock)? + "\n")?;
     println!("pinned {} ({})", lock.version, lock.release);
+    // Keep the new builds now: the autobuild release will be deleted upstream.
+    for pin in lock.targets.values() {
+        pinned_archive(&pin.url, &pin.mirrors, &pin.sha256)?;
+    }
+    Ok(())
+}
+
+/// Downloads every pinned archive (FFmpeg and ncnn for all targets, model release archives) into
+/// `archives/`, verified, and lists them: the set to upload as mirrors.
+fn archive_all() -> Result<()> {
+    let tools = read_lock()?;
+    let models = read_model_lock()?;
+    let mut pins: BTreeMap<&str, (&str, &[String])> = BTreeMap::new();
+    for p in tools.targets.values().chain(models.ncnn.values()) {
+        pins.insert(&p.sha256, (&p.url, &p.mirrors));
+    }
+    for a in models.models.values().filter_map(|m| m.archive.as_ref()) {
+        pins.insert(&a.sha256, (&a.url, &a.mirrors));
+    }
+    for (sha256, (url, mirrors)) in pins {
+        let kept = pinned_archive(url, mirrors, sha256)?;
+        let size = std::fs::metadata(&kept)?.len();
+        println!("{sha256}  {:>5} MB  {}", size >> 20, kept.strip_prefix(root()).unwrap_or(&kept).display());
+    }
+    println!("upload these as mirror assets, then list their URLs under `mirrors` in the lock files");
     Ok(())
 }
 

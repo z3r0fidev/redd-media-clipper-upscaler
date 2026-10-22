@@ -37,7 +37,7 @@ crates/rmedia-testkit/     test fixtures generated with FFmpeg + ffprobe asserti
 apps/desktop/              Tauri 2 + Svelte 5 + TypeScript desktop app
   src/                       App.svelte, lib/{components,stores,bindings}
   src-tauri/                 Rust backend: commands.rs, ops.rs, media_server.rs; tests/
-xtask/                     build tasks: fetch-tools, pin-tools, gen-bindings, stage-cli, notices, fetch-models
+xtask/                     build tasks: fetch-tools, pin-tools, gen-bindings, stage-cli, notices, fetch-models, fetch-ncnn, archive
 binaries/                  fetched engine + staged CLI (git-ignored)
 specs/001-video-clipping/  spec, plan, research, data model, contracts, tasks, checklists
 research/                  research outlines 01 to 09

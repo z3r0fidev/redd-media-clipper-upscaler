@@ -446,7 +446,7 @@ an installed package reports `bundled`):
 $ rmedia doctor
 ffmpeg:   /work/binaries/rmedia-ffmpeg-x86_64-unknown-linux-gnu (config)
 ffprobe:  /work/binaries/rmedia-ffprobe-x86_64-unknown-linux-gnu (config)
-version:  n9.0.2-22-g46d8f462ee-20261005
+version:  n9.0.2-31-gc89d6ee1ca-20261021
 encoder:  aac         yes
 encoder:  libopus     yes
 encoder:  libvpx-vp9  yes

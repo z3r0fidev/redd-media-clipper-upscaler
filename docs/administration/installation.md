@@ -211,7 +211,7 @@ Healthy output looks like this (abbreviated; the encoder lines vary by FFmpeg bu
 ```text
 ffmpeg:   /usr/bin/rmedia-ffmpeg (bundled)
 ffprobe:  /usr/bin/rmedia-ffprobe (bundled)
-version:  n9.0.2-22-g46d8f462ee-20261005
+version:  n9.0.2-31-gc89d6ee1ca-20261021
 encoder:  aac         yes
 encoder:  libopus     yes
 encoder:  libvpx-vp9  yes
