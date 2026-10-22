@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# The steps are bash scripts on both platforms (PowerShell rejects `rm -rf`).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   package:
     name: package (${{ matrix.os }})
@@ -33,9 +38,11 @@ jobs:
       - run: rustup show active-toolchain || rustup toolchain install
       - name: Linux build dependencies
         if: runner.os == 'Linux'
-        # GStreamer is bundled into the AppImage (WebKitGTK needs it for <video>).
+        # GStreamer is bundled into the AppImage (WebKitGTK needs it for <video>). The runner image
+        # preinstalls libunwind-14-dev, which conflicts with the libunwind-dev GStreamer needs.
         run: >-
-          sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev
+          sudo apt-get update && (sudo apt-get remove -y libunwind-14-dev || true)
+          && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev
           libayatana-appindicator3-dev patchelf libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
