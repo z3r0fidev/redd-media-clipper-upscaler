@@ -176,3 +176,43 @@
   - A stuck GPU driver after a kill is waited for without a deadline.
   - ffmpeg #2's overlay queue on long blur/fallback clips was not measured for memory.
 
+
+## Polish: quickstart and final validation (T111, 2026-10-22)
+
+Linux x86_64 (Ubuntu, kernel 7.0), debug build, bundled FFmpeg n9.0.2-31 unless noted. The
+scripted parts of `quickstart.md` were run end to end.
+
+- **US1:** `low.mp4` → `hevc,hvc1,1080,2340,tv,bt709,bt709,bt709`, source unchanged (same sha256).
+  `--preset reddit-916` → H.264 avc1 1080x1920 with `moov` before `mdat` (faststart). An output
+  already at 1080x2340 warns "no upscaling needed". Ctrl-C after 1 s: exit 130 within 0.06 s, no
+  `.part`, scratch folder or `rmedia-ffmpeg` process left.
+- **US2:** the quickstart's marker source could not be built (a filter graph passed to `-i`, a
+  source pad used twice), and a coloured marker is not a face for the real detector, so the
+  quickstart now builds `land.mp4` from the public-domain test portrait. Result: `ready`, 2 shots,
+  no blurred ranges, 1080x2340; the crop's left edge goes 74 → 300 → 540 → 720 during the pan
+  (0, 2, 4, 5.5 s) and holds at 856 after the cut (the face is at x=900). `center` and `blur` run.
+- **US3:** `doctor` lists cpu 27 fps, gpu 17 fps (Intel RPL-U), llvmpipe rejected; forced
+  `--tier gpu` succeeds; `auto` picks the CPU with "measured slower than the CPU here (17 vs 27
+  fps)"; with no Vulkan driver, `--tier gpu` exits 3 "no Vulkan device".
+- **US4:** the manifest gives `low` and `slides` at 1080x2340 and the `pan` clip at 1080x1920;
+  `clip --upscale --preset reddit-feed-45` gives 1080x1350; no intermediate files.
+- **US5 / SC-007 (private Xvfb display :99, never the real display):** open `face.mp4` (1),
+  **Upscale for phone** (2): analysis "Finding faces…", then "Following faces across 2 scenes"
+  with the crop rectangle on the face and the before/after showing it, about 12 s for the 10 s
+  clip in a debug build; **Upscale now** (3): "Finished · 1 succeeded",
+  `upscaled/face_phone-fill.mp4` hvc1 1080x2340, byte-identical to `rmedia upscale` (FR-022).
+  Observed: the job stays listed in the queue afterwards with **Run 1 job** enabled (running it
+  again skips the existing output).
+- **US6:** `doctor` on this iGPU: AI unavailable, about 127 min for 60 s of 480p (debug worker);
+  forced `--tier ai` exits 3 with that estimate. The quickstart said it warns "too slow"; that
+  warning applies only on a card that passes the gate, and the quickstart now says so. Discrete
+  GPU: see the owner run (Quadro M4000) under the US6 checkpoint.
+- **Minimum engine (FFmpeg 6.1.1, Ubuntu 24.04 distro):** the whole suite passes (290 passed,
+  0 failed, 9 ignored; worker crate excluded as in CI), and `upscale` of `low.mp4` and `land.mp4`
+  gives hvc1 1080x2340 BT.709. Before the polish fix, `parse_filters` read no filters from 6.x
+  and upscaling was refused there.
+- **Bundled engine:** the whole suite passes (299 passed, 0 failed, 10 ignored).
+- **CI on GitHub (first runs since the remote was created):** fixed the FFmpeg 6.x filter list,
+  the MSVC C runtime of the worker's shim (LNK2038), mingw for the Windows type-check, models for
+  the minimum-engine job, the pinned engine for the desktop backend tests, the Windows path
+  separators in the clip JSON snapshots, and documented RUSTSEC-2024-0370 in `deny.toml`.

@@ -19,13 +19,17 @@ Test sources are generated here; nothing binary is committed.
 ```bash
 # soft 480x854 portrait, heavily compressed
 $F -f lavfi -i testsrc2=s=480x854:r=30:d=20 -f lavfi -i sine=d=20 -c:v libx264 -crf 35 -c:a aac low.mp4
-# landscape with a moving magenta marker and a hard cut at 6 s
-$F -f lavfi -i "color=gray:s=1280x720:r=30:d=6[a];color=magenta:s=80x80:r=30:d=6[m];[a][m]overlay=x='100+150*t':y=320[s1];color=0x406080:s=1280x720:r=30:d=4[b];[b][m]overlay=x=1000:y=320[s2];[s1][s2]concat=n=2" land.mp4
+# landscape with a real face (the public-domain test portrait from fetch-models) panning right,
+# then a hard cut at 6 s to a still shot with the face at x=900
+FACE=$OLDPWD/models/test_face_nasa_jsc2003e41874.jpg
+$F -loop 1 -i "$FACE" -filter_complex "[0]scale=-2:300,format=yuv420p,split[f1][f2];color=gray:s=1280x720:r=30:d=6[a];[a][f1]overlay=x='100+120*t':y=200:shortest=1[s1];color=0x406080:s=1280x720:r=30:d=4[b];[b][f2]overlay=x=900:y=200:shortest=1[s2];[s1][s2]concat=n=2[v]" -map "[v]" -t 10 -c:v libx264 land.mp4
 # 4:3 slides-like source for the batch check
 $F -f lavfi -i testsrc2=s=960x720:r=30:d=8 -c:v libx264 slides.mp4
 ```
 
-The marker filter graph is illustrative; the testkit's `moving_marker` fixture is the reference.
+Smart reframe follows faces (YuNet), so `land.mp4` uses a real face. The automated tests use the
+testkit's `MovingMarker` fixture with a test-only marker detector instead; a plain coloured marker
+is not a face and would be shown over the blurred background by the real app.
 
 ## US1: phone-ready output from a soft portrait clip
 
@@ -52,12 +56,15 @@ process running.
 ## US2: landscape to portrait with smart reframe
 
 ```bash
-rmedia upscale land.mp4 --dry-run           # 2 shots; crop path summary; no fallback
-rmedia upscale land.mp4 --dry-run --json | jq '.jobs[0].upscale.reframe_analysis | {shots, fallback_ranges, n: (.path.keyframes|length)}'
+rmedia upscale land.mp4 --dry-run           # "reframe: smart, 2 shot(s)"; no blurred ranges
+rmedia upscale land.mp4 --dry-run --json | jq '.jobs[0].upscale.reframe_analysis | {status, shots: (.shots|length), fallback_ranges}'
 rmedia upscale land.mp4 --crop-path path.json
+jq '{fps, crop, x0: .x[0], x60: .x[60], x120: .x[120], x210: .x[210], x270: .x[270]}' path.json
 ```
 
-**Expected:** the output is 1080×2340 and the marker is visible in every sampled frame:
+**Expected:** `status` `ready`, 2 shots, `fallback_ranges` `[]`; the output is 1080×2340. The
+crop's left edge `x` rises during the pan (about 74, 300, 540 at 0, 2 and 4 s at 30 fps) and holds
+near the face after the cut (856 at 7 and 9 s). Sampled frames show the face:
 
 ```bash
 for t in 1 3 5 7 9; do $F -v error -ss $t -i upscaled/land_phone-fill.mp4 -frames:v 1 f$t.png; done
@@ -117,8 +124,11 @@ rmedia doctor               # ai: available, sec_per_mpx shown
 rmedia upscale low.mp4 --tier ai --on-exists rename
 ```
 
-**Expected:** progress and ETA are shown, and Ctrl-C stops all three processes within 2 s. On an
-integrated GPU, `--tier ai` warns "too slow: estimated N min".
+**Expected:** progress and ETA are shown, and Ctrl-C stops all three processes within 2 s. On a
+card that does not pass the self-test (an integrated GPU, typically), `--tier ai` stops with exit 3:
+`the ai tier is not available on this machine: too slow on … about N min for 60 s of 480p (limit
+10 min)`. On a card that passes, a clip predicted at over 10 times its length warns
+`too slow: estimated N min …` and runs.
 
 ## Owner validation (manual, research/09 [O])
 
