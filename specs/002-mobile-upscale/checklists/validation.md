@@ -138,6 +138,17 @@
   Owner re-run on the same iGPU (2026-10-22, release, bundled FFmpeg, with the anti-flicker
   step): SC-002 AI 51.78 vs GPU tier 43.73 (+8.04), render 402 s; flicker AI 0.731 vs GPU 1.900
   (source 2.474). SC-009 was stopped on purpose (about 106 min predicted on this iGPU).
+- Owner run on a discrete GPU (2026-10-22, Quadro M4000 8 GB, Maxwell, PCI passthrough to an
+  Ubuntu 24.04 VM, driver 580; release; FFmpeg n9.0.2-22): all three `us6_ai` tests pass.
+  - SC-002: AI 50.40 vs GPU tier 42.23 VMAF (+8.17, target +3); the AI render took 77 s.
+  - Flicker: AI 0.746, GPU tier 1.906, source 2.506.
+  - SC-009: 60 s of 480p (portrait 480x854, default preset) took 600 s against the 600 s limit,
+    predicted 605 s (0.8 % off; ±30 % allowed). Self-test 0.999 s/Mpx. The M4000 (2015) sits
+    exactly at the bound, so any current mid-range card should pass with margin.
+  - The availability gate is stricter than this job: it prices the full 854x480 frame (0.41 Mpx,
+    the blur-fit worst case), while the default preset crops this portrait source to 394x854
+    (0.34 Mpx). For the M4000 it predicts 737 s and does not offer AI.
+  - The GPU tier measured 6.2 fps against the CPU's 7.1 fps here, so auto picks the CPU tier.
 - **Owner checks (discrete GPU):** build the worker, then run the tests with the bundled FFmpeg
   (the system one usually lacks libvmaf; a missing feature now fails the run):
   `cargo build --release -p rmedia-sr` then
