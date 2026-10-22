@@ -2,7 +2,7 @@
 
 This page documents every command and flag of the `rmedia` command-line tool, version 0.1.0, plus
 the upscaling of feature 002 (`rmedia upscale`, `clip --upscale`, `doctor --recheck`), which is
-unreleased (0.2.0-dev).
+unreleased (0.2.0).
 Flags come from the clap definitions in `crates/rmedia-cli/src/main.rs`. Behaviour comes from
 `crates/rmedia-cli/src/commands/*.rs`. The help text below was captured from
 `target/debug/rmedia` built from the working tree after commit `bd1eef8`; the `upscale` additions
@@ -326,8 +326,8 @@ $ rmedia scan v
 ## `rmedia upscale`
 
 Makes each input video phone-ready: it scales and reframes the whole video to a device preset's
-screen size, re-encodes it and verifies the result. Added in the unreleased 0.2.0-dev
-([release notes](../releases/0.2.0-dev.md)). The CPU, GPU and AI tiers, smart reframe, manifest
+screen size, re-encodes it and verifies the result. Added in the unreleased 0.2.0
+([release notes](../releases/0.2.0.md)). The CPU, GPU and AI tiers, smart reframe, manifest
 upscaling (`batch`) and `clip --upscale` exist ([Roadmap](../roadmap.md)).
 
 ```text
@@ -474,7 +474,7 @@ these)`. A missing filter does not change `status` or the exit code; `rmedia ups
 the filters it needs when it plans. `--json` lists every filter under `filters`.
 
 The `tier:`, `gpu:`, `model:` and `checked:` lines come from the machine capability check
-(added in 0.2.0-dev). It lists the Vulkan devices, rejects software renderers (llvmpipe,
+(added in 0.2.0). It lists the Vulkan devices, rejects software renderers (llvmpipe,
 lavapipe, SwiftShader), and times a short CPU and GPU self-test that includes the preset's
 encoder (`fps`). The result is stored in `capability.json` in the state folder and reused until
 the hardware, driver, engine or app version changes; the first check takes a few seconds, later

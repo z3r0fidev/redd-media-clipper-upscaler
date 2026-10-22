@@ -1522,7 +1522,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rmedia-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1541,7 +1541,7 @@ dependencies = [
 
 [[package]]
 name = "rmedia-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "csv",
  "directories",
@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "rmedia-sr"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cc",
  "libc",
@@ -1582,7 +1582,7 @@ dependencies = [
 
 [[package]]
 name = "rmedia-testkit"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "sha2",
@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "serde",

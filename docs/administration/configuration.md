@@ -152,7 +152,7 @@ The version check applies to `ffmpeg` only.
 source, the version, the availability of the key encoders (`libx264`, `aac`, `libvpx-vp9`,
 `libopus`), and which containers accurate mode can write. If no accurate-mode encoders are
 available, doctor reports `no encoders for accurate mode (fast mode still works)` and still returns
-ready. The CLI `rmedia doctor` (since 0.2.0-dev) also lists `libx265` and the upscaling filters;
+ready. The CLI `rmedia doctor` (since 0.2.0) also lists `libx265` and the upscaling filters;
 the desktop **Video engine** section was not changed.
 
 CI tests the minimum supported version against the distribution FFmpeg 6.1 on `ubuntu-24.04`
@@ -229,10 +229,10 @@ The cache is safe to delete while the app is closed.
 |---|---|---|---|
 | `RMEDIA_FFMPEG` | `rmedia`, `rmedia-desktop`, test kit | Path to FFmpeg. Second in the [engine location order](#engine-location-order). In tests, the FFmpeg used to generate fixtures. | not set |
 | `RMEDIA_FFPROBE` | `rmedia`, `rmedia-desktop`, test kit | Path to ffprobe, as above. | not set |
-| `RMEDIA_SR` | `rmedia`, `rmedia-desktop` | Path to the AI worker `rmedia-sr`. Without it the worker is looked for next to the executable (and, in development builds, in the Cargo target folder). Added in 0.2.0-dev. | not set |
+| `RMEDIA_SR` | `rmedia`, `rmedia-desktop` | Path to the AI worker `rmedia-sr`. Without it the worker is looked for next to the executable (and, in development builds, in the Cargo target folder). Added in 0.2.0. | not set |
 | `RMEDIA_STATE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the state directory (crash journal parent). Used by the CLI tests. | per-user state directory |
 | `RMEDIA_CONFIG_DIR` | `rmedia`, `rmedia-desktop` | Folder that holds `settings.json` and the user device presets (`presets/*.json`, read by `rmedia upscale`). Used by tests. | per-user config directory |
-| `RMEDIA_CACHE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the cache root, which holds `preview/`, `reframe/` (smart-reframe analyses) and `models/`. Used by tests. Added in 0.2.0-dev. | per-user cache directory |
+| `RMEDIA_CACHE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the cache root, which holds `preview/`, `reframe/` (smart-reframe analyses) and `models/`. Used by tests. Added in 0.2.0. | per-user cache directory |
 | `RMEDIA_REQUIRE_FFMPEG` | test kit only | When `1`, media tests fail instead of being skipped if FFmpeg is missing. Set in CI. | not set |
 | `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | Linux | Standard XDG base directories, honoured when they are absolute paths. | `~/.config`, `~/.local/state`, `~/.cache` |
 

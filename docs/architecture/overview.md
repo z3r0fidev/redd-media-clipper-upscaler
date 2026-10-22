@@ -3,7 +3,7 @@
 **Status:** Feature 001 "Video Clipping Base" (version 0.1.0, commit `bd1eef8`) is described as
 built. Feature 002 (user stories 1 to 6: `rmedia upscale` with the CPU, GPU and AI tiers, smart
 reframe, the machine capability record, batch and `clip --upscale`, and the desktop upscale view;
-unreleased, 0.2.0-dev) is implemented and described under
+unreleased, 0.2.0) is implemented and described under
 [Feature 002 foundations](#feature-002-foundations-implemented) and in the
 [Domain Breakdown](domains.md#upscaling-feature-002). Sections labelled **Planned** describe work
 that is not implemented: feature 003. See the [Roadmap](../roadmap.md).

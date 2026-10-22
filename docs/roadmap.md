@@ -94,5 +94,5 @@ that feature 002 introduced. Next step when 002 allows: `speckit-specify`.
 
 ## Related
 
-[Release notes 0.2.0-dev](releases/0.2.0-dev.md) · [Architecture overview](architecture/overview.md) ·
+[Release notes 0.2.0](releases/0.2.0.md) · [Architecture overview](architecture/overview.md) ·
 [CLI reference](api/cli-reference.md)

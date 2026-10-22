@@ -9,11 +9,20 @@ Cut clips from videos on **Linux and Windows**, from the command line or a deskt
   your start time and tells you so). **Accurate** mode re-encodes and is frame-exact.
 - Source files are never modified; existing outputs are never overwritten unless you ask.
 
-In development (branch `002-mobile-upscale`, unreleased): phone-optimized upscaling —
-`rmedia upscale` makes videos fill a phone screen using device presets (CPU tier). Smart reframe,
-GPU/AI tiers, batch and `clip --upscale`, and a desktop upscale view are planned, as is high-quality
-GIF export for Reddit (feature 003). See [`docs/roadmap.md`](docs/roadmap.md), `specs/` and
-`research/`.
+**Phone-ready upscaling** (0.2.0, release candidate): `rmedia upscale` makes a video fill a phone
+held upright, using a device preset (default 1080x2340):
+
+- **Smart reframe** turns landscape into portrait by following faces, cutting at scene changes
+  and showing the whole frame over a blurred background where no face fits. `center` and `blur`
+  are the alternatives.
+- **Three quality tiers**: classical filters on the CPU, the GPU through Vulkan, and an AI
+  upscaler (Real-ESRGAN) on graphics cards that pass its self-test. `auto` picks what this machine
+  runs best and never the AI tier.
+- Cut and upscale in one pass (`clip --upscale`), upscale from batch manifests, and a desktop
+  **Upscale for phone** view with a before/after preview.
+
+Planned next: high-quality GIF export for Reddit (feature 003). See
+[`docs/roadmap.md`](docs/roadmap.md), `specs/` and `research/`.
 
 ## Install
 
@@ -64,9 +73,12 @@ rmedia scan ~/Videos --include '*.mp4' --paths | rmedia clip --inputs-from - -s 
 # preview what would happen, machine-readable
 rmedia batch jobs.csv --dry-run --json
 
-# unreleased (002): make a video phone-ready (default preset phone-fill, 1080x2340)
+# make a video phone-ready (default preset phone-fill, 1080x2340)
 rmedia upscale game.mp4            # writes upscaled/game_phone-fill.mp4
 rmedia upscale --list-presets
+rmedia upscale talk.mp4 --preset reddit-916 --reframe smart --dry-run   # shots, crop, tier, estimates
+rmedia clip game.mkv -s 1:30 -d 20 --upscale   # cut and upscale in one pass
+rmedia doctor --recheck            # which tiers this machine can run (CPU, GPU, AI)
 ```
 
 Useful options: `--mode fast|accurate`, `-o DIR`, `--name TEMPLATE`
@@ -124,6 +136,11 @@ Edit times and names in the queue, choose audio track / subtitles per video, the
 identical. Formats the system player can't show are previewed through a lightweight copy (or exact
 still frames); clips are always cut from the original.
 
+Switch the player to **Upscale for phone** to see what a phone would show: the kept part of the
+picture follows faces during playback, the timeline marks blurred-background parts, and a
+phone-shaped before/after compares the result at the playhead. **Upscale now** runs it at once;
+**Add to queue** keeps it for later.
+
 ## Building from source
 
 Requirements: Rust 1.94 (see `rust-toolchain.toml`), Node 24, and on Linux
@@ -131,7 +148,9 @@ Requirements: Rust 1.94 (see `rust-toolchain.toml`), Node 24, and on Linux
 
 ```bash
 cargo xtask fetch-tools                 # pinned, SHA-256 verified FFmpeg into binaries/
-cargo build -p rmedia-cli               # CLI: target/debug/rmedia
+cargo xtask fetch-ncnn                  # pinned ncnn for the AI worker (crates/rmedia-sr)
+cargo xtask fetch-models                # face detector and AI models into models/
+cargo build --workspace                 # CLI: target/debug/rmedia; AI worker: target/debug/rmedia-sr
 (cd apps/desktop && npm ci && npx tauri dev)   # desktop app (dev)
 
 # release packages
@@ -156,20 +175,21 @@ Push a `v*` tag (for example `git tag v0.1.0 && git push origin v0.1.0`). The re
 (also runnable by hand) builds the installers and CLI archives on Linux and Windows and uploads
 them as workflow artifacts. Publishing a GitHub release and code signing are manual steps.
 Before tagging: bump `version` in `Cargo.toml`, `apps/desktop/package.json`,
-`apps/desktop/src-tauri/Cargo.toml` and `apps/desktop/src-tauri/tauri.conf.json`; run `cargo xtask notices`; and make sure the FFmpeg
-source for the pinned build is mirrored (see `licenses/FFMPEG-NOTICE.md`). Details:
-`docs/operations/build-and-release.md`.
+`apps/desktop/src-tauri/Cargo.toml` and `apps/desktop/src-tauri/tauri.conf.json`; run
+`cargo xtask notices`; and check `cargo xtask check-pins` (every pinned archive mirrored, the
+FFmpeg corresponding source published). Details: `docs/operations/build-and-release.md`.
 
 Other tasks: `cargo xtask gen-bindings` (TypeScript types from the core), `cargo xtask notices`
 (third-party notices), `cargo xtask pin-tools` (move to a newer FFmpeg build),
-`cargo xtask fetch-models` (pinned, SHA-256 verified model files into `models/`; used by the planned
-smart reframe).
+`cargo xtask archive` / `mirror <tag>` / `check-pins` (keep, mirror and check the pinned
+third-party archives).
 
 ## Project layout
 
 ```text
 crates/rmedia-core     all media logic (timestamps, scanning, planning, ffmpeg, previews)
 crates/rmedia-cli      the `rmedia` command
+crates/rmedia-sr       the AI upscaling worker (ncnn on Vulkan), run as a separate process
 crates/rmedia-testkit  test fixtures generated with FFmpeg
 apps/desktop           Tauri 2 + Svelte 5 desktop app (thin layer over the core)
 xtask                  build tasks (engine fetch, bindings, notices, CLI staging)
@@ -182,4 +202,6 @@ specs/  research/      Spec Kit specifications, plans, contracts and research no
   `MIT OR Apache-2.0` as a placeholder).
 - Bundled FFmpeg: GPL v3 or later, shipped as separate programs — see
   `licenses/FFMPEG-NOTICE.md` for the build and the corresponding-source offer.
+- Bundled models and libraries: the YuNet face detector (MIT), Real-ESRGAN models (BSD-3-Clause)
+  and ncnn (BSD-3-Clause) — texts in `licenses/`.
 - Third-party Rust and JavaScript components: `THIRD_PARTY_NOTICES.md`.

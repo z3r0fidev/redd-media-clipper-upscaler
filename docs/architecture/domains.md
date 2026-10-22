@@ -258,7 +258,7 @@ grammar everywhere (`lib/time.ts`).
 preset: from `rmedia upscale`, from `rmedia clip --upscale` and batch manifests (an `upscale`
 block), and from the desktop upscale view.
 Code is in `crates/rmedia-core/src/{upscale,preset,models.rs}`, `exec/upscale.rs` and
-`exec/pipeline.rs`, plus the AI worker crate `crates/rmedia-sr`. Unreleased (0.2.0-dev).
+`exec/pipeline.rs`, plus the AI worker crate `crates/rmedia-sr`. Added in 0.2.0 (unreleased).
 
 | Item | Location |
 |---|---|

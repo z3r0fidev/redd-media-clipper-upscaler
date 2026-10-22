@@ -653,7 +653,7 @@ to `rmedia clip` directly.
 
 ## Upscaling
 
-These messages come from `rmedia upscale`, which is in development (0.2.0-dev) and not in the
+These messages come from `rmedia upscale`, which is in development (0.2.0) and not in the
 0.1.0 packages.
 
 ### "face model not found; using blurred background"

@@ -28,7 +28,7 @@ documents:
 | Command | Purpose |
 |---|---|
 | `rmedia clip` | Cut clips from one or more videos or folders: one clip with `-s`/`-e`/`-d`, or many with `-l LIST`. |
-| `rmedia upscale` | Make videos phone-ready: scale and reframe each whole video to a device preset. Unreleased (0.2.0-dev). |
+| `rmedia upscale` | Make videos phone-ready: scale and reframe each whole video to a device preset. Added in 0.2.0 (unreleased). |
 | `rmedia batch` | Run a batch manifest (`.json` or `.csv`) that lists many videos and their clips. |
 | `rmedia scan` | Find the videos in folders (recursively) and list them. |
 | `rmedia doctor` | Show the video engine in use and its capabilities. |
@@ -442,7 +442,7 @@ rmedia batch jobs.json || echo "rmedia exited with $?"
 
 ## Make Videos Phone-Ready
 
-> **Availability:** `rmedia upscale` is in development (0.2.0-dev, branch `002-mobile-upscale`)
+> **Availability:** `rmedia upscale` is in development (0.2.0, branch `002-mobile-upscale`)
 > and is not in the 0.1.0 packages. Smart reframe, the GPU and AI tiers, `clip --upscale`,
 > manifest upscaling and the desktop upscale view exist there. See the [Roadmap](../roadmap.md).
 

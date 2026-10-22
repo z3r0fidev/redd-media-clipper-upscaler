@@ -281,7 +281,7 @@ the template creates sub-folders.
 
 ## Device Preset Files (`presets/*.json`)
 
-Unreleased (0.2.0-dev). `rmedia upscale` reads user presets from `*.json` files in the `presets`
+Added in 0.2.0 (unreleased). `rmedia upscale` reads user presets from `*.json` files in the `presets`
 folder of the config directory ([Configuration](../administration/configuration.md#file-locations)).
 A user preset with the same `id` as a built-in replaces it. A file that fails validation is
 skipped and reported (`warning: preset file … ignored: …`, and `problems` in
@@ -310,7 +310,7 @@ valid only for upscale jobs; the default template for upscale is `{source}_{pres
 
 ## Capability Record (`capability.json`)
 
-Unreleased (0.2.0-dev). What this machine can run, written by `rmedia doctor` and by the first
+Added in 0.2.0 (unreleased). What this machine can run, written by `rmedia doctor` and by the first
 upscale after a change, in the state directory
 ([Configuration](../administration/configuration.md)) as `capability.json`, under the lock file
 `capability.lock`. It is rewritten when its `fingerprint` (rmedia, engine and worker versions,
@@ -329,7 +329,7 @@ Schema in `specs/002-mobile-upscale/contracts/capability-record.schema.json` (sc
 
 ## Crop Path (`--crop-path`)
 
-Unreleased (0.2.0-dev). `rmedia upscale --crop-path FILE` writes the smart-reframe crop of one
+Added in 0.2.0 (unreleased). `rmedia upscale --crop-path FILE` writes the smart-reframe crop of one
 video as JSON:
 
 ```json
