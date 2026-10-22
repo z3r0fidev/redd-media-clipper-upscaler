@@ -35,6 +35,15 @@ const AI_MARGIN: f64 = 3.0;
 
 /// Fails (never skips) when the engine lacks a feature these measurements need.
 fn need(features: &[&str]) {
+    for var in ["RMEDIA_FFMPEG", "RMEDIA_FFPROBE"] {
+        if let Some(p) = std::env::var_os(var).map(PathBuf::from) {
+            assert!(
+                p.is_file(),
+                "{var} is {}, which does not exist: run `cargo xtask fetch-tools`",
+                p.display()
+            );
+        }
+    }
     assert!(
         rmedia_testkit::require_engine(features),
         "the FFmpeg in use lacks one of {features:?}: point RMEDIA_FFMPEG and RMEDIA_FFPROBE at the bundled \
