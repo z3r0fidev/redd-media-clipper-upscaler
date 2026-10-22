@@ -1,0 +1,94 @@
+name: FFmpeg source
+
+# Publishes the complete corresponding source of the pinned FFmpeg build (GPL v3 §6) as the
+# release `ffmpeg-source-<version>`: FFmpeg at the pinned commit, BtbN's build scripts at the
+# pinned autobuild tag, and every library source those scripts download (BtbN's own
+# download.sh, run in BtbN's base image). Run it after each `cargo xtask pin-tools`, while the
+# autobuild tag still exists upstream (BtbN deletes old tags). See
+# docs/operations/build-and-release.md › The FFmpeg source release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    permissions:
+      contents: write # creates the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the pin
+        id: pin
+        run: |
+          release=$(jq -r .release xtask/tools.lock.json)
+          version=$(jq -r .version xtask/tools.lock.json)
+          # n9.0.2-31-gc89d6ee1ca -> commit c89d6ee1ca on release/9.0
+          commit=${version##*-g}
+          line=$(echo "${version#n}" | cut -d. -f1-2)
+          for v in "$release" "$version" "$commit" "$line"; do
+            [[ "$v" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "unexpected pin value: $v"; exit 1; }
+          done
+          {
+            echo "release=$release"
+            echo "version=$version"
+            echo "commit=$commit"
+            echo "line=$line"
+          } >> "$GITHUB_OUTPUT"
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h /
+      - name: BtbN build scripts at the pinned tag
+        env:
+          RELEASE: ${{ steps.pin.outputs.release }}
+        run: |
+          git clone --branch "$RELEASE" https://github.com/BtbN/FFmpeg-Builds.git btbn
+          git -C btbn rev-parse HEAD | tee btbn-commit.txt
+      - name: Library sources (BtbN download.sh)
+        working-directory: btbn
+        run: ./download.sh
+      - name: FFmpeg at the pinned commit
+        env:
+          COMMIT: ${{ steps.pin.outputs.commit }}
+          LINE: ${{ steps.pin.outputs.line }}
+        run: |
+          git clone --filter=blob:none --no-checkout --branch "release/$LINE" https://github.com/FFmpeg/FFmpeg.git ffmpeg
+          git -C ffmpeg rev-parse --verify "$COMMIT^{commit}" | tee ffmpeg-commit.txt
+      - name: Package
+        env:
+          RELEASE: ${{ steps.pin.outputs.release }}
+          VERSION: ${{ steps.pin.outputs.version }}
+          COMMIT: ${{ steps.pin.outputs.commit }}
+        run: |
+          mkdir out
+          git -C ffmpeg archive --format=tar --prefix="ffmpeg-$VERSION/" "$COMMIT" | xz -T0 > "out/ffmpeg-$VERSION.tar.xz"
+          git -C btbn archive --format=tar --prefix="FFmpeg-Builds-$RELEASE/" HEAD | xz -T0 > "out/FFmpeg-Builds-$RELEASE.tar.xz"
+          # download.sh writes <stage>_<hash>.tar.xz plus <stage>.tar.xz symlinks; keep the real files.
+          find btbn/.cache/downloads -maxdepth 1 -type f -name '*.tar.xz' -exec cp {} out/ \;
+          (cd out && sha256sum -- * > SHA256SUMS)
+          ls out | wc -l
+          du -sh out
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ steps.pin.outputs.release }}
+          VERSION: ${{ steps.pin.outputs.version }}
+        run: |
+          {
+            echo "Complete corresponding source (GPL v3 §6) of the FFmpeg build bundled with rmedia:"
+            echo "BtbN/FFmpeg-Builds \`$RELEASE\`, FFmpeg \`$VERSION\` (\`linux64-gpl\` and \`win64-gpl\`)."
+            echo
+            echo "- \`ffmpeg-$VERSION.tar.xz\`: FFmpeg at commit \`$(cat ffmpeg-commit.txt)\`."
+            echo "- \`FFmpeg-Builds-$RELEASE.tar.xz\`: the build scripts at commit \`$(cat btbn-commit.txt)\` (README explains how to build)."
+            echo "- \`<stage>_<hash>.tar.xz\`: each library source, as BtbN's \`download.sh\` fetched it for that commit (a superset: every target and variant)."
+            echo "- \`SHA256SUMS\`: checksums of all of the above."
+            echo
+            echo "Licence notice: [licenses/FFMPEG-NOTICE.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/licenses/FFMPEG-NOTICE.md). Not an rmedia release."
+          } > notes.md
+          gh release create "ffmpeg-source-$VERSION" --repo "$GITHUB_REPOSITORY" --prerelease \
+            --title "FFmpeg corresponding source $VERSION" --notes-file notes.md out/*
