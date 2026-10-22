@@ -1,18 +1,31 @@
 version: 2
+# One grouped pull request per ecosystem and week (each one runs the full CI matrix).
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
+    groups:
+      cargo-workspace:
+        patterns: ["*"]
   - package-ecosystem: cargo
     directory: /apps/desktop/src-tauri
     schedule:
       interval: weekly
+    groups:
+      cargo-desktop:
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /apps/desktop
     schedule:
       interval: weekly
+    groups:
+      npm-desktop:
+        patterns: ["*"]
