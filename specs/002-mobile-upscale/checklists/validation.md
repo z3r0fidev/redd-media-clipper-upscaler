@@ -135,6 +135,9 @@
 - Real model on the iGPU (`us6_ai.rs --ignored`, gate bypassed): SC-002 AI 51.84 vs GPU tier
   43.73 VMAF on the degraded 360p fixture (+8.1, target +3); static-source flicker AI 1.105 vs
   GPU 1.900 (source 2.474) before the anti-flicker step. The 10 s render took 496 s here.
+  Owner re-run on the same iGPU (2026-10-22, release, bundled FFmpeg, with the anti-flicker
+  step): SC-002 AI 51.78 vs GPU tier 43.73 (+8.04), render 402 s; flicker AI 0.731 vs GPU 1.900
+  (source 2.474). SC-009 was stopped on purpose (about 106 min predicted on this iGPU).
 - **Owner checks (discrete GPU):** build the worker, then run the tests with the bundled FFmpeg
   (the system one usually lacks libvmaf; a missing feature now fails the run):
   `cargo build --release -p rmedia-sr` then
