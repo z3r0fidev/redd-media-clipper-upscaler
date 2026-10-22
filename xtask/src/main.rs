@@ -24,6 +24,10 @@ struct Lock {
     comment: String,
     release: String,
     version: String,
+    /// The BtbN FFmpeg-Builds commit `release` pointed at when pinned: the build scripts of the
+    /// shipped binaries, checked by `.github/workflows/ffmpeg-source.yml` (tags can move).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scripts_commit: Option<String>,
     /// The release holding this build's complete corresponding source (GPL v3 §6), published by
     /// `.github/workflows/ffmpeg-source.yml`; `cargo xtask mirror` fills it in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -44,6 +48,9 @@ struct PinnedModel {
     /// Direct download; or `archive` when the file only ships inside a release archive.
     #[serde(default)]
     url: Option<String>,
+    /// Our own copies of a direct `url` download (same SHA-256), tried first.
+    #[serde(default)]
+    mirrors: Vec<String>,
     #[serde(default)]
     archive: Option<ArchiveMember>,
     sha256: String,
@@ -114,10 +121,13 @@ fn main() -> Result<()> {
         Some("mirror") => {
             mirror(args.get(1).context("usage: cargo xtask mirror <tag>, e.g. mirror-2026-10-22")?)
         }
-        Some("check-pins") => check_pins(),
+        Some("check-pins") => {
+            check_pins()?;
+            if args.iter().any(|a| a == "--online") { check_mirrors_online() } else { Ok(()) }
+        }
         _ => {
             eprintln!(
-                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins>"
+                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>"
             );
             std::process::exit(2);
         }
@@ -213,7 +223,9 @@ fn fetch_models() -> Result<()> {
         let _ = std::fs::remove_file(&tmp); // never write through a planted file or link
         println!("fetching {name}: {}", pin.description);
         match (&pin.url, &pin.archive) {
-            (Some(url), None) => download(url, &tmp)?,
+            (Some(url), None) => {
+                std::fs::copy(pinned_archive(url, &pin.mirrors, &pin.sha256)?, &tmp)?;
+            }
             (None, Some(a)) => {
                 let extracted = fetch_archive(&a.url, &a.mirrors, &a.sha256)?;
                 let member = extracted.join(&a.member);
@@ -254,6 +266,7 @@ fn download(url: &str, dest: &Path) -> Result<()> {
             "-o",
         ])
         .arg(dest)
+        .arg("--url")
         .arg(url))
 }
 
@@ -268,9 +281,15 @@ fn pinned_archive(url: &str, mirrors: &[String], sha256: &str) -> Result<PathBuf
         .next()
         .filter(|n| !n.is_empty() && !n.starts_with('.') && !n.contains(['\\', ':']))
         .with_context(|| format!("no file name in {url}"))?;
+    if let Some(bad) = mirrors.iter().map(String::as_str).chain([url]).find(|u| !u.starts_with("https://")) {
+        bail!("pinned URLs must be https: {bad:?}");
+    }
     let dir = root().join("archives").join(sha256);
     let kept = dir.join(name);
-    if file_sha256(&kept).is_ok_and(|h| h == sha256) {
+    // A kept copy is reused only as a regular file (never through a link) whose hash matches.
+    if std::fs::symlink_metadata(&kept).is_ok_and(|m| m.is_file())
+        && file_sha256(&kept).is_ok_and(|h| h == sha256)
+    {
         return Ok(kept);
     }
     std::fs::create_dir_all(&dir)?;
@@ -367,7 +386,12 @@ fn pin_tools() -> Result<()> {
     let mut lock = read_lock()?;
     let line = lock.version.trim_start_matches('n').split('.').take(2).collect::<Vec<_>>().join(".");
     let out = Command::new("curl")
-        .args(["-fsSL", "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=5"])
+        .args([
+            "-fsSL",
+            "--proto",
+            "=https",
+            "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=5",
+        ])
         .output()?;
     if !out.status.success() {
         bail!("GitHub API request failed");
@@ -408,14 +432,26 @@ fn pin_tools() -> Result<()> {
             },
         );
     }
+    let commit = release["target_commitish"].as_str().unwrap_or_default();
+    let tag_ref = Command::new("curl")
+        .args(["-fsSL", "--proto", "=https"])
+        .arg(format!("https://api.github.com/repos/BtbN/FFmpeg-Builds/commits/{tag}"))
+        .output()?;
+    let sha: serde_json::Value = serde_json::from_slice(&tag_ref.stdout).unwrap_or_default();
+    let sha = sha["sha"]
+        .as_str()
+        .filter(|s| is_commit(s))
+        .with_context(|| format!("could not resolve the commit of {tag} (target_commitish {commit:?})"))?;
+    lock.scripts_commit = Some(sha.to_owned());
     lock.release = tag;
     lock.source = None; // a new build needs its own source release
-    std::fs::write(root().join("xtask/tools.lock.json"), serde_json::to_string_pretty(&lock)? + "\n")?;
-    println!("pinned {} ({})", lock.version, lock.release);
-    // Keep the new builds now: the autobuild release will be deleted upstream.
+    // Keep the new builds now (the autobuild release will be deleted upstream), and write the
+    // lock only once both are downloaded and verified.
     for pin in lock.targets.values() {
         pinned_archive(&pin.url, &pin.mirrors, &pin.sha256)?;
     }
+    std::fs::write(root().join("xtask/tools.lock.json"), serde_json::to_string_pretty(&lock)? + "\n")?;
+    println!("pinned {} ({})", lock.version, lock.release);
     println!(
         "next, while the autobuild tag still exists: `gh workflow run ffmpeg-source.yml`, then \
          `cargo xtask mirror mirror-<date>`, update licenses/FFMPEG-NOTICE.md, `cargo xtask check-pins`"
@@ -446,16 +482,24 @@ fn archive_all() -> Result<()> {
 
 /// Every pinned archive as (upstream url, sha256, mirrors), one entry per distinct archive.
 fn all_pins() -> Result<Vec<(String, String, Vec<String>)>> {
-    let tools = read_lock()?;
-    let models = read_model_lock()?;
+    Ok(pins_of(&read_lock()?, &read_model_lock()?))
+}
+
+/// Every pinned download in the two locks (FFmpeg, ncnn, model archives and direct model files)
+/// as (upstream url, sha256, mirrors), one entry per distinct file.
+fn pins_of(tools: &Lock, models: &ModelLock) -> Vec<(String, String, Vec<String>)> {
     let mut pins = BTreeMap::new();
     for p in tools.targets.values().chain(models.ncnn.values()) {
         pins.insert(p.sha256.clone(), (p.url.clone(), p.mirrors.clone()));
     }
-    for a in models.models.values().filter_map(|m| m.archive.as_ref()) {
-        pins.insert(a.sha256.clone(), (a.url.clone(), a.mirrors.clone()));
+    for m in models.models.values() {
+        match (&m.url, &m.archive) {
+            (Some(url), _) => pins.insert(m.sha256.clone(), (url.clone(), m.mirrors.clone())),
+            (None, Some(a)) => pins.insert(a.sha256.clone(), (a.url.clone(), a.mirrors.clone())),
+            (None, None) => None,
+        };
     }
-    Ok(pins.into_iter().map(|(sha, (url, mirrors))| (url, sha, mirrors)).collect())
+    pins.into_iter().map(|(sha, (url, mirrors))| (url, sha, mirrors)).collect()
 }
 
 fn gh(args: &[&str]) -> Result<String> {
@@ -480,39 +524,73 @@ fn mirror(tag: &str) -> Result<()> {
         for (url, sha, _) in &missing {
             files.push(pinned_archive(url, &[], sha)?);
         }
-        if gh(&["release", "view", tag, "-R", &repo, "--json", "tagName"]).is_err() {
-            gh(&[
-                "release",
-                "create",
-                tag,
-                "-R",
-                &repo,
-                "--prerelease",
-                "--title",
-                &format!("Third-party archive mirror {tag}"),
-                "--notes",
-                "Copies of the archives pinned in `xtask/tools.lock.json` and `xtask/models.lock.json` \
+        match gh(&["release", "view", tag, "-R", &repo, "--json", "tagName"]) {
+            Ok(_) => {}
+            Err(e) if format!("{e:#}").contains("release not found") => {
+                gh(&[
+                    "release",
+                    "create",
+                    tag,
+                    "-R",
+                    &repo,
+                    "--prerelease",
+                    "--title",
+                    &format!("Third-party archive mirror {tag}"),
+                    "--notes",
+                    "Copies of the archives pinned in `xtask/tools.lock.json` and `xtask/models.lock.json` \
                  (`cargo xtask mirror`). `fetch-*` accept a file only when its SHA-256 matches the pin. \
                  Not an rmedia release. FFmpeg licence and source: licenses/FFMPEG-NOTICE.md.",
-            ])?;
+                ])?;
+            }
+            Err(e) => return Err(e),
         }
-        let present = gh(&["release", "view", tag, "-R", &repo, "--json", "assets", "-q", ".assets[].name"])?;
+        // name -> "sha256:<hex>" of the assets already there; a same-name asset must be these bytes.
+        let present = gh(&[
+            "release",
+            "view",
+            tag,
+            "-R",
+            &repo,
+            "--json",
+            "assets",
+            "-q",
+            r#".assets[] | "\(.name) \(.digest)""#,
+        ])?;
         let mut upload = vec!["release", "upload", tag, "-R", &repo];
         let names: Vec<String> = files.iter().map(|f| f.to_string_lossy().into_owned()).collect();
-        for (f, path) in files.iter().zip(&names) {
+        for ((f, path), (_, sha, _)) in files.iter().zip(&names).zip(&missing) {
             let name = f.file_name().and_then(|n| n.to_str()).context("file name")?;
-            if !present.lines().any(|l| l == name) {
-                upload.push(path);
+            let already = present.lines().any(|l| l.ends_with(&format!(" sha256:{sha}")));
+            match present.lines().find_map(|l| l.strip_prefix(name)?.strip_prefix(' ')) {
+                None if already => {}
+                None => upload.push(path),
+                Some(d) if d == format!("sha256:{sha}") => {}
+                Some(d) => bail!("{tag} already has {name} with digest {d}, not sha256:{sha}; use a new tag"),
             }
         }
         if upload.len() > 5 {
             println!("uploading {} archive(s) to {repo} {tag}", upload.len() - 5);
             gh(&upload)?;
         }
-        let base = format!("https://github.com/{repo}/releases/download/{tag}/");
+        // GitHub may rename an asset on upload (for example `~` becomes `.`), so each mirror URL
+        // uses the name GitHub stored for the file with that digest.
+        let stored = gh(&[
+            "release",
+            "view",
+            tag,
+            "-R",
+            &repo,
+            "--json",
+            "assets",
+            "-q",
+            r#".assets[] | "\(.digest) \(.name)""#,
+        ])?;
         for (url, sha, _) in &missing {
-            let name = url.rsplit('/').next().context("file name")?;
-            add_mirror(url, sha, &format!("{base}{name}"))?;
+            let name = stored
+                .lines()
+                .find_map(|l| l.strip_prefix(&format!("sha256:{sha} ")))
+                .with_context(|| format!("{tag} has no asset with sha256:{sha} after the upload"))?;
+            add_mirror(url, sha, &format!("https://github.com/{repo}/releases/download/{tag}/{name}"))?;
         }
     }
     let mut lock = read_lock()?;
@@ -535,21 +613,62 @@ fn mirror(tag: &str) -> Result<()> {
 /// Lists `mirror` under `mirrors` for every pin of `url` with `sha256` in both lock files. The
 /// models lock is edited as text, keeping its layout; both are re-read to confirm the result.
 fn add_mirror(url: &str, sha256: &str, mirror: &str) -> Result<()> {
+    let tools_path = root().join("xtask/tools.lock.json");
+    let models_path = root().join("xtask/models.lock.json");
     let mut lock = read_lock()?;
     for p in lock.targets.values_mut().filter(|p| p.url == url && p.sha256 == sha256) {
         p.mirrors.push(mirror.to_owned());
     }
-    std::fs::write(root().join("xtask/tools.lock.json"), serde_json::to_string_pretty(&lock)? + "\n")?;
-    let path = root().join("xtask/models.lock.json");
-    std::fs::write(&path, with_mirror_text(&std::fs::read_to_string(&path)?, url, mirror)?)?;
-    let missing: Vec<_> = all_pins()?
-        .into_iter()
-        .filter(|(u, s, m)| u == url && s == sha256 && !m.iter().any(|x| x == mirror))
-        .collect();
-    if !missing.is_empty() {
-        bail!("could not add the mirror for {url}");
+    let tools_text = serde_json::to_string_pretty(&lock)? + "\n";
+    let models_text = with_mirror_text(&std::fs::read_to_string(&models_path)?, url, mirror)?;
+    // Check the result before writing anything, so a failed edit leaves both files as they were.
+    let (tools, models): (Lock, ModelLock) =
+        (serde_json::from_str(&tools_text)?, serde_json::from_str(&models_text)?);
+    if pins_of(&tools, &models)
+        .iter()
+        .any(|(u, s, m)| u == url && s == sha256 && !m.iter().any(|x| x == mirror))
+    {
+        bail!(
+            "could not add the mirror for {url} (is xtask/models.lock.json pretty-printed with LF line ends?)"
+        );
+    }
+    for (path, text) in [(&tools_path, tools_text), (&models_path, models_text)] {
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, text)?;
+        std::fs::rename(&tmp, path)?;
     }
     Ok(())
+}
+
+/// `check-pins --online`: every mirror URL answers (HEAD over HTTPS, redirects followed), so a
+/// renamed or deleted mirror asset is noticed instead of silently falling back to upstream.
+fn check_mirrors_online() -> Result<()> {
+    let mut broken = Vec::new();
+    for (_, _, mirrors) in all_pins()? {
+        for m in mirrors {
+            let ok = Command::new("curl")
+                .args(["-fsSIL", "--proto", "=https", "--proto-redir", "=https", "--max-time", "60", "-o"])
+                .arg(if cfg!(windows) { "NUL" } else { "/dev/null" })
+                .arg("--url")
+                .arg(&m)
+                .status()
+                .is_ok_and(|s| s.success());
+            if !ok {
+                broken.push(m);
+            }
+        }
+    }
+    if broken.is_empty() {
+        println!("mirrors: every URL answers");
+        Ok(())
+    } else {
+        bail!("mirror URLs that do not answer:\n  {}", broken.join("\n  "))
+    }
+}
+
+/// A full git commit id (40 lowercase hex).
+fn is_commit(s: &str) -> bool {
+    s.len() == 40 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// `text` (pretty-printed JSON) with `"mirrors": [mirror]` after each `"url": <url>,` line that
@@ -575,7 +694,7 @@ fn with_mirror_text(text: &str, url: &str, mirror: &str) -> Result<String> {
     Ok(out)
 }
 
-/// CI check (offline): every pinned archive lists a mirror, the FFmpeg pin names its source
+/// CI check (offline): every pinned download (archives and direct model files) lists a mirror, the FFmpeg pin names its source
 /// release, and `licenses/FFMPEG-NOTICE.md` names the pinned build and that release.
 fn check_pins() -> Result<()> {
     let mut problems = Vec::new();
@@ -585,6 +704,9 @@ fn check_pins() -> Result<()> {
         }
     }
     let lock = read_lock()?;
+    if !lock.scripts_commit.as_deref().is_some_and(is_commit) {
+        problems.push(format!("no scripts_commit (40 hex) for {} in tools.lock.json", lock.release));
+    }
     let notice = std::fs::read_to_string(root().join("licenses/FFMPEG-NOTICE.md"))?;
     match &lock.source {
         None => problems.push(format!(
@@ -602,7 +724,10 @@ fn check_pins() -> Result<()> {
         }
     }
     if problems.is_empty() {
-        println!("pins: every archive mirrored; FFmpeg {} source release and notice in place", lock.version);
+        println!(
+            "pins: every pinned download mirrored; FFmpeg {} source release and notice in place",
+            lock.version
+        );
         Ok(())
     } else {
         bail!("pin check failed:\n  {}", problems.join("\n  "))
@@ -903,8 +1028,12 @@ mod tests {
         for p in pins.ncnn.values() {
             rebuilt = with_mirror_text(&rebuilt, &p.url, &p.mirrors[0]).unwrap();
         }
-        for a in pins.models.values().filter_map(|m| m.archive.as_ref()) {
-            rebuilt = with_mirror_text(&rebuilt, &a.url, &a.mirrors[0]).unwrap();
+        for m in pins.models.values() {
+            match (&m.url, &m.archive) {
+                (Some(url), _) => rebuilt = with_mirror_text(&rebuilt, url, &m.mirrors[0]).unwrap(),
+                (None, Some(a)) => rebuilt = with_mirror_text(&rebuilt, &a.url, &a.mirrors[0]).unwrap(),
+                (None, None) => {}
+            }
         }
         assert!(!mirrors.is_empty());
         assert_eq!(rebuilt, real);

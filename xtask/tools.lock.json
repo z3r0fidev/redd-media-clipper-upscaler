@@ -2,6 +2,7 @@
   "comment": "Pinned FFmpeg builds bundled with rmedia. Refresh with `cargo xtask pin-tools`. Source: BtbN/FFmpeg-Builds (GPL; see licenses/FFMPEG-NOTICE.md).",
   "release": "autobuild-2026-10-21-13-06",
   "version": "n9.0.2-31-gc89d6ee1ca",
+  "scripts_commit": "937868360a21d711ec94a33f5591d345ad9b7754",
   "source": "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/ffmpeg-source-n9.0.2-31-gc89d6ee1ca",
   "targets": {
     "x86_64-pc-windows-msvc": {

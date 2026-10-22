@@ -3,12 +3,18 @@
   "models": {
     "face_detection_yunet_2026may.onnx": {
       "url": "https://media.githubusercontent.com/media/opencv/opencv_zoo/26cc381e4d2594bb9f47a26eb8fd96c94a13660d/models/face_detection_yunet/face_detection_yunet_2026may.onnx",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/face_detection_yunet_2026may.onnx"
+      ],
       "sha256": "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0",
       "license": "licenses/models/yunet-MIT.txt",
       "description": "YuNet face detector (OpenCV Zoo), dynamic input; smart reframe (FR-013)"
     },
     "test_face_nasa_jsc2003e41874.jpg": {
       "url": "https://images-assets.nasa.gov/image/jsc2003e41874/jsc2003e41874~medium.jpg",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/jsc2003e41874.medium.jpg"
+      ],
       "sha256": "b5321a6f012748377fc4a1d25854427b2a46bbb95021cce9c697ae62d2d656fe",
       "license": "licenses/models/test-face-PD.txt",
       "description": "NASA official astronaut portrait (public domain), test-only: real-face smart reframe test",

@@ -18,21 +18,21 @@ what the packages install, see [Installation](../administration/installation.md)
 `cargo xtask` is an alias for `cargo run --package xtask --` (`.cargo/config.toml`). Usage:
 
 ```text
-cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins>
+cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>
 ```
 
 | Task | What it does | Writes |
 |---|---|---|
 | `fetch-tools [--target T]` | Downloads the pinned FFmpeg archive for target `T` (default: host), verifies its SHA-256, extracts `ffmpeg` and `ffprobe`, and installs them with Tauri sidecar names | `binaries/rmedia-ffmpeg-<T>[.exe]`, `binaries/rmedia-ffprobe-<T>[.exe]`, `binaries/FFMPEG-LICENSE.txt`, `binaries/.<T>.sha256` |
-| `pin-tools` | Moves the pin to the newest BtbN autobuild of the **current release line** and records GitHub's asset SHA-256 digests | `xtask/tools.lock.json` |
+| `pin-tools` | Moves the pin to the newest BtbN autobuild of the **current release line** and records GitHub's asset SHA-256 digests and the BtbN commit of the tag (`scripts_commit`); the lock is written only after both new archives are downloaded and verified | `xtask/tools.lock.json` |
 | `gen-bindings` | Regenerates the desktop app's TypeScript types from `rmedia-core` (ts-rs) | `apps/desktop/src/lib/bindings/` (deleted and recreated) |
 | `stage-cli [--target T]` | Builds `rmedia-cli` and the AI worker `rmedia-sr` in release mode and copies them with sidecar naming (needs `fetch-ncnn` first) | `binaries/rmedia-<T>[.exe]`, `binaries/rmedia-sr-<T>[.exe]` |
 | `fetch-ncnn [--target T]` | Downloads the pinned prebuilt ncnn 20260526 (static, Vulkan; `ubuntu-2204` or `windows-vs2022`) for target `T`, verifies its SHA-256 and installs it for `crates/rmedia-sr/build.rs`, which stops with "run `cargo xtask fetch-ncnn`" without it. `RMEDIA_NCNN_DIR` (build time) points the build at another ncnn package instead. Added in 0.2.0 (US6) | `third_party/ncnn/<T>/` (git-ignored) |
 | `notices` | Generates the third-party notices for every Rust crate and bundled npm package | `THIRD_PARTY_NOTICES.md` |
 | `fetch-models` | Downloads each model in `xtask/models.lock.json` (the YuNet face detector, the Real-ESRGAN animevideov3 x2/x3/x4 files taken from a pinned release archive, and a test-only portrait) with `curl` over HTTPS only, verifies the SHA-256 of each archive and file, and replaces it through a temp file and rename. Files that already match are kept. Added in 0.2.0. | `models/` (git-ignored; never committed) |
 | `archive` | Downloads every pinned archive (FFmpeg and ncnn for both targets, model release archives) and checks it against its pin; lists SHA-256, size and path | `archives/<sha256>/` (git-ignored) |
-| `mirror <tag>` | Uploads each pinned archive without a mirror to the release `<tag>` (a `mirror-<date>` pre-release, created if missing), adds the URLs under `mirrors` in both lock files, and records the `ffmpeg-source-<version>` release as `source`; needs `gh` with write access | `xtask/*.lock.json` |
-| `check-pins` | Offline check (CI): every pinned archive has a mirror, the FFmpeg pin has `source`, and `licenses/FFMPEG-NOTICE.md` names the version, release tag and source release | nothing |
+| `mirror <tag>` | Uploads each pinned download without a mirror (archives and the directly downloaded model files) to the release `<tag>` (a `mirror-<date>` pre-release, created if missing; an existing asset of the same name must have the same SHA-256), adds the URLs under the name GitHub stored (it renames some characters, such as `~`) to `mirrors` in both lock files after checking the edit, and records the `ffmpeg-source-<version>` release as `source`; needs `gh` with write access | `xtask/*.lock.json` |
+| `check-pins [--online]` | CI check: every pinned download has a mirror, the FFmpeg pin has `scripts_commit` (the BtbN commit of the shipped build) and `source`, and `licenses/FFMPEG-NOTICE.md` names the version, release tag and source release. `--online` also requests every mirror URL, so a renamed or deleted mirror asset is noticed | nothing |
 
 Supported targets are `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`. On Windows the host
 triple is `x86_64-pc-windows-msvc`; elsewhere it is `x86_64-unknown-linux-gnu`.
@@ -152,7 +152,8 @@ without network access to the upstream releases, copy `archives/` from a machine
 
 **Current mirror:** the public pre-release
 [`mirror-2026-10-22`](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/mirror-2026-10-22)
-holds all five pinned archives, and every pin lists it under `mirrors`. It was checked by fetching
+holds all five pinned archives and the two directly downloaded model files (YuNet and the test
+portrait), and every pin lists it under `mirrors`. It was checked by fetching
 everything with the upstream URLs pointed at a host that does not exist (all five came from the
 mirror and matched), by breaking the mirror (the upstream URL was used), and by pointing a mirror
 at a different file (rejected: `checksum …, expected …`).
@@ -162,7 +163,10 @@ at a different file (rejected: `checksum …, expected …`).
 The mirror distributes the FFmpeg binaries publicly, so the GPL v3 §6 source offer in
 `licenses/FFMPEG-NOTICE.md` applies. `.github/workflows/ffmpeg-source.yml` (run by hand) publishes
 the complete corresponding source of the pinned build as the pre-release
-`ffmpeg-source-<version>`:
+`ffmpeg-source-<version>`. It runs from `main` only, in two jobs: `build` runs BtbN's scripts with
+a read-only token, fails unless the pinned tag still points at `scripts_commit`, and uploads the
+files as an artifact; `publish` holds the write token, checks `SHA256SUMS` and creates the release
+(or reports that it already exists). The release contains:
 
 - `ffmpeg-<version>.tar.xz`: FFmpeg at the pinned commit (taken from `version`, on
   `release/<line>`).
