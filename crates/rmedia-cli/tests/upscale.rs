@@ -59,7 +59,7 @@ fn dry_run_json_matches_the_contract_and_writes_nothing() {
     assert!(job.get("mode").is_none() && job.get("predicted").is_none(), "{job}");
     assert_eq!(
         job["output"].as_str().unwrap(),
-        d.path().join("upscaled/low_phone-fill.mp4").to_str().unwrap()
+        d.path().join("upscaled").join("low_phone-fill.mp4").to_str().unwrap()
     );
     assert_eq!(job["requested"]["start"], 0.0);
     let up = &job["upscale"];
@@ -174,8 +174,9 @@ fn smart_reframe_dry_run_block_cache_no_analyze_and_crop_path() {
     assert!(src.metadata().unwrap().len() > 10_000, "the source is intact");
 }
 
+/// Output paths with `/` separators, so the checks read the same on Windows.
 fn outputs(doc: &Value) -> Vec<String> {
-    doc["jobs"].as_array().unwrap().iter().map(|j| j["output"].as_str().unwrap().to_owned()).collect()
+    doc["jobs"].as_array().unwrap().iter().map(|j| j["output"].as_str().unwrap().replace('\\', "/")).collect()
 }
 
 fn sources(doc: &Value) -> Vec<String> {
@@ -307,7 +308,7 @@ fn batch_upscale_flags_are_defaults_under_the_manifest() {
     let doc = run(&["--upscale", "--preset", "duo", "--reframe", "center"]);
     assert_eq!(preset(&doc, 2).as_deref(), Some("duo"), "--upscale turns it on everywhere");
     assert!(
-        doc["jobs"][2]["output"].as_str().unwrap().ends_with("clips/c_001_00-00-00.000_00-00-01.000_duo.mp4"),
+        outputs(&doc)[2].ends_with("clips/c_001_00-00-00.000_00-00-01.000_duo.mp4"),
         "{}",
         doc["jobs"][2]["output"]
     );

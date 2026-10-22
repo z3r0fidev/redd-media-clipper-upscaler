@@ -107,7 +107,8 @@ fn scan_errors() {
 fn output_folder_with_glob_characters_is_still_excluded() {
     require_ffmpeg!();
     let d = library();
-    let out = d.path().join("lib/out [*]");
+    // `*` cannot be in a Windows file name; `[…]` is a glob character class on both.
+    let out = d.path().join("lib").join(if cfg!(windows) { "out [a]" } else { "out [*]" });
     let list = d.path().join("l.txt");
     std::fs::write(&list, "0:01 0:02 x\n").unwrap();
     let run = || {

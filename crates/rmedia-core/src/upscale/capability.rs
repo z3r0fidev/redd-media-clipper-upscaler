@@ -1158,7 +1158,7 @@ mod tests {
         let write = |api: &str| {
             std::fs::write(
                 &manifest,
-                format!(r#"{{"ICD":{{"library_path":"{}","api_version":"{api}"}}}}"#, lib.display()),
+                serde_json::json!({"ICD": {"library_path": lib, "api_version": api}}).to_string(),
             )
             .unwrap();
         };
