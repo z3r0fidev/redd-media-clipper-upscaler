@@ -51,7 +51,8 @@ jobs:
           git -C btbn rev-parse HEAD | tee btbn-commit.txt
       - name: Library sources (BtbN download.sh)
         working-directory: btbn
-        run: ./download.sh
+        # vars.sh names BtbN's image after GITHUB_REPOSITORY, which Actions sets to this repo.
+        run: env GITHUB_REPOSITORY=btbn/ffmpeg-builds ./download.sh
       - name: FFmpeg at the pinned commit
         env:
           COMMIT: ${{ steps.pin.outputs.commit }}
