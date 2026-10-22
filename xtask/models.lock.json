@@ -17,6 +17,9 @@
     "realesr-animevideov3-x2.bin": {
       "archive": {
         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "mirrors": [
+          "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/realesrgan-ncnn-vulkan-20220424-ubuntu.zip"
+        ],
         "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
         "member": "models/realesr-animevideov3-x2.bin"
       },
@@ -27,6 +30,9 @@
     "realesr-animevideov3-x2.param": {
       "archive": {
         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "mirrors": [
+          "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/realesrgan-ncnn-vulkan-20220424-ubuntu.zip"
+        ],
         "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
         "member": "models/realesr-animevideov3-x2.param"
       },
@@ -37,6 +43,9 @@
     "realesr-animevideov3-x3.bin": {
       "archive": {
         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "mirrors": [
+          "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/realesrgan-ncnn-vulkan-20220424-ubuntu.zip"
+        ],
         "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
         "member": "models/realesr-animevideov3-x3.bin"
       },
@@ -47,6 +56,9 @@
     "realesr-animevideov3-x3.param": {
       "archive": {
         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "mirrors": [
+          "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/realesrgan-ncnn-vulkan-20220424-ubuntu.zip"
+        ],
         "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
         "member": "models/realesr-animevideov3-x3.param"
       },
@@ -57,6 +69,9 @@
     "realesr-animevideov3-x4.bin": {
       "archive": {
         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "mirrors": [
+          "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/realesrgan-ncnn-vulkan-20220424-ubuntu.zip"
+        ],
         "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
         "member": "models/realesr-animevideov3-x4.bin"
       },
@@ -67,6 +82,9 @@
     "realesr-animevideov3-x4.param": {
       "archive": {
         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip",
+        "mirrors": [
+          "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/realesrgan-ncnn-vulkan-20220424-ubuntu.zip"
+        ],
         "sha256": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
         "member": "models/realesr-animevideov3-x4.param"
       },
@@ -78,10 +96,16 @@
   "ncnn": {
     "x86_64-unknown-linux-gnu": {
       "url": "https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-ubuntu-2204.zip",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/ncnn-20260526-ubuntu-2204.zip"
+      ],
       "sha256": "4a2194be7d6ab715103a84ba34ddafecfe7173de3d55567f992266bb57bda8e7"
     },
     "x86_64-pc-windows-msvc": {
       "url": "https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-windows-vs2022.zip",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/ncnn-20260526-windows-vs2022.zip"
+      ],
       "sha256": "5ed388b134c50ba8eb2e6605f3a16f692f26598d45113bc9794aa4857d691e26"
     }
   }

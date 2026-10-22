@@ -5,10 +5,16 @@
   "targets": {
     "x86_64-pc-windows-msvc": {
       "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-21-13-06/ffmpeg-n9.0.2-31-gc89d6ee1ca-win64-gpl-9.0.zip",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/ffmpeg-n9.0.2-31-gc89d6ee1ca-win64-gpl-9.0.zip"
+      ],
       "sha256": "48c50bfed1374179b9d8cc993d6c4b64e8da5b35f348c6381bf475385c89befa"
     },
     "x86_64-unknown-linux-gnu": {
       "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-21-13-06/ffmpeg-n9.0.2-31-gc89d6ee1ca-linux64-gpl-9.0.tar.xz",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/mirror-2026-10-22/ffmpeg-n9.0.2-31-gc89d6ee1ca-linux64-gpl-9.0.tar.xz"
+      ],
       "sha256": "2212009529e7a18809c0a23700e8045364c17853c4390cf8c051e6b65dd97bde"
     }
   }

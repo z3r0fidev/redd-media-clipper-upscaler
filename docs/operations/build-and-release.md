@@ -135,10 +135,17 @@ To create the mirrors:
 4. To set up a machine without network access to the upstream releases, copy `archives/` from a
    machine that has it. `fetch-*` use those copies after checking their hashes.
 
-> **Open:** No mirror is uploaded yet; there is no remote or release storage configured. Until
-> there is, `archives/` on the maintainer's machine is the only copy of the current pins, and the
-> FFmpeg pin breaks for fresh checkouts again when BtbN deletes `autobuild-2026-10-21-13-06`. The
-> GPL corresponding-source mirror is still a release blocker too.
+**Current mirror:** the public pre-release
+[`mirror-2026-10-22`](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/mirror-2026-10-22)
+holds all five pinned archives, and every pin lists it under `mirrors`. It was checked by fetching
+everything with the upstream URLs pointed at a host that does not exist (all five came from the
+mirror and matched), by breaking the mirror (the upstream URL was used), and by pointing a mirror
+at a different file (rejected: `checksum …, expected …`). Each re-pin needs a new mirror release:
+run `cargo xtask archive`, create `mirror-<date>` with those files, and add the URLs.
+
+> **Open:** The mirror distributes the FFmpeg binaries publicly, so the GPL v3 §6 source offer in
+> `licenses/FFMPEG-NOTICE.md` applies to it now. The corresponding-source mirror (FFmpeg at the
+> pinned commit, the BtbN build scripts and the third-party library sources) is not uploaded yet.
 
 Installer size is another open owner decision. The static GPL binaries are about 172 MB each; a
 shared or trimmed custom build would reduce it (`research.md` R9, `validation.md`).
