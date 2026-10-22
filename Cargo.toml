@@ -24,13 +24,13 @@ globset = "0.4"
 indicatif = "0.18"
 insta = { version = "1.49", features = ["json"] }
 # Schema checks in tests only; no HTTP/TLS resolvers.
-jsonschema = { version = "0.58", default-features = false }
+jsonschema = { version = "0.59", default-features = false }
 libc = "0.2"
 predicates = "3"
 process-wrap = { version = "10", default-features = false, features = ["tokio1", "process-group", "job-object", "kill-on-drop", "creation-flags"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 sysinfo = "0.38"
 tempfile = "3"
 thiserror = "2"
