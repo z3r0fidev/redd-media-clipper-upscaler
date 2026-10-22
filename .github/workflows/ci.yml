@@ -67,7 +67,7 @@ jobs:
           RMEDIA_FFMPEG: ${{ github.workspace }}/binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }}
           RMEDIA_FFPROBE: ${{ github.workspace }}/binaries/rmedia-ffprobe-${{ matrix.triple }}${{ matrix.exe }}
         run: |
-          cargo test --workspace
+          cargo test --workspace --no-fail-fast
           cargo test --workspace --release -- --ignored bench
 
   minimum-engine:
@@ -92,7 +92,7 @@ jobs:
       # 002 tests need filters/encoders a distro build may lack (zscale, libvmaf, ...); they skip
       # here through testkit::require_engine and run for real in the bundled-engine jobs. The AI
       # worker (prebuilt ncnn) is built and tested in the bundled-engine jobs only.
-      - run: cargo test --workspace --exclude rmedia-sr
+      - run: cargo test --workspace --exclude rmedia-sr --no-fail-fast
         env:
           RMEDIA_ALLOW_MISSING_FEATURES: "1"
 
@@ -159,7 +159,7 @@ jobs:
           RMEDIA_FFPROBE: ${{ github.workspace }}/binaries/rmedia-ffprobe-${{ matrix.triple }}
         run: |
           cargo build -p rmedia-cli
-          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --no-fail-fast
       - name: Third-party notices are up to date
         if: runner.os == 'Linux'
         run: |

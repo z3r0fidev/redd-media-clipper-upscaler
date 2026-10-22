@@ -17,6 +17,10 @@ fn redact(v: &mut Value, dir: &str) {
         Value::String(s) => {
             if s.contains(dir) {
                 *s = s.replace(dir, "[DIR]");
+                // Paths under the temp folder use the platform separator; the snapshot uses `/`.
+                if cfg!(windows) {
+                    *s = s.replace('\\', "/");
+                }
             }
             // Temp names carry the run id: .<stem>.rmedia-<run>-<job>.part
             if let Some(i) = s.find(".rmedia-") {
