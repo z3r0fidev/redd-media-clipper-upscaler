@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "max-quality",
+  "version": 1,
+  "name": "Max quality",
+  "description": "Best-looking GIF, no size budget",
+  "verified": true,
+  "width": {
+    "landscape": 960,
+    "portrait": 640
+  },
+  "fps": 20,
+  "colours": 256,
+  "dither": "floyd_steinberg",
+  "stats_mode": "full",
+  "engine": "best",
+  "mp4": {
+    "crf": 18,
+    "max_fps": 60
+  },
+  "gifski": {
+    "quality": 100
+  },
+  "lossy": 0
+}

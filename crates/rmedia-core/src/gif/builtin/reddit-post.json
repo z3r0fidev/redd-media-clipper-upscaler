@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "reddit-post",
+  "version": 1,
+  "name": "Reddit post",
+  "description": "Feed GIF for a Reddit post (limits unverified)",
+  "budget": {
+    "soft": 8000000,
+    "hard": 20000000
+  },
+  "verified": false,
+  "width": {
+    "landscape": 720,
+    "portrait": 480
+  },
+  "floor_width": 320,
+  "fps": 15,
+  "colours": 256,
+  "dither": {
+    "bayer": 4
+  },
+  "stats_mode": "diff",
+  "engine": "builtin",
+  "max_duration": 15,
+  "mp4": {
+    "crf": 23,
+    "max_fps": 60
+  },
+  "floor_fps": 10,
+  "lossy": 30
+}

@@ -34,4 +34,21 @@ field_order?: string, color_space?: string, color_primaries?: string, color_tran
 /**
  * `tv` (limited) or `pc` (full).
  */
-color_range?: string, };
+color_range?: string, 
+/**
+ * The lowest frame rate all timestamps can be represented in (`r_frame_rate`), as
+ * (num, den). It differs from `frame_rate` (the average) on variable-rate sources.
+ */
+r_frame_rate?: [number, number], 
+/**
+ * The frame count the container states (absent for GIF, MKV and others).
+ */
+nb_frames?: number, 
+/**
+ * The stream's time base as (num, den); a GIF's is 1/100.
+ */
+time_base?: [number, number], 
+/**
+ * The pixel format has an alpha plane (feature 003 flattens it, research R15).
+ */
+has_alpha: boolean, };

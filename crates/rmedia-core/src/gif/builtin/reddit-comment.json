@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "reddit-comment",
+  "version": 1,
+  "name": "Reddit comment",
+  "description": "GIF for a Reddit comment (limits unverified)",
+  "budget": {
+    "soft": 3000000,
+    "hard": 8000000
+  },
+  "verified": false,
+  "width": {
+    "landscape": 480,
+    "portrait": 360
+  },
+  "floor_width": 240,
+  "fps": 12,
+  "colours": 128,
+  "dither": {
+    "bayer": 5
+  },
+  "stats_mode": "diff",
+  "engine": "builtin",
+  "lossy": 60,
+  "max_duration": 6,
+  "mp4": {
+    "crf": 23,
+    "max_fps": 30
+  },
+  "floor_fps": 10
+}

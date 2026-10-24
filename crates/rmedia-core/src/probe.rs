@@ -83,6 +83,21 @@ pub struct StreamInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub color_range: Option<String>,
+    /// The lowest frame rate all timestamps can be represented in (`r_frame_rate`), as
+    /// (num, den). It differs from `frame_rate` (the average) on variable-rate sources.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub r_frame_rate: Option<(u32, u32)>,
+    /// The frame count the container states (absent for GIF, MKV and others).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub nb_frames: Option<u64>,
+    /// The stream's time base as (num, den); a GIF's is 1/100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub time_base: Option<(u32, u32)>,
+    /// The pixel format has an alpha plane (feature 003 flattens it, research R15).
+    pub has_alpha: bool,
 }
 
 impl StreamInfo {
@@ -100,6 +115,16 @@ impl StreamInfo {
     /// PQ (HDR10) or HLG transfer.
     pub fn is_hdr(&self) -> bool {
         matches!(self.color_transfer.as_deref(), Some("smpte2084" | "arib-std-b67"))
+    }
+
+    /// Variable frame rate: the average and the base rate differ by more than 1 %.
+    pub fn is_vfr(&self) -> bool {
+        let rate =
+            |r: Option<(u32, u32)>| r.filter(|(_, d)| *d > 0).map(|(n, d)| f64::from(n) / f64::from(d));
+        match (rate(self.frame_rate), rate(self.r_frame_rate)) {
+            (Some(avg), Some(base)) if avg > 0.0 && base > 0.0 => (avg / base - 1.0).abs() > 0.01,
+            _ => false,
+        }
     }
 
     /// Interlaced field order (any order but `progressive`/unknown).
@@ -231,6 +256,7 @@ pub fn parse_probe_json(path: &Path, size: u64, json: &str) -> Result<MediaInfo>
                 width: s.width,
                 height: s.height,
                 frame_rate: s.avg_frame_rate.as_deref().and_then(parse_rational),
+                has_alpha: s.pix_fmt.as_deref().is_some_and(has_alpha_plane),
                 pix_fmt: s.pix_fmt,
                 is_attached_pic: s.disposition.is_some_and(|d| d.attached_pic == 1),
                 language: s.tags.as_ref().and_then(|t| t.language.clone()),
@@ -253,6 +279,9 @@ pub fn parse_probe_json(path: &Path, size: u64, json: &str) -> Result<MediaInfo>
                 color_primaries: known(s.color_primaries),
                 color_transfer: known(s.color_transfer),
                 color_range: known(s.color_range),
+                r_frame_rate: s.r_frame_rate.as_deref().and_then(parse_rational),
+                nb_frames: s.nb_frames.as_deref().and_then(|n| n.parse().ok()).filter(|n| *n > 0),
+                time_base: s.time_base.as_deref().and_then(parse_rational),
             })
             .collect();
     Ok(MediaInfo {
@@ -374,6 +403,14 @@ fn known(v: Option<String>) -> Option<String> {
     v.filter(|s| !s.is_empty() && s != "unknown")
 }
 
+/// Pixel formats with an alpha plane: `yuva*`, `rgba*`/`bgra`/`argb`/`abgr`, `gbrap*`, `ya*`,
+/// `ayuv*` (FFmpeg's names).
+fn has_alpha_plane(pix_fmt: &str) -> bool {
+    ["yuva", "rgba", "bgra", "argb", "abgr", "gbrap", "ya8", "ya16", "ayuv"]
+        .iter()
+        .any(|p| pix_fmt.starts_with(p))
+}
+
 fn parse_rational(v: &str) -> Option<(u32, u32)> {
     let (n, d) = v.split_once('/')?;
     let (n, d) = (n.parse().ok()?, d.parse().ok()?);
@@ -403,6 +440,9 @@ struct RawStream {
     width: Option<u32>,
     height: Option<u32>,
     avg_frame_rate: Option<String>,
+    r_frame_rate: Option<String>,
+    nb_frames: Option<String>,
+    time_base: Option<String>,
     pix_fmt: Option<String>,
     start_time: Option<String>,
     duration: Option<String>,

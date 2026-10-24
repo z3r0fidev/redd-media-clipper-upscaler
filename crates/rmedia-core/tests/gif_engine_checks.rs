@@ -95,6 +95,8 @@ fn b_frame_rates_map_to_centisecond_delays() {
             seen.dedup();
             assert_eq!(seen, allowed, "{fps} fps delays");
             assert_eq!(delays.len(), 2 * fps as usize, "{fps} fps frame count");
+            let predicted = rmedia_core::gif::timing::delays((fps, 1), delays.len());
+            assert_eq!(delays, predicted, "{fps} fps: timing::delays matches the muxer");
         }
     }
 }

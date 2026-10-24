@@ -209,7 +209,7 @@ impl Preset {
 const MAX_PRESET_BYTES: u64 = 64 * 1024;
 
 /// Reads a user preset: a regular file (not a symlink) of at most 64 KiB.
-fn read_preset_file(path: &Path) -> Result<String, String> {
+pub(crate) fn read_preset_file(path: &Path) -> Result<String, String> {
     use std::io::Read;
     let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if !meta.file_type().is_file() {

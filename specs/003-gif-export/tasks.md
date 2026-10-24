@@ -207,12 +207,12 @@ green after every task.**
 
 ### Probe, targets, timing, engines, options, verify
 
-- [ ] T022 [P] Write probe tests in `core-tests/probe_003.rs`:
+- [X] T022 [P] Write probe tests in `core-tests/probe_003.rs`:
   - `r_frame_rate`, `nb_frames`, `time_base`;
   - `has_alpha` (`Alpha` fixture);
   - `is_vfr()` (`VfrMp4` true, `Land6` false).
-- [ ] T023 Implement the probe additions in `core/probe.rs` (`RawStream` fields, helpers).
-- [ ] T024 [P] Write target registry tests in `core/gif/target.rs`:
+- [X] T023 Implement the probe additions in `core/probe.rs` (`RawStream` fields, helpers).
+- [X] T024 [P] Write target registry tests in `core/gif/target.rs`:
   - built-ins validate against `specs/003-gif-export/contracts/gif-target.schema.json`
     (jsonschema dev-dependency);
   - user overrides by id are labelled "user override";
@@ -220,15 +220,15 @@ green after every task.**
   - symlinks, files over 64 KiB and the 65th file are refused;
   - control characters in `name` are refused;
   - `soft ≤ hard ≤ 1 GiB`, and each floor ≤ the widths/fps.
-- [ ] T025 Implement `core/gif/target.rs` and `core/gif/builtin/{reddit-post,reddit-comment,max-quality,flat-ui}.json`
+- [X] T025 Implement `core/gif/target.rs` and `core/gif/builtin/{reddit-post,reddit-comment,max-quality,flat-ui}.json`
   (research R2 table, schema examples), reusing `read_preset_file`.
-- [ ] T026 [P] Write table-driven timing tests in `core/gif/timing.rs`:
+- [X] T026 [P] Write table-driven timing tests in `core/gif/timing.rs`:
   - exact rates 10/20/25/50;
   - approximate 12/15/24/30 with their average cs;
   - rejection above 50;
   - the predicted delay sequence equals the T005(b) measurement for 15 fps;
   - fps capped at the source rate.
-- [ ] T027 Implement `core/gif/timing.rs`.
+- [X] T027 Implement `core/gif/timing.rs`.
 - [ ] T028 [P] Write engine lookup tests in `core/gif/engines.rs`:
   - the order explicit → env → bundled → PATH, with PATH only when nothing is bundled;
   - a missing or bad explicit path makes the engine unavailable with a reason;

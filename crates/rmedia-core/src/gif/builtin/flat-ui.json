@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "flat-ui",
+  "version": 1,
+  "name": "Flat / text / UI",
+  "description": "Screen recordings, text and flat graphics: crisp edges, few colours",
+  "verified": true,
+  "width": {
+    "landscape": 720,
+    "portrait": 480
+  },
+  "fps": 15,
+  "colours": 64,
+  "dither": "none",
+  "stats_mode": "diff",
+  "sharpen": 0.5,
+  "engine": "builtin",
+  "mp4": {
+    "crf": 23,
+    "max_fps": 30
+  }
+}
