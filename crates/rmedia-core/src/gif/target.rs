@@ -173,9 +173,21 @@ pub struct GifTarget {
     pub mp4: Mp4Params,
 }
 
-/// Printable text: no control characters (they could rewrite a terminal line).
+/// Characters that could rewrite or reorder a terminal line: controls, and bidi overrides,
+/// embeddings and isolates.
+fn unsafe_char(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}')
+}
+
+/// Printable text (see [`unsafe_char`]).
 fn printable(s: &str) -> bool {
-    !s.chars().any(char::is_control)
+    !s.chars().any(unsafe_char)
+}
+
+/// `s` with unsafe characters replaced and at most 300 characters (problem messages quote
+/// file names and parser errors from untrusted files).
+fn shown(s: &str) -> String {
+    s.chars().take(300).map(|c| if unsafe_char(c) { '?' } else { c }).collect()
 }
 
 impl GifTarget {
@@ -251,8 +263,8 @@ impl GifTarget {
                 "gifski quality values must be within 1..100".into(),
             ),
             (
-                self.max_duration.is_none_or(|d| d.is_finite() && d > 0.0),
-                "max_duration must be a positive number of seconds".into(),
+                self.max_duration.is_none_or(|d| d.is_finite() && d > 0.0 && d <= 3600.0),
+                "max_duration must be within (0, 3600] seconds".into(),
             ),
             (self.mp4.crf <= 51, format!("mp4.crf {} must be within 0..51", self.mp4.crf)),
             (
@@ -298,22 +310,28 @@ impl GifTargetRegistry {
         let mut reg = GifTargetRegistry::builtin();
         let Some(dir) = config_dir.map(|d| d.join("gif-targets")) else { return reg };
         let Ok(entries) = std::fs::read_dir(&dir) else { return reg };
+        // A folder with a huge number of files is not listed in full.
         let mut files: Vec<PathBuf> = entries
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")))
+            .take(MAX_USER_FILES * 4)
             .collect();
         files.sort();
+        if files.len() > MAX_USER_FILES {
+            reg.problems.push(PresetProblem {
+                file: dir.clone(),
+                message: format!(
+                    "{}{} files ignored: at most {MAX_USER_FILES} GIF target files are read",
+                    files.len() - MAX_USER_FILES,
+                    if files.len() == MAX_USER_FILES * 4 { " or more" } else { "" }
+                ),
+            });
+            files.truncate(MAX_USER_FILES);
+        }
         let mut user: Vec<(GifTarget, PresetSource)> = Vec::new();
-        for (i, file) in files.into_iter().enumerate() {
-            if i >= MAX_USER_FILES {
-                reg.problems.push(PresetProblem {
-                    file,
-                    message: format!("ignored: at most {MAX_USER_FILES} GIF target files are read"),
-                });
-                continue;
-            }
-            match read_preset_file(&file).and_then(|t| GifTarget::from_json(&t)) {
+        for file in files {
+            match read_preset_file(&file).and_then(|t| GifTarget::from_json(&t)).map_err(|e| shown(&e)) {
                 Ok(t) if user.iter().any(|(u, _)| u.id == t.id) => reg.problems.push(PresetProblem {
                     file,
                     message: format!("another user GIF target already uses the id {:?}", t.id),
@@ -436,6 +454,9 @@ mod tests {
         bad(&|j| j["dither"] = serde_json::json!({"bayer": 6}), "bayer");
         bad(&|j| j["colours"] = 300.into(), "colours");
         bad(&|j| j["extra"] = 1.into(), "unknown field");
+        bad(&|j| j["name"] = "evil\u{202e}txt.exe".into(), "printable");
+        bad(&|j| j["max_duration"] = 1e9.into(), "max_duration");
+        assert_eq!(shown("a\u{1b}[2Jb\u{202e}c"), "a?[2Jb?c");
     }
 
     fn user_dir(files: &[(&str, &str)]) -> tempfile::TempDir {
@@ -506,7 +527,7 @@ mod tests {
         let reg = GifTargetRegistry::load(Some(dir.path()));
         assert_eq!(reg.ids().len(), 4 + 64);
         assert_eq!(reg.problems().len(), 1);
-        assert!(reg.problems()[0].message.contains("at most 64"));
+        assert!(reg.problems()[0].message.starts_with("1 files ignored: at most 64"), "{:?}", reg.problems());
     }
 
     #[test]

@@ -216,6 +216,7 @@ pub(super) async fn run_stages(
     stages: &[StageSpec],
     cwd: Option<&Path>,
     progress: &ProgressFrom,
+    stall: Option<Duration>,
     cancel: &CancellationToken,
     mut on_progress: impl FnMut(ProgressBlock),
 ) -> Result<Vec<StageEnd>> {
@@ -257,6 +258,8 @@ pub(super) async fn run_stages(
 
     let mut ends: Vec<StageEnd> = stages.iter().map(|_| StageEnd::default()).collect();
     let mut cancelled = false;
+    let mut stalled = false;
+    let mut last_progress = std::time::Instant::now();
     let mut poll = tokio::time::interval(POLL);
     while ends.iter().any(|e| e.status.is_none()) {
         tokio::select! {
@@ -266,10 +269,19 @@ pub(super) async fn run_stages(
                 continue;
             }
             Some(block) = blocks.recv() => {
+                last_progress = std::time::Instant::now();
                 on_progress(block);
                 continue;
             }
             _ = poll.tick() => {}
+        }
+        if let Some(limit) = stall
+            && !cancelled
+            && !stalled
+            && last_progress.elapsed() > limit
+        {
+            stalled = true;
+            running.kill_running(&mut ends);
         }
         let mut failed = false;
         for (child, end) in running.children.iter_mut().zip(ends.iter_mut()) {
@@ -290,13 +302,23 @@ pub(super) async fn run_stages(
     while let Ok(b) = blocks.try_recv() {
         on_progress(b);
     }
-    for (end, report) in ends.iter_mut().zip(reports) {
-        let (tail, worker) = report.await.unwrap_or_default();
-        end.tail = tail;
-        end.worker = worker;
+    // A descendant that left the group could hold a stderr pipe open: never wait long for it.
+    for (end, mut report) in ends.iter_mut().zip(reports) {
+        match tokio::time::timeout(Duration::from_secs(5), &mut report).await {
+            Ok(r) => (end.tail, end.worker) = r.unwrap_or_default(),
+            Err(_) => report.abort(),
+        }
     }
     if cancelled {
         return Err(Error::Cancelled);
+    }
+    if stalled {
+        let secs = stall.unwrap_or_default().as_secs();
+        let tails: Vec<&str> = ends.iter().map(|e| e.tail.as_str()).collect();
+        return Err(Error::engine_failed(
+            format!("the pipeline made no progress for {secs} s and was stopped"),
+            tails.join("\n"),
+        ));
     }
     Ok(ends)
 }
@@ -323,7 +345,8 @@ async fn tail_progress(path: PathBuf, tx: tokio::sync::mpsc::UnboundedSender<Pro
     }
 }
 
-/// A stage that only lost its reader: SIGPIPE, or ffmpeg reporting a broken pipe.
+/// A stage that only lost its reader: SIGPIPE, or ffmpeg's last stderr line reporting a broken
+/// pipe (only the last line: earlier ones can echo the source's file name and metadata).
 #[allow(dead_code)] // gifski (T043)
 fn lost_reader(end: &StageEnd) -> bool {
     #[cfg(unix)]
@@ -333,7 +356,8 @@ fn lost_reader(end: &StageEnd) -> bool {
             return true;
         }
     }
-    end.tail.contains("Broken pipe") || end.tail.contains("broken pipe") || end.tail.contains("End of file")
+    let last = end.tail.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or_default();
+    last.contains("Broken pipe") || last.contains("broken pipe")
 }
 
 /// The cause of a producer → consumer pipe's failure (research R7): a producer that failed on
@@ -374,7 +398,8 @@ pub(super) async fn run(
     ];
     let cancel = ctx.cancel.clone();
     let ends =
-        run_stages(&stages, cwd, &ProgressFrom::ConsumerStdout, &cancel, |b| ctx.progress(b, total)).await?;
+        run_stages(&stages, cwd, &ProgressFrom::ConsumerStdout, None, &cancel, |b| ctx.progress(b, total))
+            .await?;
     let cause = blame(
         ends[DECODE].failed(),
         ends[WORKER].failed().then(|| ends[WORKER].worker.error.as_ref().map(|e| e.0.as_str())),
@@ -537,7 +562,8 @@ mod tests {
     ) -> (Result<Vec<StageEnd>>, Vec<ProgressBlock>) {
         let stages = [fake(producer, Role::Producer), fake(consumer, Role::Consumer)];
         let mut blocks = Vec::new();
-        let r = run_stages(&stages, None, &progress, &CancellationToken::new(), |b| blocks.push(b)).await;
+        let r =
+            run_stages(&stages, None, &progress, None, &CancellationToken::new(), |b| blocks.push(b)).await;
         (r, blocks)
     }
 
@@ -590,7 +616,7 @@ mod tests {
             later.cancel();
         });
         let started = std::time::Instant::now();
-        let r = run_stages(&stages, None, &ProgressFrom::ConsumerStdout, &cancel, |_| {}).await;
+        let r = run_stages(&stages, None, &ProgressFrom::ConsumerStdout, None, &cancel, |_| {}).await;
         assert!(matches!(r, Err(Error::Cancelled)), "{r:?}");
         assert!(started.elapsed() < Duration::from_millis(2500), "took {:?}", started.elapsed());
     }
@@ -602,10 +628,29 @@ mod tests {
         return std::os::windows::process::ExitStatusExt::from_raw(0);
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_pipe_without_progress_is_stopped() {
+        let stages = [fake("produce-forever", Role::Producer), fake("consume:0", Role::Consumer)];
+        let started = std::time::Instant::now();
+        let progress = ProgressFrom::ConsumerStdout;
+        let stall = Some(Duration::from_millis(300));
+        let r = run_stages(&stages, None, &progress, stall, &CancellationToken::new(), |_| {}).await;
+        match r {
+            Err(Error::EngineFailed { message, .. }) => assert!(message.contains("no progress"), "{message}"),
+            other => panic!("{other:?}"),
+        }
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
     #[test]
     fn lost_readers_are_recognised() {
         let end = |tail: &str| StageEnd { tail: tail.into(), ..StageEnd::default() };
         assert!(lost_reader(&end("av_interleaved_write_frame(): Broken pipe")));
+        assert!(lost_reader(&end("frame=  10\nError writing trailer: Broken pipe\n\n")));
         assert!(!lost_reader(&end("Invalid data found when processing input")));
+        assert!(
+            !lost_reader(&end("Input #0 from 'Broken pipe.mp4':\nInvalid data found when processing input")),
+            "an echoed file name is not a lost reader"
+        );
     }
 }

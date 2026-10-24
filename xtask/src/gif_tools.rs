@@ -229,6 +229,10 @@ pub fn stage(target: &str, with_gifski: bool) -> Result<()> {
         let tmp = bin_dir.join(format!(".rmedia-{name}-{target}{exe}.tmp"));
         let _ = std::fs::remove_file(&tmp);
         std::fs::copy(&kept, &tmp)?;
+        if file_sha256(&tmp)? != built.sha256 {
+            let _ = std::fs::remove_file(&tmp);
+            bail!("the staged copy of {name} does not match its pin");
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -404,7 +408,9 @@ pub fn pin(run_id: u64) -> Result<()> {
     if !on_main {
         bail!("commit {} of run {run_id} is not on origin/main (git fetch first?)", run.head_sha);
     }
-    // The release the run published names the run in its notes.
+    // The release the run published: its notes name the run on a line of their own, and its tag
+    // is at the run's commit. (Notes and tags are writable by anyone who can write releases;
+    // the attestations below are what authenticates.)
     let tags =
         gh(&["release", "list", "-R", &repo, "--limit", "50", "--json", "tagName", "-q", ".[].tagName"])?;
     let release = tags
@@ -412,13 +418,28 @@ pub fn pin(run_id: u64) -> Result<()> {
         .filter(|t| is_release_tag(t))
         .find(|t| {
             gh(&["release", "view", t, "-R", &repo, "--json", "body", "-q", ".body"])
-                .is_ok_and(|b| b.contains(&format!("build_run: {run_id}")))
+                .is_ok_and(|b| names_run(&b, run_id))
         })
         .with_context(|| format!("no gif-tools-<date> release names build_run: {run_id}"))?
         .to_owned();
+    let target = gh(&[
+        "release",
+        "view",
+        &release,
+        "-R",
+        &repo,
+        "--json",
+        "targetCommitish",
+        "-q",
+        ".targetCommitish",
+    ])?;
+    if target != run.head_sha {
+        bail!("{release} targets {target}, not run {run_id}'s commit {}", run.head_sha);
+    }
 
-    // Downloads are untrusted until verified: an empty folder of their own.
-    let work = root().join("target/xtask-pin-gif-tools");
+    // Downloads are untrusted until verified: an empty folder of their own, outside the
+    // repository (so no parent .cargo/config or rust-toolchain applies to the crate).
+    let work = std::env::temp_dir().join(format!("rmedia-pin-gif-tools-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work)?;
     gh(&["release", "download", &release, "-R", &repo, "--dir", &work.to_string_lossy()])?;
@@ -441,30 +462,31 @@ pub fn pin(run_id: u64) -> Result<()> {
     };
     let download = |name: &str| format!("https://github.com/{repo}/releases/download/{release}/{name}");
 
+    let source_file = |url: &str| url.rsplit('/').next().unwrap_or_default().to_owned();
+    let vendor_name = format!("gifski-{GIFSKI_VERSION}-vendor.tar.gz");
+    let attested: Vec<String> = asset_names(GIFSICLE_VERSION, GIFSKI_VERSION)
+        .into_iter()
+        .map(|(n, _, _)| n)
+        .chain([source_file(GIFSICLE_SOURCE), source_file(GIFSKI_SOURCE), vendor_name.clone()])
+        .collect();
     let mut verified = BTreeMap::new();
-    for (name, _, _) in asset_names(GIFSICLE_VERSION, GIFSKI_VERSION) {
+    for name in attested {
         let file = work.join(&name);
         let actual = file_sha256(&file).with_context(|| format!("{release} has no {name}"))?;
         let listed = sums.get(&name).with_context(|| format!("SHA256SUMS does not list {name}"))?;
         if &actual != listed || digest_of(&name).as_deref() != Some(actual.as_str()) {
             bail!("{name}: downloaded {actual}, SHA256SUMS {listed}, GitHub digest {:?}", digest_of(&name));
         }
-        let signer = format!("{repo}/{WORKFLOW}");
-        gh(&[
-            "attestation",
-            "verify",
-            &file.to_string_lossy(),
-            "--repo",
-            &repo,
-            "--signer-workflow",
-            &signer,
-        ])
-        .with_context(|| format!("{name}: no valid build attestation from {WORKFLOW}"))?;
+        // Made by gif-tools.yml from main at the run's commit, on a GitHub-hosted runner.
+        let args = attest_args(&file.to_string_lossy(), &repo, &run.head_sha);
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        gh(&refs).with_context(|| {
+            format!("{name}: no valid attestation from {WORKFLOW} on main at {}", run.head_sha)
+        })?;
         verified.insert(name, actual);
     }
 
     // Sources: the pinned hashes, the crates.io index, and Debian's copy of gifsicle.
-    let source_file = |url: &str| url.rsplit('/').next().unwrap_or_default().to_owned();
     for (url, sha) in [(GIFSICLE_SOURCE, GIFSICLE_SHA256), (GIFSKI_SOURCE, GIFSKI_SHA256)] {
         let name = source_file(url);
         if file_sha256(&work.join(&name)).ok().as_deref() != Some(sha) {
@@ -494,12 +516,7 @@ pub fn pin(run_id: u64) -> Result<()> {
 
     // gifski's Cargo.lock: the vendored tree's, checked with cargo deny (and cargo audit when
     // installed), then its dependency list for the notices.
-    let vendor_name = format!("gifski-{GIFSKI_VERSION}-vendor.tar.gz");
-    let vendor_sha =
-        file_sha256(&work.join(&vendor_name)).with_context(|| format!("{release} has no {vendor_name}"))?;
-    if sums.get(&vendor_name) != Some(&vendor_sha) {
-        bail!("{vendor_name} does not match SHA256SUMS");
-    }
+    let vendor_sha = verified[&vendor_name].clone();
     let crate_dir = work.join("crate");
     std::fs::create_dir_all(&crate_dir)?;
     crate::run(
@@ -512,6 +529,17 @@ pub fn pin(run_id: u64) -> Result<()> {
     let manifest = crate_dir.join(format!("gifski-{GIFSKI_VERSION}/Cargo.toml"));
     let cargo_lock = manifest.with_file_name("Cargo.lock");
     let cargo_lock_sha256 = file_sha256(&cargo_lock).context("the gifski crate has no Cargo.lock")?;
+    // Each vendored package must be the one Cargo.lock pins (its crates.io checksum).
+    let vendor_dir = work.join("vendor");
+    std::fs::create_dir_all(&vendor_dir)?;
+    crate::run(
+        Command::new(crate::tar()).arg("-xzf").arg(work.join(&vendor_name)).arg("-C").arg(&vendor_dir),
+    )?;
+    let locked = lock_checksums(&std::fs::read_to_string(&cargo_lock)?);
+    let mismatched = vendor_mismatches(&vendor_dir.join("vendor"), &locked)?;
+    if !mismatched.is_empty() {
+        bail!("vendored packages that are not the locked ones:\n  {}", mismatched.join("\n  "));
+    }
     crate::run(
         Command::new("cargo")
             .args(["deny", "--manifest-path"])
@@ -591,6 +619,83 @@ pub fn pin(run_id: u64) -> Result<()> {
         "notices updated with the mirrored sources; next: `cargo xtask check-pins --online`, then commit"
     );
     Ok(())
+}
+
+/// `gh attestation verify` for `file`: signed by gif-tools.yml, from `main` at `commit`, on a
+/// GitHub-hosted runner.
+fn attest_args(file: &str, repo: &str, commit: &str) -> Vec<String> {
+    let signer = format!("{repo}/{WORKFLOW}");
+    [
+        "attestation",
+        "verify",
+        file,
+        "--repo",
+        repo,
+        "--signer-workflow",
+        &signer,
+        "--source-ref",
+        "refs/heads/main",
+        "--source-digest",
+        commit,
+        "--signer-digest",
+        commit,
+        "--deny-self-hosted-runners",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// Whether release notes name `run` on a line of their own (`build_run: 12` is not run 123).
+fn names_run(body: &str, run: u64) -> bool {
+    body.lines().any(|l| l.trim() == format!("build_run: {run}"))
+}
+
+/// `name version → checksum` of every registry package in a Cargo.lock.
+fn lock_checksums(lock: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let (mut name, mut version) = (None::<String>, None::<String>);
+    let value = |l: &str, key: &str| {
+        l.strip_prefix(key)?
+            .trim_start()
+            .strip_prefix('=')?
+            .trim()
+            .strip_prefix('"')?
+            .strip_suffix('"')
+            .map(str::to_owned)
+    };
+    for line in lock.lines().map(str::trim) {
+        if line == "[[package]]" {
+            (name, version) = (None, None);
+        } else if let Some(v) = value(line, "name") {
+            name = Some(v);
+        } else if let Some(v) = value(line, "version") {
+            version = Some(v);
+        } else if let (Some(c), Some(n), Some(v)) = (value(line, "checksum"), &name, &version) {
+            out.insert(format!("{n} {v}"), c);
+        }
+    }
+    out
+}
+
+/// Vendored packages (`<name>-<version>/.cargo-checksum.json`) whose `package` checksum is not
+/// the one `locked` has for them, or that the lock does not list.
+fn vendor_mismatches(vendor: &Path, locked: &BTreeMap<String, String>) -> Result<Vec<String>> {
+    let mut bad = Vec::new();
+    for entry in std::fs::read_dir(vendor).with_context(|| format!("read {}", vendor.display()))? {
+        let dir = entry?.path();
+        let Some(dir_name) = dir.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
+        let text = std::fs::read_to_string(dir.join(".cargo-checksum.json")).unwrap_or_default();
+        let sums: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        let package = sums["package"].as_str().unwrap_or_default();
+        // `--versioned-dirs`: the folder is `<name>-<version>`.
+        match locked.iter().find(|(k, _)| k.replacen(' ', "-", 1) == dir_name) {
+            Some((_, c)) if c == package => {}
+            Some((k, c)) => bad.push(format!("{k}: vendored {package:?}, locked {c}")),
+            None => bad.push(format!("{dir_name}: not in Cargo.lock")),
+        }
+    }
+    Ok(bad)
 }
 
 /// The notice text with the mirrored source URLs listed after its marker line (replacing a
@@ -896,6 +1001,43 @@ mod tests {
         let twice = with_mirrors(&once, &[&b]);
         assert!(!twice.contains("/a") && twice.contains("- https://example.com/b\n\nOn request"), "{twice}");
         assert_eq!(with_mirrors("no marker", &[&a]), "no marker");
+    }
+
+    #[test]
+    fn the_release_must_name_the_run_exactly_and_attestations_are_bound_to_main() {
+        assert!(names_run("notes\nbuild_run: 12\nbuild_commit: x", 12));
+        assert!(!names_run("build_run: 123", 12), "no substring matches");
+        assert!(!names_run("see build_run: 12 above", 12));
+        let args = attest_args("f", REPO, "abc").join(" ");
+        for need in [
+            "--source-ref refs/heads/main",
+            "--source-digest abc",
+            "--signer-digest abc",
+            "--deny-self-hosted-runners",
+        ] {
+            assert!(args.contains(need), "{args}");
+        }
+    }
+
+    #[test]
+    fn vendored_packages_must_match_the_lock() {
+        let lock = "[[package]]\nname = \"gifski\"\nversion = \"1.34.0\"\n\n[[package]]\nname = \"loop9\"\nversion = \"0.1.5\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"aa\"\n\n[[package]]\nname = \"rgb-x\"\nversion = \"0.8.0\"\nchecksum = \"bb\"\n";
+        let locked = lock_checksums(lock);
+        assert_eq!(locked.len(), 2, "{locked:?}");
+        assert_eq!(locked["loop9 0.1.5"], "aa");
+        let dir = tempfile_dir("vendor");
+        let pkg = |name: &str, sum: &str| {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+            let json = format!("{{\"files\":{{}},\"package\":\"{sum}\"}}");
+            std::fs::write(dir.join(name).join(".cargo-checksum.json"), json).unwrap();
+        };
+        pkg("loop9-0.1.5", "aa");
+        pkg("rgb-x-0.8.0", "bb");
+        assert_eq!(vendor_mismatches(&dir, &locked).unwrap(), Vec::<String>::new());
+        pkg("rgb-x-0.8.0", "cc");
+        pkg("evil-1.0.0", "dd");
+        assert_eq!(vendor_mismatches(&dir, &locked).unwrap().len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

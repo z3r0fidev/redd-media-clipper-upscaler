@@ -242,7 +242,11 @@ pub(crate) fn engine_env() -> Vec<(OsString, OsString)> {
 /// Runs `path --version` with a cleared environment, returning at most 4 KiB of its stdout.
 fn banner(path: &Path, timeout: Duration) -> Result<String, String> {
     let mut cmd = crate::tools::quiet_command(path);
-    cmd.arg("--version").env_clear().envs(engine_env());
+    // A neutral working directory (the user's may be an untrusted folder), and on Unix a
+    // process group of its own, so a timeout kills anything it started too.
+    cmd.arg("--version").env_clear().envs(engine_env()).current_dir(std::env::temp_dir());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
     // A program written moments ago can be briefly busy (another thread forked while it was
     // open for writing): retry that case a few times.
@@ -266,8 +270,7 @@ fn banner(path: &Path, timeout: Duration) -> Result<String, String> {
     let text = match rx.recv_timeout(timeout) {
         Ok(t) => t,
         Err(_) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_tree(&mut child);
             return Err(format!(
                 "{} --version did not finish within {} s",
                 path.display(),
@@ -276,9 +279,16 @@ fn banner(path: &Path, timeout: Duration) -> Result<String, String> {
         }
     };
     // The banner is read; the program may still be writing (bounded read): stop it.
+    kill_tree(&mut child);
+    Ok(String::from_utf8_lossy(&text).into_owned())
+}
+
+/// Kills a banner check and its process group, then reaps it.
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    crate::exec::process::kill_group(child.id());
     let _ = child.kill();
     let _ = child.wait();
-    Ok(String::from_utf8_lossy(&text).into_owned())
 }
 
 #[cfg(test)]

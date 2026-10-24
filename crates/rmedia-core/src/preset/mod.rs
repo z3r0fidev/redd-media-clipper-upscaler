@@ -218,10 +218,21 @@ pub(crate) fn read_preset_file(path: &Path) -> Result<String, String> {
     if meta.len() > MAX_PRESET_BYTES {
         return Err(format!("larger than {} KiB", MAX_PRESET_BYTES / 1024));
     }
+    // Opened without following a link and without blocking (a file swapped for a FIFO after
+    // the check must not hang the read), then checked again on the open handle.
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = open.open(path).map_err(|e| e.to_string())?;
+    if !file.metadata().map_err(|e| e.to_string())?.file_type().is_file() {
+        return Err("not a regular file".into());
+    }
     let mut text = String::new();
-    std::fs::File::open(path)
-        .and_then(|f| f.take(MAX_PRESET_BYTES).read_to_string(&mut text))
-        .map_err(|e| e.to_string())?;
+    file.take(MAX_PRESET_BYTES).read_to_string(&mut text).map_err(|e| e.to_string())?;
     Ok(text)
 }
 
