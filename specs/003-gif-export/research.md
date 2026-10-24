@@ -228,6 +228,10 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
     producer's EPIPE/SIGPIPE is ignored. If only the producer fails, it is the cause, and the
     consumer's output is discarded even if the consumer exited 0 (a truncated GIF on EOF). The
     AI worker's error-code table stays as a filter-specific refinement.
+    - As built (T021, 2026-10-24): for the 2-stage pipe, a producer that failed **on its own**
+      (not SIGPIPE, and its stderr does not report a broken pipe) is the cause even when the
+      consumer also failed, because a consumer fed a cut-short stream fails with a misleading
+      message. Otherwise a failed consumer is the cause. Stage exits are polled every 25 ms.
   - **Kill:** on Linux, stage 0 leads the process group and the others join after its pid is
     known. On Windows, each child has its own kill-on-close Job Object (as today,
     `process.rs:155-158`), and cancel kills them in order, consumer first.

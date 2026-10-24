@@ -190,7 +190,7 @@ green after every task.**
   - `ReframeInput` in `core/upscale/reframe/mod.rs` with the fields from research R16;
   - `UpscaleSpec::reframe_input()`;
   - update `core/upscale/preview.rs` and `apps/desktop/src-tauri/src/ops.rs` callers.
-- [ ] T020 Write B3 tests in `core-tests/us6_pipeline.rs` (extend) and `core/exec/pipeline.rs`
+- [X] T020 Write B3 tests in `core-tests/us6_pipeline.rs` (extend) and `core/exec/pipeline.rs`
   unit tests. They use small fake programs built in the test (no shell): a producer that writes
   y4m-like bytes, a consumer that reads stdin.
   - the 2-stage happy path;
@@ -200,7 +200,7 @@ green after every task.**
   - cancel kills both within 2 s on Linux and Windows.
 
   All existing 3-stage tests stay green.
-- [ ] T021 Implement B3: rewrite `core/exec/pipeline.rs` around
+- [X] T021 Implement B3: rewrite `core/exec/pipeline.rs` around
   `Vec<StageSpec { program, args, role, progress }>`, with the role-based blame rule, the
   progress sources and the kill order (research R7). The AI tier in `core/exec/upscale.rs`
   becomes a 3-stage instance.

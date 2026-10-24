@@ -43,8 +43,12 @@ pub(crate) enum Group {
     Join(u32),
 }
 
-fn build(program: &Path, args: &[OsString], cwd: Option<&Path>) -> CommandWrap {
-    build_with(program, args, cwd, Stdio::null(), Group::Own)
+/// The environment a child gets: rmedia's own (ffmpeg, the AI worker), or only the listed
+/// variables (the optional GIF engines, research R7).
+pub(crate) type Env<'a> = Option<&'a [(OsString, OsString)]>;
+
+fn build(program: &Path, args: &[OsString], cwd: Option<&Path>, env: Env<'_>) -> CommandWrap {
+    build_with(program, args, cwd, Stdio::null(), Group::Own, env)
 }
 
 fn build_with(
@@ -53,9 +57,13 @@ fn build_with(
     cwd: Option<&Path>,
     stdin: Stdio,
     group: Group,
+    env: Env<'_>,
 ) -> CommandWrap {
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args).stdin(stdin).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(vars) = env {
+        cmd.env_clear().envs(vars.iter().map(|(k, v)| (k, v)));
+    }
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
@@ -110,8 +118,13 @@ fn set_parent_death_signal(cmd: &mut tokio::process::Command) {
     }
 }
 
-fn spawn(program: &Path, args: &[OsString], cwd: Option<&Path>) -> Result<Box<dyn ChildWrapper>> {
-    spawned(program, build(program, args, cwd).spawn())
+fn spawn(
+    program: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    env: Env<'_>,
+) -> Result<Box<dyn ChildWrapper>> {
+    spawned(program, build(program, args, cwd, env).spawn())
 }
 
 /// Spawns one stage of a pipeline (the AI tier, US6): `stdin` is the previous stage's stdout;
@@ -124,8 +137,9 @@ pub(crate) fn spawn_stage(
     cwd: Option<&Path>,
     stdin: Stdio,
     group: Group,
+    env: Env<'_>,
 ) -> Result<Box<dyn ChildWrapper>> {
-    spawned(program, build_with(program, args, cwd, stdin, group).spawn())
+    spawned(program, build_with(program, args, cwd, stdin, group, env).spawn())
 }
 
 /// SIGKILLs every process in the group `pgid` (pipelines). Errors are ignored: the group may
@@ -161,7 +175,7 @@ pub async fn run_capture(
     cancel: &CancellationToken,
 ) -> Result<ProcessOutput> {
     let mut buf = Vec::new();
-    let mut out = run(program, args, None, cancel, |stdout| async {
+    let mut out = run(program, args, None, None, cancel, |stdout| async {
         let mut limited = stdout.take(MAX_CAPTURE_BYTES);
         limited.read_to_end(&mut buf).await?;
         if buf.len() as u64 >= MAX_CAPTURE_BYTES {
@@ -191,11 +205,23 @@ pub async fn run_lines_in(
     args: &[OsString],
     cwd: Option<&Path>,
     cancel: &CancellationToken,
+    on_line: impl FnMut(&str) + Send,
+) -> Result<ProcessOutput> {
+    run_lines_env(program, args, cwd, None, cancel, on_line).await
+}
+
+/// [`run_lines_in`] with only the variables of `env` (the optional GIF engines).
+pub(crate) async fn run_lines_env(
+    program: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    env: Env<'_>,
+    cancel: &CancellationToken,
     mut on_line: impl FnMut(&str) + Send,
 ) -> Result<ProcessOutput> {
-    run(program, args, cwd, cancel, |stdout| async move {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Some(line) = lines.next_line().await? {
+    run(program, args, cwd, env, cancel, |stdout| async move {
+        let mut reader = BufReader::new(stdout);
+        while let Some(line) = next_line_bounded(&mut reader, MAX_LINE_CHARS * 4).await? {
             on_line(&line);
         }
         Ok(())
@@ -216,7 +242,7 @@ where
     F: FnOnce(tokio::process::ChildStdout) -> Fut,
     Fut: std::future::Future<Output = std::io::Result<()>>,
 {
-    run(program, args, cwd, cancel, consume).await
+    run(program, args, cwd, None, cancel, consume).await
 }
 
 /// Spawns, drains stdout with `consume` (racing cancellation), then reaps the child.
@@ -224,6 +250,7 @@ async fn run<F, Fut>(
     program: &Path,
     args: &[OsString],
     cwd: Option<&Path>,
+    env: Env<'_>,
     cancel: &CancellationToken,
     consume: F,
 ) -> Result<ProcessOutput>
@@ -231,7 +258,7 @@ where
     F: FnOnce(tokio::process::ChildStdout) -> Fut,
     Fut: std::future::Future<Output = std::io::Result<()>>,
 {
-    let mut child = spawn(program, args, cwd)?;
+    let mut child = spawn(program, args, cwd, env)?;
     let stdout = child.stdout().take().expect("stdout is piped");
     let stderr_task = tokio::spawn(collect_stderr(child.stderr().take()));
     let drained = tokio::select! {
