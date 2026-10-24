@@ -69,10 +69,7 @@ pub async fn frame_at(
     );
     let out = run_capture(&tools.ffmpeg.path, &args, cancel).await?;
     if !out.status.success() || out.stdout.is_empty() {
-        return Err(Error::EngineFailed {
-            message: format!("could not extract a frame at {t}"),
-            stderr_tail: out.stderr_tail,
-        });
+        return Err(Error::engine_failed(format!("could not extract a frame at {t}"), out.stderr_tail));
     }
     Ok(out.stdout)
 }
@@ -224,10 +221,7 @@ pub async fn ensure_proxy(
         }
         Ok(out) => {
             remove_with_retry(&temp);
-            Err(Error::EngineFailed {
-                message: "could not create a preview".into(),
-                stderr_tail: out.stderr_tail,
-            })
+            Err(Error::engine_failed("could not create a preview", out.stderr_tail))
         }
         Err(e) => {
             remove_with_retry(&temp);

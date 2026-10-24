@@ -226,10 +226,9 @@ impl Prepared {
         let not_smart = || Error::InvalidInput("this job has no smart reframe to analyse".into());
         let spec_det = up.detector.clone().ok_or_else(not_smart)?;
         // Reading and hashing the model is blocking work.
-        let detector =
-            tokio::task::spawn_blocking(move || detect::load(&spec_det)).await.map_err(|e| {
-                Error::EngineFailed { message: format!("face model: {e}"), stderr_tail: String::new() }
-            })??;
+        let detector = tokio::task::spawn_blocking(move || detect::load(&spec_det))
+            .await
+            .map_err(|e| Error::engine_failed(format!("face model: {e}"), String::new()))??;
         let crop = up.geometry.crop.ok_or_else(not_smart)?;
         let span = spec.cut.requested;
         let len = span.end.saturating_sub(span.start).as_secs_f64();

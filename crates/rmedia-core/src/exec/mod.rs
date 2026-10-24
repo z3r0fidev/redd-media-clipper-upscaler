@@ -256,6 +256,7 @@ async fn run(
                         code: "INTERNAL".into(),
                         message: format!("internal error while processing this clip: {e}"),
                         stderr_tail: None,
+                        detail: None,
                     },
                 };
                 shared.emit(Event::JobFinished { job_id: job.id, outcome: outcome.clone() });
@@ -403,7 +404,12 @@ impl<'a> JobCtx<'a> {
 
     /// Reports a warning for this job.
     pub fn warn(&self, message: String) {
-        self.shared.emit(Event::JobWarning { job_id: self.id, message });
+        self.shared.emit(Event::JobWarning { job_id: self.id, message, code: None });
+    }
+
+    /// Reports a warning that has a code (feature 003).
+    pub fn warn_code(&self, code: crate::error::IssueCode, message: String) {
+        self.shared.emit(Event::JobWarning { job_id: self.id, message, code: Some(code) });
     }
 
     /// Reports progress within the current stage as a fraction (for stages without ffmpeg
@@ -449,8 +455,10 @@ async fn run_job(
         return JobOutcome::Cancelled;
     }
     shared.emit(Event::JobStarted { job_id: job.id });
+    // Warnings that have a code (notices) are sent with it; the rest as in 001/002.
     for w in &job.warnings {
-        shared.emit(Event::JobWarning { job_id: job.id, message: w.clone() });
+        let code = job.notices.iter().find(|n| &n.message == w).map(|n| n.code);
+        shared.emit(Event::JobWarning { job_id: job.id, message: w.clone(), code });
     }
     if let Some(dir) = job.temp.parent().map(Path::to_path_buf) {
         let made = blocking(move || std::fs::create_dir_all(&dir).map_err(|e| (dir, e))).await;

@@ -39,6 +39,9 @@ pub struct GraphInput {
     /// The source's colour tags in ffmpeg's names (`setparams` options), with the same SD/HD
     /// defaults as `colour_in`, so the GPU scaler converts from the right colours.
     pub params_in: String,
+    /// The source has an alpha plane: the GIF chain flattens it onto opaque black first
+    /// (feature 003, research R15). The video flavours ignore it.
+    pub flatten_alpha: bool,
 }
 
 /// Smart-reframe parameters of the graph.
@@ -102,6 +105,89 @@ enum Flavor {
     /// The AI tier's source-side chain: no denoise (the model removes compression noise
     /// itself) and a constant frame rate, so ffmpeg #2 can time the worker's raw frames.
     Ai,
+    /// The GIF frame chain (feature 003, refactor B1): the same trim, pre-processing and
+    /// framing, a constant frame rate, one swscale Lanczos resample straight to the GIF size,
+    /// and full-range RGB out for the palette. No denoise, sharpening or video tail.
+    Gif,
+}
+
+/// swscale flags of the GIF resample (research R1).
+const GIF_SCALER: &str = "lanczos+accurate_rnd+full_chroma_int";
+/// Flattens a source with alpha onto opaque black: the base is a copy of the source (so it has
+/// its timing) without the alpha plane, painted black (research R15, T005 e).
+const FLATTEN_ALPHA: &str =
+    "split[fa][fb];[fa]format=yuv420p,drawbox=c=black:t=fill[fk];[fk][fb]overlay=format=auto";
+
+/// What the GIF frame chain needs besides [`GraphInput`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GifChain<'a> {
+    /// The constant output frame rate (`n/d`): the target's, capped at the source's.
+    pub rate: &'a str,
+    /// `unsharp` luma amount after the resample (flat-ui).
+    pub sharpen: Option<f32>,
+}
+
+/// The GIF frame chain (refactor B1): `[0:v]` → frames at the GIF size in full-range RGB. It
+/// ends in an open chain, so callers append `,palettegen=…` or `[x];[x][1:v]paletteuse=…`.
+/// `geometry.target` is the GIF size, planned with `W = min(target width, crop width)`.
+pub fn frame_chain(g: &GraphInput, c: &GifChain<'_>) -> String {
+    let pre = pre_chain_at(g, Flavor::Gif, Some(c.rate));
+    let (w, h) = g.geometry.target;
+    let sharpen = c.sharpen.map(|a| format!(",unsharp=5:5:{a}:5:5:0")).unwrap_or_default();
+    let rgb = gif_rgb(g);
+    let to_rgb = format!("{sharpen},scale=flags=accurate_rnd+full_chroma_int:{rgb},format=rgb24");
+    let overflow = g.geometry.overflow != Overflow::None;
+    match (g.reframe, &g.track, g.geometry.crop) {
+        (Reframe::Smart, Some(t), Some(cr)) if overflow => {
+            let crop = format!(
+                "sendcmd=f=reframe.cmd,crop@trk=w={}:h={}:x={}:y={},{}",
+                cr.w,
+                cr.h,
+                t.x0,
+                cr.y,
+                scaler(g, w, h, Flavor::Gif)
+            );
+            if !t.fallback {
+                return format!("[0:v]{pre},{crop}{to_rgb}");
+            }
+            format!(
+                "[0:v]{pre},split[a][b];[a]{crop}[crop];{};[crop][pad]overlay@fb=0:0:enable=0{to_rgb}",
+                blur_pad(g, "[b]", "[pad]", Flavor::Gif)
+            )
+        }
+        (Reframe::Blur, _, _) if overflow => blur_pad(g, &format!("[0:v]{pre},"), &to_rgb, Flavor::Gif),
+        _ => {
+            let mut chain = vec![pre];
+            if let Some(cr) = g.geometry.crop {
+                chain.push(format!("crop={}:{}:{}:{}", cr.w, cr.h, cr.x, cr.y));
+            }
+            // One swscale pass resamples and converts to RGB, unless sharpening sits between.
+            if c.sharpen.is_some() {
+                chain.push(format!("{}{to_rgb}", scaler(g, w, h, Flavor::Gif)));
+            } else {
+                chain.push(format!("scale={w}:{h}:flags={GIF_SCALER}:{rgb},format=rgb24"));
+            }
+            format!("[0:v]{}", chain.join(","))
+        }
+    }
+}
+
+/// swscale's input colour options for the GIF's RGB conversion: the source matrix and range
+/// (from `colour_in`, which already has the SD/HD defaults), or BT.709 limited after
+/// tone-mapping.
+fn gif_rgb(g: &GraphInput) -> String {
+    let field = |key: &str| g.colour_in.split(':').find_map(|kv| kv.strip_prefix(key)).unwrap_or_default();
+    let (matrix, range) = if g.tonemap {
+        ("bt709", "tv")
+    } else {
+        let matrix = match field("min=") {
+            "170m" | "470bg" => "bt601",
+            "2020_ncl" | "2020_cl" => "bt2020",
+            _ => "bt709",
+        };
+        (matrix, if field("rin=") == "full" { "pc" } else { "tv" })
+    };
+    format!("in_color_matrix={matrix}:in_range={range}:out_range=pc")
 }
 
 /// Builds the filtergraph.
@@ -219,20 +305,21 @@ fn blur_pad(g: &GraphInput, head: &str, end: &str, flavor: Flavor) -> String {
     let overlay_fmt = if g.keep_hdr { ":format=yuv420p10" } else { "" };
     format!(
         "{head}split[bg0][fg0];[bg0]{}[bg];[fg0]{}[fg];[bg][fg]overlay={ox}:{oy}{overlay_fmt}{end}",
-        blur_background(g),
+        blur_background(g, flavor),
         scaler(g, fw, fh, flavor)
     )
 }
 
 /// The blurred, darkened copy filling the target: scaled to 1/10 size (cheap), converted like
-/// the foreground, blurred, darkened and scaled back up.
-fn blur_background(g: &GraphInput) -> String {
+/// the foreground, blurred, darkened and scaled back up. The GIF flavour keeps the source's
+/// colours (both layers are converted to RGB together after the overlay).
+fn blur_background(g: &GraphInput, flavor: Flavor) -> String {
     let (w, h) = g.geometry.target;
     let (bw, bh) = (even(f64::from(w) / 10.0), even(f64::from(h) / 10.0));
+    let colour = if flavor == Flavor::Gif { String::new() } else { colour_tail(g) };
     format!(
-        "scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}{},gblur=sigma=3,\
-         eq=brightness=-0.08,scale={w}:{h},setsar=1",
-        colour_tail(g)
+        "scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}{colour},gblur=sigma=3,\
+         eq=brightness=-0.08,scale={w}:{h},setsar=1"
     )
 }
 
@@ -308,7 +395,7 @@ pub fn ai_finish(g: &GraphInput, stage: &super::ai::AiStage, rate: &str) -> Stri
             format!(
                 "[1:v]{}[fg];[0:v]{source},{}[bg];[bg][fg]overlay={ox}:{oy},{tail}[v]",
                 to(stage.fit),
-                blur_background(g)
+                blur_background(g, Flavor::Render)
             )
         }
         _ => format!("[1:v]{},{tail}[v]", to(g.geometry.target)),
@@ -353,6 +440,9 @@ fn pre_chain_at(g: &GraphInput, flavor: Flavor, rate: Option<&str>) -> String {
         let end = end.map(|e| format!(":end={}", e.ffmpeg())).unwrap_or_default();
         f.push(format!("trim=start={}{end},setpts=PTS-STARTPTS", start.ffmpeg()));
     }
+    if flavor == Flavor::Gif && g.flatten_alpha {
+        f.push(FLATTEN_ALPHA.into());
+    }
     if g.deinterlace {
         f.push("bwdif=mode=send_frame".into());
     }
@@ -368,7 +458,7 @@ fn pre_chain_at(g: &GraphInput, flavor: Flavor, rate: Option<&str>) -> String {
         f.push(DENOISE.into());
     }
     match (flavor, rate) {
-        (Flavor::Ai, Some(r)) => f.push(format!("fps={r}")),
+        (Flavor::Ai | Flavor::Gif, Some(r)) => f.push(format!("fps={r}")),
         _ => {
             if let Some(fps) = g.fps_cap {
                 f.push(format!("fps={fps}"));
@@ -409,6 +499,9 @@ fn colour_tail(g: &GraphInput) -> String {
 fn scaler(g: &GraphInput, w: u32, h: u32, flavor: Flavor) -> String {
     if flavor == Flavor::Baseline {
         return format!("zscale=w={w}:h={h}:f=bicubic{}", colour_options(g));
+    }
+    if flavor == Flavor::Gif {
+        return format!("scale={w}:{h}:flags={GIF_SCALER}");
     }
     if let Some(_device) = g.gpu {
         return gpu_scaler(g, w, h);
@@ -476,6 +569,7 @@ mod tests {
             track: None,
             gpu: None,
             params_in: setparams_input(&ColourTags::bt709(), 1080),
+            flatten_alpha: false,
         }
     }
 

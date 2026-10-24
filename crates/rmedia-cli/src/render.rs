@@ -251,6 +251,9 @@ fn job_doc(j: &PlannedJob) -> Value {
     if let Some(p) = j.predicted() {
         m.insert("predicted".into(), json!(p));
     }
+    if !j.notices.is_empty() {
+        m.insert("notices".into(), json!(j.notices));
+    }
     if let JobSpec::Upscale(u) = &j.spec {
         m.insert("kind".into(), json!("upscale"));
         m.insert("upscale".into(), u.up.to_json());
@@ -395,7 +398,7 @@ impl EventSink for RenderSink {
                             pb.set_message(msg);
                         }
                     }
-                    Event::JobWarning { job_id, message } => {
+                    Event::JobWarning { job_id, message, .. } => {
                         let label = labels.get(&job_id).cloned().unwrap_or_default();
                         let _ = multi.println(format!("warning: {label}: {message}"));
                     }

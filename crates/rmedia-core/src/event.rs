@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::ErrorInfo;
+use crate::error::{ErrorInfo, IssueCode};
 use crate::time::Ts;
 use crate::upscale::tier::Tier;
 
@@ -36,6 +36,10 @@ pub enum Event {
     JobWarning {
         job_id: JobId,
         message: String,
+        /// The warning's code, for warnings that have one (feature 003, e.g. `ENGINE_FALLBACK`).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        code: Option<IssueCode>,
     },
     /// A multi-stage job (e.g. upscale: analyze → render → verify) entered stage `index` of `of`.
     /// `job_progress.fraction` always covers the whole job, weighted across stages.
@@ -152,5 +156,62 @@ impl EventSink for NullSink {
 impl<F: Fn(Event) + Send + Sync> EventSink for F {
     fn emit(&self, event: Event) {
         self(event)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{ErrorDetail, IssueCode};
+    use serde_json::json;
+
+    #[test]
+    fn job_warnings_without_a_code_serialise_as_before() {
+        let plain = Event::JobWarning { job_id: 3, message: "careful".into(), code: None };
+        assert_eq!(
+            serde_json::to_value(&plain).unwrap(),
+            json!({"type": "job_warning", "job_id": 3, "message": "careful"})
+        );
+        let coded =
+            Event::JobWarning { job_id: 3, message: "careful".into(), code: Some(IssueCode::EngineFallback) };
+        assert_eq!(serde_json::to_value(&coded).unwrap()["code"], "ENGINE_FALLBACK");
+    }
+
+    #[test]
+    fn error_info_without_detail_serialises_as_before() {
+        let info = crate::Error::Cancelled.info();
+        assert_eq!(
+            serde_json::to_value(&info).unwrap(),
+            json!({"code": "CANCELLED", "message": "cancelled"})
+        );
+        let budget = crate::Error::BudgetUnreachable {
+            fits_secs: Some(4.2),
+            best_bytes: Some(9_800_000),
+            min_bytes: None,
+        };
+        let v = serde_json::to_value(budget.info()).unwrap();
+        assert_eq!(v["code"], "BUDGET_UNREACHABLE");
+        assert_eq!(v["detail"], json!({"fits_secs": 4.2, "best_bytes": 9_800_000}));
+        let floor =
+            crate::Error::BudgetUnreachable { fits_secs: None, best_bytes: None, min_bytes: Some(65_536) };
+        assert_eq!(serde_json::to_value(floor.info()).unwrap()["detail"], json!({"min_bytes": 65_536}));
+        assert_eq!(
+            ErrorDetail::default(),
+            ErrorDetail { fits_secs: None, best_bytes: None, min_bytes: None }
+        );
+    }
+
+    #[test]
+    fn engine_failures_name_their_tool_and_default_to_ffmpeg() {
+        let e = crate::Error::engine_failed("bad input", "tail");
+        assert_eq!(e.to_string(), "ffmpeg failed: bad input");
+        assert_eq!(e.code(), "ENGINE_FAILED");
+        let g = crate::Error::EngineFailed {
+            tool: "gifsicle".into(),
+            message: "exit 1".into(),
+            stderr_tail: String::new(),
+        };
+        assert_eq!(g.to_string(), "gifsicle failed: exit 1");
+        assert_eq!(g.code(), "ENGINE_FAILED");
     }
 }

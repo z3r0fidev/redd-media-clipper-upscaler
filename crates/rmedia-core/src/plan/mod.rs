@@ -99,6 +99,33 @@ pub enum Resource {
     Gpu,
 }
 
+/// A warning or note with a code (feature 003). Every notice's message is also in
+/// `PlannedJob.warnings`, so 001/002 consumers keep reading plain strings (research R16).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Notice {
+    pub code: IssueCode,
+    pub message: String,
+}
+
+/// The program a [`JobCommand`] runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Program {
+    Ffmpeg,
+    /// The AI tier's worker (`rmedia-sr`).
+    AiWorker,
+    Gifsicle,
+    Gifski,
+}
+
+/// One process of a job: what runs, with which arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobCommand {
+    pub program: Program,
+    pub args: Vec<OsString>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct PlannedJob {
@@ -118,6 +145,10 @@ pub struct PlannedJob {
     /// The span of the source this job processes (user time base).
     pub requested: Span,
     pub warnings: Vec<String>,
+    /// The warnings that have a code, with it (empty for clip and upscale jobs).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<Notice>>", optional))]
+    pub notices: Vec<Notice>,
     #[serde(skip)]
     pub spec: JobSpec,
 }
@@ -136,6 +167,20 @@ impl PlannedJob {
         match &self.spec {
             JobSpec::Upscale(u) if u.up.ai.is_some() => Some(ffargs::ai_args(u, &self.temp)),
             _ => None,
+        }
+    }
+
+    /// Every process this job runs, in order. The last one writes the output, and its arguments
+    /// are [`PlannedJob::args`].
+    pub fn commands(&self) -> Vec<JobCommand> {
+        let ffmpeg = |args| JobCommand { program: Program::Ffmpeg, args };
+        match self.pipeline() {
+            Some(p) => vec![
+                ffmpeg(p.decode),
+                JobCommand { program: Program::AiWorker, args: p.worker },
+                ffmpeg(p.encode),
+            ],
+            None => vec![ffmpeg(self.args())],
         }
     }
 
@@ -593,6 +638,7 @@ impl Planner<'_> {
             disposition,
             requested,
             warnings,
+            notices: Vec::new(),
             spec,
         });
     }
@@ -781,6 +827,7 @@ impl Planner<'_> {
             keep_hdr,
             colour_in: crate::upscale::graph::zscale_input(&colour_in, v.height.unwrap_or(0)),
             params_in: crate::upscale::graph::setparams_input(&colour_in, v.height.unwrap_or(0)),
+            flatten_alpha: false,
             gpu: (tier.tier == Tier::Gpu).then_some(tier.device).flatten(),
             fps_cap,
             geometry,

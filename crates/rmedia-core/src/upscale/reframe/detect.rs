@@ -154,7 +154,7 @@ impl std::fmt::Debug for YunetDetector {
 }
 
 fn model_error(e: impl std::fmt::Display) -> crate::Error {
-    crate::Error::EngineFailed { message: format!("face model: {e}"), stderr_tail: String::new() }
+    crate::Error::engine_failed(format!("face model: {e}"), String::new())
 }
 
 impl YunetDetector {

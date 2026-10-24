@@ -187,12 +187,11 @@ pub(super) async fn run(
                 Some((code, message)) => format!("the AI worker failed ({code}): {message}"),
                 None => format!("the AI worker stopped unexpectedly ({})", describe(status[WORKER])),
             };
-            Err(Error::EngineFailed { message: msg, stderr_tail: report.tail.join("\n") })
+            Err(Error::engine_failed(msg, report.tail.join("\n")))
         }
-        Some(i) => Err(Error::EngineFailed {
-            message: format!("{} failed ({})", NAMES[i], describe(status[i])),
-            stderr_tail: decode_tail,
-        }),
+        Some(i) => {
+            Err(Error::engine_failed(format!("{} failed ({})", NAMES[i], describe(status[i])), decode_tail))
+        }
     }
 }
 

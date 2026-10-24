@@ -153,13 +153,13 @@ green after every task.**
 
 ### Refactors B1–B4 (data-model.md › Refactors)
 
-- [ ] T014 Write tests for B4 in `cli-tests/contract_clip_json.rs` and `core/event.rs` tests:
+- [X] T014 Write tests for B4 in `cli-tests/contract_clip_json.rs` and `core/event.rs` tests:
   - the existing clip and upscale JSON snapshots are unchanged;
   - `JobWarning` without a code serialises as before;
   - `ErrorInfo` without `detail` serialises as before;
   - `PlannedJob::commands()` for a clip job equals `[args()]`;
   - the AI job's `pipeline` is unchanged.
-- [ ] T015 Implement B4:
+- [X] T015 Implement B4:
   - `notices` on `PlannedJob`;
   - an optional `code` on `Event::JobWarning`;
   - `ErrorInfo.detail`;
@@ -169,7 +169,7 @@ green after every task.**
 
   Files: `core/event.rs`, `core/error.rs`, `core/plan/mod.rs`, `crates/rmedia-cli/src/render.rs`.
   Then `cargo xtask gen-bindings`.
-- [ ] T016 Write B1 tests in `core-tests/snapshots_gif_graph.rs`, insta snapshots of
+- [X] T016 Write B1 tests in `core-tests/snapshots_gif_graph.rs`, insta snapshots of
   `frame_chain` for:
   - centre, blur and smart framing;
   - tone-map;
@@ -179,7 +179,7 @@ green after every task.**
 
   Assert every `build()` snapshot from `snapshots_ffargs.rs` and the upscale tests is
   unchanged.
-- [ ] T017 Implement B1 in `core/upscale/graph.rs`: `Flavor::Gif` in `build_with`, plus
+- [X] T017 Implement B1 in `core/upscale/graph.rs`: `Flavor::Gif` in `build_with`, plus
   `pub fn frame_chain` (research R1). It has one resample, no denoise, CAS, zscale or format
   tail, and an open output label.
 - [ ] T018 Write B2 tests in `core-tests/us2_reframe.rs` (extend):

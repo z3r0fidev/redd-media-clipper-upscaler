@@ -688,6 +688,7 @@ async fn self_test(
         track: None,
         gpu,
         params_in: setparams_input(&tags, 854),
+        flatten_alpha: false,
     });
     let mut args = strings(&["-hide_banner", "-nostdin", "-v", "error"]);
     if let Some(n) = gpu {

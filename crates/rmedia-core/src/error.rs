@@ -20,14 +20,21 @@ pub enum Error {
     OutputUnwritable { path: PathBuf, message: String },
     #[error("not enough disk space writing {}", .0.display())]
     DiskFull(PathBuf),
-    #[error("ffmpeg failed: {message}")]
-    EngineFailed { message: String, stderr_tail: String },
+    /// An external tool failed. `tool` names it ("ffmpeg" unless said otherwise, see
+    /// [`Error::engine_failed`]); the JSON code is `ENGINE_FAILED` for every tool.
+    #[error("{tool} failed: {message}")]
+    EngineFailed { tool: String, message: String, stderr_tail: String },
     #[error("output verification failed: {0}")]
     VerifyFailed(String),
     #[error("cancelled")]
     Cancelled,
     #[error("{0}")]
     EngineMissing(String),
+    /// A size budget cannot be met (feature 003). At plan time only `min_bytes` is set (the
+    /// static floor); after the search's floor sample, `fits_secs` (the longest range that fits)
+    /// and `best_bytes` (the smallest size reached).
+    #[error("{}", budget_message(*fits_secs, *best_bytes, *min_bytes))]
+    BudgetUnreachable { fits_secs: Option<f64>, best_bytes: Option<u64>, min_bytes: Option<u64> },
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -57,6 +64,18 @@ pub enum IssueCode {
     HdrUnsupported,
     /// Warning: a predicted output exceeds a preset's platform limit (002).
     LimitExceeded,
+    /// An unknown GIF target id (003).
+    TargetUnknown,
+    /// A GIF size budget cannot be reached at the target's floors (003).
+    BudgetUnreachable,
+    /// Warning: the result is over the soft budget and within the hard one (003).
+    OverRecommended,
+    /// Warning: an optional GIF engine that mattered is unavailable; another one was used (003).
+    EngineFallback,
+    /// Notice: the frame rate is not exact in GIF's centisecond delays (003).
+    TimingApproximate,
+    /// Warning: the range is longer than the GIF target's recommended duration (003).
+    LongRange,
 }
 
 impl IssueCode {
@@ -77,6 +96,12 @@ impl IssueCode {
             IssueCode::PresetUnknown => "PRESET_UNKNOWN",
             IssueCode::HdrUnsupported => "HDR_UNSUPPORTED",
             IssueCode::LimitExceeded => "LIMIT_EXCEEDED",
+            IssueCode::TargetUnknown => "TARGET_UNKNOWN",
+            IssueCode::BudgetUnreachable => "BUDGET_UNREACHABLE",
+            IssueCode::OverRecommended => "OVER_RECOMMENDED",
+            IssueCode::EngineFallback => "ENGINE_FALLBACK",
+            IssueCode::TimingApproximate => "TIMING_APPROXIMATE",
+            IssueCode::LongRange => "LONG_RANGE",
         }
     }
 }
@@ -107,7 +132,17 @@ impl Error {
             Error::VerifyFailed(_) => IssueCode::VerifyFailed,
             Error::Cancelled => IssueCode::Cancelled,
             Error::EngineMissing(_) => IssueCode::EngineMissing,
+            Error::BudgetUnreachable { .. } => IssueCode::BudgetUnreachable,
             Error::Io(_) => IssueCode::IoError,
+        }
+    }
+
+    /// An ffmpeg failure (the tool most errors come from).
+    pub fn engine_failed(message: impl Into<String>, stderr_tail: impl Into<String>) -> Error {
+        Error::EngineFailed {
+            tool: "ffmpeg".into(),
+            message: message.into(),
+            stderr_tail: stderr_tail.into(),
         }
     }
 
@@ -126,12 +161,41 @@ impl Error {
                 }
                 _ => None,
             },
+            detail: match self {
+                Error::BudgetUnreachable { fits_secs, best_bytes, min_bytes } => Some(ErrorDetail {
+                    fits_secs: fits_secs.map(|s| (s * 10.0).round() / 10.0),
+                    best_bytes: *best_bytes,
+                    min_bytes: *min_bytes,
+                }),
+                _ => None,
+            },
         }
     }
 }
 
+fn budget_message(fits_secs: Option<f64>, best_bytes: Option<u64>, min_bytes: Option<u64>) -> String {
+    let human = crate::upscale::estimate::human_bytes;
+    match (fits_secs, best_bytes, min_bytes) {
+        (_, _, Some(min)) => format!("the size budget is below the smallest possible GIF ({})", human(min)),
+        (Some(s), Some(best), _) => format!(
+            "the size budget cannot be reached at the target's lowest settings (smallest {}); about {s:.1} s fits (use --allow-trim to trim)",
+            human(best)
+        ),
+        (Some(s), None, _) => {
+            format!("the size budget cannot be reached; about {s:.1} s fits (use --allow-trim to trim)")
+        }
+        (None, Some(best), _) => {
+            format!(
+                "the size budget cannot be reached at the target's lowest settings (smallest {})",
+                human(best)
+            )
+        }
+        (None, None, None) => "the size budget cannot be reached".into(),
+    }
+}
+
 /// Serializable error summary for events and reports.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct ErrorInfo {
     pub code: String,
@@ -139,4 +203,23 @@ pub struct ErrorInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub stderr_tail: Option<String>,
+    /// Structured facts about the error (only `BUDGET_UNREACHABLE` has any, feature 003).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub detail: Option<ErrorDetail>,
+}
+
+/// `ErrorInfo.detail` (contracts/json-output.md › Outcome): absent fields are not serialised.
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct ErrorDetail {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub fits_secs: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub best_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub min_bytes: Option<u64>,
 }

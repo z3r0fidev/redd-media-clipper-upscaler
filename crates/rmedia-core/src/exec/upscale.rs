@@ -190,7 +190,7 @@ mod tests {
             device: Some(0),
         };
         let forced = TierDecision { forced: true, ..auto_gpu.clone() };
-        let engine = Error::EngineFailed { message: "vk".into(), stderr_tail: String::new() };
+        let engine = Error::engine_failed("vk", String::new());
         assert!(should_fall_back(&auto_gpu, &engine, false));
         assert!(!should_fall_back(&auto_gpu, &engine, true), "never after a cancel");
         assert!(!should_fall_back(&forced, &engine, false), "forced tiers never fall back");

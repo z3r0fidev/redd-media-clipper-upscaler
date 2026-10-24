@@ -159,10 +159,7 @@ pub async fn run(
     };
     let out = process::run_stream(&tools.ffmpeg.path, &args, Some(work), cancel, consume).await?;
     if !out.status.success() {
-        return Err(Error::EngineFailed {
-            message: "the reframe analysis decode failed".into(),
-            stderr_tail: out.stderr_tail,
-        });
+        return Err(Error::engine_failed("the reframe analysis decode failed", out.stderr_tail));
     }
     let scores =
         std::fs::read_to_string(work.join("cuts.txt")).map(|t| cuts::parse_scdet(&t)).unwrap_or_default();

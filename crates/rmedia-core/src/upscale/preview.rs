@@ -262,10 +262,10 @@ impl Still<'_> {
             if ok {
                 Ok(())
             } else {
-                Err(Error::EngineFailed {
-                    message: format!("could not render the preview at {}", self.at),
-                    stderr_tail: o.stderr_tail,
-                })
+                Err(Error::engine_failed(
+                    format!("could not render the preview at {}", self.at),
+                    o.stderr_tail,
+                ))
             }
         });
         let committed = written.and_then(|()| {

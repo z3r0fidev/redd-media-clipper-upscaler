@@ -226,6 +226,7 @@ mod tests {
             track: None,
             gpu: None,
             params_in: String::new(),
+            flatten_alpha: false,
         };
         let blur = stage(&g((1920, 1080), Reframe::Blur));
         assert_eq!((blur.input, blur.shrunk, blur.scale, blur.fit), ((540, 304), true, 2, (1080, 608)));

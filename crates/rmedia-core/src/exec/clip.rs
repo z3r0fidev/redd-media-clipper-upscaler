@@ -107,7 +107,7 @@ pub fn classify_failure(stderr_tail: &str, output: &Path) -> Error {
             .unwrap_or("ffmpeg exited with an error")
             .trim()
             .to_owned();
-        Error::EngineFailed { message, stderr_tail: stderr_tail.to_owned() }
+        Error::engine_failed(message, stderr_tail)
     }
 }
 
