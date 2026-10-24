@@ -42,6 +42,16 @@ jobs:
       # Every pinned archive has a mirror, and the FFmpeg pin has its GPL source release and notice.
       - name: Pins are mirrored and sourced, and every mirror answers
         run: cargo xtask check-pins --online
+      # FR-025: a release with gifski staged needs the application licence decision. The gate
+      # must refuse a tree with a staged gifski and no decision.
+      - name: The release gate refuses a staged gifski without a licence decision
+        shell: bash
+        run: |
+          gate="$RUNNER_TEMP/gate-tree"
+          mkdir -p "$gate/binaries" && cp Cargo.toml "$gate/"
+          touch "$gate/binaries/rmedia-gifski-${{ matrix.triple }}${{ matrix.exe }}"
+          if cargo xtask check-release-gate --tree "$gate"; then echo "the gate let gifski through"; exit 1; fi
+          cargo xtask check-release-gate
       # rmedia-sr (the AI worker, US6) links the prebuilt ncnn; build.rs stops without it.
       # No cache: the libraries are linked into the worker, so they are fetched and verified each run.
       - name: Fetch pinned ncnn (sha256-verified)

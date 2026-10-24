@@ -81,7 +81,7 @@ green after every task.**
 
 ### Bundled engines: supply chain (contracts/gif-tools-lock.md)
 
-- [ ] T006 Write xtask tests, then implement the `xtask/gif-tools.lock.json` reader and
+- [X] T006 Write xtask tests, then implement the `xtask/gif-tools.lock.json` reader and
   `check-pins` rules in `xtask/src/main.rs`:
   - hex and https checks;
   - the `release` pattern, `build_run`, `build_commit`;
@@ -91,7 +91,7 @@ green after every task.**
 
   Extend `all_pins`, `pins_of`, `archive_all` and `mirror` to include the new sources (the
   same-bytes rule for existing assets applies).
-- [ ] T007 Add `.github/workflows/gif-tools.yml` with the four jobs `vendor`, `build` (matrix),
+- [X] T007 Add `.github/workflows/gif-tools.yml` with the four jobs `vendor`, `build` (matrix),
   `attest` and `publish`, exactly as the contract describes:
   - permissions per job, commit-SHA-pinned actions, `concurrency`, timeouts;
   - https-only curl, verifying archives before extraction, refusing unsafe members;
@@ -103,7 +103,7 @@ green after every task.**
 
   If nmake fails, switch Windows gifsicle to the MSYS2/MinGW static route and record it in
   research R8.
-- [ ] T008 Implement `cargo xtask pin-gif-tools <run-id>` in `xtask/src/main.rs`:
+- [X] T008 Implement `cargo xtask pin-gif-tools <run-id>` in `xtask/src/main.rs`:
   - check the run's workflow, success and `head_sha` on main;
   - run `gh attestation verify --signer-workflow` per asset;
   - compare the digests with the build job's outputs and with the downloads;
@@ -128,13 +128,13 @@ green after every task.**
   - in `.github/workflows/ci.yml`, set `RMEDIA_GIFSICLE`/`RMEDIA_GIFSKI` and
     `RMEDIA_REQUIRE_GIF_TOOLS=1` for the bundled-engine test jobs, and leave them unset in
     `minimum-engine`.
-- [ ] T011 [P] Add the notices:
+- [X] T011 [P] Add the notices:
   - `licenses/GIFSICLE-NOTICE.md`, `GIFSICLE-COPYING.txt`, `GIFSKI-NOTICE.md`,
     `GIFSKI-LICENSE.txt`, with the version, licence, upstream, mirrored corresponding source,
     the build command, and the separate-program statement;
   - `check-pins` rules for them and for `GIFSKI-DEPS.md`;
   - `cargo xtask notices` links all three from `THIRD_PARTY_NOTICES.md`.
-- [ ] T012 [P] Write xtask tests, then implement `cargo xtask check-release-gate`. It fails when
+- [X] T012 [P] Write xtask tests, then implement `cargo xtask check-release-gate`. It fails when
   `binaries/rmedia-gifski*` is staged unless both of these exist:
   - a root `LICENSE`;
   - `[workspace.metadata.rmedia] app_licence` from the allowlist.

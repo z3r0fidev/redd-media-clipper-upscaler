@@ -1,6 +1,7 @@
-//! Developer tasks: `cargo xtask fetch-tools [--target TRIPLE]`, `cargo xtask pin-tools`,
-//! `cargo xtask fetch-models`, `cargo xtask fetch-ncnn [--target TRIPLE]`, `cargo xtask archive`,
-//! `cargo xtask mirror <tag>`, `cargo xtask check-pins`.
+//! Developer tasks: `cargo xtask fetch-tools [--target TRIPLE] [--no-gifski]`, `cargo xtask
+//! pin-tools`, `cargo xtask pin-gif-tools <run-id>`, `cargo xtask fetch-models`, `cargo xtask
+//! fetch-ncnn [--target TRIPLE]`, `cargo xtask archive`, `cargo xtask mirror <tag>`, `cargo xtask
+//! check-pins`, `cargo xtask check-release-gate [--tree DIR]`.
 //!
 //! Engine binaries are downloaded at build time from a pinned, SHA-256-verified URL and placed in
 //! `binaries/` using Tauri's sidecar naming (`rmedia-ffmpeg-<triple>[.exe]`). They are never
@@ -10,6 +11,8 @@
 //! Every pinned archive is kept in `archives/<sha256>/` (gitignored), because upstream builds can
 //! disappear (BtbN deletes old FFmpeg autobuilds). A pin may list `mirrors`, our own copies of the
 //! same bytes, tried before the upstream `url`; whatever the source, the SHA-256 must match.
+
+mod gif_tools;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -72,7 +75,7 @@ struct ArchiveMember {
     member: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Pinned {
     url: String,
     /// Our own copies of the archive, tried before `url` (same SHA-256).
@@ -97,9 +100,24 @@ fn main() -> Result<()> {
                 Some(i) => args.get(i + 1).context("--target needs a value")?.clone(),
                 None => host_triple().to_owned(),
             };
-            fetch_tools(&target)
+            fetch_tools(&target)?;
+            gif_tools::stage(&target, !args.iter().any(|a| a == "--no-gifski"))
         }
         Some("pin-tools") => pin_tools(),
+        Some("pin-gif-tools") => {
+            let run: u64 = args
+                .get(1)
+                .and_then(|r| r.parse().ok())
+                .context("usage: cargo xtask pin-gif-tools <run-id> (the gif-tools.yml run)")?;
+            gif_tools::pin(run)
+        }
+        Some("check-release-gate") => {
+            let tree = args
+                .iter()
+                .position(|a| a == "--tree")
+                .map(|i| args.get(i + 1).context("--tree needs a value"));
+            gif_tools::check_release_gate(tree.transpose()?.map(Path::new))
+        }
         Some("gen-bindings") => gen_bindings(),
         Some("stage-cli") => {
             let target = match args.iter().position(|a| a == "--target") {
@@ -127,7 +145,7 @@ fn main() -> Result<()> {
         }
         _ => {
             eprintln!(
-                "usage: cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>"
+                "usage: cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online] | check-release-gate [--tree DIR]>"
             );
             std::process::exit(2);
         }
@@ -471,6 +489,10 @@ fn archive_all() -> Result<()> {
     for a in models.models.values().filter_map(|m| m.archive.as_ref()) {
         pins.insert(&a.sha256, (&a.url, &a.mirrors));
     }
+    let gif = gif_tools::read_lock()?.map(|l| gif_tools::archive_pins(&l)).unwrap_or_default();
+    for (url, sha256, mirrors) in &gif {
+        pins.insert(sha256, (url, mirrors));
+    }
     for (sha256, (url, mirrors)) in pins {
         let kept = pinned_archive(url, mirrors, sha256)?;
         let size = std::fs::metadata(&kept)?.len();
@@ -480,9 +502,28 @@ fn archive_all() -> Result<()> {
     Ok(())
 }
 
-/// Every pinned archive as (upstream url, sha256, mirrors), one entry per distinct archive.
+/// Every pinned archive as (upstream url, sha256, mirrors), one entry per distinct archive:
+/// the FFmpeg, model and GIF-engine locks.
 fn all_pins() -> Result<Vec<(String, String, Vec<String>)>> {
-    Ok(pins_of(&read_lock()?, &read_model_lock()?))
+    let mut pins = pins_of(&read_lock()?, &read_model_lock()?);
+    if let Some(gif) = gif_tools::read_lock()? {
+        pins.extend(gif_tools::archive_pins(&gif));
+    }
+    Ok(pins)
+}
+
+/// `owner/name` of this repository (GitHub Actions' variable, else the `origin` remote).
+fn repo_name() -> Option<String> {
+    if let Ok(r) = std::env::var("GITHUB_REPOSITORY")
+        && !r.is_empty()
+    {
+        return Some(r);
+    }
+    let out = Command::new("git").args(["remote", "get-url", "origin"]).current_dir(root()).output().ok()?;
+    let url = String::from_utf8(out.stdout).ok()?;
+    let path = url.trim().trim_end_matches(".git");
+    let path = path.split_once("github.com").map(|(_, p)| p.trim_start_matches([':', '/']))?;
+    Some(path.to_owned())
 }
 
 /// Every pinned download in the two locks (FFmpeg, ncnn, model archives and direct model files)
@@ -641,21 +682,26 @@ fn add_mirror(url: &str, sha256: &str, mirror: &str) -> Result<()> {
 }
 
 /// `check-pins --online`: every mirror URL answers (HEAD over HTTPS, redirects followed), so a
-/// renamed or deleted mirror asset is noticed instead of silently falling back to upstream.
+/// renamed or deleted mirror asset is noticed instead of silently falling back to upstream. The
+/// GIF engines' URLs (sources, mirrors and built binaries) are all checked.
 fn check_mirrors_online() -> Result<()> {
+    let mut urls: Vec<String> = all_pins()?.into_iter().flat_map(|(_, _, m)| m).collect();
+    if let Some(gif) = gif_tools::read_lock()? {
+        urls.extend(gif_tools::all_urls(&gif));
+    }
+    urls.sort();
+    urls.dedup();
     let mut broken = Vec::new();
-    for (_, _, mirrors) in all_pins()? {
-        for m in mirrors {
-            let ok = Command::new("curl")
-                .args(["-fsSIL", "--proto", "=https", "--proto-redir", "=https", "--max-time", "60", "-o"])
-                .arg(if cfg!(windows) { "NUL" } else { "/dev/null" })
-                .arg("--url")
-                .arg(&m)
-                .status()
-                .is_ok_and(|s| s.success());
-            if !ok {
-                broken.push(m);
-            }
+    for m in urls {
+        let ok = Command::new("curl")
+            .args(["-fsSIL", "--proto", "=https", "--proto-redir", "=https", "--max-time", "60", "-o"])
+            .arg(if cfg!(windows) { "NUL" } else { "/dev/null" })
+            .arg("--url")
+            .arg(&m)
+            .status()
+            .is_ok_and(|s| s.success());
+        if !ok {
+            broken.push(m);
         }
     }
     if broken.is_empty() {
@@ -722,6 +768,13 @@ fn check_pins() -> Result<()> {
         if !notice.contains(v.as_str()) {
             problems.push(format!("licenses/FFMPEG-NOTICE.md does not name {v}"));
         }
+    }
+    match repo_name() {
+        Some(repo) => problems.extend(gif_tools::check_pins(&repo)?),
+        None if gif_tools::read_lock()?.is_some() => {
+            problems.push("cannot tell this repository's name to check xtask/gif-tools.lock.json".into())
+        }
+        None => {}
     }
     if problems.is_empty() {
         println!(
@@ -877,7 +930,9 @@ fn notices() -> Result<()> {
     let mut out = String::from(
         "# Third-party notices\n\nrmedia includes the following third-party software. FFmpeg ships as a \
          separate program; see `licenses/FFMPEG-NOTICE.md`. The AI worker `rmedia-sr` links ncnn and \
-         glslang statically; see `licenses/NCNN-NOTICE.md`.\n\nGenerated by `cargo xtask notices`.\n",
+         glslang statically; see `licenses/NCNN-NOTICE.md`. The optional GIF engines gifsicle and \
+         gifski ship as separate programs; see `licenses/GIFSICLE-NOTICE.md`, \
+         `licenses/GIFSKI-NOTICE.md` and `licenses/GIFSKI-DEPS.md`.\n\nGenerated by `cargo xtask notices`.\n",
     );
     // Packages that ship no license file get the canonical text of their SPDX license(s) in an
     // appendix, taken from another package that ships exactly that license.

@@ -1,0 +1,316 @@
+name: GIF tools
+
+# Builds the optional GIF engines bundled with rmedia (feature 003) from pinned upstream sources
+# and publishes them, with those sources, as the release `gif-tools-<date>`
+# (contracts/gif-tools-lock.md). Run it by hand on `main`, then pin the result locally with
+# `cargo xtask pin-gif-tools <run-id>`, which verifies the attestations and every hash.
+#
+# - gifsicle 1.98 (GPL-2.0): lcdf.org tarball; autotools on Linux, nmake + MSVC (/MT) on Windows.
+# - gifski 1.34.0 (AGPL-3.0-or-later): the crates.io crate with its own Cargo.lock; its
+#   dependencies are vendored once (the only job that talks to crates.io) and built offline.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gif-tools
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GIFSICLE_VERSION: "1.98"
+  GIFSICLE_URL: https://www.lcdf.org/gifsicle/gifsicle-1.98.tar.gz
+  GIFSICLE_SHA256: e9d4cc0816db95c64d32e79f778836db0f1f7eb15868490bd330104e5146b66e
+  GIFSKI_VERSION: "1.34.0"
+  GIFSKI_URL: https://static.crates.io/crates/gifski/gifski-1.34.0.crate
+  GIFSKI_SHA256: c246c795a61d4a2476fb1c8ab70bedfaa825c734882adc40e117fc837df81190
+
+jobs:
+  vendor:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      vendor_sha256: ${{ steps.pack.outputs.vendor_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download and verify the sources
+        run: |
+          set -euo pipefail
+          mkdir -p sources
+          get() { curl -fsSL --proto =https --proto-redir =https --retry 3 --max-time 300 -o "$2" --url "$1"; }
+          get "$GIFSICLE_URL" "sources/gifsicle-$GIFSICLE_VERSION.tar.gz"
+          get "$GIFSKI_URL" "sources/gifski-$GIFSKI_VERSION.crate"
+          echo "$GIFSICLE_SHA256  sources/gifsicle-$GIFSICLE_VERSION.tar.gz" | sha256sum -c -
+          echo "$GIFSKI_SHA256  sources/gifski-$GIFSKI_VERSION.crate" | sha256sum -c -
+      - name: Refuse unsafe archive members, cargo config and toolchain overrides
+        run: |
+          set -euo pipefail
+          for a in sources/*.tar.gz sources/*.crate; do
+            if tar -tzf "$a" | grep -qE '^/|(^|/)\.\.(/|$)'; then echo "unsafe path in $a"; exit 1; fi
+          done
+          if tar -tzf "sources/gifski-$GIFSKI_VERSION.crate" | grep -qE '(^|/)\.cargo/|(^|/)rust-toolchain(\.toml)?$'; then
+            echo "the gifski crate carries cargo configuration or a toolchain override"; exit 1
+          fi
+          mkdir crate && tar -xzf "sources/gifski-$GIFSKI_VERSION.crate" -C crate --no-same-owner
+          lock_sha=$(sha256sum "crate/gifski-$GIFSKI_VERSION/Cargo.lock" | cut -d' ' -f1)
+          echo "gifski Cargo.lock sha256: $lock_sha"
+          # After the first pin, the crate's lock must be the pinned one.
+          if [ -f xtask/gif-tools.lock.json ]; then
+            pinned=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["gifski"]["cargo_lock_sha256"])' xtask/gif-tools.lock.json)
+            [ "$pinned" = "$lock_sha" ] || { echo "Cargo.lock $lock_sha is not the pinned $pinned"; exit 1; }
+          fi
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: Vendor gifski's dependencies (fresh CARGO_HOME, the crate's own lock)
+        id: pack
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="$RUNNER_TEMP/cargo-home"
+          cd "crate/gifski-$GIFSKI_VERSION"
+          cargo vendor --locked --versioned-dirs vendor > /dev/null
+          # A reproducible tarball: sorted names, fixed times and owners, no gzip timestamp.
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - vendor \
+            | gzip -n > "$GITHUB_WORKSPACE/sources/gifski-$GIFSKI_VERSION-vendor.tar.gz"
+          cd "$GITHUB_WORKSPACE"
+          echo "vendor_sha256=$(sha256sum sources/gifski-$GIFSKI_VERSION-vendor.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sources
+          path: sources/
+          if-no-files-found: error
+
+  build-linux:
+    needs: vendor
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      gifsicle: ${{ steps.hash.outputs.gifsicle }}
+      gifski: ${{ steps.hash.outputs.gifski }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources
+          path: sources
+      - name: Verify the sources
+        run: |
+          set -euo pipefail
+          echo "$GIFSICLE_SHA256  sources/gifsicle-$GIFSICLE_VERSION.tar.gz" | sha256sum -c -
+          echo "$GIFSKI_SHA256  sources/gifski-$GIFSKI_VERSION.crate" | sha256sum -c -
+          echo "${{ needs.vendor.outputs.vendor_sha256 }}  sources/gifski-$GIFSKI_VERSION-vendor.tar.gz" | sha256sum -c -
+      - name: Build gifsicle
+        run: |
+          set -euo pipefail
+          mkdir build && tar -xzf "sources/gifsicle-$GIFSICLE_VERSION.tar.gz" -C build --no-same-owner
+          cd "build/gifsicle-$GIFSICLE_VERSION"
+          ./configure --disable-gifview --disable-gifdiff \
+            CFLAGS="-O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE" \
+            LDFLAGS="-pie -Wl,-z,relro,-z,now"
+          make -j"$(nproc)"
+          strip src/gifsicle
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp src/gifsicle "$GITHUB_WORKSPACE/out/gifsicle-$GIFSICLE_VERSION-x86_64-unknown-linux-gnu"
+          cp COPYING "$GITHUB_WORKSPACE/out/GIFSICLE-COPYING.txt"
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: Build gifski (offline, vendored, default features)
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="$RUNNER_TEMP/cargo-home"
+          mkdir -p gifski && tar -xzf "sources/gifski-$GIFSKI_VERSION.crate" -C gifski --no-same-owner
+          cd "gifski/gifski-$GIFSKI_VERSION"
+          tar -xzf "$GITHUB_WORKSPACE/sources/gifski-$GIFSKI_VERSION-vendor.tar.gz" --no-same-owner
+          cargo build --release --frozen --offline \
+            --config 'source.crates-io.replace-with="vendored"' --config 'source.vendored.directory="vendor"'
+          strip target/release/gifski
+          cp target/release/gifski "$GITHUB_WORKSPACE/out/gifski-$GIFSKI_VERSION-x86_64-unknown-linux-gnu"
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          cd out
+          gs="./gifsicle-$GIFSICLE_VERSION-x86_64-unknown-linux-gnu"
+          gk="./gifski-$GIFSKI_VERSION-x86_64-unknown-linux-gnu"
+          "$gs" --version | head -1 | grep -qx "LCDF Gifsicle $GIFSICLE_VERSION"
+          "$gk" --version | head -1 | grep -qx "gifski $GIFSKI_VERSION"
+          python3 -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 420 t420.y4m
+          python3 -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 444 t444.y4m
+          "$gk" --fps 10 --quality 80 -o t.gif - < t420.y4m
+          if "$gk" --fps 10 --quality 80 -o t444.gif - < t444.y4m; then echo "gifski accepts 4:4:4 y4m"; else echo "gifski refuses 4:4:4 y4m"; fi
+          "$gs" -O3 --lossy=40 -o t2.gif -- t.gif
+          head -c 6 t.gif | grep -q GIF89a && head -c 6 t2.gif | grep -q GIF89a
+          for b in "$gs" "$gk"; do readelf -h "$b" | grep -q 'Type:.*DYN' || { echo "$b is not PIE"; exit 1; }; done
+          rm -f t*.y4m t*.gif
+      - name: Hash the binaries (job outputs, not the artifact)
+        id: hash
+        run: |
+          set -euo pipefail
+          echo "gifsicle=$(sha256sum out/gifsicle-$GIFSICLE_VERSION-x86_64-unknown-linux-gnu | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "gifski=$(sha256sum out/gifski-$GIFSKI_VERSION-x86_64-unknown-linux-gnu | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-linux
+          path: out/
+          if-no-files-found: error
+
+  build-windows:
+    needs: vendor
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      gifsicle: ${{ steps.hash.outputs.gifsicle }}
+      gifski: ${{ steps.hash.outputs.gifski }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources
+          path: sources
+      - name: Verify the sources
+        run: |
+          set -euo pipefail
+          echo "$GIFSICLE_SHA256  sources/gifsicle-$GIFSICLE_VERSION.tar.gz" | sha256sum -c -
+          echo "$GIFSKI_SHA256  sources/gifski-$GIFSKI_VERSION.crate" | sha256sum -c -
+          echo "${{ needs.vendor.outputs.vendor_sha256 }}  sources/gifski-$GIFSKI_VERSION-vendor.tar.gz" | sha256sum -c -
+          mkdir build && tar -xzf "sources/gifsicle-$GIFSICLE_VERSION.tar.gz" -C build
+          mkdir gifski && tar -xzf "sources/gifski-$GIFSKI_VERSION.crate" -C gifski
+          mkdir out
+      - name: Build gifsicle (nmake, MSVC, static runtime)
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          cd build\gifsicle-%GIFSICLE_VERSION%\src || exit /b 1
+          nmake -f Makefile.w32 "CFLAGS=-I.. -I..\include -DHAVE_CONFIG_H -D_CONSOLE /W2 /O2 /MT /GS /guard:cf" "LDLIBS=setargv.obj /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /guard:cf" gifsicle.exe || exit /b 1
+          copy gifsicle.exe "%GITHUB_WORKSPACE%\out\gifsicle-%GIFSICLE_VERSION%-x86_64-pc-windows-msvc.exe" || exit /b 1
+          copy ..\COPYING "%GITHUB_WORKSPACE%\out\GIFSICLE-COPYING.txt" || exit /b 1
+          dumpbin /headers gifsicle.exe | findstr /C:"Dynamic base" || exit /b 1
+          dumpbin /headers gifsicle.exe | findstr /C:"NX compatible" || exit /b 1
+          dumpbin /dependents gifsicle.exe | findstr /I "vcruntime msvcp" && exit /b 1
+          exit /b 0
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: Build gifski (offline, vendored, default features, static CRT)
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="$RUNNER_TEMP/cargo-home"
+          cd "gifski/gifski-$GIFSKI_VERSION"
+          tar -xzf "$GITHUB_WORKSPACE/sources/gifski-$GIFSKI_VERSION-vendor.tar.gz"
+          cargo build --release --frozen --offline \
+            --config 'source.crates-io.replace-with="vendored"' --config 'source.vendored.directory="vendor"'
+          cp target/release/gifski.exe "$GITHUB_WORKSPACE/out/gifski-$GIFSKI_VERSION-x86_64-pc-windows-msvc.exe"
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          cd out
+          gs="./gifsicle-$GIFSICLE_VERSION-x86_64-pc-windows-msvc.exe"
+          gk="./gifski-$GIFSKI_VERSION-x86_64-pc-windows-msvc.exe"
+          "$gs" --version | head -1 | tr -d '\r' | grep -qx "LCDF Gifsicle $GIFSICLE_VERSION"
+          "$gk" --version | head -1 | tr -d '\r' | grep -qx "gifski $GIFSKI_VERSION"
+          python -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 420 t420.y4m
+          python -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 444 t444.y4m
+          "$gk" --fps 10 --quality 80 -o t.gif - < t420.y4m
+          if "$gk" --fps 10 --quality 80 -o t444.gif - < t444.y4m; then echo "gifski accepts 4:4:4 y4m"; else echo "gifski refuses 4:4:4 y4m"; fi
+          "$gs" -O3 --lossy=40 -o t2.gif -- t.gif
+          head -c 6 t.gif | grep -q GIF89a && head -c 6 t2.gif | grep -q GIF89a
+          rm -f t*.y4m t*.gif
+      - name: Hash the binaries (job outputs, not the artifact)
+        id: hash
+        run: |
+          set -euo pipefail
+          echo "gifsicle=$(sha256sum out/gifsicle-$GIFSICLE_VERSION-x86_64-pc-windows-msvc.exe | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "gifski=$(sha256sum out/gifski-$GIFSKI_VERSION-x86_64-pc-windows-msvc.exe | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-windows
+          path: out/
+          if-no-files-found: error
+
+  attest:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: build-*
+          path: bin
+          merge-multiple: true
+      - name: The artifact holds the binaries the build jobs hashed
+        run: |
+          set -euo pipefail
+          cd bin
+          echo "${{ needs.build-linux.outputs.gifsicle }}  gifsicle-$GIFSICLE_VERSION-x86_64-unknown-linux-gnu" | sha256sum -c -
+          echo "${{ needs.build-linux.outputs.gifski }}  gifski-$GIFSKI_VERSION-x86_64-unknown-linux-gnu" | sha256sum -c -
+          echo "${{ needs.build-windows.outputs.gifsicle }}  gifsicle-$GIFSICLE_VERSION-x86_64-pc-windows-msvc.exe" | sha256sum -c -
+          echo "${{ needs.build-windows.outputs.gifski }}  gifski-$GIFSKI_VERSION-x86_64-pc-windows-msvc.exe" | sha256sum -c -
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            bin/gifsicle-*
+            bin/gifski-*
+
+  publish:
+    needs: [vendor, build-linux, build-windows, attest]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dl
+      - name: Collect and re-check every file against the job outputs
+        run: |
+          set -euo pipefail
+          mkdir release
+          cp dl/build-linux/gifsicle-* dl/build-linux/gifski-* dl/build-windows/gifsicle-* dl/build-windows/gifski-* release/
+          cp dl/build-linux/GIFSICLE-COPYING.txt release/
+          cp dl/sources/* release/
+          cd release
+          {
+            echo "${{ needs.build-linux.outputs.gifsicle }}  gifsicle-$GIFSICLE_VERSION-x86_64-unknown-linux-gnu"
+            echo "${{ needs.build-linux.outputs.gifski }}  gifski-$GIFSKI_VERSION-x86_64-unknown-linux-gnu"
+            echo "${{ needs.build-windows.outputs.gifsicle }}  gifsicle-$GIFSICLE_VERSION-x86_64-pc-windows-msvc.exe"
+            echo "${{ needs.build-windows.outputs.gifski }}  gifski-$GIFSKI_VERSION-x86_64-pc-windows-msvc.exe"
+            echo "$GIFSICLE_SHA256  gifsicle-$GIFSICLE_VERSION.tar.gz"
+            echo "$GIFSKI_SHA256  gifski-$GIFSKI_VERSION.crate"
+            echo "${{ needs.vendor.outputs.vendor_sha256 }}  gifski-$GIFSKI_VERSION-vendor.tar.gz"
+          } > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="gif-tools-$(date -u +%Y-%m-%d)"
+          notes=$(printf '%s\n' \
+            "GIF engines bundled with rmedia, built from source by .github/workflows/gif-tools.yml." \
+            "Not an rmedia release. Licences and sources: licenses/GIFSICLE-NOTICE.md, licenses/GIFSKI-NOTICE.md." \
+            "" \
+            "build_run: $GITHUB_RUN_ID" \
+            "build_commit: $GITHUB_SHA" \
+            "gifsicle: $GIFSICLE_VERSION (GPL-2.0-only)" \
+            "gifski: $GIFSKI_VERSION (AGPL-3.0-or-later)")
+          gh release create "$tag" -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "GIF engines $tag" --notes "$notes" release/*

@@ -36,6 +36,9 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show active-toolchain || rustup toolchain install
+      # FR-025: gifski (AGPL-3.0) ships only after the application licence decision.
+      - name: Release gate (before staging)
+        run: cargo xtask check-release-gate
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         # GStreamer is bundled into the AppImage (WebKitGTK needs it for <video>). The runner image
@@ -58,6 +61,8 @@ jobs:
           cargo xtask fetch-ncnn --target ${{ matrix.triple }}
           cargo xtask fetch-models
           cargo xtask stage-cli --target ${{ matrix.triple }}
+      - name: Release gate (after staging)
+        run: cargo xtask check-release-gate
       - name: Tests must pass before packaging
         shell: bash
         env:
