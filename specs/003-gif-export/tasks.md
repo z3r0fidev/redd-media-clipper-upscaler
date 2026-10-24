@@ -294,6 +294,8 @@ dry run and estimate, progress, cancel and verify.
   - `Rotated90` is rotated before scaling;
   - `VfrMp4` duration holds;
   - a range shorter than 2 frames is rejected;
+  - a range over the target's `max_duration` plans with a `LONG_RANGE` notice (code and message)
+    and still encodes;
   - a collision follows `--on-exists`.
 - [ ] T034 [P] [US1] Write cancel tests in `core-tests/cancel.rs` (extend): cancel during the
   palette and the encode stages. Within 2 s: no `.part`, no `.d`, no ffmpeg process. Linux and
@@ -304,7 +306,11 @@ dry run and estimate, progress, cancel and verify.
   - a dry run writes nothing, and `--no-sample` gives `pending`;
   - `--list-targets` (human and JSON);
   - usage errors (`--mode`, `--container`, `--audio`, fps > 50, bad sizes);
-  - exit codes 0/1/2/3/4/130;
+  - exit codes 0/1/2/3/4/130, including `--budget 10k --no-sample` rejected at plan time with
+    `BUDGET_UNREACHABLE` and `"detail":{"min_bytes":65536}` (exit 3, nothing written);
+  - a GIF job whose predicted output exceeds free space warns per output folder, using
+    `estimate::check_space` with a fake free-space function as
+    `upscale/estimate.rs::free_space_shortfall_warns_per_folder` does;
   - `doctor` lines, with and without engines.
 - [ ] T036 [P] [US1] Write estimate tests in `core/gif/estimate.rs` and
   `core-tests/gif_estimate.rs`:
@@ -445,7 +451,9 @@ GIF.
   - budget: the CRF ladder runs before any width drop;
   - SC-006: ≥ 5× smaller than the GIF at the same width and fps on `Land6` and `Busy10`;
   - a `reddit-post` GIF dry run and outcome carry `mp4_bytes`/`mp4_estimate`, once per run;
-  - without libx264, MP4 is `ENGINE_MISSING` while GIF still works (simulated through caps).
+  - without libx264, MP4 is `ENGINE_MISSING` while GIF still works (simulated through caps);
+  - the reverse: without `palettegen`/`paletteuse`, GIF is `ENGINE_MISSING` while MP4 still
+    works (simulated through caps).
 - [ ] T055 [US3] Implement the MP4 path in `core/gif/graph.rs` (encode argv), `core/gif/budget.rs`
   (the CRF rung list) and `core/exec/gif.rs` (stages), plus the MP4 hint sample in
   `core/gif/estimate.rs`.
