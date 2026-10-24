@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::gif::{GifOptions, PartialGif};
 use crate::time::{EndSpec, Ts};
 use crate::upscale::{PartialUpscale, UpscaleOptions};
 
@@ -16,6 +17,12 @@ pub const UPSCALE_CLIP_NAME_TEMPLATE: &str = "{source}_{index:03}_{name-or-range
 /// `MULTI_SOURCE_NAME_TEMPLATE` for upscaled clips (many sources into one output folder).
 pub const UPSCALE_MULTI_CLIP_NAME_TEMPLATE: &str =
     "{source}/{source}_{index:03}_{name-or-range}_{preset}.{ext}";
+/// Default name of a whole-video GIF (in `<source dir>/gifs/`, feature 003).
+pub const GIF_NAME_TEMPLATE: &str = "{source}_{target}.{ext}";
+/// Default name of a GIF made from a clip.
+pub const GIF_CLIP_NAME_TEMPLATE: &str = "{source}_{index:03}_{name-or-range}_{target}.{ext}";
+/// `MULTI_SOURCE_NAME_TEMPLATE` for GIF clips (many sources into one output folder).
+pub const GIF_MULTI_CLIP_NAME_TEMPLATE: &str = "{source}/{source}_{index:03}_{name-or-range}_{target}.{ext}";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -88,6 +95,15 @@ pub struct Options {
     #[serde(skip)]
     #[cfg_attr(feature = "ts", ts(skip))]
     pub upscale_fill: Option<UpscaleOptions>,
+    /// Make each job a GIF or Reddit MP4 (feature 003); `None` = no GIF export.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub gif: Option<GifOptions>,
+    /// GIF fields from the command line that do not turn GIF export on (`batch --target`
+    /// without `--gif`): a layer that turns it on starts from these.
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub gif_fill: Option<GifOptions>,
 }
 
 impl Default for Options {
@@ -101,6 +117,8 @@ impl Default for Options {
             streams: StreamSelection::default(),
             upscale: None,
             upscale_fill: None,
+            gif: None,
+            gif_fill: None,
         }
     }
 }
@@ -135,6 +153,10 @@ pub struct PartialOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub upscale: Option<PartialUpscale>,
+    /// Present = GIF export on at this layer (unless `enabled: false`); absent = inherited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub gif: Option<PartialGif>,
 }
 
 impl PartialOptions {
@@ -159,6 +181,12 @@ impl PartialOptions {
                 }
                 _ => PartialUpscale::diff(opts.upscale.as_ref(), base.upscale.as_ref()),
             },
+            gif: match (&base.gif, &base.gif_fill) {
+                (None, Some(fill)) if opts.gif.is_some() => PartialGif::diff(opts.gif.as_ref(), Some(fill))
+                    .map(|p| PartialGif { enabled: None, ..p })
+                    .or_else(|| Some(PartialGif::default())),
+                _ => PartialGif::diff(opts.gif.as_ref(), base.gif.as_ref()),
+            },
         }
     }
 
@@ -178,6 +206,11 @@ impl PartialOptions {
                 Some(p) => p.apply(base.upscale.as_ref().or(base.upscale_fill.as_ref())),
             },
             upscale_fill: base.upscale_fill.clone(),
+            gif: match &self.gif {
+                None => base.gif.clone(),
+                Some(p) => p.apply(base.gif.as_ref().or(base.gif_fill.as_ref())),
+            },
+            gif_fill: base.gif_fill.clone(),
         }
     }
 }
@@ -287,6 +320,148 @@ mod tests {
 
     fn layer(json: &str) -> PartialOptions {
         serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn gif_layers_in_order_defaults_source_clip() {
+        use crate::gif::target::Dither;
+        use crate::gif::{BudgetSpec, Format, LoopCount, Shape};
+        let resolve = |d: &str, v: &str, c: &str| {
+            let defaults = layer(d).apply(&Options::default());
+            layer(c).apply(&layer(v).apply(&defaults)).gif
+        };
+        assert_eq!(resolve("{}", "{}", "{}"), None, "off unless a layer turns it on");
+        let on = resolve(r#"{"gif":{}}"#, "{}", "{}").unwrap();
+        assert_eq!(on, GifOptions::default());
+        assert_eq!((on.target.as_str(), on.format, on.optimise), ("reddit-post", Format::Gif, true));
+        let g = resolve(
+            r#"{"gif":{"target":"reddit-comment","shape":"4:5","loop":3}}"#,
+            r#"{"gif":{"dither":{"bayer":5},"width":400}}"#,
+            r#"{"gif":{"format":"mp4","allow_trim":true}}"#,
+        )
+        .unwrap();
+        assert_eq!(g.target, "reddit-comment");
+        assert_eq!(
+            (g.shape, g.loop_count, g.dither, g.width),
+            (Shape::Feed, LoopCount::Plays(3), Some(Dither::Bayer(5)), Some(400))
+        );
+        assert_eq!((g.format, g.allow_trim), (Format::Mp4, true));
+        assert_eq!(resolve(r#"{"gif":{"target":"flat-ui"}}"#, r#"{"gif":{"enabled":false}}"#, "{}"), None);
+        assert_eq!(resolve(r#"{"gif":{}}"#, "{}", r#"{"gif":{"enabled":false}}"#), None);
+        let back =
+            resolve(r#"{"gif":{"target":"flat-ui"}}"#, r#"{"gif":{"enabled":false}}"#, r#"{"gif":{}}"#)
+                .unwrap();
+        assert_eq!(back.target, "reddit-post", "re-enabling starts from the defaults, as upscale does");
+        // `null` turns the budget search off; an object sets it.
+        let off =
+            resolve(r#"{"gif":{"budget":{"soft":5000000}}}"#, "{}", r#"{"gif":{"budget":null}}"#).unwrap();
+        assert_eq!(off.budget, None);
+        let set = resolve(r#"{"gif":{"budget":{"soft":5000000}}}"#, "{}", r#"{"gif":{}}"#).unwrap();
+        assert_eq!(set.budget, Some(BudgetSpec { soft: Some(5_000_000), hard: None }));
+        let target =
+            resolve(r#"{"gif":{"budget":{"soft":5000000}}}"#, "{}", r#"{"gif":{"budget":{}}}"#).unwrap();
+        assert_eq!(target.budget, Some(BudgetSpec::default()), "an empty budget is the target's own");
+        // `null` clears an override set below.
+        let cleared =
+            resolve(r#"{"gif":{"fps":12,"dither":"none"}}"#, "{}", r#"{"gif":{"fps":null}}"#).unwrap();
+        assert_eq!((cleared.fps, cleared.dither), (None, Some(Dither::None)));
+    }
+
+    #[test]
+    fn gif_budget_soft_alone_sets_the_hard_limit() {
+        use crate::gif::BudgetSpec;
+        use crate::gif::target::Budget;
+        let target = Some(Budget { soft: 8_000_000, hard: 20_000_000 });
+        let spec = |soft, hard| BudgetSpec { soft, hard };
+        assert_eq!(
+            spec(Some(3_000_000), None).resolve(target),
+            Some(Budget { soft: 3_000_000, hard: 3_000_000 })
+        );
+        assert_eq!(
+            spec(None, Some(5_000_000)).resolve(target),
+            Some(Budget { soft: 5_000_000, hard: 5_000_000 })
+        );
+        assert_eq!(
+            spec(None, Some(10_000_000)).resolve(target),
+            Some(Budget { soft: 8_000_000, hard: 10_000_000 })
+        );
+        assert_eq!(spec(Some(1), Some(2)).resolve(None), Some(Budget { soft: 1, hard: 2 }));
+        assert_eq!(spec(None, None).resolve(target), target);
+        assert_eq!(spec(None, Some(4)).resolve(None), Some(Budget { soft: 4, hard: 4 }));
+    }
+
+    #[test]
+    fn gif_layers_reject_unknown_keys_and_bad_values() {
+        assert!(serde_json::from_str::<PartialOptions>(r#"{"gif":{"bogus":1}}"#).is_err());
+        assert!(serde_json::from_str::<PartialOptions>(r#"{"gif":{"loop":0}}"#).is_err());
+        assert!(serde_json::from_str::<PartialOptions>(r#"{"gif":{"loop":"always"}}"#).is_err());
+        assert!(serde_json::from_str::<PartialOptions>(r#"{"gif":{"shape":"16:9"}}"#).is_err());
+        assert!(serde_json::from_str::<PartialOptions>(r#"{"gif":{"budget":{"max":1}}}"#).is_err());
+        assert!(
+            serde_json::from_str::<PartialOptions>(r#"{"gif":{"loop":"forever","format":"mp4"}}"#).is_ok()
+        );
+    }
+
+    #[test]
+    fn gif_diff_inverts_apply() {
+        use crate::gif::{BudgetSpec, Format, PartialGif, Shape};
+        let d = GifOptions::default();
+        let custom = GifOptions {
+            target: "flat-ui".into(),
+            format: Format::Mp4,
+            shape: Shape::Square,
+            fps: Some(12),
+            budget: Some(BudgetSpec { soft: Some(1_000_000), hard: None }),
+            ..d.clone()
+        };
+        let off = GifOptions { budget: None, ..d.clone() };
+        for (opts, base) in [
+            (None, None),
+            (Some(d.clone()), None),
+            (None, Some(d.clone())),
+            (Some(custom.clone()), Some(d.clone())),
+            (Some(off.clone()), Some(custom.clone())),
+            (Some(custom.clone()), None),
+        ] {
+            let p = PartialGif::diff(opts.as_ref(), base.as_ref());
+            let back = match &p {
+                None => base.clone(),
+                Some(p) => p.apply(base.as_ref()),
+            };
+            assert_eq!(back, opts, "diff {p:?}");
+        }
+        let text = serde_json::to_string(&PartialGif::diff(Some(&off), Some(&d)).unwrap()).unwrap();
+        assert_eq!(text, r#"{"budget":null}"#);
+        let text = serde_json::to_string(&PartialGif::diff(Some(&d), Some(&custom)).unwrap()).unwrap();
+        assert_eq!(
+            text,
+            r#"{"target":"reddit-post","format":"gif","shape":"source","fps":null,"budget":{}}"#
+        );
+        let full = PartialOptions::diff(
+            &Options { gif: Some(custom.clone()), ..Options::default() },
+            &Options::default(),
+        );
+        assert_eq!(full.gif.unwrap().apply(None), Some(custom));
+    }
+
+    #[test]
+    fn gif_name_templates() {
+        assert_eq!(GIF_NAME_TEMPLATE, "{source}_{target}.{ext}");
+        assert_eq!(GIF_CLIP_NAME_TEMPLATE, "{source}_{index:03}_{name-or-range}_{target}.{ext}");
+        assert_eq!(
+            GIF_MULTI_CLIP_NAME_TEMPLATE,
+            "{source}/{source}_{index:03}_{name-or-range}_{target}.{ext}"
+        );
+    }
+
+    #[test]
+    fn gif_loop_counts_map_to_repeats() {
+        use crate::gif::LoopCount;
+        assert_eq!((LoopCount::Forever.repeat_arg(), LoopCount::Forever.netscape()), (0, Some(0)));
+        assert_eq!((LoopCount::Plays(1).repeat_arg(), LoopCount::Plays(1).netscape()), (-1, None));
+        assert_eq!((LoopCount::Plays(3).repeat_arg(), LoopCount::Plays(3).netscape()), (2, Some(2)));
+        assert_eq!(serde_json::to_string(&LoopCount::Plays(3)).unwrap(), "3");
+        assert_eq!(serde_json::to_string(&LoopCount::Forever).unwrap(), r#""forever""#);
     }
 
     /// defaults < video < clip, per upscale field (T074).

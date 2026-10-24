@@ -229,7 +229,7 @@ green after every task.**
   - the predicted delay sequence equals the T005(b) measurement for 15 fps;
   - fps capped at the source rate.
 - [X] T027 Implement `core/gif/timing.rs`.
-- [ ] T028 [P] Write engine lookup tests in `core/gif/engines.rs`:
+- [X] T028 [P] Write engine lookup tests in `core/gif/engines.rs`:
   - the order explicit → env → bundled → PATH, with PATH only when nothing is bundled;
   - a missing or bad explicit path makes the engine unavailable with a reason;
   - with strict mode, `ENGINE_MISSING`;
@@ -238,9 +238,9 @@ green after every task.**
   - children get a cleared environment.
 
   The fake engines are small test programs.
-- [ ] T029 Implement `core/gif/engines.rs`, making `tools::find_tool` `pub(crate)` and adding
+- [X] T029 Implement `core/gif/engines.rs`, making `tools::find_tool` `pub(crate)` and adding
   an optional lookup mode in `core/tools.rs`.
-- [ ] T030 Write tests, then add:
+- [X] T030 Write tests, then add:
   - `Settings` fields `gifsicle_path`, `gifski_path`, `gif_defaults` (backward-compatible load
     test) in `core/settings.rs`;
   - `KEY_FILTERS`/`KEY_ENCODERS` entries for palettegen, paletteuse, the gif muxer and libx264;
@@ -248,7 +248,7 @@ green after every task.**
     `status` (contracts/cli.md).
 
   Regenerate the bindings.
-- [ ] T031 Write layering tests in `core/request.rs` (`#[cfg(test)]`):
+- [X] T031 Write layering tests in `core/request.rs` (`#[cfg(test)]`):
   - `PartialGif` apply/diff over defaults → source → clip;
   - `enabled:false`;
   - `budget.soft` alone sets hard;

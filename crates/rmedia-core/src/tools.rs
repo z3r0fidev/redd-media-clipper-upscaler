@@ -70,6 +70,10 @@ pub struct Tools {
 pub struct LocateOptions {
     pub ffmpeg: Option<PathBuf>,
     pub ffprobe: Option<PathBuf>,
+    /// The optional GIF engines (feature 003; `None`: the settings' path, then the usual
+    /// lookup).
+    pub gifsicle: Option<PathBuf>,
+    pub gifski: Option<PathBuf>,
     /// Directory searched for bundled binaries; defaults to the current executable's directory.
     pub bundled_dir: Option<PathBuf>,
 }
@@ -122,18 +126,41 @@ fn find_tool(
     if let Some(p) = std::env::var_os(env_var).filter(|v| !v.is_empty()) {
         return existing(Path::new(&p), ToolSource::Config);
     }
-    if let Some(dir) = bundled_dir {
-        let candidate = dir.join(format!("{bundled_name}{}", std::env::consts::EXE_SUFFIX));
-        if candidate.is_file() {
-            return Ok(Tool { path: candidate, source: ToolSource::Bundled });
-        }
-    }
-    which::which(path_name).map(|path| Tool { path, source: ToolSource::Path }).map_err(|_| {
+    bundled_or_path(bundled_name, path_name, bundled_dir).ok_or_else(|| {
         Error::EngineMissing(format!(
             "{path_name} not found: not bundled with rmedia and not on PATH \
                  (use --{path_name} PATH)"
         ))
     })
+}
+
+/// The bundled copy beside rmedia, else `path_name` on PATH (only when nothing is bundled).
+fn bundled_or_path(bundled_name: &str, path_name: &str, bundled_dir: Option<&Path>) -> Option<Tool> {
+    if let Some(dir) = bundled_dir {
+        let candidate = dir.join(format!("{bundled_name}{}", std::env::consts::EXE_SUFFIX));
+        if candidate.is_file() {
+            return Some(Tool { path: candidate, source: ToolSource::Bundled });
+        }
+    }
+    which::which(path_name).ok().map(|path| Tool { path, source: ToolSource::Path })
+}
+
+/// Where an optional tool was found (feature 003's gifsicle and gifski), in [`find_tool`]'s
+/// order: explicit path → the environment variable's value (`env`) → bundled → PATH, with PATH
+/// used only when no bundled copy exists. `None`: not configured and not found. `Some(Err)`: an
+/// explicit or environment path that does not exist (the tool is then unavailable; the next
+/// places are not tried).
+pub(crate) fn find_optional(
+    explicit: Option<&Path>,
+    env: Option<&Path>,
+    bundled_name: &str,
+    path_name: &str,
+    bundled_dir: Option<&Path>,
+) -> Option<std::result::Result<Tool, String>> {
+    if let Some(p) = explicit.or(env) {
+        return Some(existing(p, ToolSource::Config).map_err(|e| e.to_string()));
+    }
+    bundled_or_path(bundled_name, path_name, bundled_dir).map(Ok)
 }
 
 fn existing(p: &Path, source: ToolSource) -> Result<Tool> {

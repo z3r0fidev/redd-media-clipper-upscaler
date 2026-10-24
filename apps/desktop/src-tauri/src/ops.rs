@@ -224,7 +224,7 @@ impl AppState {
     pub fn doctor(&self) -> DoctorReport {
         let s = lock(&self.settings).clone();
         let (report, found) =
-            doctor::run(&LocateOptions { ffmpeg: s.ffmpeg_path, ffprobe: s.ffprobe_path, bundled_dir: None });
+            doctor::run(&LocateOptions { ffmpeg: s.ffmpeg_path, ffprobe: s.ffprobe_path, gifsicle: s.gifsicle_path, gifski: s.gifski_path, bundled_dir: None });
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = found;
         report
     }
@@ -250,7 +250,7 @@ impl AppState {
         };
         let s = lock(&self.settings).clone();
         let (mut report, mut found) =
-            doctor::run(&LocateOptions { ffmpeg: s.ffmpeg_path, ffprobe: s.ffprobe_path, bundled_dir: None });
+            doctor::run(&LocateOptions { ffmpeg: s.ffmpeg_path, ffprobe: s.ffprobe_path, gifsicle: s.gifsicle_path, gifski: s.gifski_path, bundled_dir: None });
         doctor::check_capability(&mut report, found.as_mut(), mode, &CancellationToken::new()).await;
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = found;
         Ok(report)
@@ -512,6 +512,9 @@ impl AppState {
             let current = lock(&self.settings);
             s.ffmpeg_path = current.ffmpeg_path.clone();
             s.ffprobe_path = current.ffprobe_path.clone();
+            // The GIF engines too: they are executables (research R13).
+            s.gifsicle_path = current.gifsicle_path.clone();
+            s.gifski_path = current.gifski_path.clone();
             // The models folder is code the app loads: it is chosen in Rust (`set_models_dir`).
             s.models_dir = current.models_dir.clone();
             // A default output folder must be one the user picked (it is trusted after restart).

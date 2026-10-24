@@ -43,6 +43,10 @@ const COARSE_SEEK_MARGIN: Ts = Ts::from_micros(10_000_000);
 pub struct Caps {
     pub encoders: BTreeSet<String>,
     pub filters: BTreeSet<String>,
+    /// Output formats the engine can write (`ffmpeg -muxers`; GIF export needs `gif`/`mp4`).
+    pub muxers: BTreeSet<String>,
+    /// The optional GIF engines gifsicle and gifski (feature 003).
+    pub gif_engines: crate::gif::engines::Engines,
     pub models: crate::models::ModelSet,
     pub capability: Option<crate::upscale::capability::CapabilityRecord>,
     /// The face detector smart reframe uses (`None`: no model, smart falls back to blur).

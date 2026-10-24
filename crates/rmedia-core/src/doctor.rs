@@ -15,9 +15,90 @@ use crate::upscale::capability::{
 /// Encoders the doctor report always lists.
 pub const KEY_ENCODERS: [&str; 5] = ["libx264", "libx265", "aac", "libvpx-vp9", "libopus"];
 
-/// Filters upscaling needs (research R3–R6); listed by the doctor report.
-pub const KEY_FILTERS: [&str; 10] =
-    ["zscale", "cas", "hqdn3d", "bwdif", "gblur", "tonemap", "sendcmd", "scdet", "libplacebo", "libvmaf"];
+/// Filters upscaling needs (research R3–R6) and GIF export's palette pair (003); listed by the
+/// doctor report.
+pub const KEY_FILTERS: [&str; 12] = [
+    "zscale",
+    "cas",
+    "hqdn3d",
+    "bwdif",
+    "gblur",
+    "tonemap",
+    "sendcmd",
+    "scdet",
+    "libplacebo",
+    "libvmaf",
+    "palettegen",
+    "paletteuse",
+];
+
+/// What GIF export needs from the engine, as (name, kind): filters, encoders, muxers.
+pub const GIF_NEEDS: [(&str, Feature); 3] =
+    [("palettegen", Feature::Filter), ("paletteuse", Feature::Filter), ("gif", Feature::Muxer)];
+/// What the Reddit MP4 needs from the engine.
+pub const MP4_NEEDS: [(&str, Feature); 2] = [("libx264", Feature::Encoder), ("mp4", Feature::Muxer)];
+
+/// A kind of engine feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Feature {
+    Filter,
+    Encoder,
+    Muxer,
+}
+
+impl Caps {
+    /// Whether the engine has `name` of kind `f`.
+    pub fn has(&self, name: &str, f: Feature) -> bool {
+        match f {
+            Feature::Filter => self.filters.contains(name),
+            Feature::Encoder => self.encoders.contains(name),
+            Feature::Muxer => self.muxers.contains(name),
+        }
+    }
+
+    /// The features of `needs` the engine lacks, named for messages (`gif muxer`).
+    pub fn missing(&self, needs: &[(&str, Feature)]) -> Vec<String> {
+        needs
+            .iter()
+            .filter(|(n, f)| !self.has(n, *f))
+            .map(|(n, f)| if *f == Feature::Muxer { format!("{n} muxer") } else { (*n).to_owned() })
+            .collect()
+    }
+}
+
+/// The doctor report's `gif` block (contracts/json-output.md › doctor --json). GIF availability
+/// never changes the report's `ok` (Principle VI).
+#[derive(Debug, Clone, Default, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct GifReport {
+    /// The built-in engine can make GIFs (palette filters and the gif muxer).
+    pub gif: bool,
+    /// The Reddit MP4 can be made (libx264 and the mp4 muxer).
+    pub mp4: bool,
+    /// What is missing for either.
+    pub missing: Vec<String>,
+    pub engines: Vec<crate::gif::engines::EngineStatus>,
+    /// User GIF target files that could not be used (`file: message`).
+    pub target_problems: Vec<String>,
+}
+
+impl GifReport {
+    pub fn of(caps: &Caps, targets: &crate::gif::target::GifTargetRegistry) -> GifReport {
+        let gif_missing = caps.missing(&GIF_NEEDS);
+        let mp4_missing = caps.missing(&MP4_NEEDS);
+        GifReport {
+            gif: gif_missing.is_empty(),
+            mp4: mp4_missing.is_empty(),
+            missing: gif_missing.into_iter().chain(mp4_missing).collect(),
+            engines: vec![caps.gif_engines.gifsicle.clone(), caps.gif_engines.gifski.clone()],
+            target_problems: targets
+                .problems()
+                .iter()
+                .map(|p| format!("{}: {}", p.file.display(), p.message))
+                .collect(),
+        }
+    }
+}
 
 const ACCURATE_CONTAINERS: [(&str, Container); 6] = [
     ("mp4", Container::Mp4),
@@ -56,6 +137,8 @@ pub struct DoctorReport {
     pub capability: Option<CapabilitySummary>,
     /// User preset files that could not be used (`file: message`).
     pub preset_problems: Vec<String>,
+    /// GIF export (feature 003): what the engine can make and the optional engines found.
+    pub gif: GifReport,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -85,6 +168,7 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
         models: BTreeMap::new(),
         capability: None,
         preset_problems: Vec::new(),
+        gif: GifReport::default(),
     };
     let tools = match tools::locate(opts) {
         Ok(t) => t,
@@ -96,13 +180,19 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
     report.ffmpeg = Some(tools.ffmpeg.clone());
     report.ffprobe = Some(tools.ffprobe.clone());
     report.version = Some(tools.version.text().to_owned());
-    let caps = match caps(&tools) {
+    let mut caps = match caps(&tools) {
         Ok(c) => c,
         Err(e) => {
             report.problems.push(e.to_string());
             return (report, None);
         }
     };
+    let settings = crate::settings::Settings::load();
+    caps.gif_engines = crate::gif::engines::Engines::locate(&crate::gif::engines::EngineLookup {
+        gifsicle: opts.gifsicle.clone().or(settings.gifsicle_path),
+        gifski: opts.gifski.clone().or(settings.gifski_path),
+        bundled_dir: opts.bundled_dir.clone(),
+    });
     for enc in KEY_ENCODERS {
         report.encoders.insert(enc.to_owned(), caps.encoders.contains(enc));
     }
@@ -138,6 +228,8 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
     let presets = crate::preset::PresetRegistry::load(crate::settings::config_dir().as_deref());
     report.preset_problems =
         presets.problems().iter().map(|p| format!("{}: {}", p.file.display(), p.message)).collect();
+    let targets = crate::gif::target::GifTargetRegistry::load(crate::settings::config_dir().as_deref());
+    report.gif = GifReport::of(&caps, &targets);
     report.ok = true;
     (report, Some((tools, caps)))
 }
@@ -183,6 +275,7 @@ pub fn caps(tools: &Tools) -> Result<Caps> {
     Ok(Caps {
         encoders: parse_encoders(&list("-encoders")?),
         filters: parse_filters(&list("-filters")?),
+        muxers: parse_muxers(&list("-muxers")?),
         face,
         models,
         reframe_cache: crate::settings::cache_root().map(|c| c.join("reframe")),
@@ -205,6 +298,22 @@ pub fn parse_filters(text: &str) -> BTreeSet<String> {
                 && flags.chars().all(|c| matches!(c, '.' | 'T' | 'S' | 'C'))
                 && io.contains("->"))
             .then(|| name.to_owned())
+        })
+        .collect()
+}
+
+/// Parses `ffmpeg -muxers` rows such as `  E  gif   CompuServe …` (after the `--`/`---` line;
+/// the flags column is 1–3 characters of `D`, `E`, `d` and `.`).
+pub fn parse_muxers(text: &str) -> BTreeSet<String> {
+    text.lines()
+        .skip_while(|l| !l.trim_start().starts_with("--"))
+        .skip(1)
+        .filter_map(|l| {
+            let mut parts = l.split_whitespace();
+            let flags = parts.next()?;
+            (flags.contains('E') && flags.chars().all(|c| matches!(c, 'D' | 'E' | 'd' | '.')))
+                .then(|| parts.next().map(str::to_owned))
+                .flatten()
         })
         .collect()
 }
@@ -246,6 +355,37 @@ mod tests {
         assert_eq!(parse_filters(FILTERS_N9), set(&["aap", "cas", "nullsrc"]));
         assert_eq!(parse_filters(FILTERS_N6), set(&["abench", "nullsrc", "overlay", "zscale"]));
         assert!(parse_filters("ffmpeg: unrecognized option '-filters'\n").is_empty());
+    }
+
+    #[test]
+    fn parses_muxer_lists_of_ffmpeg_9_and_6() {
+        let n9 = "Formats:\n D.. = Demuxing supported\n .E. = Muxing supported\n ..d = Is a device\n ---\n  E  3g2             3GP2 (3GPP2 file format)\n  E  gif             CompuServe Graphics Interchange Format (GIF)\n D   aa              Audible AA format files\n DE  matroska        Matroska\n";
+        let n6 = "File formats:\n D. = Demuxing supported\n .E = Muxing supported\n --\n  E 3g2             3GP2 (3GPP2 file format)\n  E mp4             MP4 (MPEG-4 Part 14)\n D  aa              Audible AA format files\n";
+        let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>();
+        assert_eq!(parse_muxers(n9), set(&["3g2", "gif", "matroska"]));
+        assert_eq!(parse_muxers(n6), set(&["3g2", "mp4"]));
+    }
+
+    #[test]
+    fn the_gif_block_reports_what_is_missing_without_changing_readiness() {
+        let mut caps = Caps::default();
+        let targets = crate::gif::target::GifTargetRegistry::builtin();
+        let none = GifReport::of(&caps, &targets);
+        assert!(!none.gif && !none.mp4);
+        assert_eq!(none.missing, ["palettegen", "paletteuse", "gif muxer", "libx264", "mp4 muxer"]);
+        assert_eq!(none.engines.len(), 2);
+        for f in ["palettegen", "paletteuse"] {
+            caps.filters.insert(f.into());
+        }
+        caps.muxers.insert("gif".into());
+        let gif_only = GifReport::of(&caps, &targets);
+        assert!(gif_only.gif && !gif_only.mp4);
+        assert_eq!(gif_only.missing, ["libx264", "mp4 muxer"]);
+        caps.encoders.insert("libx264".into());
+        caps.muxers.insert("mp4".into());
+        let all = GifReport::of(&caps, &targets);
+        assert!(all.gif && all.mp4 && all.missing.is_empty());
+        assert!(all.target_problems.is_empty());
     }
 
     #[test]

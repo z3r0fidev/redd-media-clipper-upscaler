@@ -142,11 +142,14 @@ async fn settings_from_the_page_cannot_set_engine_paths() {
     let st = state(d.path()).await;
     let mut s = st.get_settings();
     s.ffmpeg_path = Some("/bin/sh".into());
+    s.gifsicle_path = Some("/bin/sh".into());
+    s.gifski_path = Some("/bin/sh".into());
     s.ffprobe_path = Some("/bin/sh".into());
     s.jobs = Some(3);
     st.set_settings(s).unwrap();
     let now = st.get_settings();
     assert_eq!((now.ffmpeg_path, now.ffprobe_path), (None, None));
+    assert_eq!((now.gifsicle_path, now.gifski_path), (None, None), "GIF engine paths are not taken from the page");
     assert!(st.set_engine_path(Some("/bin/sh".into())).is_err(), "only a program named ffmpeg is accepted");
 }
 

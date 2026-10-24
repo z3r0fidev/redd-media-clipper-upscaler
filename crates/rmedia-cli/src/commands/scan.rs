@@ -23,7 +23,11 @@ pub async fn run(cli: &Cli, args: &ScanArgs) -> u8 {
             return out.input_error(&format!("{} does not exist", r.display()));
         }
     }
-    let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
+    let opts = LocateOptions {
+        ffmpeg: cli.ffmpeg.clone(),
+        ffprobe: cli.ffprobe.clone(),
+        ..LocateOptions::default()
+    };
     let (report, engine) = doctor::run(&opts);
     let Some((tools, _)) = engine else {
         return out.engine_error(&report.problems.join("; "));

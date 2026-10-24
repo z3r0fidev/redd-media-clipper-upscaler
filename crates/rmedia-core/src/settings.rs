@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
+use crate::gif::PartialGif;
 use crate::request::PartialOptions;
 use crate::upscale::PartialUpscale;
 
@@ -71,6 +72,16 @@ pub struct Settings {
     /// The desktop upscale view's last-used choices. Separate from `defaults`, so clip runs
     /// never turn upscaling on by accident.
     pub upscale_defaults: PartialUpscale,
+    /// Explicit paths of the optional GIF engines (empty = `RMEDIA_GIFSICLE`/`RMEDIA_GIFSKI`,
+    /// then bundled, then PATH; feature 003).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub gifsicle_path: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub gifski_path: Option<PathBuf>,
+    /// The desktop GIF view's last-used choices (like `upscale_defaults`).
+    pub gif_defaults: PartialGif,
 }
 
 impl Default for Settings {
@@ -83,6 +94,9 @@ impl Default for Settings {
             proxy_cache_max_mb: 5120,
             models_dir: None,
             upscale_defaults: PartialUpscale::default(),
+            gifsicle_path: None,
+            gifski_path: None,
+            gif_defaults: PartialGif::default(),
         }
     }
 }
@@ -141,5 +155,22 @@ mod tests {
         let s: Settings = serde_json::from_str(new).unwrap();
         assert_eq!(s.upscale_defaults.preset.as_deref(), Some("reddit-916"));
         assert!(serde_json::from_str::<Settings>(r#"{"upscale_defaults":{"bogus":1}}"#).is_err());
+    }
+
+    #[test]
+    fn settings_from_before_003_still_load() {
+        let old = r#"{"jobs":2,"models_dir":"/m","upscale_defaults":{"preset":"duo"}}"#;
+        let s: Settings = serde_json::from_str(old).unwrap();
+        assert_eq!(
+            (&s.gifsicle_path, &s.gifski_path, &s.gif_defaults),
+            (&None, &None, &PartialGif::default())
+        );
+        let new = r#"{"gifsicle_path":"/opt/g","gif_defaults":{"target":"reddit-comment","loop":2}}"#;
+        let s: Settings = serde_json::from_str(new).unwrap();
+        assert_eq!(s.gifsicle_path.as_deref(), Some(std::path::Path::new("/opt/g")));
+        assert_eq!(s.gif_defaults.target.as_deref(), Some("reddit-comment"));
+        assert!(serde_json::from_str::<Settings>(r#"{"gif_defaults":{"bogus":1}}"#).is_err());
+        let text = serde_json::to_string(&Settings::default()).unwrap();
+        assert!(!text.contains("gifsicle_path"), "unset engine paths are not written: {text}");
     }
 }

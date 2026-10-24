@@ -2,6 +2,7 @@
 import type { AudioSel } from "./AudioSel";
 import type { Mode } from "./Mode";
 import type { OnExists } from "./OnExists";
+import type { PartialGif } from "./PartialGif";
 import type { PartialUpscale } from "./PartialUpscale";
 import type { SubSel } from "./SubSel";
 
@@ -12,4 +13,8 @@ export type PartialOptions = { mode?: Mode, output_dir?: string, name_template?:
 /**
  * Present = upscaling on at this layer (unless `enabled: false`); absent = inherited.
  */
-upscale?: PartialUpscale, };
+upscale?: PartialUpscale, 
+/**
+ * Present = GIF export on at this layer (unless `enabled: false`); absent = inherited.
+ */
+gif?: PartialGif, };

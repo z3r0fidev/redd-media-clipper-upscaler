@@ -90,7 +90,11 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
         req.defaults.name_template = rmedia_core::request::MULTI_SOURCE_NAME_TEMPLATE.to_owned();
     }
 
-    let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
+    let opts = LocateOptions {
+        ffmpeg: cli.ffmpeg.clone(),
+        ffprobe: cli.ffprobe.clone(),
+        ..LocateOptions::default()
+    };
     let (mut report, mut engine) = doctor::run(&opts);
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));

@@ -7,7 +7,11 @@ use rmedia_core::upscale::capability::CheckMode;
 use crate::{Cli, DoctorArgs, exit};
 
 pub async fn run(cli: &Cli, args: &DoctorArgs) -> u8 {
-    let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
+    let opts = LocateOptions {
+        ffmpeg: cli.ffmpeg.clone(),
+        ffprobe: cli.ffprobe.clone(),
+        ..LocateOptions::default()
+    };
     let (mut report, mut engine) = doctor::run(&opts);
     let mode = if args.recheck { CheckMode::Recheck } else { CheckMode::Ensure };
     let ctrl_c = super::ctrl_c_token();

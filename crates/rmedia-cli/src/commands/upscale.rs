@@ -17,7 +17,11 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
     if args.list_presets {
         return list_presets(&out);
     }
-    let opts = LocateOptions { ffmpeg: cli.ffmpeg.clone(), ffprobe: cli.ffprobe.clone(), bundled_dir: None };
+    let opts = LocateOptions {
+        ffmpeg: cli.ffmpeg.clone(),
+        ffprobe: cli.ffprobe.clone(),
+        ..LocateOptions::default()
+    };
     let (mut report, mut engine) = doctor::run(&opts);
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
