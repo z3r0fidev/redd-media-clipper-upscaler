@@ -258,7 +258,7 @@ green after every task.**
 
   Then implement `GifOptions`/`PartialGif` in `core/gif/mod.rs` and `PartialOptions.gif` in
   `core/request.rs`.
-- [ ] T032 [P] Write tests, then implement `core/gif/verify.rs`:
+- [X] T032 [P] Write tests, then implement `core/gif/verify.rs`:
   - the GIF89a header;
   - the loop table (R15), including no block for 1 play;
   - delays ≥ 2, frame count ±1, dimensions, size ≤ hard;
