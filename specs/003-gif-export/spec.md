@@ -70,7 +70,8 @@ than 10 full or sample encodes were run.
 
 1. **Given** a clip whose default-settings GIF is over the budget, **When** the user exports with
    a budget, **Then** the result fits the budget, and the settings were lowered in this order of
-   least visible damage: dithering style, number of colours, frame rate, width.
+   least visible damage: lossy compression strength (when the optimiser is available), dithering
+   style, number of colours, frame rate, width (as FR-009).
 2. **Given** a clip that cannot fit the budget even at the lowest allowed width and frame rate,
    **When** the user exports, **Then** nothing over the hard limit is written; the run explains
    that only a shorter duration would fit, says how long, and trims only if the user allowed it
@@ -335,8 +336,9 @@ is within the stated margin of the estimate.
   in a browser before release, as for 002's owner checks.
 - **Engine:** the bundled FFmpeg already includes everything needed for GIF and H.264 MP4. The
   optional engines (gifsicle GPL-2.0, gifski AGPL-3.0, `research/05` §3) are new third-party
-  components; whether installers bundle them or only detect installed copies is a plan decision,
-  and bundling gifski depends on the application licence (still a placeholder, see the roadmap).
+  components. Owner decision (2026-10-23): installers and CLI archives bundle both, pinned and
+  built from source; a release that bundles gifski is gated on the application licence (still a
+  placeholder, see the roadmap and `plan.md`).
 - **Animated WebP and AVIF are out of scope:** Reddit's acceptance of animated WebP is unconfirmed
   and AVIF is not accepted (`research/05` §5).
 - **Out of scope:** uploading to Reddit, text/caption overlays, stickers, crossfade "perfect

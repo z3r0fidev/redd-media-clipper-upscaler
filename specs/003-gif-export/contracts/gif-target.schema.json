@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rmedia.local/schema/gif-target-v1.json",
+  "title": "rmedia GIF target v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "name",
+    "verified",
+    "width",
+    "fps",
+    "colours",
+    "dither",
+    "stats_mode",
+    "engine",
+    "mp4"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 40
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 400,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "soft",
+        "hard"
+      ],
+      "properties": {
+        "soft": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Recommended size in bytes",
+          "maximum": 1073741824
+        },
+        "hard": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Never written above this (FR-011); soft <= hard is checked in code",
+          "maximum": 1073741824
+        }
+      }
+    },
+    "verified": {
+      "type": "boolean",
+      "description": "false until the owner confirms the limits (FR-007)"
+    },
+    "width": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "landscape",
+        "portrait"
+      ],
+      "properties": {
+        "landscape": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1920
+        },
+        "portrait": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1920
+        }
+      }
+    },
+    "floor_width": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 1920,
+      "description": "Lowest width the budget search may reach; omitted = no width lowering"
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "colours": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 256
+    },
+    "dither": {
+      "oneOf": [
+        {
+          "enum": [
+            "none",
+            "floyd_steinberg",
+            "sierra2_4a"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bayer"
+          ],
+          "properties": {
+            "bayer": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            }
+          }
+        }
+      ]
+    },
+    "stats_mode": {
+      "enum": [
+        "full",
+        "diff"
+      ]
+    },
+    "sharpen": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1.5
+    },
+    "engine": {
+      "enum": [
+        "builtin",
+        "best"
+      ],
+      "description": "best = gifski when available, else builtin with a warning"
+    },
+    "lossy": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 200,
+      "description": "Default gifsicle lossy level; the budget ladder starts here (research R5)"
+    },
+    "max_duration": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Seconds; longer ranges warn before encoding"
+    },
+    "mp4": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "crf",
+        "max_fps"
+      ],
+      "properties": {
+        "crf": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 51
+        },
+        "max_fps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      }
+    },
+    "floor_fps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "Lowest fps the budget search may reach; omitted = fps is not lowered"
+    },
+    "gifski": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quality"
+      ],
+      "properties": {
+        "quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "motion_quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "lossy_quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "description": "Parameters for the best-quality engine (research R14)"
+    }
+  },
+  "examples": [
+    {
+      "schema": 1,
+      "id": "reddit-post",
+      "version": 1,
+      "name": "Reddit post",
+      "description": "Feed GIF for a Reddit post (limits unverified)",
+      "budget": {
+        "soft": 8000000,
+        "hard": 20000000
+      },
+      "verified": false,
+      "width": {
+        "landscape": 720,
+        "portrait": 480
+      },
+      "floor_width": 320,
+      "fps": 15,
+      "colours": 256,
+      "dither": {
+        "bayer": 4
+      },
+      "stats_mode": "diff",
+      "engine": "builtin",
+      "max_duration": 15,
+      "mp4": {
+        "crf": 23,
+        "max_fps": 60
+      },
+      "floor_fps": 10,
+      "lossy": 30
+    },
+    {
+      "schema": 1,
+      "id": "reddit-comment",
+      "version": 1,
+      "name": "Reddit comment",
+      "description": "GIF for a Reddit comment (limits unverified)",
+      "budget": {
+        "soft": 3000000,
+        "hard": 8000000
+      },
+      "verified": false,
+      "width": {
+        "landscape": 480,
+        "portrait": 360
+      },
+      "floor_width": 240,
+      "fps": 12,
+      "colours": 128,
+      "dither": {
+        "bayer": 5
+      },
+      "stats_mode": "diff",
+      "engine": "builtin",
+      "lossy": 60,
+      "max_duration": 6,
+      "mp4": {
+        "crf": 23,
+        "max_fps": 30
+      },
+      "floor_fps": 10
+    },
+    {
+      "schema": 1,
+      "id": "max-quality",
+      "version": 1,
+      "name": "Max quality",
+      "description": "Best-looking GIF, no size budget",
+      "verified": true,
+      "width": {
+        "landscape": 960,
+        "portrait": 640
+      },
+      "fps": 20,
+      "colours": 256,
+      "dither": "floyd_steinberg",
+      "stats_mode": "full",
+      "engine": "best",
+      "mp4": {
+        "crf": 18,
+        "max_fps": 60
+      },
+      "gifski": {
+        "quality": 100
+      },
+      "lossy": 0
+    },
+    {
+      "schema": 1,
+      "id": "flat-ui",
+      "version": 1,
+      "name": "Flat / text / UI",
+      "description": "Screen recordings, text and flat graphics: crisp edges, few colours",
+      "verified": true,
+      "width": {
+        "landscape": 720,
+        "portrait": 480
+      },
+      "fps": 15,
+      "colours": 64,
+      "dither": "none",
+      "stats_mode": "diff",
+      "sharpen": 0.5,
+      "engine": "builtin",
+      "mp4": {
+        "crf": 23,
+        "max_fps": 30
+      }
+    }
+  ]
+}

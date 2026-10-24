@@ -33,6 +33,9 @@
 
 - Resolved 2026-10-22 (owner): gifsicle and gifski are both in scope as optional engines
   (FR-022 to FR-025); bundling gifski waits on the application licence.
+- Resolved 2026-10-23 (owner): both engines are bundled (pinned, built from source); the
+  release gate for gifski's AGPL licence is in `plan.md` / `contracts/gif-tools-lock.md`.
+- 2026-10-23 design review: US2 scenario 1 now lists the lossy step first, matching FR-009.
 - Named products: FFmpeg (the existing bundled engine, Assumptions only) and gifsicle/gifski in
   FR-022 to FR-025, because the owner chose those specific tools and their licences matter.
 - Reddit size limits are third-party figures; FR-007 requires labelling them unverified until the

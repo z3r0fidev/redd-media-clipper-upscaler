@@ -12,7 +12,7 @@ Last updated: 2026-10-22.
 |---|---|---|
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, not yet tagged | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0 release candidate, not yet tagged | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
-| 003 GIF export for Reddit | ▶ Specified (2026-10-22); plan next | Nothing yet (spec: `specs/003-gif-export/spec.md`) |
+| 003 GIF export for Reddit | ▶ Planned (2026-10-23); tasks next | Nothing yet (plan: `specs/003-gif-export/plan.md`) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -80,13 +80,15 @@ owner on real footage.
 
 ## Feature 003: GIF Export for Reddit
 
-Specified on 2026-10-22: [spec](../specs/003-gif-export/spec.md); no plan or task list yet.
+Specified on 2026-10-22: [spec](../specs/003-gif-export/spec.md); planned on 2026-10-23:
+[plan](../specs/003-gif-export/plan.md); no task list yet.
 Research: `research/05-gif-export.md`. Six stories: a GIF that fits a Reddit post (P1), automatic
 size-budget search (P2), a silent "Reddit MP4" alternative (P3), portrait and square shapes via
 002's reframe (P4), batch and `clip` integration (P5), and a desktop GIF view (P6). It reuses the
 job model that feature 002 introduced. Owner decision: gifsicle (GPL-2.0) and gifski (AGPL-3.0)
-are optional engines; bundling gifski waits on the application licence. Owner check before
-release: confirm Reddit's GIF size limits in its Help Center. Next step: plan mode.
+are optional engines, and (2026-10-23) both are bundled, pinned and built from source; a release
+that bundles gifski fails until the application licence (a root `LICENSE`) exists. Owner check
+before release: confirm Reddit's GIF size limits in its Help Center. Next step: `/speckit-tasks`.
 
 ## Release and Project Housekeeping
 
