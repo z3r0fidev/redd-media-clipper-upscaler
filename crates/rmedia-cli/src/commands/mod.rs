@@ -1,6 +1,7 @@
 pub mod batch;
 pub mod clip;
 pub mod doctor;
+pub mod gif;
 pub mod scan;
 pub mod upscale;
 

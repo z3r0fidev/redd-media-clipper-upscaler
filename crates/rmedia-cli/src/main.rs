@@ -55,6 +55,9 @@ pub enum Command {
     Scan(ScanArgs),
     /// Show the video engine in use and its capabilities.
     Doctor(DoctorArgs),
+    /// Make GIFs (or silent Reddit MP4 loops) that fit a size target (feature 003).
+    #[command(hide = true)]
+    Gif(Box<GifArgs>),
 }
 
 #[derive(Debug, Args)]
@@ -291,6 +294,13 @@ pub struct CommonArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct GifArgs {
+    /// Input video files and/or folders (folders are scanned for videos).
+    #[arg(value_name = "INPUT")]
+    pub inputs: Vec<PathBuf>,
+}
+
+#[derive(Debug, Args)]
 pub struct BatchArgs {
     /// Manifest file: .json (structured) or .csv (one row per clip).
     #[arg(value_name = "MANIFEST")]
@@ -438,6 +448,7 @@ fn main() -> ExitCode {
             Command::Batch(args) => commands::batch::run(&cli, args).await,
             Command::Scan(args) => commands::scan::run(&cli, args).await,
             Command::Doctor(args) => commands::doctor::run(&cli, args).await,
+            Command::Gif(args) => commands::gif::run(&cli, args).await,
         }
     });
     ExitCode::from(code)

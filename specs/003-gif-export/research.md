@@ -95,6 +95,9 @@ Tags:
     for clips. The windows are joined with `concat` after the per-input frame chains.
   - With smart framing, each window gets its own sendcmd file with `cmd_offset` = the window
     start, so crop commands land on the right frames (R16).
+    - [V] T005(d), 2026-10-24: per-window files work as designed. An empty sendcmd file is an
+      error ("No commands were specified"), so each window's file starts with the crop's
+      position at the window start.
   - One ffmpeg run, counted as one encode.
   - A range of 4 s or less is encoded whole: the sample is the real output, and the result is
     reused if it is chosen.
@@ -425,7 +428,12 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
   after the post-pass.
 - **Alpha** (edge case "transparency", code review M8): when the probe reports `has_alpha`, the
   frame chain flattens the source onto opaque black before scaling:
-  `color=black:s=WxH[bg];[bg][src]overlay=shortest=1:format=auto,format=rgb24`.
+  `split[fa][fb];[fa]format=yuv420p,drawbox=c=black:t=fill[fk];[fk][fb]overlay=format=auto`.
+  - [V] T005(e), 2026-10-24: the black base is a copy of the source, so it has the source's
+    timing (a `color` source would set the output rate). It must drop the alpha plane first,
+    or `overlay` keeps the base's alpha and the GIF is transparent. `premultiply=inplace=1`
+    was rejected: on `yuva420p` it changed opaque colours ((0,0,254) became (13,13,156)).
+  - The Alpha fixture's hidden pixels are red, so a flatten that ignores alpha shows red.
   - The output is opaque.
   - `reserve_transparent=1` stays on: paletteuse uses that index only for unchanged-pixel diffs,
     never for source alpha.

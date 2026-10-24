@@ -29,18 +29,18 @@ quickstart.md
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Record the 002 baseline in `specs/003-gif-export/checklists/validation.md`:
+- [X] T001 Record the 002 baseline in `specs/003-gif-export/checklists/validation.md`:
   - run `cargo test --workspace` (bundled engine, `RMEDIA_REQUIRE_FFMPEG=1`) and the desktop
     tests;
   - note the passing counts (300 / 10 ignored, desktop 16) and the insta snapshot list.
 
   The Phase 2 refactors must keep them green.
-- [ ] T002 Scaffold empty modules and register them in `core/lib.rs`:
+- [X] T002 Scaffold empty modules and register them in `core/lib.rs`:
   - `core/gif/{mod,target,timing,graph,budget,estimate,engines,verify}.rs`;
   - `core/gif/builtin/` (empty for now);
   - `core/exec/gif.rs`;
   - `crates/rmedia-cli/src/commands/gif.rs`, wired as a hidden `Gif` command until T044.
-- [ ] T003 [P] Add testkit fixtures in `crates/rmedia-testkit/src/lib.rs`:
+- [X] T003 [P] Add testkit fixtures in `crates/rmedia-testkit/src/lib.rs`:
   - `Land6` (testsrc2 1280×720 30 fps, 6 s);
   - `Busy10` (mandelbrot 1280×720 30 fps, 10 s, the US2 budget case);
   - `FlatUi` (white + `drawgrid` + `drawtext`-free bars, 6 s);
@@ -50,7 +50,7 @@ quickstart.md
 
   Reuse `MovingMarker`, `VfrMp4`, `Rotated90` and `HdrTagged`. Derived fixtures hash their
   parent's spec.
-- [ ] T004 [P] Add testkit helpers in `crates/rmedia-testkit/src/lib.rs`:
+- [X] T004 [P] Add testkit helpers in `crates/rmedia-testkit/src/lib.rs`:
   - `gif_delays(path) -> Vec<u32>` (ffprobe `packet=duration`, time base 1/100);
   - `gif_packet_sizes`;
   - `gif_loop(path) -> Option<u16>` (NETSCAPE2.0 repeat count, `None` when absent);
@@ -60,7 +60,7 @@ quickstart.md
     `RMEDIA_REQUIRE_GIF_TOOLS=1`.
 
   Each helper gets a self-check test.
-- [ ] T005 [P] Write engine probes in `core-tests/gif_engine_checks.rs`. They pass immediately
+- [X] T005 [P] Write engine probes in `core-tests/gif_engine_checks.rs`. They pass immediately
   and guard against engine regressions (research R1, R3, R4, R15):
   - (a) two-pass palette output is byte-identical across runs;
   - (b) 15 fps gives only 6/7 cs delays, and 20/25/50 fps give exact delays;

@@ -5,6 +5,7 @@ pub mod doctor;
 pub mod error;
 pub mod event;
 pub mod exec;
+pub mod gif;
 pub mod input;
 pub mod models;
 pub mod paths;

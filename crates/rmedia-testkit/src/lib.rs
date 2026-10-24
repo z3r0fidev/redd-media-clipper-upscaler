@@ -65,6 +65,20 @@ pub enum Fixture {
     TinySource,
     /// 320x240 @ 120 fps, 5 s.
     HighFps120,
+    // --- 003 (GIF export) ----------------------------------------------------------------------
+    /// 1280x720 @ 30 fps, 6 s, testsrc2 with sine AAC audio (the US1 default case).
+    Land6,
+    /// 1280x720 @ 30 fps, 10 s of zooming mandelbrot: busy detail that is hard to fit a budget.
+    Busy10,
+    /// 1280x720 @ 30 fps, 6 s: a white page with a grey grid and a blue bar sliding across.
+    FlatUi,
+    /// 1280x720 @ 30 fps, 6 s: one flat colour with a small 8x8 block moving (tiny deltas).
+    Static6,
+    /// 640x360 @ 30 fps, 3 s FFV1 `yuva420p` MKV: a 480x270 picture with a transparent margin
+    /// whose hidden colour is red (a flatten that ignores alpha shows red, not black).
+    Alpha,
+    /// 640x360 @ 30 fps, 4 s (narrower than the 720 px GIF target).
+    Narrow,
 }
 
 impl Fixture {
@@ -95,6 +109,12 @@ impl Fixture {
             Fixture::HdrTagged => "hdr10.mp4",
             Fixture::TinySource => "tiny.mp4",
             Fixture::HighFps120 => "fps120.mp4",
+            Fixture::Land6 => "land6.mp4",
+            Fixture::Busy10 => "busy10.mp4",
+            Fixture::FlatUi => "flat-ui.mp4",
+            Fixture::Static6 => "static6.mp4",
+            Fixture::Alpha => "alpha.mkv",
+            Fixture::Narrow => "narrow.mp4",
         }
     }
 
@@ -702,6 +722,99 @@ impl Fixture {
                 "-f",
                 "mp4",
             ],
+            Fixture::Land6 => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=1280x720:rate=30:duration=6",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=6",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+                "-f",
+                "mp4",
+            ],
+            Fixture::Busy10 => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "mandelbrot=size=1280x720:rate=30,trim=duration=10",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mp4",
+            ],
+            Fixture::FlatUi => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "color=white:size=1280x720:rate=30:duration=6,drawgrid=w=64:h=64:t=2:c=gray,\
+                 drawbox=x='mod(t*200\\,1100)':y=300:w=120:h=60:color=blue:t=fill",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mp4",
+            ],
+            Fixture::Static6 => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "color=0x406080:size=1280x720:rate=30:duration=6,\
+                 drawbox=x='100+t*50':y=200:w=8:h=8:color=yellow:t=fill",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mp4",
+            ],
+            Fixture::Alpha => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=480x270:rate=30:duration=3,format=yuva420p,pad=640:360:80:45:color=red@0",
+                "-c:v",
+                "ffv1",
+                "-f",
+                "matroska",
+            ],
+            Fixture::Narrow => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x360:rate=30:duration=4",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mp4",
+            ],
         }
     }
 }
@@ -714,6 +827,16 @@ const SRT: &str = "1\n00:00:01,000 --> 00:00:04,000\nHello\n\n2\n00:00:10,000 --
 /// Path to ffmpeg (`RMEDIA_FFMPEG` or PATH).
 pub fn ffmpeg() -> PathBuf {
     std::env::var_os("RMEDIA_FFMPEG").map(PathBuf::from).unwrap_or_else(|| "ffmpeg".into())
+}
+
+/// Whether the engine is a pinned release build (the bundled engine reports `version nX.Y`;
+/// distro builds report e.g. `6.1.1-3ubuntu5`). Exact-timing and byte-identity checks are
+/// measured on it only.
+pub fn bundled_engine() -> bool {
+    Command::new(ffmpeg())
+        .args(["-hide_banner", "-version"])
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).starts_with("ffmpeg version n"))
 }
 
 /// Path to ffprobe (`RMEDIA_FFPROBE` or PATH).
@@ -1006,6 +1129,144 @@ pub fn bicubic_baseline(src: &Path, w: u32, h: u32, out: &Path) -> PathBuf {
     out.to_path_buf()
 }
 
+/// ffprobe `packet=<entry>` values of the first video stream, in order.
+fn packet_entries(path: &Path, entry: &str) -> Vec<u64> {
+    let out = Command::new(ffprobe())
+        .args(["-v", "error", "-select_streams", "v:0", "-show_entries", &format!("packet={entry}")])
+        .args(["-of", "csv=p=0"])
+        .arg(path)
+        .output()
+        .expect("run ffprobe");
+    assert!(out.status.success(), "ffprobe failed on {}", path.display());
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.trim().trim_end_matches(',').parse().ok())
+        .collect()
+}
+
+/// A GIF's frame delays in centiseconds (packet durations; GIF's time base is 1/100).
+pub fn gif_delays(path: &Path) -> Vec<u32> {
+    packet_entries(path, "duration").into_iter().map(|d| d as u32).collect()
+}
+
+/// A GIF's packet sizes in bytes (frame 0 is the full first frame, the rest are deltas).
+pub fn gif_packet_sizes(path: &Path) -> Vec<u64> {
+    packet_entries(path, "size")
+}
+
+/// The NETSCAPE2.0 repeat count of a GIF (`Some(0)` = forever), `None` when the block is absent
+/// (the GIF plays once).
+pub fn gif_loop(path: &Path) -> Option<u16> {
+    let data = std::fs::read(path).expect("read gif");
+    netscape_repeat(&data)
+}
+
+fn netscape_repeat(data: &[u8]) -> Option<u16> {
+    const ID: &[u8] = b"NETSCAPE2.0";
+    let at = data.windows(ID.len()).position(|w| w == ID)?;
+    // Application extension: id, then a 3-byte sub-block [len=3, 1, repeat lo, repeat hi].
+    match data.get(at + ID.len()..at + ID.len() + 4)? {
+        [3, 1, lo, hi] => Some(u16::from_le_bytes([*lo, *hi])),
+        _ => None,
+    }
+}
+
+/// Whether the first frame of `path`, decoded to RGBA, has no pixel with alpha below 255.
+pub fn gif_opaque(path: &Path) -> bool {
+    let out = Command::new(ffmpeg())
+        .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-i"])
+        .arg(path)
+        .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .output()
+        .expect("decode first frame");
+    assert!(out.status.success() && !out.stdout.is_empty(), "cannot decode {}", path.display());
+    out.stdout.chunks_exact(4).all(|px| px[3] == 255)
+}
+
+/// Whether an MP4's `moov` box comes before its `mdat` box (playable while downloading).
+pub fn mp4_faststart(path: &Path) -> bool {
+    let data = std::fs::read(path).expect("read mp4");
+    let order = top_level_boxes(&data);
+    let pos = |name: &[u8; 4]| order.iter().position(|b| b == name);
+    matches!((pos(b"moov"), pos(b"mdat")), (Some(m), Some(d)) if m < d)
+}
+
+fn top_level_boxes(data: &[u8]) -> Vec<[u8; 4]> {
+    let mut boxes = Vec::new();
+    let mut at = 0usize;
+    while at + 8 <= data.len() {
+        let size = u32::from_be_bytes(data[at..at + 4].try_into().expect("4 bytes")) as u64;
+        let kind: [u8; 4] = data[at + 4..at + 8].try_into().expect("4 bytes");
+        let size = match size {
+            1 if at + 16 <= data.len() => {
+                u64::from_be_bytes(data[at + 8..at + 16].try_into().expect("8 bytes"))
+            }
+            0 => (data.len() - at) as u64,
+            s => s,
+        };
+        boxes.push(kind);
+        if size < 8 {
+            break;
+        }
+        at = at.saturating_add(size as usize);
+    }
+    boxes
+}
+
+/// The optional GIF engines (feature 003), found through `RMEDIA_GIFSICLE` / `RMEDIA_GIFSKI`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GifTool {
+    Gifsicle,
+    Gifski,
+}
+
+impl GifTool {
+    fn env(self) -> &'static str {
+        match self {
+            GifTool::Gifsicle => "RMEDIA_GIFSICLE",
+            GifTool::Gifski => "RMEDIA_GIFSKI",
+        }
+    }
+}
+
+/// Path to an optional GIF engine, when its environment variable names a program that runs.
+pub fn gif_tool(tool: GifTool) -> Option<PathBuf> {
+    let path = std::env::var_os(tool.env()).filter(|v| !v.is_empty()).map(PathBuf::from)?;
+    Command::new(&path).arg("--version").output().ok().filter(|o| o.status.success()).map(|_| path)
+}
+
+/// Whether a test needing `tool` can run. Panics when `RMEDIA_REQUIRE_GIF_TOOLS=1` and the tool
+/// is missing, so the bundled-engine CI jobs never skip silently.
+pub fn require_gif_tool(tool: GifTool) -> bool {
+    if gif_tool(tool).is_some() {
+        return true;
+    }
+    if std::env::var_os("RMEDIA_REQUIRE_GIF_TOOLS").is_some_and(|v| v == "1") {
+        panic!(
+            "{tool:?} is required (RMEDIA_REQUIRE_GIF_TOOLS=1) but {} is not set to a working program",
+            tool.env()
+        );
+    }
+    eprintln!("skipping: {tool:?} not available ({} unset)", tool.env());
+    false
+}
+
+/// Skips the calling test (returns early) when an optional GIF engine is unavailable:
+/// `require_tool!(gifsicle)` or `require_tool!(gifski)`.
+#[macro_export]
+macro_rules! require_tool {
+    (gifsicle) => {
+        if !$crate::require_gif_tool($crate::GifTool::Gifsicle) {
+            return;
+        }
+    };
+    (gifski) => {
+        if !$crate::require_gif_tool($crate::GifTool::Gifski) {
+            return;
+        }
+    };
+}
+
 /// A fresh, empty working directory under the fixtures root.
 fn tempfile_dir(tag: &str) -> PathBuf {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -1018,6 +1279,97 @@ fn tempfile_dir(tag: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// A GIF made by the engine under test (two frames at 10 fps, so 10 cs each).
+    fn tiny_gif(loop_arg: &str, dir: &Path) -> PathBuf {
+        let out = dir.join(format!("loop{loop_arg}.gif"));
+        let status = Command::new(ffmpeg())
+            .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i"])
+            .arg("testsrc2=size=64x48:rate=10:duration=0.3")
+            .args(["-loop", loop_arg, "-f", "gif"])
+            .arg(&out)
+            .status()
+            .expect("run ffmpeg");
+        assert!(status.success());
+        out
+    }
+
+    #[test]
+    fn gif_helpers_read_delays_sizes_loop_and_opacity() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let dir = tempfile_dir("gif-helpers");
+        let forever = tiny_gif("0", &dir);
+        assert_eq!(gif_delays(&forever), vec![10, 10, 10]);
+        let sizes = gif_packet_sizes(&forever);
+        assert_eq!(sizes.len(), 3);
+        assert!(sizes.iter().all(|s| *s > 0));
+        assert_eq!(gif_loop(&forever), Some(0));
+        assert_eq!(gif_loop(&tiny_gif("2", &dir)), Some(2));
+        assert_eq!(gif_loop(&tiny_gif("-1", &dir)), None, "one play has no NETSCAPE block");
+        assert!(gif_opaque(&forever));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn netscape_block_parsing() {
+        let mut gif = b"GIF89a....!\xff\x0bNETSCAPE2.0".to_vec();
+        gif.extend([3, 1, 0x34, 0x12, 0]);
+        assert_eq!(netscape_repeat(&gif), Some(0x1234));
+        assert_eq!(netscape_repeat(b"GIF89a no block"), None);
+        assert_eq!(netscape_repeat(b"NETSCAPE2.0\x03"), None, "truncated");
+    }
+
+    #[test]
+    fn faststart_compares_top_level_box_order() {
+        let boxed = |kind: &[u8; 4], len: u32| {
+            let mut b = len.to_be_bytes().to_vec();
+            b.extend(kind);
+            b.resize(len as usize, 0);
+            b
+        };
+        let fast = [boxed(b"ftyp", 16), boxed(b"moov", 24), boxed(b"mdat", 12)].concat();
+        let slow = [boxed(b"ftyp", 16), boxed(b"mdat", 12), boxed(b"moov", 24)].concat();
+        assert_eq!(top_level_boxes(&fast), vec![*b"ftyp", *b"moov", *b"mdat"]);
+        let dir = tempfile_dir("faststart");
+        std::fs::write(dir.join("fast.mp4"), &fast).unwrap();
+        std::fs::write(dir.join("slow.mp4"), &slow).unwrap();
+        assert!(mp4_faststart(&dir.join("fast.mp4")));
+        assert!(!mp4_faststart(&dir.join("slow.mp4")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gif_tools_come_from_their_environment_variables() {
+        // A variable naming nothing runnable is "not available", never a panic by itself.
+        assert_eq!(GifTool::Gifsicle.env(), "RMEDIA_GIFSICLE");
+        assert_eq!(GifTool::Gifski.env(), "RMEDIA_GIFSKI");
+        if let Some(p) = gif_tool(GifTool::Gifsicle) {
+            assert!(p.exists());
+        }
+    }
+
+    #[test]
+    fn gif_fixtures_have_the_documented_shape() {
+        if !ffmpeg_available() {
+            return;
+        }
+        for (kind, size, secs) in [
+            (Fixture::Land6, (1280, 720), 6.0),
+            (Fixture::Narrow, (640, 360), 4.0),
+            (Fixture::Static6, (1280, 720), 6.0),
+            (Fixture::FlatUi, (1280, 720), 6.0),
+        ] {
+            let p = fixture(kind);
+            assert_eq!(display_size(&p), size, "{kind:?}");
+            assert!((duration(&p) - secs).abs() < 0.1, "{kind:?}");
+        }
+        let alpha = probe_json(&fixture(Fixture::Alpha));
+        assert_eq!(alpha["streams"][0]["pix_fmt"], "yuva420p");
+    }
+
     #[test]
     fn require_engine_sees_common_filters_and_encoders() {
         if !super::ffmpeg_available() {
