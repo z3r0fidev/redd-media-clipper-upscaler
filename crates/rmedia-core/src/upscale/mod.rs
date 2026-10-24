@@ -369,7 +369,7 @@ pub async fn prepare_plan(
         if u.up.analysis != AnalysisState::Pending {
             continue;
         }
-        match reframe::analyze_cached(tools, u, cancel, |_| {}).await {
+        match reframe::analyze_cached(tools, &u.reframe_input(), cancel, |_| {}).await {
             Ok((a, cache)) => u.up = u.up.clone().with_analysis(a, cache),
             Err(crate::Error::Cancelled) => return Err(crate::Error::Cancelled),
             Err(e) => {

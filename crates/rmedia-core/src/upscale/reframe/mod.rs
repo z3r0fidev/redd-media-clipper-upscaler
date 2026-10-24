@@ -208,6 +208,43 @@ pub fn assemble(
     }
 }
 
+/// What the analysis reads from a job (refactor B2, research R16): upscale and GIF jobs each
+/// build one, so both share the analysis and its cache.
+#[derive(Debug, Clone, Copy)]
+pub struct ReframeInput<'a> {
+    /// The source range (`input_args`, the requested span, the input file).
+    pub cut: &'a crate::plan::ffargs::ClipSpec,
+    /// The pre-processing the analysis graph repeats (trim, deinterlace, tone-map).
+    pub graph: &'a crate::upscale::graph::GraphInput,
+    pub detector: Option<&'a detect::DetectorSpec>,
+    pub cache_dir: Option<&'a std::path::Path>,
+    pub analysis_size: (u32, u32),
+    /// The output frame rate the crop path has one entry per frame of.
+    pub fps_out: f64,
+    /// The displayed source size and the centred crop window the path moves.
+    pub display: (u32, u32),
+    pub crop: Option<crate::upscale::geometry::Crop>,
+    pub motion: Motion,
+}
+
+impl crate::upscale::UpscaleSpec {
+    /// This job's analysis input.
+    pub fn reframe_input(&self) -> ReframeInput<'_> {
+        let up = &self.up;
+        ReframeInput {
+            cut: &self.cut,
+            graph: &up.graph,
+            detector: up.detector.as_ref(),
+            cache_dir: up.reframe_cache.as_deref(),
+            analysis_size: up.analysis_size,
+            fps_out: up.fps_out,
+            display: up.geometry.display,
+            crop: up.geometry.crop,
+            motion: up.motion,
+        }
+    }
+}
+
 /// What an analysis of one job is keyed and checked by.
 struct Prepared {
     detector: std::sync::Arc<dyn detect::Detector>,
@@ -220,36 +257,35 @@ struct Prepared {
 }
 
 impl Prepared {
-    async fn new(tools: &crate::tools::Tools, spec: &crate::upscale::UpscaleSpec) -> crate::Result<Prepared> {
+    async fn new(tools: &crate::tools::Tools, input: &ReframeInput<'_>) -> crate::Result<Prepared> {
         use crate::Error;
-        let up = &spec.up;
         let not_smart = || Error::InvalidInput("this job has no smart reframe to analyse".into());
-        let spec_det = up.detector.clone().ok_or_else(not_smart)?;
+        let spec_det = input.detector.cloned().ok_or_else(not_smart)?;
         // Reading and hashing the model is blocking work.
         let detector = tokio::task::spawn_blocking(move || detect::load(&spec_det))
             .await
             .map_err(|e| Error::engine_failed(format!("face model: {e}"), String::new()))??;
-        let crop = up.geometry.crop.ok_or_else(not_smart)?;
-        let span = spec.cut.requested;
+        let crop = input.crop.ok_or_else(not_smart)?;
+        let span = input.cut.requested;
         let len = span.end.saturating_sub(span.start).as_secs_f64();
-        let graph = crate::upscale::graph::analysis_graph(&up.graph, up.analysis_size);
-        let meta = std::fs::metadata(&spec.cut.input)?;
+        let graph = crate::upscale::graph::analysis_graph(input.graph, input.analysis_size);
+        let meta = std::fs::metadata(&input.cut.input)?;
         let mtime_ns = meta
             .modified()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_nanos() as i128);
-        let source = std::fs::canonicalize(&spec.cut.input).unwrap_or_else(|_| spec.cut.input.clone());
+        let source = std::fs::canonicalize(&input.cut.input).unwrap_or_else(|_| input.cut.input.clone());
         let key = cache::key(&cache::KeyInputs {
             source: source.to_string_lossy().into_owned(),
             size: meta.len(),
             mtime_ns,
             span: (span.start.as_secs_f64(), span.end.as_secs_f64()),
             chain: graph.clone(),
-            analysis_size: up.analysis_size,
+            analysis_size: input.analysis_size,
             crop: (crop.w, crop.h),
-            fps: up.fps_out,
-            motion: up.motion,
+            fps: input.fps_out,
+            motion: input.motion,
             algo: ALGO_VERSION,
             detector: detector.id(),
             ffmpeg: tools.version.text().to_owned(),
@@ -257,18 +293,18 @@ impl Prepared {
         Ok(Prepared {
             detector,
             key,
-            cache: up.reframe_cache.clone().map(cache::Cache::new),
+            cache: input.cache_dir.map(|d| cache::Cache::new(d.to_path_buf())),
             graph,
             crop,
             len,
-            frames: frame_count(len, up.fps_out),
+            frames: frame_count(len, input.fps_out),
         })
     }
 
-    fn cached(&self, up: &crate::upscale::UpscalePlan) -> Option<ReframeAnalysis> {
+    fn cached(&self, input: &ReframeInput<'_>) -> Option<ReframeAnalysis> {
         let fits = |a: &ReframeAnalysis| {
             a.path.len() == self.frames
-                && a.source_size == up.geometry.display
+                && a.source_size == input.display
                 && a.crop == (self.crop.w, self.crop.h)
                 && a.crop_y == self.crop.y
         };
@@ -276,37 +312,41 @@ impl Prepared {
     }
 }
 
-/// The cached analysis of an upscale job, if there is one; never decodes (the desktop preview).
-pub async fn lookup_cached(
-    tools: &crate::tools::Tools,
-    spec: &crate::upscale::UpscaleSpec,
-) -> crate::Result<Option<std::sync::Arc<ReframeAnalysis>>> {
-    let p = Prepared::new(tools, spec).await?;
-    Ok(p.cached(&spec.up).map(std::sync::Arc::new))
+/// The cache key of a job's analysis (tests check it is stable across refactors).
+pub async fn cache_key(tools: &crate::tools::Tools, input: &ReframeInput<'_>) -> crate::Result<String> {
+    Ok(Prepared::new(tools, input).await?.key)
 }
 
-/// Analyses an upscale job's source range, or takes the result from the cache (research R10).
+/// The cached analysis of a job, if there is one; never decodes (the desktop preview).
+pub async fn lookup_cached(
+    tools: &crate::tools::Tools,
+    input: &ReframeInput<'_>,
+) -> crate::Result<Option<std::sync::Arc<ReframeAnalysis>>> {
+    let p = Prepared::new(tools, input).await?;
+    Ok(p.cached(input).map(std::sync::Arc::new))
+}
+
+/// Analyses a job's source range, or takes the result from the cache (research R10).
 /// `progress` receives the fraction of samples done.
 pub async fn analyze_cached(
     tools: &crate::tools::Tools,
-    spec: &crate::upscale::UpscaleSpec,
+    input: &ReframeInput<'_>,
     cancel: &tokio_util::sync::CancellationToken,
     mut progress: impl FnMut(f64) + Send,
 ) -> crate::Result<(std::sync::Arc<ReframeAnalysis>, crate::upscale::CacheUse)> {
     use crate::upscale::CacheUse;
-    let up = &spec.up;
-    let p = Prepared::new(tools, spec).await?;
-    if let Some(a) = p.cached(up) {
+    let p = Prepared::new(tools, input).await?;
+    if let Some(a) = p.cached(input) {
         progress(1.0);
         return Ok((std::sync::Arc::new(a), CacheUse::Hit));
     }
-    let work = decode::WorkDir::new(up.reframe_cache.as_deref())?;
+    let work = decode::WorkDir::new(input.cache_dir)?;
     let expected = (p.len * SAMPLE_FPS).ceil().max(1.0);
     let (samples, scores) = decode::run(
         tools,
-        crate::plan::ffargs::input_args(&spec.cut),
+        crate::plan::ffargs::input_args(input.cut),
         &p.graph,
-        up.analysis_size,
+        input.analysis_size,
         p.detector.clone(),
         work.path(),
         cancel,
@@ -314,14 +354,14 @@ pub async fn analyze_cached(
     )
     .await?;
     let params = AssembleParams {
-        analysis_size: up.analysis_size,
-        display: up.geometry.display,
+        analysis_size: input.analysis_size,
+        display: input.display,
         crop: (p.crop.w, p.crop.h),
         crop_y: p.crop.y,
-        fps: up.fps_out,
+        fps: input.fps_out,
         len: p.len,
-        clip_start: spec.cut.requested.start,
-        motion: up.motion,
+        clip_start: input.cut.requested.start,
+        motion: input.motion,
     };
     let a = assemble(&samples, &scores, &params, p.key.clone());
     if let Some(c) = &p.cache

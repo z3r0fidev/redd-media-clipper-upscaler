@@ -594,7 +594,7 @@ impl AppState {
                 return Ok(ReframeResult { analysis: None, note });
             }
             let mut sent = -1.0;
-            let (a, _) = reframe::analyze_cached(&tools, &spec, &cancel, |f| {
+            let (a, _) = reframe::analyze_cached(&tools, &spec.reframe_input(), &cancel, |f| {
                 // At most one event per percent.
                 if f - sent >= 0.01 || f >= 1.0 {
                     sent = f;

@@ -142,10 +142,12 @@ pub async fn preview_frame(
     let up = &spec.up;
     let analysis = match &up.analysis {
         AnalysisState::Ready(a, _) => Some(a.clone()),
-        AnalysisState::Pending => reframe::lookup_cached(tools, &spec).await.unwrap_or_else(|e| {
-            tracing::warn!("reframe cache lookup failed: {e}");
-            None
-        }),
+        AnalysisState::Pending => {
+            reframe::lookup_cached(tools, &spec.reframe_input()).await.unwrap_or_else(|e| {
+                tracing::warn!("reframe cache lookup failed: {e}");
+                None
+            })
+        }
         AnalysisState::NotNeeded => None,
     };
     let smart = up.reframe_applied == Reframe::Smart;

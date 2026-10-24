@@ -182,11 +182,11 @@ green after every task.**
 - [X] T017 Implement B1 in `core/upscale/graph.rs`: `Flavor::Gif` in `build_with`, plus
   `pub fn frame_chain` (research R1). It has one resample, no denoise, CAS, zscale or format
   tail, and an open output label.
-- [ ] T018 Write B2 tests in `core-tests/us2_reframe.rs` (extend):
+- [X] T018 Write B2 tests in `core-tests/us2_reframe.rs` (extend):
   - the cache key of a 002 smart job is identical before and after;
   - `analyze_cached` and `lookup_cached` through `ReframeInput` return the same analysis as
     today.
-- [ ] T019 Implement B2:
+- [X] T019 Implement B2:
   - `ReframeInput` in `core/upscale/reframe/mod.rs` with the fields from research R16;
   - `UpscaleSpec::reframe_input()`;
   - update `core/upscale/preview.rs` and `apps/desktop/src-tauri/src/ops.rs` callers.

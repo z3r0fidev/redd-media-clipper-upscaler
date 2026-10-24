@@ -113,7 +113,7 @@ async fn smart_reframe_follows_the_cached_path_and_its_fallback_ranges() {
             let spec = single_job(&tools, &caps, PresetRegistry::builtin(), &src, None, &cpu(), &cancel)
                 .await
                 .unwrap();
-            let (a, _) = analyze_cached(&tools, &spec, &cancel, |_| {}).await.unwrap();
+            let (a, _) = analyze_cached(&tools, &spec.reframe_input(), &cancel, |_| {}).await.unwrap();
             (src, a)
         };
 

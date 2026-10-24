@@ -25,7 +25,9 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
     if analyse {
         ctx.stage("analyze", 1, 3, 0.25);
         let (tools, cancel) = (ctx.tools, ctx.cancel);
-        match reframe::analyze_cached(tools, &spec, cancel, |f| ctx.stage_fraction(f, total)).await {
+        match reframe::analyze_cached(tools, &spec.reframe_input(), cancel, |f| ctx.stage_fraction(f, total))
+            .await
+        {
             Ok((a, cache)) => spec.up = spec.up.with_analysis(a, cache),
             Err(Error::Cancelled) => return Err(Error::Cancelled),
             Err(e) => {

@@ -203,3 +203,49 @@ async fn an_analysis_that_fails_while_rendering_falls_back_to_the_blurred_backgr
     let warned = events.iter().any(|e| matches!(e, rmedia_core::event::Event::JobWarning { message, .. } if message.contains("using the blurred background")));
     assert!(warned, "the fallback is reported");
 }
+
+/// T018 (003, refactor B2): analysis through `ReframeInput` keys and reuses the cache exactly as
+/// 002 did. The key is rebuilt here from the job's own fields the way 002 computed it.
+#[tokio::test(flavor = "multi_thread")]
+async fn reframe_input_keeps_the_002_cache_key_and_lookup() {
+    use rmedia_core::upscale::reframe::{analyze_cached, cache, cache_key, lookup_cached};
+    require_engine!("libx264", "zscale", "cas", "hqdn3d", "sendcmd", "scdet");
+    let (tools, _) = engine();
+    let dir = tempfile::tempdir().unwrap();
+    let caps = caps(&dir.path().join("cache"), Some(DetectorSpec::Marker));
+    let p = planned(Fixture::MovingMarker, dir.path(), &caps, Reframe::Smart).await;
+    let (a, first) = analysis(&p);
+    assert_eq!(first, CacheUse::Miss);
+    let JobSpec::Upscale(u) = &p.jobs[0].spec else { panic!("not an upscale job") };
+    let input = u.reframe_input();
+    let key = cache_key(&tools, &input).await.unwrap();
+    assert_eq!(key, a.key, "the analysis was stored under the input's key");
+
+    let src = std::fs::canonicalize(&u.cut.input).unwrap();
+    let meta = std::fs::metadata(&src).unwrap();
+    let span = u.cut.requested;
+    let crop = u.up.geometry.crop.unwrap();
+    let by_002 = cache::key(&cache::KeyInputs {
+        source: src.to_string_lossy().into_owned(),
+        size: meta.len(),
+        mtime_ns: meta.modified().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as i128,
+        span: (span.start.as_secs_f64(), span.end.as_secs_f64()),
+        chain: rmedia_core::upscale::graph::analysis_graph(&u.up.graph, u.up.analysis_size),
+        analysis_size: u.up.analysis_size,
+        crop: (crop.w, crop.h),
+        fps: u.up.fps_out,
+        motion: u.up.motion,
+        algo: rmedia_core::upscale::reframe::ALGO_VERSION,
+        detector: detect::load(&DetectorSpec::Marker).unwrap().id(),
+        ffmpeg: tools.version.text().to_owned(),
+    });
+    assert_eq!(key, by_002, "the key is derived from the same inputs as in 002");
+
+    let cached = lookup_cached(&tools, &input).await.unwrap().expect("found in the cache");
+    assert_eq!(*cached, a);
+    let mut pending = u.clone();
+    pending.up.analysis = AnalysisState::Pending;
+    let (again, hit) =
+        analyze_cached(&tools, &pending.reframe_input(), &CancellationToken::new(), |_| {}).await.unwrap();
+    assert_eq!((hit, &*again), (CacheUse::Hit, &a));
+}
