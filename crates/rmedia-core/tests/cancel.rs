@@ -9,6 +9,7 @@ use common::*;
 use rmedia_core::EndSpec;
 use rmedia_core::event::{Event, EventSink, JobOutcome};
 use rmedia_core::exec::{self, RunConfig};
+use rmedia_core::gif::EngineChoice;
 use rmedia_core::request::Mode;
 use rmedia_testkit::{Fixture, fixture, require_ffmpeg};
 use sysinfo::{Pid, ProcessesToUpdate, System};
@@ -34,7 +35,7 @@ fn child_engines() -> Vec<String> {
         .values()
         .filter(|p| p.parent() == Some(me))
         .map(|p| p.name().to_string_lossy().into_owned())
-        .filter(|n| n.contains("ffmpeg") || n.contains("ffprobe"))
+        .filter(|n| n.contains("ffmpeg") || n.contains("ffprobe") || n.contains("gifski"))
         .collect()
 }
 
@@ -146,9 +147,9 @@ async fn cancelling_an_upscale_is_fast_and_clean() {
     assert!(child_engines().is_empty(), "orphaned engine processes: {:?}", child_engines());
 }
 
-/// T034 (003 US1): cancelling a GIF job during `stage` stops within 2 s and leaves no `.part`,
-/// no scratch folder and no engine process.
-async fn cancel_gif_during(stage: &str) {
+/// T034, T038 (003 US1): cancelling a GIF job during `stage` stops within 2 s and leaves no
+/// `.part`, no scratch folder and no engine process (with `engine`, the gifski pipe's two).
+async fn cancel_gif_during(stage: &str, engine_choice: EngineChoice) {
     let _serial = SERIAL.lock().await;
     rmedia_testkit::require_engine!("palettegen", "paletteuse");
     let src = fixture(Fixture::Busy10);
@@ -159,6 +160,7 @@ async fn cancel_gif_during(stage: &str) {
         budget: None,
         width: Some(1280),
         fps: Some(25),
+        engine: engine_choice,
         ..Default::default()
     });
     let plan = make_plan(&request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], o), &tools, &caps).await;
@@ -192,10 +194,16 @@ async fn cancel_gif_during(stage: &str) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_a_gif_in_the_palette_stage_is_fast_and_clean() {
-    cancel_gif_during("palette").await;
+    cancel_gif_during("palette", EngineChoice::Builtin).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_a_gif_in_the_encode_stage_is_fast_and_clean() {
-    cancel_gif_during("encode").await;
+    cancel_gif_during("encode", EngineChoice::Builtin).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_the_gifski_pipe_is_fast_and_clean() {
+    rmedia_testkit::require_tool!(gifski);
+    cancel_gif_during("encode", EngineChoice::Gifski).await;
 }

@@ -9,9 +9,8 @@ description: "Task list for 003 GIF Export for Reddit"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R16), data-model.md (B1–B4), contracts/,
 quickstart.md
 
-**Status (2026-10-25)**: T001–T008, T011, T012, T014–T037, T039–T042 and T044 done. Open:
-T009 (owner-approved dispatch of `gif-tools.yml`, not yet run), T010, T013, and the gifski engine
-T038/T043 (needs the T009 binaries). Roadmap: `docs/roadmap.md`.
+**Status (2026-10-25)**: T001–T009, T011, T012 and T014–T044 done (US1 complete, checkpoint
+review pending). Open in Phase 2: T010, T013. Roadmap: `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.
@@ -117,13 +116,21 @@ green after every task.**
 
   Unit-test the parsing and the rejection paths against recorded API fixtures (JSON text, not
   binaries).
-- [ ] T009 **Owner-approved step.** Run `gif-tools.yml` on `main`, which publishes a
+- [X] T009 **Owner-approved step.** Run `gif-tools.yml` on `main`, which publishes a
   `gif-tools-<date>` release on the public repo. Then:
   - run `cargo xtask pin-gif-tools <run-id>` and `cargo xtask mirror`;
   - commit the lock;
   - check that `cargo xtask check-pins --online` passes.
 
   Ask before dispatching the workflow, because it publishes a release.
+
+  Done 2026-10-25: run 40211502841 → `gif-tools-2026-10-25.40211502841` (the release is the
+  mirror, so no separate `cargo xtask mirror`). On the way: MSYS tar needs POSIX paths, the
+  smoke test must not pipe into `head` under pipefail, Windows gifsicle prints
+  `LCDF Gifsicle 1.98 (Windows)`, Debian's orig tarball is a repository snapshot (compared by
+  tree: 62 shared files identical), gifski's lock moves crossbeam-epoch 0.9.18 → 0.9.20
+  (RUSTSEC-2026-0204, `lock_updates`), and imagequant (GPL-3.0-or-later) is allowed with the
+  gate marker `commercial-gifski-imagequant` (owner decisions 2026-10-25).
 - [ ] T010 Stage the engines:
   - `fetch-tools` writes `binaries/rmedia-{gifsicle,gifski}-<triple>[.exe]` (verified, cached,
     stamped) and gains `--no-gifski`;
@@ -331,12 +338,17 @@ dry run and estimate, progress, cancel and verify.
   Done 2026-10-25 without the same-size part: 49.98 vs 48.81 VMAF, ours 1.56× the bytes (Land6
   is now tagged BT.709, and `vmaf_gif` compares both sides through RGB). T053 repeats it with
   the budget set to the plain GIF's size.
-- [ ] T038 [P] [US1] Write gifski tests in `core-tests/gif_gifski.rs`, behind `require_tool!(gifski)`:
+- [X] T038 [P] [US1] Write gifski tests in `core-tests/gif_gifski.rs`, behind `require_tool!(gifski)`:
   - `max-quality` uses gifski, through the 2-stage pipe;
   - a missing gifski falls back with `ENGINE_FALLBACK`, and `--strict-engine` exits 4;
   - `--colors` with gifski gives a note;
   - cancel during the pipe;
   - SC-010: VMAF(gifski) > VMAF(built-in) at the same width and fps on `Land6` and `Busy10`.
+
+  Done 2026-10-25 with the pinned gifski 1.34.0. The cancel test lives in `core-tests/cancel.rs`
+  (`cancelling_the_gifski_pipe_is_fast_and_clean`), with the other child-process checks; the
+  strict-engine exit 4 is the CLI test in `cli-tests/gif.rs`. SC-010 at 480 px, 20 fps: Land6
+  99.98 vs 98.80 VMAF, Busy10 84.63 vs 83.50.
 
 ### Implementation for User Story 1
 
@@ -364,8 +376,13 @@ dry run and estimate, progress, cancel and verify.
   - classified failures with tool attribution.
 
   Also `JobMeasure::Gif` in `core/event.rs` (makes T033/T034 pass).
-- [ ] T043 [US1] Implement the gifski engine in `core/exec/gif.rs`: a 2-stage pipe (ffmpeg y4m
+- [X] T043 [US1] Implement the gifski engine in `core/exec/gif.rs`: a 2-stage pipe (ffmpeg y4m
   → gifski) through B3, the R14 parameters, fallback and strict mode, notes (makes T038 pass).
+  Done 2026-10-25: BT.709 full-range 4:4:4 y4m with `--y4m-color-override bt709` (R7), progress
+  from ffmpeg's `-progress file:`, and for 1 play the executor strips gifski's NETSCAPE block
+  (R15). Samples for the estimate run through the same pipe. Running with gifsicle staged also
+  showed that its `-O3` merges identical frames, so verify checks the display time after the
+  post-pass (R11).
 - [X] T044 [US1] Implement the CLI in `crates/rmedia-cli/src/commands/gif.rs` and `main.rs`:
   - the `GifFlags` group (reusable, without the range), with gif-only `-s/-e/-d`;
   - `--list-targets`, `--gifsicle`/`--gifski`;

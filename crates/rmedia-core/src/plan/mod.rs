@@ -161,11 +161,15 @@ pub struct PlannedJob {
 }
 
 impl PlannedJob {
-    /// The exact ffmpeg arguments this job will run.
+    /// The exact ffmpeg arguments this job will run (for a gifski job, the ffmpeg half of its
+    /// pipe).
     pub fn args(&self) -> Vec<OsString> {
         match &self.spec {
             JobSpec::Clip(c) => ffargs::clip_args(c, &self.temp),
             JobSpec::Upscale(u) => ffargs::upscale_args(u, &self.temp),
+            JobSpec::Gif(g) if g.gif.engine == crate::gif::plan::EngineUsed::Gifski => {
+                crate::gif::graph::y4m_args(g, &g.gif.start, crate::gif::graph::PROGRESS)
+            }
             JobSpec::Gif(g) => {
                 let s = &g.gif.start;
                 crate::gif::graph::encode_args(
@@ -186,13 +190,24 @@ impl PlannedJob {
         }
     }
 
-    /// Every process this job runs, in order. The last one writes the output, and its arguments
-    /// are [`PlannedJob::args`].
+    /// Every process this job runs, in order (a pipe's stages in pipe order). For clip and
+    /// upscale jobs the last one writes the output, and its arguments are [`PlannedJob::args`].
     pub fn commands(&self) -> Vec<JobCommand> {
         let ffmpeg = |args| JobCommand { program: Program::Ffmpeg, args };
         if let JobSpec::Gif(g) = &self.spec {
-            use crate::gif::graph::{ENCODED, OPTIMISED, gifsicle_args, palette_args, palette_name};
+            use crate::gif::graph::{
+                ENCODED, OPTIMISED, gifsicle_args, gifski_args, palette_args, palette_name,
+            };
             let s = &g.gif.start;
+            if let (crate::gif::plan::EngineUsed::Gifski, Some(p)) = (g.gif.engine, s.gifski) {
+                return vec![
+                    ffmpeg(self.args()),
+                    JobCommand {
+                        program: Program::Gifski,
+                        args: gifski_args(s.rate, p, g.gif.loop_count, ENCODED),
+                    },
+                ];
+            }
             let palette = palette_name(g, s);
             let mut cmds = vec![ffmpeg(palette_args(g, s, &palette)), ffmpeg(self.args())];
             if g.gif.optimiser.is_some() {

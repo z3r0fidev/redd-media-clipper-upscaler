@@ -96,20 +96,25 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   targets, timing, probe, estimate, `gif::verify`, engine lookup and `doctor`, refactors B1–B4
   (reframe input, N-stage pipelines), the GIF engine supply chain (`xtask pin-gif-tools`,
   `check-release-gate`, `.github/workflows/gif-tools.yml`, notices) and its security review
-  (`specs/003-gif-export/checklists/validation.md`). Tasks T001–T008, T011, T012, T014–T032.
-- Next step: **T009**, dispatch `.github/workflows/gif-tools.yml` on `main` (owner-approved, not
-  yet run), then `cargo xtask pin-gif-tools <run-id>` locally and commit the lock. T010 (staging,
-  `externalBin`, CI environment) waits for T009; T013 (Phase 0 measurements) follows T010.
-- In progress: US1 (T033–T044). Planning, ffmpeg argv, the executor and the T033 acceptance tests
-  are drafted but do not build yet (the CLI `render.rs` lacks a `JobMeasure::Gif` arm). They are
-  kept on the **local, unpushed branch `wip/003-us1`**. Not written yet: dry-run estimate (T041),
-  gifski engine (T043), CLI (T044), tests T034–T038.
+  (`specs/003-gif-export/checklists/validation.md`). Tasks T001–T009, T011, T012, T014–T032.
+- T009 done: both engines built by `gif-tools.yml` run 40211502841 and pinned in
+  `xtask/gif-tools.lock.json` (release `gif-tools-2026-10-25.40211502841`). gifski's lock moves
+  crossbeam-epoch 0.9.18 → 0.9.20 for RUSTSEC-2026-0204 (`lock_updates`).
+- US1 (T033–T044) done: `rmedia gif` with the built-in engine and gifski (`max-quality`, with
+  fallback), dry run with a sample size estimate, verify and cancel. SC-010: gifski 99.98 vs
+  98.80 VMAF (Land6), 84.63 vs 83.50 (Busy10).
+- Next: T010 (staging, `externalBin`, CI environment), then T013 (Phase 0 measurements), then
+  the US1 checkpoint (quickstart, code and security reviews).
 - Then: US2 automatic size budget, US3 Reddit MP4, US4 portrait and square, US5 batch and `clip`
   integration, US6 desktop GIF view, and Polish (T045–T080).
 
 ### Open owner decisions
 
 - Application licence (gates any release that bundles gifski: `cargo xtask check-release-gate`).
+  gifski's quantiser imagequant is GPL-3.0-or-later (allowed, 2026-10-25), so a commercial route
+  needs licences for both (`commercial-gifski-imagequant`).
+- The unpinned release `gif-tools-2026-10-25` (gifski with crossbeam-epoch 0.9.18) is still
+  public; delete it or keep it.
 - Visual C++ runtime for the 002 Windows installers.
 - Tag `v0.1.0` and `v0.2.0`; Dependabot notices automation.
 - Owner checks: two-phone gallery test, a Reddit upload, +3 VMAF on real footage, Reddit's GIF

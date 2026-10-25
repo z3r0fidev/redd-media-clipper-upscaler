@@ -27,6 +27,10 @@ pub struct GifExpect {
     pub height: u32,
     /// Planned frame count (±1 allowed).
     pub frames: u64,
+    /// Set when gifsicle optimised the GIF: its `-O3` merges identical consecutive frames and adds
+    /// up their delays, so fewer frames are allowed and this planned display time (centiseconds)
+    /// is checked instead, within one frame.
+    pub optimised_cs: Option<u64>,
     pub loop_count: LoopCount,
     /// The hard size limit, when there is a budget.
     pub max_bytes: Option<u64>,
@@ -57,8 +61,20 @@ pub fn check_gif(f: &GifFacts, e: &GifExpect) -> std::result::Result<(), String>
         return Err(format!("a frame delay is {d} cs, under the {MIN_DELAY_CS} cs minimum"));
     }
     let frames = f.delays.len() as u64;
-    if frames.abs_diff(e.frames) > 1 {
-        return Err(format!("the GIF has {frames} frames, expected {}", e.frames));
+    match e.optimised_cs {
+        None if frames.abs_diff(e.frames) > 1 => {
+            return Err(format!("the GIF has {frames} frames, expected {}", e.frames));
+        }
+        None => {}
+        Some(_) if frames > e.frames + 1 => {
+            return Err(format!("the GIF has {frames} frames, expected at most {}", e.frames + 1));
+        }
+        Some(planned) => {
+            let shown: u64 = f.delays.iter().map(|&d| u64::from(d)).sum();
+            if shown.abs_diff(planned) > planned.div_ceil(e.frames.max(1)) + 1 {
+                return Err(format!("the GIF plays for {shown} cs, expected {planned} cs"));
+            }
+        }
     }
     if f.netscape != e.loop_count.netscape() {
         let shown = |n: Option<u16>| {
@@ -221,6 +237,7 @@ mod tests {
             width: 720,
             height: 405,
             frames: 90,
+            optimised_cs: None,
             loop_count: LoopCount::Forever,
             max_bytes: Some(8_000_000),
         }
@@ -261,6 +278,20 @@ mod tests {
         bad(GifFacts { netscape: None, ..facts() }, expect(), "repeat 0");
         bad(facts(), GifExpect { loop_count: LoopCount::Plays(3), ..expect() }, "repeat 2");
         bad(GifFacts { bytes: 8_000_001, ..facts() }, expect(), "over the 8000000-byte limit");
+    }
+
+    #[test]
+    fn an_optimised_gif_may_merge_frames_but_not_change_its_length() {
+        let planned: u64 = facts().delays.iter().map(|&d| u64::from(d)).sum();
+        let opt = GifExpect { optimised_cs: Some(planned), ..expect() };
+        let merged = GifFacts { delays: vec![200, 200, planned as u32 - 400], ..facts() };
+        assert_eq!(check_gif(&merged, &opt), Ok(()), "3 merged frames, same length");
+        assert_eq!(check_gif(&facts(), &opt), Ok(()));
+        let short = GifFacts { delays: vec![200, 200], ..facts() };
+        assert!(check_gif(&short, &opt).unwrap_err().contains("plays for 400 cs"));
+        let more = GifFacts { delays: crate::gif::timing::delays((15, 1), 92), ..facts() };
+        assert!(check_gif(&more, &opt).unwrap_err().contains("at most 91"));
+        assert!(check_gif(&merged, &expect()).unwrap_err().contains("3 frames"), "built-in: exact count");
     }
 
     #[test]

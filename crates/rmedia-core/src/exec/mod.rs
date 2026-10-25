@@ -6,7 +6,7 @@
 
 mod clip;
 pub mod commit;
-mod gif;
+pub(crate) mod gif;
 pub mod journal;
 mod pipeline;
 pub mod process;

@@ -1,6 +1,6 @@
 //! Sample encodes and the size model (research R4). The estimate shown before encoding comes
 //! from one ffmpeg run over three 1 s windows of the range (or the whole range, when it is
-//! short), optimised as the job would be, then scaled up from its first frame and the mean of
+//! short), optimised as the job would be (or through the gifski pipe), then scaled up from its first frame and the mean of
 //! its delta frames. Samples never run in the planner: [`prepare`] runs them after planning, in
 //! a temporary folder of its own.
 
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use tokio_util::sync::CancellationToken;
 
-use super::graph::{gifsicle_args, palette_settings};
+use super::graph::{gifsicle_args, palette_settings, pipe_head, y4m_graph, y4m_tail};
 use super::plan::{EngineUsed, Estimate, EstimateFrom, GifSpec, Settings};
 use crate::error::{Error, Result};
 use crate::exec::process;
@@ -83,12 +83,38 @@ fn gif_tail(spec: &GifSpec, output: &str) -> Vec<OsString> {
     ])
 }
 
-/// The sample encode of `s` into `output` (relative): each window is its own input with a fast
-/// seek, the windows are joined with `concat`, then framed, scaled and paletted as one clip.
-/// With smart framing (US4), crop commands are written on the joined timeline: window `k`
-/// starts at `k` seconds.
-pub fn sample_args(spec: &GifSpec, s: &Settings, starts: &[Ts], output: &str) -> Vec<OsString> {
-    let mut a = common_args();
+/// What a sample encode writes.
+#[derive(Debug, Clone, Copy)]
+pub enum SampleOut<'a> {
+    /// The built-in engine's GIF, at this relative name.
+    Gif(&'a str),
+    /// y4m frames on stdout, for gifski.
+    Y4m,
+}
+
+impl SampleOut<'_> {
+    fn head(self) -> Vec<OsString> {
+        match self {
+            SampleOut::Gif(_) => common_args(),
+            SampleOut::Y4m => pipe_head(None),
+        }
+    }
+
+    /// The rest of the graph after `chain`, and the output options.
+    fn finish(self, spec: &GifSpec, s: &Settings, chain: &str) -> (String, Vec<OsString>) {
+        match self {
+            SampleOut::Gif(output) => (one_pass(chain, s), gif_tail(spec, output)),
+            SampleOut::Y4m => (y4m_graph(chain), y4m_tail()),
+        }
+    }
+}
+
+/// The sample encode of `s`: each window is its own input with a fast seek, the windows are
+/// joined with `concat`, then framed, scaled and paletted (or made y4m) as one clip. With smart
+/// framing (US4), crop commands are written on the joined timeline: window `k` starts at `k`
+/// seconds.
+pub fn sample_args(spec: &GifSpec, s: &Settings, starts: &[Ts], out: SampleOut) -> Vec<OsString> {
+    let mut a = out.head();
     for w in starts {
         a.extend(os(&[
             "-ss",
@@ -103,20 +129,21 @@ pub fn sample_args(spec: &GifSpec, s: &Settings, starts: &[Ts], output: &str) ->
     }
     let inputs: String = (0..starts.len()).map(|i| format!("[{i}:v]")).collect();
     let joined = format!("{inputs}concat=n={}:v=1:a=0[cat];", starts.len());
-    let graph = joined + &one_pass(&chain_from(spec, s, "[cat]", false), s);
-    a.extend(os(&["-filter_complex", &graph]));
-    a.extend(gif_tail(spec, output));
+    let (rest, tail) = out.finish(spec, s, &chain_from(spec, s, "[cat]", false));
+    a.extend(os(&["-filter_complex", &(joined + &rest)]));
+    a.extend(tail);
     a
 }
 
 /// The whole range of a short job, in one run: the same frames as the job's own encode.
-pub fn whole_args(spec: &GifSpec, s: &Settings, output: &str) -> Vec<OsString> {
+pub fn whole_args(spec: &GifSpec, s: &Settings, out: SampleOut) -> Vec<OsString> {
     let (source, range) = input_parts(&spec.cut);
-    let mut a = common_args();
+    let mut a = out.head();
     a.extend(source);
     a.extend(range);
-    a.extend(os(&["-filter_complex", &one_pass(&chain_from(spec, s, "[0:v]", true), s)]));
-    a.extend(gif_tail(spec, output));
+    let (graph, tail) = out.finish(spec, s, &chain_from(spec, s, "[0:v]", true));
+    a.extend(os(&["-filter_complex", &graph]));
+    a.extend(tail);
     a
 }
 
@@ -185,8 +212,8 @@ async fn frame_sizes(tools: &Tools, path: &Path, cancel: &CancellationToken) -> 
     Ok(SampleSize { bytes, frames })
 }
 
-/// Encodes the sample of `s` in `dir` and measures it (optimised by gifsicle when the job is).
-/// Returns the predicted size of the job's GIF.
+/// Encodes the sample of `s` in `dir` and measures it (optimised by gifsicle when the job is;
+/// through gifski when that is the engine). Returns the predicted size of the job's GIF.
 pub async fn sample(
     tools: &Tools,
     spec: &GifSpec,
@@ -199,13 +226,22 @@ pub async fn sample(
     }
     let span = spec.cut.requested;
     let starts = windows(span.start, spec.gif.len);
+    let gifski = spec.gif.gifski.as_deref().filter(|_| spec.gif.engine == EngineUsed::Gifski);
+    let out = if gifski.is_some() { SampleOut::Y4m } else { SampleOut::Gif(SAMPLE) };
     let args = match &starts {
-        Some(w) => sample_args(spec, s, w, SAMPLE),
-        None => whole_args(spec, s, SAMPLE),
+        Some(w) => sample_args(spec, s, w, out),
+        None => whole_args(spec, s, out),
     };
-    let out = process::run_lines_in(&tools.ffmpeg.path, &args, Some(dir), cancel, |_| {}).await?;
-    if !out.status.success() {
-        return Err(Error::engine_failed("the sample encode failed", out.stderr_tail));
+    if let Some(program) = gifski {
+        let pipe =
+            crate::exec::gif::Gifski { program, dir, output: SAMPLE, limit: crate::exec::gif::MAX_OUTPUT };
+        let job_output = dir.join(SAMPLE);
+        pipe.run(tools, args, s, spec.gif.loop_count, None, &job_output, cancel, |_| {}).await?;
+    } else {
+        let out = process::run_lines_in(&tools.ffmpeg.path, &args, Some(dir), cancel, |_| {}).await?;
+        if !out.status.success() {
+            return Err(Error::engine_failed("the sample encode failed", out.stderr_tail));
+        }
     }
     let mut measured = SAMPLE;
     if let Some(gifsicle) = spec.gif.optimiser.as_deref() {
@@ -281,10 +317,6 @@ pub async fn prepare_in(
     for job in &mut plan.jobs {
         let JobSpec::Gif(g) = &mut job.spec else { continue };
         if job.disposition != Disposition::Run || g.gif.estimate.from != EstimateFrom::Pending {
-            continue;
-        }
-        if g.gif.engine == EngineUsed::Gifski {
-            // gifski samples need its pipe (T043).
             continue;
         }
         let dir = match TempDir::new(parent) {

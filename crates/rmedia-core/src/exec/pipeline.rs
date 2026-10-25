@@ -51,7 +51,6 @@ pub(super) enum Report {
     /// The last lines (ffmpeg).
     Tail,
     /// The last lines, stripped of control characters (less trusted programs).
-    #[allow(dead_code)] // gifski (T043)
     CleanTail,
     /// The AI worker's JSON lines (contracts/rmedia-sr-protocol.md).
     Worker,
@@ -75,7 +74,6 @@ pub(super) enum ProgressFrom {
     ConsumerStdout,
     /// The producer writes ffmpeg `-progress` to this file (its stdout carries the frames);
     /// it is read every 250 ms.
-    #[allow(dead_code)] // gifski (T043)
     File(PathBuf),
 }
 
@@ -347,7 +345,6 @@ async fn tail_progress(path: PathBuf, tx: tokio::sync::mpsc::UnboundedSender<Pro
 
 /// A stage that only lost its reader: SIGPIPE, or ffmpeg's last stderr line reporting a broken
 /// pipe (only the last line: earlier ones can echo the source's file name and metadata).
-#[allow(dead_code)] // gifski (T043)
 fn lost_reader(end: &StageEnd) -> bool {
     #[cfg(unix)]
     {
@@ -363,7 +360,6 @@ fn lost_reader(end: &StageEnd) -> bool {
 /// The cause of a producer → consumer pipe's failure (research R7): a producer that failed on
 /// its own is the cause, even when the consumer exited 0 (its output is from a cut-short
 /// stream); otherwise a failed consumer is; a producer that only lost its reader is not.
-#[allow(dead_code)] // gifski (T043)
 pub(super) fn blame_pair(producer: &StageEnd, consumer: &StageEnd) -> Option<usize> {
     if producer.failed() && !lost_reader(producer) {
         Some(0)

@@ -42,8 +42,14 @@ async fn gifs_made_by_the_engine_pass_and_wrong_expectations_fail() {
     let cancel = CancellationToken::new();
     let forever = make(dir.path(), "f.gif", &["-loop", "0", "-f", "gif"]);
     let facts = gif_facts(&tools, &forever, &cancel).await.unwrap();
-    let expect =
-        GifExpect { width: 320, height: 180, frames: 30, loop_count: LoopCount::Forever, max_bytes: None };
+    let expect = GifExpect {
+        width: 320,
+        height: 180,
+        frames: 30,
+        optimised_cs: None,
+        loop_count: LoopCount::Forever,
+        max_bytes: None,
+    };
     assert_eq!(check_gif(&facts, &expect), Ok(()), "{facts:?}");
     assert!(facts.delays.iter().all(|d| *d == 6 || *d == 7), "{:?}", facts.delays);
     assert!(check_gif(&facts, &GifExpect { loop_count: LoopCount::Plays(1), ..expect.clone() }).is_err());

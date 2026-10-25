@@ -224,6 +224,14 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
   - y4m on stdin is gifski's default `binary` feature [V crates.io features, 2026-10-23].
   - [U] Whether gifski accepts 4:4:4 y4m is checked in Phase 0. The fallback is `yuv420p`, with a
     note.
+  - [V] T043, 2026-10-25, from the pinned 1.34.0 source (`src/bin/y4m_source.rs`): `C444` is
+    read. The range comes from the header's `COLORRANGE=` (ffmpeg 6.1 and 8.x write
+    `XCOLORRANGE=FULL` for `out_range=pc`), but the matrix is guessed from the frame size
+    (BT.601 up to 720×480, BT.709 above) unless `--y4m-color-override` is given. As built: the
+    chain ends `scale=out_color_matrix=bt709:out_range=pc,format=yuv444p`, and gifski gets
+    `--y4m-color-override bt709`, so small GIFs are not shifted. Its ffmpeg writes progress
+    with `-progress file:progress.log`. `--fps` is rounded up to 3 decimals, because gifski
+    drops a frame whenever the stream runs ahead of `--fps`.
 - **Refactor B3 rewrites `exec/pipeline.rs`** (code review H6):
   - `Stages` holds `Vec<StageSpec { program, args, role: Producer | Filter | Consumer, progress:
     ProgressSource }>`. The 002 AI pipe is decode (producer) → worker (filter) → encode
@@ -358,6 +366,10 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
       block at byte 784 with repeat 0.)
     - packet durations from `ffprobe -show_entries packet=duration` are all ≥ 2;
     - the frame count is within ±1 of the plan;
+      - [V] 2026-10-25: gifsicle `-O3` merges identical consecutive frames and adds up their
+        delays (Static6: 3 frames for 90 planned; a VFR source 75 for 90). After the post-pass
+        the frame count may only drop (≤ plan + 1), and the total display time must match the
+        plan within one frame instead.
     - the width and height match;
     - the size is ≤ hard.
   - MP4:
@@ -437,6 +449,10 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
 
   gifsicle keeps the block as it is (`-O3` does not touch loop extensions). Verify checks this
   after the post-pass.
+  - [V] T043, 2026-10-25: gifski 1.34.0 maps `--repeat -1` to `Repeat::Finite(0)`, and gif
+    0.13.3 writes that as a NETSCAPE block with count 0, which loops forever. For 1 play, the
+    executor removes that exact 19-byte block (at offset 13: gifski writes no global palette)
+    and leaves any other layout alone, so verification still catches a change.
 - **Alpha** (edge case "transparency", code review M8): when the probe reports `has_alpha`, the
   frame chain flattens the source onto opaque black before scaling:
   `split[fa][fb];[fa]format=yuv420p,drawbox=c=black:t=fill[fk];[fk][fb]overlay=format=auto`.
