@@ -79,9 +79,15 @@ fn is_sha256(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// `gif-tools-YYYY-MM-DD`.
+/// `gif-tools-YYYY-MM-DD`, or `gif-tools-YYYY-MM-DD.<run-id>` for a second build that day.
 fn is_release_tag(s: &str) -> bool {
-    let Some(date) = s.strip_prefix("gif-tools-") else { return false };
+    let Some(rest) = s.strip_prefix("gif-tools-") else { return false };
+    // A second build on the same day: `gif-tools-YYYY-MM-DD.<run-id>`.
+    let date = match rest.split_once('.') {
+        Some((date, run)) if !run.is_empty() && run.bytes().all(|c| c.is_ascii_digit()) => date,
+        Some(_) => return false,
+        None => rest,
+    };
     let b = date.as_bytes();
     b.len() == 10
         && b.iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
@@ -111,7 +117,7 @@ pub fn all_urls(lock: &GifToolsLock) -> Vec<String> {
 pub fn check_lock(lock: &GifToolsLock, repo: &str) -> Vec<String> {
     let mut problems = Vec::new();
     if !is_release_tag(&lock.release) {
-        problems.push(format!("release {:?} must look like gif-tools-YYYY-MM-DD", lock.release));
+        problems.push(format!("release {:?} must look like gif-tools-YYYY-MM-DD[.<run-id>]", lock.release));
     }
     if lock.build_run == 0 {
         problems.push("build_run must be the gif-tools.yml run id".into());
@@ -1196,7 +1202,15 @@ mod tests {
     #[test]
     fn release_tags_have_a_date() {
         assert!(is_release_tag("gif-tools-2026-10-24"));
-        for bad in ["gif-tools-2026-1-24", "gif-tools-", "mirror-2026-10-24", "gif-tools-2026-10-24x"] {
+        assert!(is_release_tag("gif-tools-2026-10-24.40204764127"));
+        for bad in [
+            "gif-tools-2026-1-24",
+            "gif-tools-",
+            "mirror-2026-10-24",
+            "gif-tools-2026-10-24x",
+            "gif-tools-2026-10-24.",
+            "gif-tools-2026-10-24.1a",
+        ] {
             assert!(!is_release_tag(bad), "{bad}");
         }
     }

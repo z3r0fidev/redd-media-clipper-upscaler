@@ -124,7 +124,7 @@ The lock change is a normal reviewed commit.
    - What this proves: "built by this workflow at this commit".
 4. **`publish`** (`needs: [vendor, build, attest]`, `contents: write`; it runs no build code):
    - Recompute the hashes against the outputs.
-   - Create the release `gif-tools-<date>` with the binaries, both sources, the vendor tarball
+   - Create the release `gif-tools-<date>` (`gif-tools-<date>.<run-id>` for a second build that day) with the binaries, both sources, the vendor tarball
      and the licence texts.
 
 ## Fetch and staging

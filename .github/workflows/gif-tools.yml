@@ -1,7 +1,7 @@
 name: GIF tools
 
 # Builds the optional GIF engines bundled with rmedia (feature 003) from pinned upstream sources
-# and publishes them, with those sources, as the release `gif-tools-<date>`
+# and publishes them, with those sources, as the release `gif-tools-<date>` (`.<run-id>` added for a second build that day)
 # (contracts/gif-tools-lock.md). Run it by hand on `main`, then pin the result locally with
 # `cargo xtask pin-gif-tools <run-id>`, which verifies the attestations and every hash.
 #
@@ -350,6 +350,8 @@ jobs:
         run: |
           set -euo pipefail
           tag="gif-tools-$(date -u +%Y-%m-%d)"
+          # A second build on the same day gets its own release: the date plus this run's id.
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then tag="$tag.$GITHUB_RUN_ID"; fi
           notes=$(printf '%s\n' \
             "GIF engines bundled with rmedia, built from source by .github/workflows/gif-tools.yml." \
             "Not an rmedia release. Licences and sources: licenses/GIFSICLE-NOTICE.md, licenses/GIFSKI-NOTICE.md." \
