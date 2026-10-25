@@ -657,26 +657,26 @@ tests, senior-code-reviewer, and security-auditor (new IPC, media server, settin
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T073 [P] Update the docs:
+- [X] T073 [P] Update the docs:
   - `docs/api/cli-reference.md`: `rmedia gif`, `--gif` on `clip`/`batch`, `doctor`, the
     lookup order;
   - `docs/api/json-output.md`;
   - `docs/api/file-formats.md`: the manifest `gif` block, `gif_*` columns, target files.
-- [ ] T074 [P] Update the docs:
+- [X] T074 [P] Update the docs:
   - `docs/administration/configuration.md`: settings and `RMEDIA_GIFSICLE`/`RMEDIA_GIFSKI`;
   - `docs/api/desktop-ipc.md`;
   - `docs/user/{cli-guide,desktop-guide,troubleshooting}.md`.
-- [ ] T075 [P] Update the docs:
+- [X] T075 [P] Update the docs:
   - `docs/architecture/{overview,domains}.md`: the GIF job kind and the N-stage pipe;
   - `docs/reference/glossary.md`: target, budget, sample, ladder, post-pass;
   - `docs/developer/{development-guide,testing}.md`: the new fixtures, `require_tool!`,
     `RMEDIA_REQUIRE_GIF_TOOLS`.
-- [ ] T076 [P] Update the docs:
+- [X] T076 [P] Update the docs:
   - `docs/operations/build-and-release.md`: `gif-tools.yml`, `pin-gif-tools`, the gate,
     `--no-gifski`;
   - `docs/security/security-model.md`: the supply chain and engine spawning;
   - `docs/administration/installation.md`: licensing notices.
-- [ ] T077 Write the release notes `docs/releases/0.3.0-dev.md`, update the `README.md` feature
+- [X] T077 Write the release notes `docs/releases/0.3.0-dev.md`, update the `README.md` feature
   list, `docs/README.md` and `docs/roadmap.md`, and mark the Reddit limits "unverified" in the
   user docs (FR-007).
 - [ ] T078 Run `cargo xtask notices` (no diff), `check-pins --online` and `check-release-gate`

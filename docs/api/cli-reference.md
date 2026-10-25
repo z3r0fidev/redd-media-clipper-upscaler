@@ -131,6 +131,14 @@ rmedia clip land.mp4 -s 0 -e 4 --upscale --preset reddit-feed-45
 # ✓ …/clips/land_001_00-00-00.000_00-00-04.000_reddit-feed-45.mp4   (1080x1350, H.264)
 ```
 
+### Clip and GIF in One Pass
+
+`--gif` makes each clip a GIF (or `--format mp4` loop) with all `rmedia gif` options, written to
+`gifs/` next to the source, with no intermediate video. GIF flags without `--gif` are a usage
+error (exit 2, `--target needs --gif`). With `--upscale` too, the upscale is skipped (a note:
+`upscale skipped: a GIF is never larger than its source`). A `clip --gif --dry-run` samples like
+`rmedia gif` (`--no-sample` skips it).
+
 ### Argument Rules (from clap)
 
 | Rule | Detail |
@@ -272,6 +280,10 @@ rmedia batch jobs.csv --upscale --tier cpu       # every row upscaled on the CPU
 rmedia batch jobs.csv --dry-run --json
 rmedia batch jobs.csv --json > run.ndjson
 ```
+
+`batch --gif` makes a GIF of every clip the manifest does not turn GIF export off for; GIF flags
+without `--gif` only fill the manifest's own `gif` layers (a warning when it has none). A batch
+dry run never samples (the estimates are `pending`).
 
 ## `rmedia scan`
 
@@ -420,6 +432,77 @@ User presets are tagged `[user]` in the text listing. The JSON form is documente
 - Ctrl-C cancels as for `clip`; no partial output is left.
 
 Exit codes are those in [Exit Codes](#exit-codes).
+
+## `rmedia gif`
+
+Makes GIFs (or silent "Reddit MP4" loops) that fit a Reddit size budget. Added in the unreleased
+0.3.0 ([release notes](../releases/0.3.0-dev.md)).
+
+```text
+rmedia gif [OPTIONS] [INPUT]...
+rmedia gif --list-targets [--json]
+```
+
+One job per input, over the range `-s/-e/-d` (default: the whole video). Inputs are files,
+folders (scanned with the `scan` options) or `--inputs-from FILE|-`. Outputs go to `gifs/` next
+to each source (`-o` replaces it), named `{source}_{target}.gif` (or `.mp4`) by default.
+
+### GIF Options
+
+| Flag | Values | Default | Notes |
+|---|---|---|---|
+| `--target ID` | an id from `--list-targets` | `reddit-post` | Built in: `reddit-post` (8 MB aim, 20 MB limit), `reddit-comment` (3 MB / 8 MB), `max-quality` (gifski when found), `flat-ui`. Reddit's limits are **unverified** estimates; check Reddit's Help Center. Unknown id: exit 3 (`TARGET_UNKNOWN`) |
+| `--format` | `gif`, `mp4` | `gif` | `mp4` is a silent, fast-start H.264 loop at the source's rate (up to 60 fps), usually 5× or more smaller |
+| `--width N` | 64 to 1920 | the target's | Never above the source's (a GIF is never enlarged; a note says so) |
+| `--fps N` | 1 to 50 (GIF), 1 to 60 (MP4) | the target's | GIF delays are whole centiseconds: 10, 20, 25 and 50 fps are exact, others average out (a `TIMING_APPROXIMATE` note) |
+| `--colors N` | 2 to 256 | the target's | Built-in engine only |
+| `--dither MODE` | `none`, `bayer`, `bayer:0..5`, `floyd-steinberg`, `sierra` | the target's | Built-in engine only |
+| `--lossy N` | 0 to 200 | the target's | gifsicle's lossy level; without gifsicle it is ignored with `ENGINE_FALLBACK` |
+| `--loop N` | `forever`, 1 to 65535 | `forever` | Plays, not repeats (`--loop 1` plays once) |
+| `--budget SIZE` | `3MB`, `2.5MiB`, `800k`, `none` | the target's | The size to aim for; alone it is also the hard limit. `none` turns the search off |
+| `--hard-limit SIZE` | size | the budget, else the target's | Never written above this |
+| `--allow-trim` | flag | off | When nothing fits, keep the start of the range that does |
+| `--engine` | `auto`, `builtin`, `gifski` | `auto` (the target's) | gifski is the best-quality engine (AGPL-3.0, bundled where the licence allows) |
+| `--strict-engine` | flag | off | A missing engine is an error (exit 4, `ENGINE_MISSING`) instead of a fallback |
+| `--no-optimise` | flag | off | Never run gifsicle |
+| `--shape` | `source`, `9:16`, `4:5`, `1:1` | `source` | |
+| `--framing` | `smart`, `center`, `blur` | `smart` | `smart` follows faces with 002's analysis (needs the YuNet model, otherwise `blur`) |
+| `--no-sample` | flag | off | With `--dry-run`, skip the sample encodes (the estimate is `pending`) |
+| `--crop-path FILE` | path | none | As for `upscale`: the one smart-framed video's crop path as JSON |
+| `--gifsicle PATH`, `--gifski PATH` | path | lookup order | Override the engine lookup (below) |
+| `--list-targets` | flag | off | Lists targets (built-in and `<config>/gif-targets/*.json`) and exits |
+
+`--mode` does not apply (GIF export always re-encodes); `--container` is replaced by
+`--format`.
+
+### Size Budget
+
+With a budget, a bounded search (at most 9 encodes) samples three 1 s windows of the range and
+lowers the least visible settings first: gifsicle lossy (free re-runs), dither, colours, frame
+rate (down to 10 fps), then width (down to 320 px for `reddit-post`). For gifski it lowers
+`lossy_quality`; for the MP4 the CRF (+3 three times) before the width. The full encode follows,
+with one retry a step down when it misses the aim. The summary lists what was lowered:
+
+```text
+✓ …/gifs/busy10_reddit-post.gif  (2.7 MB, 378x212, 10.000 fps, 128 colours, dither bayer:5, builtin)
+  budget search: 8 encodes; lowered lossy 30 → 90, dither bayer 4 → bayer 5, colours 256 → 128, fps 15.0 → 10.0, width 720 → 378
+```
+
+Over the aim but within the limit: kept, with `OVER_RECOMMENDED`. Over the limit even at the
+lowest settings: the job fails with `BUDGET_UNREACHABLE` (exit 1), nothing is written, and the
+error says how many seconds would fit (`--allow-trim` keeps that part).
+
+A dry run samples each input and shows the predicted result (`estimate ~2.3 MB (after the budget
+search); lowered …`) and, for `reddit-post`, once per run: `note: as a Reddit MP4 … this would be
+about 398 kB`.
+
+### GIF Engine Lookup Order
+
+gifsicle and gifski are optional and found like ffmpeg: `--gifsicle`/`--gifski`, then the
+`gifsicle_path`/`gifski_path` settings, then `$RMEDIA_GIFSICLE`/`$RMEDIA_GIFSKI`, then the bundled
+`rmedia-gifsicle`/`rmedia-gifski` next to the executable, then `PATH` (never inside an input or
+scratch folder). Each must identify itself (`--version`) as version 1.x. Without them everything
+still works: the built-in engine replaces gifski (`ENGINE_FALLBACK`) and no post-pass runs.
 
 ## `rmedia doctor`
 

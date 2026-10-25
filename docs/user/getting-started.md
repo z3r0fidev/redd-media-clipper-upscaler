@@ -100,6 +100,20 @@ If you see `status: NOT READY`, see
 
 In the desktop app, the same information is in **Settings**, in the **Video engine** section.
 
+From 0.3.0 (in development), `doctor` also shows GIF export and its two optional engines, for
+example:
+
+```text
+gif:      yes (palettegen, paletteuse, gif muxer)
+reddit mp4: yes (libx264)
+gifsicle: 1.98 (bundled …)
+gifski: 1.34.0 (bundled …)
+```
+
+gifsicle (GPL-2.0) and gifski (AGPL-3.0) are separate programs installed next to rmedia as
+`rmedia-gifsicle` and `rmedia-gifski`. gifski is included only once the app's licence allows it.
+GIF export works without either; see [Make GIFs for Reddit](cli-guide.md#make-gifs-for-reddit).
+
 ## Make Your First Clip in the Desktop App
 
 1. Start rmedia.

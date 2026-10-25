@@ -18,12 +18,15 @@ what the packages install, see [Installation](../administration/installation.md)
 `cargo xtask` is an alias for `cargo run --package xtask --` (`.cargo/config.toml`). Usage:
 
 ```text
-cargo xtask <fetch-tools [--target TRIPLE] | pin-tools | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>
+cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> | check-release-gate [--tree DIR] | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>
 ```
 
 | Task | What it does | Writes |
 |---|---|---|
 | `fetch-tools [--target T]` | Downloads the pinned FFmpeg archive for target `T` (default: host), verifies its SHA-256, extracts `ffmpeg` and `ffprobe`, and installs them with Tauri sidecar names | `binaries/rmedia-ffmpeg-<T>[.exe]`, `binaries/rmedia-ffprobe-<T>[.exe]`, `binaries/FFMPEG-LICENSE.txt`, `binaries/.<T>.sha256` |
+| `fetch-tools` (GIF engines, 0.3.0) | Also downloads the pinned gifsicle and gifski binaries from `xtask/gif-tools.lock.json`, verifies their SHA-256s and installs them with sidecar names; `--no-gifski` leaves gifski (and its licence files) out | `binaries/rmedia-gifsicle-<T>[.exe]`, `binaries/rmedia-gifski-<T>[.exe]` |
+| `pin-gif-tools <run-id>` | Pins a `gif-tools.yml` run: checks the build attestations and every hash, the gifski lock updates, and writes the lock | `xtask/gif-tools.lock.json` |
+| `check-release-gate [--tree DIR]` | Fails when gifski is staged (`binaries/rmedia-gifski*`) and the root `Cargo.toml` records no app licence decision (a root `LICENSE` plus `[workspace.metadata.rmedia] app_licence`). FR-025 | nothing |
 | `pin-tools` | Moves the pin to the newest BtbN autobuild of the **current release line** and records GitHub's asset SHA-256 digests and the BtbN commit of the tag (`scripts_commit`); the lock is written only after both new archives are downloaded and verified | `xtask/tools.lock.json` |
 | `gen-bindings` | Regenerates the desktop app's TypeScript types from `rmedia-core` (ts-rs) | `apps/desktop/src/lib/bindings/` (deleted and recreated) |
 | `stage-cli [--target T]` | Builds `rmedia-cli` and the AI worker `rmedia-sr` in release mode and copies them with sidecar naming (needs `fetch-ncnn` first) | `binaries/rmedia-<T>[.exe]`, `binaries/rmedia-sr-<T>[.exe]` |
@@ -183,6 +186,33 @@ the build scripts, x264) were checked after publishing.
 
 Installer size is another open owner decision. The static GPL binaries are about 172 MB each; a
 shared or trimmed custom build would reduce it (`research.md` R9, `validation.md`).
+
+## Pinned GIF Engines (0.3.0)
+
+gifsicle 1.98 (GPL-2.0-only) and gifski 1.34.0 (AGPL-3.0-or-later) are built from pinned sources
+by `.github/workflows/gif-tools.yml` (manual dispatch on `main`, `contents: read` for the builds):
+
+1. **vendor** (the only job with crates.io access): downloads the lcdf.org tarball and the
+   crates.io `.crate`, checks their SHA-256s, refuses unsafe archive members, cargo config and
+   toolchain overrides, and vendors gifski's dependencies from its own `Cargo.lock` plus the
+   listed security updates (`GIFSKI_LOCK_UPDATES`, today crossbeam-epoch 0.9.20 for
+   RUSTSEC-2026-0204).
+2. **build** on `ubuntu-22.04` and `windows-latest`: gifsicle with autotools (Linux) or nmake +
+   MSVC `/MT` (Windows); gifski offline from the vendor tarball, default features, static CRT on
+   Windows. A smoke test runs both, and the binaries are hashed.
+3. **publish**: a `gif-tools-<date>[.<run-id>]` release with the binaries, the sources and the
+   vendor tarball (the source offer), with build attestations.
+
+Then `cargo xtask pin-gif-tools <run-id>` records the release in `xtask/gif-tools.lock.json`, and
+`check-pins` covers it like the FFmpeg pin (every download mirrored, `licenses/GIFSICLE-NOTICE.md`
+and `GIFSKI-NOTICE.md` naming the pinned version and source). The current pin is
+`gif-tools-2026-10-25.40211502841`.
+
+**Release gate (FR-025).** Bundling gifski is distribution under the AGPL, so `release.yml`
+runs `cargo xtask check-release-gate` and fails while the app licence is undecided (the
+manifests' `MIT OR Apache-2.0` is a placeholder; [Roadmap](../roadmap.md)). Until then, build
+artifacts with the `gifski` input off. Commits before 003 have no `gif-tools.lock.json`, so
+tagging `v0.1.0`/`v0.2.0` is unaffected.
 
 ## Continuous Integration (`ci.yml`)
 

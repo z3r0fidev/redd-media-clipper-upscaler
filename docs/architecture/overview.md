@@ -88,14 +88,14 @@ desktop app adapt input and output only.
 
 | Component | Responsibility | Source |
 |---|---|---|
-| `rmedia-core` | Time grammar, request model, clip-list / manifest parsers, discovery, ffprobe parsing, planning, ffmpeg argv building, scheduler, process control, commit, journal, previews, settings | `crates/rmedia-core/src/` |
+| `rmedia-core` | Time grammar, request model, clip-list / manifest parsers, discovery, ffprobe parsing, planning, ffmpeg argv building, scheduler, process control, commit, journal, previews, settings; upscaling (002) and GIF export (003, `gif/`) | `crates/rmedia-core/src/` |
 | `rmedia` CLI | clap argument parsing, input expansion, rendering (progress bars or JSON), Ctrl-C handling, exit codes | `crates/rmedia-cli/src/` |
 | Tauri commands | Argument plumbing only | `apps/desktop/src-tauri/src/commands.rs` |
 | Desktop ops | Path policy (`Allowed`), engine cache, plan/run registries, preview glue; tested without a webview | `apps/desktop/src-tauri/src/ops.rs` |
 | Media server | Loopback HTTP range server for `<video>` | `apps/desktop/src-tauri/src/media_server.rs` |
 | Svelte frontend | Sources, player, queue, run panel, settings; the queue is a v1 manifest | `apps/desktop/src/` |
 | `rmedia-testkit` | lavfi fixtures, ffprobe assertions, PSNR helpers (`publish = false`) | `crates/rmedia-testkit/src/lib.rs` |
-| `xtask` | `fetch-tools`, `pin-tools`, `gen-bindings`, `stage-cli`, `notices` | `xtask/src/main.rs` |
+| `xtask` | `fetch-tools`, `pin-tools`, `pin-gif-tools`, `check-release-gate`, `gen-bindings`, `stage-cli`, `notices` | `xtask/src/main.rs` |
 
 ```mermaid
 flowchart TB
@@ -131,7 +131,8 @@ depends on `rmedia-core` by path.
 ## Process Model
 
 rmedia never links libav. Every media operation is an `ffmpeg` or `ffprobe` child process
-(research.md R2). All long-running children go through `exec::process`
+(research.md R2). The optional GIF engines, gifsicle and gifski (003), are child processes too,
+as is the AI worker `rmedia-sr` (002). All long-running children go through `exec::process`
 (`crates/rmedia-core/src/exec/process.rs`):
 
 | Platform | Mechanism | Effect |
@@ -298,18 +299,23 @@ The upscale job is one ffmpeg pass (`upscale/graph.rs` builds the `-filter_compl
 verify stage (`exec/upscale.rs`). Device presets are data (`preset/`): seven built-ins compiled
 into the binary plus user files in `<config>/presets/`.
 
-## Extension Points (Planned: Feature 003)
+## Feature 003 GIF Export (Implemented, Unreleased)
 
-**Planned** (not implemented):
+`JobSpec` has a third variant, `Gif(Box<GifSpec>)`. A GIF job runs analyze (smart framing only),
+a bounded size-budget search over sample encodes, a two-pass palette encode (or the ffmpeg →
+gifski pipe, or the MP4 encode), an optional gifsicle post-pass and a verify stage
+(`exec/gif.rs`), reusing 002's frame chain, reframe analysis, scratch folders, events and commit.
+GIF targets are data (`gif/target.rs`, four built-ins plus `<config>/gif-targets/`). See
+[Domain Breakdown › GIF Export](domains.md#gif-export-feature-003) and the
+[0.3.0 release notes](../releases/0.3.0-dev.md).
 
-- **003 GIF export:** `JobSpec::Gif` with a two-pass palette pipeline and a size-budget search,
-  reusing segment, executor, events and commit. Research: `research/05-gif-export.md`. Spec, plan and tasks exist (`specs/003-gif-export/`); the
-  engine, option and verify modules (`crates/rmedia-core/src/gif/`) are in `main`, the planner and
-  CLI are not yet (see the [Roadmap](../roadmap.md)).
+## Job-Kind Refactors
 
 Feature 002 is implemented: user stories 1 to 6 (CPU tier, smart reframe, GPU tier and
 capability record, batch and `clip --upscale`, the desktop upscale view, and the AI tier with
 its `rmedia-sr` worker). See [Domain Breakdown › Upscaling](domains.md#upscaling-feature-002).
+Feature 003 added refactor B3: `exec/pipeline.rs` runs N stages joined by pipes (the AI tier's
+three, and ffmpeg → gifski).
 
 **Refactors before adding job kinds** (plan.md, senior review A1–A5, 2026-10-06). All five were
 completed on 2026-10-14 as part of 002 phase 2 (tasks T007 to T021); the first table below

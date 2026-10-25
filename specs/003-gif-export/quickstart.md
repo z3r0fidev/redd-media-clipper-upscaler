@@ -54,7 +54,7 @@ triple-suffixed names are longer than the 15-character process name).
 rmedia gif busy10.mp4 --budget 3MB --json | tail -1 | jq '.outcome | {bytes, search: .search | {encodes, fit, lowered}}'
 #   bytes ≤ 3 000 000 (--budget alone sets the hard limit too), encodes ≤ 10,
 #   lowered in the order lossy → dither → colours → fps → width
-rmedia gif busy10.mp4 --budget 3MB --on-exists rename && cmp gifs/busy10_reddit-post.gif gifs/busy10_reddit-post-1.gif   # identical
+rmedia gif busy10.mp4 --budget 3MB --on-exists rename && cmp gifs/busy10_reddit-post.gif gifs/busy10_reddit-post_1.gif   # identical
 rmedia gif busy10.mp4 --budget 150k --hard-limit 200k        # BUDGET_UNREACHABLE, "fits ≈ N s", nothing written, exit 1
 rmedia gif busy10.mp4 --budget 150k --hard-limit 200k --allow-trim   # trimmed to ≈ N s, reported
 rmedia gif busy10.mp4 --budget 10k --dry-run --no-sample     # static floor: rejected at plan time (min 64 KiB), exit 3
@@ -86,8 +86,8 @@ rmedia upscale low.mp4 && rmedia gif upscaled/low_phone-fill.mp4 --target reddit
 ```bash
 cat > m.json <<'EOF'
 {"version":1,"defaults":{"gif":{"target":"reddit-post"}},
- "videos":[{"path":"land6.mp4","clips":[{"start":"0","end":"2"},{"start":"2","end":"4","options":{"gif":{"target":"reddit-comment"}}}]},
-           {"path":"busy10.mp4","clips":[{"start":"1","end":"4"}]}]}
+ "videos":[{"input":"land6.mp4","clips":[{"start":"0","end":"2"},{"start":"2","end":"4","options":{"gif":{"target":"reddit-comment"}}}]},
+           {"input":"busy10.mp4","clips":[{"start":"1","end":"4"}]}]}
 EOF
 rmedia batch m.json                       # 3 GIFs; the second one is comment-sized; no intermediate .mp4 left
 rmedia clip land6.mp4 -s 0:01 -e 0:03 --gif --shape 1:1

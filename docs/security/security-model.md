@@ -175,6 +175,37 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
   `pre_exec` closure calls only `prctl` and `getppid`), `exec::process::kill_group` (`killpg`
   on a pipeline's own process group), and the worker's `crates/rmedia-sr/src/ffi.rs`.
 
+### GIF Engines (feature 003)
+
+- **Separate processes, never linked.** gifsicle and gifski run as child programs through
+  `exec::process` (kill-tree aware; ffmpeg → gifski through `exec/pipeline.rs`), with a cleared
+  environment plus an allowlist (`LANG`; `SystemRoot`, `TEMP`/`TMP` on Windows).
+- **Only generated names.** Both run with the scratch folder as working directory and receive
+  only names rmedia made (`in.gif`, `out.gif`, `p-<key>.png`), never a source name, so no
+  leading `-` and no gifsicle `#N` selectors; gifsicle never reads a user-supplied GIF.
+- **Lookup.** Flag or setting → `RMEDIA_GIFSICLE`/`RMEDIA_GIFSKI` → bundled → `PATH`. Paths are
+  canonicalised; a path inside an input folder, the scratch folder or the current directory is
+  refused, and each program must pass a `--version` banner check (5 s timeout, bounded output).
+  A failing explicit path makes the engine unavailable, with a reason (an error only under
+  `--strict-engine`).
+- **Bounded output.** Tool stderr is read with a length bound and stripped of control
+  characters; a watchdog aborts an encode whose temp file passes 2× the hard limit (4 GiB
+  without a budget), and the verify stage refuses a committed file above the limit.
+- **User targets** (`<config>/gif-targets/*.json`) are read like presets: regular files only,
+  at most 64 KiB each and 64 files, names without control characters, `soft ≤ hard ≤ 1 GiB`;
+  only the `id` (`^[a-z0-9-]+$`) reaches a file name. `--budget`/`--hard-limit` use checked
+  arithmetic.
+- **Desktop.** The page never sets an engine path: `set_settings` ignores `gifsicle_path` and
+  `gifski_path`, and only `pick_engine(kind)` (native dialog, no links or folders, banner check)
+  sets them. `gif_estimate` runs one estimate at a time in a fresh 0700 folder under the app
+  cache (removed on every path and at startup), refuses to run during an encode, and the core
+  re-validates every option. `open_output` registers only a committed output of one of the last
+  16 runs, re-checked after registering, with at most 48 live URLs.
+- **Supply chain.** Both are built from SHA-256-pinned sources by `gif-tools.yml`, pinned in
+  `xtask/gif-tools.lock.json` and mirrored ([Build and Release › Pinned GIF
+  Engines](../operations/build-and-release.md#pinned-gif-engines-030)). Notices with source offers:
+  `licenses/GIFSICLE-NOTICE.md`, `licenses/GIFSKI-NOTICE.md`.
+
 ### AI Worker (T9)
 
 - **Separate process.** ncnn and the Vulkan driver run in `rmedia-sr`, never in rmedia or the
@@ -214,6 +245,8 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
 | No code signing for installers | Open owner decision | `checklists/validation.md` |
 | The desktop page can register any allowed media file (including files under a picked folder) with the media server | Inherent to the path policy; limited to user-chosen locations | `ops.rs` |
 | Windows-specific controls (Job Objects, reparse-point flag, cloud placeholders, long paths) | Type-checked locally; **Unverified** beyond CI | `checklists/validation.md` |
+| A user-supplied gifsicle or gifski (flag, setting, environment or `PATH`) is trusted at the level of the user's own shell; only the banner is checked | Accepted (same as ffmpeg) | research R7 |
+| gifski (AGPL-3.0) cannot ship until the app licence is decided | Gated: `check-release-gate` fails the release | research R10 |
 | `Settings::load` silently falls back to defaults on an unreadable or invalid file | Low impact (availability only) | `settings.rs` |
 
 ## Related Documentation

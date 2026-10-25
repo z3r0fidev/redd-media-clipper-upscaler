@@ -21,8 +21,19 @@ held upright, using a device preset (default 1080x2340):
 - Cut and upscale in one pass (`clip --upscale`), upscale from batch manifests, and a desktop
   **Upscale for phone** view with a before/after preview.
 
-In progress: high-quality GIF export for Reddit (feature 003; no user-facing command yet). See
-[`docs/roadmap.md`](docs/roadmap.md), `specs/` and `research/`.
+**GIF export for Reddit** (0.3.0, in development): `rmedia gif` makes a GIF that fits a Reddit
+post or comment, or a silent looping "Reddit MP4" that is usually five or more times smaller:
+
+- A bounded size-budget search lowers the least visible settings first and reports what it
+  changed; the size is predicted before anything is encoded.
+- GIF targets as data (`reddit-post`, `reddit-comment`, `max-quality`, `flat-ui`, or your own);
+  Reddit's limits are estimates, labelled unverified.
+- Optional gifsicle and gifski engines for smaller and better-looking GIFs, bundled where the
+  licence allows; everything works without them.
+- Portrait and square GIFs with 002's face-following reframe, `clip --gif`, `batch --gif`, and a
+  desktop **GIF for Reddit** view. See [`docs/releases/0.3.0-dev.md`](docs/releases/0.3.0-dev.md).
+
+Progress: [`docs/roadmap.md`](docs/roadmap.md), `specs/` and `research/`.
 
 ## Install
 
@@ -79,6 +90,12 @@ rmedia upscale --list-presets
 rmedia upscale talk.mp4 --preset reddit-916 --reframe smart --dry-run   # shots, crop, tier, estimates
 rmedia clip game.mkv -s 1:30 -d 20 --upscale   # cut and upscale in one pass
 rmedia doctor --recheck            # which tiers this machine can run (CPU, GPU, AI)
+
+# GIFs for Reddit (0.3.0, in development)
+rmedia gif clip.mp4                # writes gifs/clip_reddit-post.gif, under 8 MB
+rmedia gif talk.mp4 -s 0:12 -e 0:18 --target reddit-comment --shape 9:16
+rmedia gif clip.mp4 --format mp4   # the silent looping Reddit MP4
+rmedia clip game.mkv -s 1:30 -d 6 --gif   # cut and make a GIF in one pass
 ```
 
 Useful options: `--mode fast|accurate`, `-o DIR`, `--name TEMPLATE`

@@ -125,3 +125,32 @@ click; (2) **Export now**: "Finished · 1 succeeded", `gifs/land_reddit-post.gif
 (the estimate's 2.1 MB), playing in the result card. Two interactions after opening the video
 (the bar is three). Found and fixed: the result card overflowed the panel, hiding its size line
 (the caption now comes first and the picture is smaller).
+
+## T079 quickstart on Linux (2026-10-25)
+
+`quickstart.md` run in a scratch folder with the bundled FFmpeg n9.0.2, gifsicle 1.98 and gifski
+1.34.0 (debug `rmedia`, Ubuntu 24.04, X11).
+
+| Step | Result |
+|---|---|
+| US1 dry run | 720x405, 15 fps (≈ 6.67 cs, approximate note), 8 MB / 20 MB, estimate ~2.2 MB, MP4 hint ~496 kB, nothing written |
+| US1 encode | 2,127,275 B; delays 30 × 6 cs and 60 × 7 cs (none under 2); 720,405,90 frames |
+| `--fps 30` | note "3–4 cs frame delays"; 4.1 MB |
+| `--start 1 --end 3` | 30 frames (2 s at 15 fps) |
+| `--width 1600` | "kept source width 1280 (a GIF is never enlarged)" |
+| `max-quality` | gifski; with `RMEDIA_GIFSKI=/nonexistent`: built-in + "gifski is not available …" |
+| Cancel during the gifski pipe | exit 130 in 0.04 s after SIGINT; no `.part`/`.d`; no ffmpeg or gifski left |
+| US2 `--budget 3MB` | 2,771,320 B, 8 encodes, fit soft, lowered lossy 30→90, dither bayer 4→5, colours 256→128, fps 15→10, width 720→… (ladder order) |
+| Determinism | the rename-run output is byte-identical (`cmp`) |
+| `--budget 150k --hard-limit 200k` | fails: "smallest 2.0 MB; about 0.9 s fits (use --allow-trim to trim)", nothing written |
+| … `--allow-trim` | 139,290 B, 0.8 s |
+| `--budget 10k --no-sample` | exit 3 at plan time: below the smallest possible GIF (65,536 B) |
+| `RMEDIA_GIFSICLE=/nonexistent` | still fits: 3.0 MB, no lossy rung |
+| US3 MP4 | `h264,video` only; moov before mdat; same width/fps as the GIF: 5.4× smaller (2,127,275 vs 390,930 B) |
+| US4 | `--shape 4:5 --framing smart` plans 480x600; `--shape 9:16 --framing blur` encodes. Run on the synthetic `land6` (no face, so smart falls back to blur); the real-face pan is covered by `gif_us4.rs`'s moving-marker fixture |
+| US5 | manifest: 3 GIFs, the second `reddit-comment`; no intermediate `.mp4`; `clip --gif --shape 1:1`, `clip -l --gif` (two files), `clip --gif --upscale` dry run: one job, "upscale skipped" |
+| Doctor | gif and reddit mp4 yes, gifsicle 1.98 and gifski 1.34.0 found; with neither: both "no (not found …)", status still ready |
+| US6 | covered by the SC-007 run above and the desktop/CLI GIF parity test (`bridge.rs`) |
+
+Quickstart corrections made: the rename suffix is `_1` (not `-1`), and manifest videos use
+`input` (not `path`).

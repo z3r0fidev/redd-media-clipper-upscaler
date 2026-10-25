@@ -310,6 +310,44 @@ The 001 refactors A1 to A5 are in place: outcomes carry a `JobMeasure` (`clip` o
 can run several stages with weighted progress, and issue codes are a typed enum
 (`IssueCode`).
 
+## GIF Export (feature 003)
+
+**Responsibility:** make an animated GIF or a silent "Reddit MP4" loop that fits a target's size
+budget: from `rmedia gif`, `clip --gif`, `batch --gif` and manifest `gif` blocks, and from the
+desktop GIF view. Code is in `crates/rmedia-core/src/gif/` and `exec/gif.rs`. Added in 0.3.0
+(unreleased); design in `specs/003-gif-export/` (research R1–R16).
+
+| Item | Location |
+|---|---|
+| `GifOptions` / `PartialGif` (target, format, engine, shape, framing, width, fps, colours, dither, lossy, loop, budget, allow_trim), `parse_size` | `gif/mod.rs` |
+| GIF targets as data: `GifTargetRegistry` (four built-ins in `gif/builtin/*.json` plus `<config>/gif-targets/*.json`, schema 1), `Budget`, `Dither`, `GifskiParams`, `Mp4Params` | `gif/target.rs` |
+| Frame timing: centisecond delays, the 50 fps cap, exact rates {10, 20, 25, 50}, the `TIMING_APPROXIMATE` note | `gif/timing.rs` |
+| Planning: `plan_gif` builds `GifSpec { cut, frame: FramePlan, gif: GifPlan }`; never enlarges; engine choice and fallback; `FramePlan.smart` for follow-faces framing | `gif/plan.rs` |
+| Graphs and argv: two-pass palette (`palettegen` to `p-<key>.png`, then `paletteuse` from a second input), gifski's y4m pipe, the MP4 (`libx264`, `+faststart`, no audio, square pixels), gifsicle `-O2 [--lossy]` | `gif/graph.rs` |
+| Size estimate: three 1 s windows in one ffmpeg run, the size model, the MP4 hint, `prepare` (dry runs and the desktop estimate) | `gif/estimate.rs` |
+| Budget search: a pure, deterministic ladder behind the `Sampler` trait (lossy → dither → colours → fps → width; CRF for the MP4; gifski `lossy_quality`), at most 9 encodes, `BUDGET_UNREACHABLE` with the seconds that fit, `--allow-trim` | `gif/budget.rs` |
+| Optional engines: gifsicle and gifski lookup (flag/setting → env → bundled → `PATH`), `--version` banner check, refused paths | `gif/engines.rs` |
+| Verify: every delay ≥ 2 cs, frame count, width, loop block (NETSCAPE), size under the limit; the MP4's codec, tags and fast start | `gif/verify.rs` |
+| Executor: analyze (smart), search, palette, encode, optimise, verify; the gifski pipe runs through `exec/pipeline.rs` (ffmpeg → gifski) | `exec/gif.rs` |
+| Manifests: JSON `gif` block, `gif_*` CSV columns; `clip --gif` / `batch --gif` | `input/manifest_json.rs`, `input/manifest_csv.rs`, `crates/rmedia-cli/src/commands/` |
+| Desktop: `list_gif_targets`, `gif_estimate` / `cancel_estimate`, `open_output`, engine pickers | `apps/desktop/src-tauri/src/ops.rs` |
+
+**Invariants**
+
+- A GIF is never enlarged and never plays faster than 50 fps (no delay under 2 cs).
+- Nothing is written above the hard limit: the verify stage checks the committed size, and a
+  watchdog aborts an encode whose temp file passes 2× the limit.
+- gifsicle and gifski are separate processes, never linked, found only outside input and scratch
+  folders, and given only generated names inside scratch (never a source name).
+- Without either engine every requirement still holds: gifski falls back to the built-in engine
+  (`ENGINE_FALLBACK`, or `ENGINE_MISSING` with `--strict-engine`), and no post-pass runs.
+- The search is deterministic for identical inputs, options and engines, and never runs more
+  than 9 encodes; a retried full encode is kept only when it is smaller.
+- Smart framing reuses 002's analysis and its cache; the crop window found for the start size is
+  kept at every width the search tries.
+- `clip --gif --upscale` is one job with no intermediate file; the upscale step is skipped
+  (a GIF is never enlarged) and the plan says so.
+
 ## Tooling (`xtask`)
 
 | Command | Effect |
@@ -321,6 +359,9 @@ can run several stages with weighted progress, and issue codes are a typed enum
 | `cargo xtask fetch-ncnn [--target TRIPLE]` | Installs the pinned prebuilt ncnn into `third_party/ncnn/<triple>/` for the worker's build |
 | `cargo xtask archive` / `mirror <tag>` / `check-pins` | Keep every pinned archive in `archives/`, upload missing ones to a mirror release and record the URLs, and check (in CI) that every pin is mirrored and the FFmpeg source release and notice are in place |
 | `cargo xtask notices` | Writes `THIRD_PARTY_NOTICES.md` from cargo and npm metadata, including license texts |
+| `cargo xtask fetch-tools` (GIF engines) | Also stages `binaries/rmedia-gifsicle-<triple>` and `rmedia-gifski-<triple>` from `xtask/gif-tools.lock.json`, verifying SHA-256s (`--no-gifski` leaves gifski out) |
+| `cargo xtask pin-gif-tools <run-id>` | Pins the binaries and sources of a `gif-tools.yml` run into `xtask/gif-tools.lock.json` |
+| `cargo xtask check-release-gate [--tree DIR]` | Fails when a release would bundle gifski (AGPL-3.0) and the repository has no root `LICENSE` (FR-025) |
 | `cargo xtask fetch-models` | Downloads the models pinned in `xtask/models.lock.json` into `models/`, verifying SHA-256; verified files are kept. Models are never committed. |
 
 ## Testing

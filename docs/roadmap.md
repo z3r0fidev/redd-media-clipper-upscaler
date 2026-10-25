@@ -12,7 +12,7 @@ Last updated: 2026-10-25.
 |---|---|---|
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, not yet tagged | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0 release candidate, not yet tagged | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
-| 003 GIF export for Reddit | ▶ In progress (2026-10-25): tasks written, Phase 1 and most of Phase 2 done, US1 under way | Nothing yet for users (plan: `specs/003-gif-export/plan.md`, tasks: `specs/003-gif-export/tasks.md`) |
+| 003 GIF export for Reddit | ▶ Polish (2026-10-25): US1–US6 done (T001–T072), docs and release checks (T073–T080) under way; 0.3.0 in development | On `main`, unreleased: `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0-dev.md)) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -108,12 +108,23 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - T013 done: gifski, gifsicle `--lossy` and x264 are byte-reproducible on repeated runs.
 - US1 checkpoint done: quickstart and both reviews, findings fixed or recorded in
   `specs/003-gif-export/checklists/validation.md`.
-- Next: US2 automatic size budget (T045–).
-- Then: US2 automatic size budget, US3 Reddit MP4, US4 portrait and square, US5 batch and `clip`
-  integration, US6 desktop GIF view, and Polish (T045–T080).
+- US2 (T045–T053) done: the budget search, the gifsicle post-pass at `-O2`, `BUDGET_UNREACHABLE`
+  and `--allow-trim`. SC-002 20/20 under the aim, SC-003 23.8 s (bar 30 s), SC-004 9/10 within
+  25%. SC-009 **not met**: gifsicle saves 6.4% (lossy 30) and 12.3% (lossy 200) on the synthetic
+  set against a 15% aim (owner decision below).
+- US3 (T054–T056) done: the Reddit MP4 (SC-006 6.1× and 18.2× smaller).
+- US4 (T057–T058) done: 9:16, 4:5 and 1:1 with 002's reframe; smart framing.
+- US5 (T059–T064) done: JSON and CSV manifests, `clip --gif`, `batch --gif`, `clip --gif --upscale`
+  as one job.
+- US6 (T065–T072) done: desktop GIF commands, the GIF view, GIF parity with the CLI; SC-007 two
+  interactions, the estimate matched the output.
+- Now: Polish (T073–T080): documentation, notices and release checks, the quickstart, final
+  reviews.
 
 ### Open owner decisions
 
+- SC-009: keep the provisional 5% floor for the synthetic set and make 15% an owner check on
+  real footage, or change the default lossy level.
 - Application licence (gates any release that bundles gifski: `cargo xtask check-release-gate`).
   gifski's quantiser imagequant is GPL-3.0-or-later (allowed, 2026-10-25), so a commercial route
   needs licences for both (`commercial-gifski-imagequant`).

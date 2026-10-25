@@ -1,8 +1,9 @@
 # rmedia documentation
 
 rmedia cuts clips from videos on Linux and Windows, from the `rmedia` command line or the desktop
-app. An unreleased `rmedia upscale` command (feature 002, branch `002-mobile-upscale`) makes videos
-phone-ready; see the [Roadmap](roadmap.md). Start with the page for your role.
+app. The unreleased `rmedia upscale` (feature 002, 0.2.0 release candidate) makes videos
+phone-ready, and `rmedia gif` (feature 003, 0.3.0 in development) makes GIFs and silent MP4 loops
+that fit Reddit; see the [Roadmap](roadmap.md). Start with the page for your role.
 
 ## Users
 
@@ -43,6 +44,7 @@ phone-ready; see the [Roadmap](roadmap.md). Start with the page for your role.
 | [Roadmap](roadmap.md) | What is done, next and planned; owner validation items |
 | [Release notes 0.1.0](releases/0.1.0.md) | What feature 001 delivers; known issues |
 | [Release notes 0.2.0](releases/0.2.0.md) | Release candidate: phone upscaling (CPU, GPU and AI tiers), smart reframe, `clip --upscale`, manifests and the desktop upscale view |
+| [Release notes 0.3.0 (in development)](releases/0.3.0-dev.md) | GIF export for Reddit: `rmedia gif`, size budgets, the Reddit MP4, gifsicle and gifski, `clip --gif`, the desktop GIF view |
 
 Specifications, plans and contracts live in [`specs/`](../specs/); research notes are in
 [`research/`](../research/).

@@ -45,6 +45,30 @@ The +3 VMAF target on real footage, the two-phone gallery test and the Reddit up
 checks that no test covers ([Roadmap](../roadmap.md#owner-validation-cannot-be-automated)).
 `RMEDIA_CACHE_DIR` redirects the cache root for tests; CI runs `cargo xtask fetch-models` first.
 
+## Feature 003 Suites
+
+Added for GIF export (0.3.0). The engine tests need gifsicle and gifski: `cargo xtask fetch-tools`
+stages both, and the tests find them through `RMEDIA_GIFSICLE` / `RMEDIA_GIFSKI` (`require_tool!`
+skips when they are missing, unless `RMEDIA_REQUIRE_GIF_TOOLS=1`). The minimum-engine CI job runs
+without them, which proves everything else holds without the optional engines (FR-024).
+
+| Suite | What it proves |
+|---|---|
+| `crates/rmedia-core/tests/gif_engine_checks.rs` | FFmpeg behaviour GIF export relies on: the two-pass palette, centisecond delays, the loop block, y4m for gifski |
+| `crates/rmedia-core/tests/gif_verify.rs` | The verify stage on real files: looping and play-once GIFs, MP4 with and without fast start |
+| `crates/rmedia-core/tests/gif_argv.rs`, `snapshots_gif_graph.rs` | The palette and encode argv and the filter graphs, pinned with insta |
+| `crates/rmedia-core/tests/gif_us1.rs` | US1: defaults (≤ 8 MB, 720 wide, 15 fps, looping), no enlarging, approximate timing, cancel, alpha sources, verify (SC-001) |
+| `crates/rmedia-core/tests/gif_estimate.rs` | The sample-based estimate against the real output |
+| `crates/rmedia-core/tests/gif_gifski.rs`, `gif_gifsicle.rs` | The optional engines: gifski quality (SC-010) and fallback; gifsicle `-O2`/`--lossy`, the loop block kept, only generated names in argv |
+| `crates/rmedia-core/tests/gif_us2.rs` | US2: the budget search fits a busy clip into 3 MB, is deterministic, refuses an unreachable budget (`BUDGET_UNREACHABLE`) and trims only with `allow_trim` |
+| `crates/rmedia-core/tests/gif_us3.rs` | US3: the Reddit MP4 is silent, fast-start H.264 and at least 5× smaller than the GIF (SC-006) |
+| `crates/rmedia-core/tests/gif_us4.rs` | US4: 9:16, 4:5 and 1:1 through 002's reframe; smart framing keeps a moving subject |
+| `crates/rmedia-core/tests/gif_us5.rs` | US5: a two-video, four-clip manifest gives three GIFs with their own budgets and one isolated failure |
+| `crates/rmedia-core/tests/gif_calibration.rs` | Benches (`--ignored bench`): SC-002, SC-003 (≤ 30 s on 12+ threads), SC-004 (estimate within 25%), SC-009 (gifsicle's saving) |
+| `crates/rmedia-cli/tests/gif.rs`, `gif_clip_batch.rs` | The `rmedia gif` contract (dry runs write nothing, `--list-targets`, usage errors, JSON), `clip --gif`, `clip --gif --upscale` as one job, `batch --gif` |
+| `apps/desktop/src-tauri/tests/bridge.rs` (GIF tests) | GIF commands, `open_output` confinement, desktop/CLI GIF parity |
+| `apps/desktop/src/lib/stores/gif.test.ts`, `gif.svelte.test.ts` | GIF options, estimate state and queue export |
+
 ## Run the Tests
 
 ```bash
@@ -76,6 +100,8 @@ asserting it.
 | `RMEDIA_CLI_BIN` | desktop `bridge.rs` | Path to the `rmedia` binary for the CLI parity test. Default: `target/debug/rmedia`. |
 | `RMEDIA_ALLOW_MISSING_FEATURES` | testkit | With `RMEDIA_REQUIRE_FFMPEG=1`, `1` lets tests that need an FFmpeg feature the engine lacks (for example libvmaf on a distro 6.1) skip instead of failing. The CI minimum-engine job sets it. |
 | `RMEDIA_US6_KEEP` | `us6_ai.rs` | A folder to copy the AI and classical renders into, for measuring anti-flicker candidates offline. |
+| `RMEDIA_GIFSICLE`, `RMEDIA_GIFSKI` | testkit and the code under test | The GIF engines the tests use (CI points them at the staged `binaries/`). |
+| `RMEDIA_REQUIRE_GIF_TOOLS` | testkit | `1` makes the gifsicle and gifski tests panic when the engine is missing, instead of skipping. |
 | `RMEDIA_SR` | the code under test | Path to the AI worker, overriding the lookup (logged; see the configuration guide). |
 | `RMEDIA_NCNN_DIR` | `rmedia-sr` build script | Build time: the ncnn package to link instead of `third_party/ncnn/<target>/`. |
 

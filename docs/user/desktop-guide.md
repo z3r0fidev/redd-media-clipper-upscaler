@@ -364,6 +364,40 @@ queue (**Export…**) runs the same jobs with `rmedia batch` and gives identical
 the framing line says so and rmedia uses the blurred background instead. To use a model in another folder, open
 **Settings**, and under **Upscaling quality tiers** select **Models folder › Choose…**.
 
+## Make a GIF for Reddit
+
+> **In development (0.3.0):** the GIF view is not in the 0.1.0 or 0.2.0 packages.
+
+Select a video, then select **GIF for Reddit** at the top of the player. To use only part of the
+video, mark **In** and **Out** first. Then select **Export now**: the GIF is saved in a `gifs`
+folder next to the video and plays in the **Result** card, with its size, width and frame rate.
+
+| Setting | Choices | Default |
+|---|---|---|
+| **Target** | **Reddit post** (8 MB aim, 20 MB limit), **Reddit comment** (3 MB / 8 MB), **Max quality** (no size budget), **Flat / text / UI** (screen recordings; no size budget), plus your own target files | Reddit post |
+| **Format** | **GIF**, **Reddit MP4 (recommended for posts)**: a silent looping video, much smaller | GIF |
+| **Shape** | **As filmed**, **9:16**, **4:5**, **1:1** | As filmed |
+| **Framing** | **Follow faces**, **Centre**, **Show all** (only when the shape is not As filmed) | Follow faces |
+
+> **Unverified:** Reddit's limits are estimates; check Reddit's Help Center.
+
+The line under the settings shows the **estimated size** before anything is written. rmedia makes
+it from three short samples, so it takes a few seconds (**Estimating the size…**) and updates when
+you change a setting. If the GIF would not fit, it shows the settings rmedia will lower.
+
+**More settings** opens width, frames per second, colours, dither, lossy compression, how many
+times it plays, the size to aim for and the most it may be, **No size limit**, **Allow trimming to
+fit**, and the engine. Empty fields use the target's value. Your choices are remembered.
+
+**Add to queue** keeps the GIF for later; **Run** in the queue makes it with your clips, and an
+exported queue makes the same files with `rmedia batch`.
+
+### Optional engines
+
+gifsicle (smaller files) and gifski (best quality) are separate programs. The installers include
+them where the licence allows. To use your own copy, open **Settings** and choose the program
+under the engine pickers. Without them, the built-in engine is used and the result card says so.
+
 ## Change Settings
 
 Select **Settings** in the top-right corner. Select **Save** to keep your changes, or **Cancel**

@@ -135,6 +135,7 @@ A clip with neither `end` nor `duration` runs to the end of the video.
 | `audio` | `"all"` \| `"none"` \| array of 1-based track numbers | |
 | `subtitles` | `"all"` \| `"none"` | |
 | `upscale` | upscale object | Feature 002; see [Upscaling in manifests](#upscaling-in-manifests) |
+| `gif` | GIF object | Feature 003; see [GIFs in manifests](#gifs-in-manifests) |
 
 ### Upscaling in Manifests
 
@@ -172,6 +173,31 @@ This writes `upscaled/low_phone-fill.mp4` (1080x2340), `clips/land_001_pan_reddi
   `videos[3].options.container: upscaled outputs are always .mp4; container "mov" cannot be used`.
 - `rmedia batch` upscale flags fill the fields of upscaled videos under these values; `--upscale`
   turns upscaling on for every video ([CLI reference](cli-reference.md#rmedia-batch)).
+
+### GIFs in Manifests
+
+Added in 0.3.0 (contract `specs/003-gif-export/contracts/manifest-gif.md`). `gif` may appear in
+`defaults`, a video's `options` and a clip's `options`; layers apply defaults → video → clip,
+field by field, and `"enabled": false` turns GIF export off for that layer and below. Unknown keys
+are errors with the line number.
+
+```json
+{"version":1,"defaults":{"gif":{"target":"reddit-post","shape":"4:5"}},
+ "videos":[{"input":"game.mkv","clips":[
+   {"start":"1:02","end":"1:09"},
+   {"start":"2:10","end":"2:14","options":{"gif":{"target":"reddit-comment","allow_trim":true}}},
+   {"start":"3:00","end":"3:20","options":{"gif":{"format":"mp4"}}}]},
+  {"input":"clip.mp4","options":{"gif":{"budget":{"soft":5000000},"loop":3}}}]}
+```
+
+Keys: `enabled`, `target`, `format` (`gif`/`mp4`), `engine` (`auto`/`builtin`/`gifski`),
+`strict_engine`, `optimise`, `allow_trim`, `loop` (`"forever"` or 1–65535 plays), `shape`
+(`source`/`9:16`/`4:5`/`1:1`), `framing` (`smart`/`center`/`blur`), `width`, `fps`, `colours`,
+`lossy` (numbers, `null` = the target's), `dither` (`"none"`, `"floyd_steinberg"`,
+`"sierra2_4a"`, `{"bayer":0..5}`), and `budget` (`{"soft":bytes,"hard":bytes}`; `null` = no
+search; `soft` alone sets `hard` too). A video without `clips` and GIF on is one whole-video
+job. `container` is ignored for GIF jobs (`format` decides). `gif` with `upscale` is one GIF job;
+the upscale is skipped with a note.
 
 ### Strictness and Errors
 
@@ -226,6 +252,13 @@ match13.mp4,12:00,end,,,accurate,
 | `upscale_preset` | No | Preset id, or `off` to turn upscaling off for the row (feature 002) |
 | `upscale_reframe`, `upscale_tier`, `upscale_hdr`, `upscale_motion` | No | Same words as the JSON `upscale` object (case-insensitive) |
 | `upscale_crf` | No | 0–51 |
+| `gif_target` | No | Target id, or `off` to turn GIF export off for the row (not with other `gif_*` cells) |
+| `gif_format`, `gif_shape`, `gif_framing`, `gif_engine` | No | Same words as the JSON `gif` object |
+| `gif_width`, `gif_fps`, `gif_colours`, `gif_lossy` | No | Whole numbers (64–1920, 1–50 for a GIF / 60 for MP4, 2–256, 0–200) |
+| `gif_dither` | No | `none`, `bayer`, `bayer:S`, `floyd-steinberg`, `sierra` |
+| `gif_loop` | No | `forever` or plays |
+| `gif_budget`, `gif_hard_limit` | No | Sizes (`3MB`, `800k`); `gif_budget=none` turns the search off (not with `gif_hard_limit`) |
+| `gif_allow_trim`, `gif_optimise`, `gif_strict_engine` | No | `true`/`false`/`yes`/`no`/`1`/`0` |
 
 - Without `end` and `duration`, a clip runs to the end of the video.
 - Any non-empty `upscale_*` cell turns upscaling on for the row. A row with upscaling on and empty
@@ -248,6 +281,19 @@ Other options are not written.
 **Equivalence (FR-007):** a JSON and a CSV manifest with the same content produce the same jobs.
 This was verified by running `rmedia batch jobs.json --dry-run --json` and the CSV equivalent;
 both planned the same outputs, modes and spans.
+
+Any `gif_*` column (or `batch --gif`) makes `start` optional: a row without times is the whole
+video. The writer emits the `gif_*` columns only when some job has GIF export on.
+
+## GIF Target Files (`gif-targets/*.json`)
+
+Added in 0.3.0. User targets live in `<config>/gif-targets/*.json` (schema
+`specs/003-gif-export/contracts/gif-target.schema.json`); a file with a built-in id replaces it.
+Invalid files are listed by `rmedia gif --list-targets` and ignored. Fields: `schema` (1), `id`,
+`version`, `name`, `description`, `verified`, `budget` `{soft, hard}`, `width`
+`{landscape, portrait}`, `floor_width`, `fps`, `floor_fps`, `colours`, `dither`, `stats_mode`,
+`sharpen`, `engine` (`builtin`/`best`), `lossy`, `gifski`, `max_duration`, and `mp4`
+`{crf, max_fps, hint}` (`hint`: GIF jobs also estimate the MP4's size).
 
 ## Name Templates
 

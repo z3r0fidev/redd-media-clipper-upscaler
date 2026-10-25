@@ -73,9 +73,10 @@ The Tauri CLI comes from `apps/desktop/package.json` (`@tauri-apps/cli` 2.12.1);
 cargo xtask fetch-tools
 ```
 
-This step downloads the pinned, SHA-256-verified FFmpeg into `binaries/`. You need it for the
-desktop build (Tauri sidecars), and it is the recommended engine for tests. Repeated runs reuse
-verified binaries.
+This step downloads the pinned, SHA-256-verified FFmpeg into `binaries/`, plus the optional GIF
+engines `rmedia-gifsicle` and `rmedia-gifski` (pinned in `xtask/gif-tools.lock.json`;
+`--no-gifski` leaves gifski out). You need it for the desktop build (Tauri sidecars), and it is the
+recommended engine for tests. Repeated runs reuse verified binaries.
 
 ### CLI
 
@@ -226,21 +227,23 @@ Also available: `/speckit-checklist`, `/speckit-converge`, and `/speckit-tasksto
 - Research outlines in `research/` are not confirmed until marked so. Items tagged `[K]`, `[verify]`,
   or `[unverified]` are not yet confirmed (`CLAUDE.md`).
 
-Feature 002 (mobile upscaling with smart reframing) is in progress: user story 1 is done and the
-rest is planned. Feature 003 (GIF export for Reddit) is in progress (core modules only; no CLI yet). See the [Roadmap](../roadmap.md).
+Feature 002 (mobile upscaling with smart reframing) is done (0.2.0 release candidate). Feature 003
+(GIF export for Reddit) is implemented through user story 6 and in its polish phase (0.3.0,
+unreleased). See the [Roadmap](../roadmap.md).
 
 ## Add a New Job Kind
 
 The executor takes further job kinds. `Upscale` (feature 002) is the first added after `Clip`;
-the plan's mandatory refactors A1 to A5 were completed for it. Feature 003 will add `Gif`.
+the plan's mandatory refactors A1 to A5 were completed for it. Feature 003 added `Gif`.
 
 ### Current extension point
 
-- `crates/rmedia-core/src/plan/mod.rs` defines `pub enum JobSpec { Clip(Box<ClipSpec>), Upscale(Box<UpscaleSpec>) }`.
+- `crates/rmedia-core/src/plan/mod.rs` defines `pub enum JobSpec { Clip(Box<ClipSpec>), Upscale(Box<UpscaleSpec>), Gif(Box<GifSpec>) }`.
   `PlannedJob.spec` holds it.
 - `crates/rmedia-core/src/exec/mod.rs` → `run_job()` dispatches on it:
   `JobSpec::Clip(spec) => clip::execute(spec, &mut ctx).await` and
-  `JobSpec::Upscale(spec) => upscale::execute(spec, &mut ctx).await`.
+  `JobSpec::Upscale(spec) => upscale::execute(spec, &mut ctx).await`, and the same for
+  `JobSpec::Gif` (`exec/gif.rs`).
 - The scheduler does not look inside a job kind. `JobCtx` provides the tools, the temp output path,
   the final output path, cancellation, the job ID, and progress events. The scheduler handles
   concurrency, journaling of `job.temp`, commit, and cleanup.
@@ -286,9 +289,7 @@ Feature-specific notes from `plan.md` (Forward Compatibility):
 - **002 mobile-upscale:** adds `JobSpec::Upscale`, a `Resource::Gpu` semaphore, Vulkan and upscaler
   detection in `doctor`, and device presets as data files (the constitution requires presets as
   data, not code).
-- **003 gif-export:** adds `JobSpec::Gif` (two-pass palette pipeline, size-budget search), reusing
-  `Segment`, the executor, events, and commit (`research/05-gif-export.md`).
-
-> **Unverified:** None of the A1 to A5 refactors have been implemented yet. `JobSpec` has only the
-> `Clip` variant. The procedure above combines the plan with the current code; adjust it once the
-> refactors land.
+- **003 gif-export:** adds `JobSpec::Gif` (two-pass palette pipeline, size-budget search), GIF
+  targets as data, the optional gifsicle and gifski engines, and refactor B3 (an N-stage
+  `exec/pipeline.rs`), reusing the executor, scratch folders, events, and commit
+  (`specs/003-gif-export/plan.md`).

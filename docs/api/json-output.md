@@ -172,6 +172,40 @@ the video. Real dry run, abridged (`argv` omitted):
 | `limit_warnings` | Platform limit messages (also `LIMIT_EXCEEDED` issues) |
 | `reframe_analysis` | `status`: `not_needed` (centre, blur, matching aspect), `pending` (`--no-analyze`) or `ready`. When ready: `cache` (`hit`/`miss`), `crop` `[w,h]`, `axis` `x`, `fps`, `shots` (`start`, `end`, `kind`: `tracked`, `fallback` or `mixed`), `fallback_ranges` (blurred-background ranges), and `path` `{hz:10, keyframes:[[seconds, x], …]}`. Times are source seconds |
 
+### GIF jobs
+
+Added in 0.3.0. A GIF job (`kind: "gif"`, from `rmedia gif`, `clip --gif`, `batch --gif`) has the
+clip job fields plus `notices` (coded warnings; every message is also in `warnings`), `pipeline`
+(the argv of every process, in order) and a `gif` block. Real dry run with `--budget 1MB`,
+abridged (`argv`, `pipeline` omitted):
+
+```json
+{"id":1,"kind":"gif","status":"planned","requested":{"start":0.0,"end":6.0},
+ "notices":[{"code":"TIMING_APPROXIMATE","message":"15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)"}],
+ "gif":{"target":"reddit-post","target_verified":false,"format":"gif","engine":"builtin",
+   "engine_reason":"target engine: builtin","optimiser":"gifsicle 1.98","loop":"forever",
+   "budget":{"soft":1000000,"hard":1000000},"floors":{"width":320,"fps":10},"allow_trim":false,
+   "settings":{"width":720,"height":405,"fps":15.0,"timing":{"exact":false,"avg_cs":6.67},
+     "colours":256,"dither":{"bayer":4},"lossy":30},
+   "estimate":{"bytes":776911,"from":"search","mp4_bytes":495728,
+     "lowered":[{"setting":"lossy","from":30,"to":90},{"setting":"dither","from":{"bayer":4},"to":{"bayer":5}},
+                {"setting":"colours","from":256,"to":128},{"setting":"fps","from":15.0,"to":10.0},
+                {"setting":"width","from":720,"to":554}],
+     "settings":{"width":554,"height":312,"fps":10.0,"…":"…"}},
+   "notes":[]}}
+```
+
+| `gif` field | Notes |
+|---|---|
+| `target`, `target_verified` | The target id; `false` while Reddit's limits are unverified |
+| `format` | `gif` or `mp4` |
+| `engine`, `engine_reason` | `builtin`, `gifski` or `libx264` (MP4), and why |
+| `optimiser` | `"gifsicle 1.98"`, or `null` when no post-pass runs |
+| `budget`, `floors` | `{soft, hard}` bytes or `null` (no search); the lowest width and fps the search may use |
+| `settings` | The starting settings: `width`, `height`, `fps`, `timing` (`exact`, `avg_cs` centiseconds per frame), `colours`, `dither`, `lossy`; `gifski` (`{quality, lossy_quality?…}`) for gifski jobs, `crf` for MP4 jobs |
+| `estimate` | `from`: `search` (the budget search's prediction), `sample` (one sample, no budget) or `pending` (not sampled: `--no-sample`, `batch`). `bytes`, `lowered` (in ladder order), the predicted `settings`, and `mp4_bytes` (the "MP4 would be smaller" hint, targets with it) |
+| `notes` | Plain notes ("kept source width 1080", "--colors is ignored by gifski") |
+
 ### `issues[]` and Errors
 
 When any issue has severity `error`, nothing runs (exit 3, or 4 when every error is
@@ -246,6 +280,24 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 **`measure: "clip"`** adds `actual` `{start,end}` and `adjusted` (true when start or end differ
 from the request by more than 50 ms). These two keys are unchanged from 0.1.0.
 
+**`measure: "gif"`** (0.3.0) adds `span`, `format`, `bytes`, `width`, `height`, `fps`, `timing`,
+`colours`, `dither` and `lossy` (built-in engine; otherwise `null`), `engine`, `optimiser` (bool),
+`loop`, `deterministic`, `trimmed` (`{start,end}` when `--allow-trim` shortened the range, else
+`null`), `mp4_estimate`, and `search` (`null` without a budget):
+
+```json
+{"status":"succeeded","measure":"gif","format":"gif","bytes":783579,"width":554,"height":312,
+ "fps":10.0,"timing":{"avg_cs":10.0,"exact":true},"colours":128,"dither":{"bayer":5},"lossy":90,
+ "engine":"builtin","optimiser":true,"loop":"forever","deterministic":true,"trimmed":null,
+ "mp4_estimate":495728,
+ "search":{"encodes":8,"fit":"soft","lowered":["…"],
+   "steps":[{"n":1,"kind":"sample","bytes":1101900,"estimate":2176205,"settings":{"…":"…"}},"…"]}}
+```
+
+`search.fit` is `soft` (within the aim) or `hard` (over the aim, within the limit:
+`OVER_RECOMMENDED`). `steps[].kind` is `sample`, `post` (a gifsicle re-run, not an encode) or
+`full`; `encodes` counts samples and full encodes (at most 9).
+
 **`measure: "upscale"`** adds:
 
 | Field | Notes |
@@ -307,6 +359,20 @@ New in 0.2.0: `TIER_UNAVAILABLE` (a forced `gpu` or `ai` tier cannot be used; er
 `PRESET_UNKNOWN` (error, exit 3), `HDR_UNSUPPORTED` (`--hdr keep` with a preset that cannot keep
 HDR; error, exit 3) and `LIMIT_EXCEEDED` (a preset's size or duration limit would be exceeded;
 warning).
+
+New in 0.3.0: `TARGET_UNKNOWN` (error, exit 3), `BUDGET_UNREACHABLE` (error: exit 1 per job with
+`detail` `{fits_secs, best_bytes}`, or exit 3 at plan time for a budget under 64 KiB with
+`{min_bytes}`), and the warnings `ENGINE_FALLBACK` (an optional engine is missing; the built-in
+one is used), `OVER_RECOMMENDED`, `TIMING_APPROXIMATE` and `LONG_RANGE`. `ENGINE_FAILED` errors
+name the tool (`gifsicle failed: …`). `job_warning` events carry the `code` when there is one.
+
+## `rmedia gif --list-targets --json`
+
+```json
+{"schema":1,"type":"targets","targets":[{"id":"reddit-post","name":"Reddit post","verified":false,
+  "budget":{"soft":8000000,"hard":20000000},"width":{"landscape":720,"portrait":480},"fps":15,
+  "…":"…","source":"builtin"}],"problems":[]}
+```
 
 > **Unverified:** the `failed`, `cancelled` and `INTERNAL` outcomes above are documented from code
 > and from the contract tests (`crates/rmedia-cli/tests/`, `crates/rmedia-core/tests/cancel.rs`,

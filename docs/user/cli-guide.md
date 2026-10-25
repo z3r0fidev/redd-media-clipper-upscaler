@@ -534,6 +534,67 @@ crop may follow. The analysis is cached, so the render that follows a dry run re
 Press Ctrl-C to cancel; no partial file is left. Details:
 [CLI Reference](../api/cli-reference.md#rmedia-upscale).
 
+## Make GIFs for Reddit
+
+> **In development (0.3.0):** `rmedia gif` is not in the 0.1.0 or 0.2.0 packages.
+
+```bash
+rmedia gif video.mp4                              # a GIF that fits a Reddit post
+rmedia gif -s 1:05 -e 1:12 --target reddit-comment video.mp4
+rmedia gif --format mp4 video.mp4                 # a silent looping MP4, much smaller
+rmedia gif --shape 9:16 video.mp4                 # upright, following faces
+rmedia gif --dry-run video.mp4                    # predict the size, write nothing
+```
+
+Each GIF is saved in a `gifs` folder next to the video, named `{source}_{target}.gif`. The
+source is never changed.
+
+### Choose a Target
+
+A target sets the size budget and the starting look. List them with `rmedia gif --list-targets`.
+
+| Target | Aim / limit | For |
+|---|---|---|
+| `reddit-post` (default) | 8 MB / 20 MB | GIFs in posts |
+| `reddit-comment` | 3 MB / 8 MB | GIFs in comments |
+| `max-quality` | no budget | The best picture; uses gifski when it is installed |
+| `flat-ui` | no budget | Screen recordings, text and UI (64 colours, no dither) |
+
+> **Unverified:** Reddit's limits above are estimates. Check Reddit's Help Center before relying
+> on them, and set your own with `--budget` and `--hard-limit`.
+
+### Fit a Size
+
+rmedia lowers the least visible settings first until the GIF fits: compression, dithering,
+colours, frame rate, and only then the width. It needs at most nine encodes, and the summary
+lists what it lowered. When nothing fits even at the lowest settings, the job fails with
+`BUDGET_UNREACHABLE` and says how many seconds would fit; `--allow-trim` keeps that part instead.
+`--budget none` turns the search off.
+
+### Reddit MP4
+
+Reddit turns uploaded GIFs into video anyway. `--format mp4` writes that video yourself: a silent,
+looping H.264 file that is usually five or more times smaller than the GIF at a better picture.
+For posts, it is the better choice; a dry run for `reddit-post` says how big the MP4 would be.
+
+### Clip and GIF Together
+
+```bash
+rmedia clip -s 10 -e 16 --gif --target reddit-comment video.mp4
+rmedia clip -l clips.txt --gif video.mp4          # one GIF per clip
+rmedia batch --gif jobs.json                      # every clip of a manifest as a GIF
+```
+
+Manifests can also set GIF options per clip (a `gif` block in JSON, `gif_*` columns in CSV). See
+[File Formats › GIFs in Manifests](../api/file-formats.md#gifs-in-manifests).
+
+### Optional Engines
+
+Two separate programs improve the result when rmedia finds them: **gifsicle** shrinks the GIF
+further, and **gifski** makes the best-looking GIFs (`max-quality`). Without them, everything
+still works with the built-in engine. `rmedia doctor` lists both. All flags:
+[CLI Reference › rmedia gif](../api/cli-reference.md#rmedia-gif).
+
 ## Check the Video Engine
 
 ```bash
@@ -564,6 +625,7 @@ FFmpeg 6.0 or newer is required.
 | `skipped: output already exists` | [Output already exists](troubleshooting.md#skipped-output-already-exists) |
 | `no input videos (folders contained no videos)` | [No input videos](troubleshooting.md#no-input-videos-folders-contained-no-videos) |
 | `face model not found`, `the gpu tier is not available`, or other `rmedia upscale` messages | [Upscaling](troubleshooting.md#upscaling) |
+| `BUDGET_UNREACHABLE`, `ENGINE_FALLBACK`, or other `rmedia gif` messages | [GIF Export](troubleshooting.md#gif-export) |
 | Warnings about subtitles, high bit depth, or `.mp4` instead | [Warnings](troubleshooting.md#warnings-that-do-not-stop-the-clip) |
 
 ## Related Information

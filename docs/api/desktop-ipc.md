@@ -77,7 +77,11 @@ Further rules:
 | `ensure_proxy` | `path`, `codec: "h264" \| "vp8"`, `onProgress: Channel<number>` | `string` (media URL) | Encodes or reuses a cached 480p proxy; progress 0–1 |
 | `frame_at` | `path`, `t: number`, `height: number` | JPEG bytes (`ArrayBuffer`, via `ipc::Response`) | `height` clamped to 32–1080; `t` is clip time |
 | `thumbnails` | `path`, `n: number` | `string[]` (`data:image/jpeg;base64,…`) | `n` clamped to 1–60; cached |
-| `pick_engine` | `reset: boolean` | `DoctorReport` | `reset: false` opens a native picker for the ffmpeg program; ffprobe must sit next to it. `reset: true` returns to automatic lookup. Saved to settings. |
+| `pick_engine` | `reset: boolean`, `kind?: "ffmpeg" \| "gifsicle" \| "gifski"` | `DoctorReport` | `reset: false` opens a native picker for that program (ffmpeg: ffprobe must sit next to it; gifsicle/gifski: a regular file, not a link, that identifies itself as version 1.x). `reset: true` returns to automatic lookup. Saved to settings. |
+| `list_gif_targets` | — | `{default, targets: GifTarget[], problems}` | Built-in and user GIF targets (0.3.0). |
+| `gif_estimate` | `estimateId` (1–64 chars), `path`, `span`, `options: GifOptions`, `onEvent: Channel<AnalysisEvent>` | `{estimate, notes, notices}` | Requires an allowed path. The predicted size of the GIF job (the budget search from samples, nothing encoded in full; the `estimate` object of the plan JSON), in a private folder under the app cache (`gif-estimates/`, removed on every path and at startup). One estimate at a time: a new one cancels the others; refused while a run encodes, and a run that starts cancels it. The core re-checks every option. |
+| `cancel_estimate` | `estimateId` | — | |
+| `open_output` | `runId`, `jobId` | `{url, kind: "image" \| "video", bytes, width, height}` | Registers a committed output of one of this app's last 16 runs with the media server. The page never sends a path; a file that is no longer the one the run wrote (a link swapped in) is refused. At most 48 output URLs stay live. |
 | `doctor_recheck` | — | `DoctorReport` | Runs the machine check (tier self-tests) again; one at a time |
 | `list_presets` | — | `{default, presets: Preset[], problems: {file, message}[]}` | Built-in and user presets (002 US5) |
 | `analyze_reframe` | `analysisId` (1–64 chars), `path`, `span: {start, end\|null} \| null`, `options: UpscaleOptions`, `onEvent: Channel<AnalysisEvent>` | `{analysis: ReframeAnalysis \| null, note: string \| null}` | Requires an allowed path. Smart-reframe analysis for the crop overlay, through the same cache as the render and the CLI; runs with the CPU tier. A new analysis cancels the running one. `analysis` is null when there is nothing to analyse; `note` says why. |
@@ -85,7 +89,7 @@ Further rules:
 | `upscale_preview` | `path`, `span`, `at: number`, `options: UpscaleOptions` | `{before, after, size, approximate, crop_x, in_fallback, classical}` | Requires an allowed path. Two PNG stills at the preset size (`classical`: AI tier, the "after" still uses the standard scaler), served by the media server (`image/png`); written under the app cache (`upscale-preview/`, newest 48 kept). A new preview cancels the running one. Times must be finite and 0–10,000,000 s. |
 | `pick_models_dir` | `reset: boolean` | `Settings` | Native folder picker for the models folder (or back to the default search). Reloads the engine capabilities. |
 | `get_settings` | — | `Settings` | |
-| `set_settings` | `settings: Settings` | — | Saved atomically. `ffmpeg_path` / `ffprobe_path` and `models_dir` from the page are **ignored**; only `pick_engine` and `pick_models_dir` change them. `jobs` is clamped to 1–64. A changed `defaults.output_dir` must already be allowed (picked with `pick_folder`), otherwise: `choose the output folder with Choose…`. |
+| `set_settings` | `settings: Settings` | — | Saved atomically. `ffmpeg_path` / `ffprobe_path`, `gifsicle_path` / `gifski_path` and `models_dir` from the page are **ignored**; only `pick_engine` and `pick_models_dir` change them. `jobs` is clamped to 1–64. A changed `defaults.output_dir` must already be allowed (picked with `pick_folder`), otherwise: `choose the output folder with Choose…`. |
 
 ### The Queue Is a v1 Manifest
 

@@ -844,6 +844,87 @@ command-line tool does not need WebView2.
 
 ---
 
+## GIF Export
+
+These messages come from `rmedia gif`, `clip --gif`, `batch --gif` and the desktop GIF view,
+which are in development (0.3.0).
+
+### "the size budget cannot be reached …" (BUDGET_UNREACHABLE)
+
+#### Cause
+
+The range is too long or too busy for the size limit, even at the smallest width, frame rate and
+colours the target allows. Nothing was written. The message says how many seconds fit. "the size
+budget is below the smallest possible GIF" means the budget is too small for any GIF at all.
+
+#### Resolution
+
+Choose one:
+
+1. Use a shorter range (`-s`/`-e`, or In and Out in the desktop app).
+2. Add `--allow-trim` (desktop: **Allow trimming to fit**) to keep the part that fits.
+3. Use `--format mp4` (desktop: **Reddit MP4**), which is usually five or more times smaller.
+4. Raise the limit with `--hard-limit`, if the place you post allows it.
+
+### "… is over the recommended … (within the … limit)" (OVER_RECOMMENDED)
+
+#### Cause
+
+The GIF is above the target's aim but below its limit. It was kept.
+
+#### Resolution
+
+Nothing is required. For a smaller file, lower `--width` or `--fps`, or use `--format mp4`.
+
+### "gifski is not available (…); using the built-in engine" (ENGINE_FALLBACK)
+
+#### Cause
+
+The target (for example `max-quality`) or `--engine gifski` asked for gifski, or `--lossy` for
+gifsicle ("--lossy needs gifsicle (…); ignored"), and rmedia could not find the program. The GIF
+was made with the built-in engine.
+
+#### Resolution
+
+Run `rmedia doctor` to see where rmedia looked. Install the program, or point rmedia at it with
+`--gifski`/`--gifsicle`, `RMEDIA_GIFSKI`/`RMEDIA_GIFSICLE`, or the desktop engine pickers. Add
+`--strict-engine` to make a missing engine an error (exit 4) instead.
+
+### "15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)" (TIMING_APPROXIMATE)
+
+#### Cause
+
+GIF frame delays are whole hundredths of a second, so only 10, 20, 25 and 50 fps play exactly.
+Other rates alternate delays and average out to the rate you chose.
+
+#### Resolution
+
+Nothing is wrong. Choose one of those rates to silence the note.
+
+### "unknown GIF target … (known: …)" (TARGET_UNKNOWN)
+
+#### Cause
+
+The `--target` id is not a built-in or user target (exit code 3).
+
+#### Resolution
+
+Run `rmedia gif --list-targets`. If you added a target file in `<config>/gif-targets/`, check the
+listed problems for it.
+
+### "kept source width … (a GIF is never enlarged)"
+
+#### Cause
+
+The width you asked for is wider than the source, so rmedia kept the source width.
+
+#### Resolution
+
+Nothing is wrong: enlarging only makes a GIF bigger, not sharper. For an upright, enlarged video,
+use `rmedia upscale` instead.
+
+---
+
 ## Still Stuck?
 
 When you report a problem, include:

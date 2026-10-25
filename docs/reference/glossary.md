@@ -24,7 +24,17 @@ to avoid.
 | **indexed container / indexed seeking** | Formats whose demuxer seek is exact (ffprobe `format_name` `mov`, `mp4`, `matroska`, `webm`). Decides the seek strategy. | `MediaInfo::has_indexed_seeking` | |
 | **issue** | A planning or parsing problem (`severity` error/warning, `code`, `origin`, `message`). Any error-severity issue means nothing runs. | `plan::Issue` | |
 | **job** | One clip request resolved to a concrete output path, with state queued/running/succeeded/failed/cancelled/skipped | `plan::PlannedJob`, spec.md | task |
-| **job kind** | The work a job does: `JobSpec::Clip` or `JobSpec::Upscale` (0.2.0); `Gif` (003) is in progress and not on `main` yet | `plan::JobSpec` | |
+| **job kind** | The work a job does: `JobSpec::Clip`, `JobSpec::Upscale` (0.2.0) or `JobSpec::Gif` (0.3.0) | `plan::JobSpec` | |
+| **GIF target (target)** | A data file that describes a GIF output: widths, frame rate, colours, dither, engine, MP4 settings and an optional size budget. Four are built in (`reddit-post`, `reddit-comment`, `max-quality`, `flat-ui`); users add JSON files to `<config>/gif-targets/`. | `gif/target.rs` | GIF preset (a *preset* is an upscale target) |
+| **size budget (aim, hard limit)** | A target's recommended size (`soft`, the aim) and the size never written above (`hard`, the limit). `--budget`, `--hard-limit`. | `gif::target::Budget` | quota |
+| **sample (sample encode)** | Three 1 s windows spread across the range, encoded in one ffmpeg run; the size estimate and every search step extrapolate from it | `gif/estimate.rs` | probe (that is ffprobe) |
+| **ladder (search ladder)** | The fixed order in which the budget search lowers settings: lossy, dither, colours, frame rate, width (CRF before width for the MP4) | `gif/budget.rs` | |
+| **post-pass** | gifsicle run on the built-in engine's GIF (`-O2`, optionally `--lossy`) | `gif/graph.rs::gifsicle_args` | |
+| **budget search** | The bounded ladder that lowers settings from sample encodes until the estimate fits the aim (at most 9 encodes), recorded in the outcome's `search` | `gif/budget.rs` | |
+| **Reddit MP4** | The silent, looping, fast-start H.264 alternative to a GIF (`--format mp4`); recommended for posts | `gif::Format::Mp4` | video GIF |
+| **built-in engine** | GIF encoding with ffmpeg's two-pass palette (`palettegen` + `paletteuse`) | `gif::EngineUsed::Builtin` | |
+| **gifsicle / gifski** | The optional GIF engines (separate programs): gifsicle optimises and adds lossy compression after the built-in engine; gifski encodes the best-quality GIFs. Bundled as `rmedia-gifsicle` / `rmedia-gifski` where the licence allows. | `gif/engines.rs` | optimiser (for gifski) |
+| **frame delay** | How long a GIF frame shows, in whole centiseconds (at least 2); 10, 20, 25 and 50 fps are exact | `gif/timing.rs` | |
 | **preset (device preset)** | A data file that describes an upscale target: size, codec, quality, platform limits. Seven are built in; users add JSON files to `<config>/presets/`. | `preset/`, `--list-presets` | profile |
 | **reframe** | How a video of one shape fills a screen of another: `smart` (follow faces), `center` or `blur` | `upscale::Reframe` | |
 | **tier** | The engine quality level of an upscale: `cpu` (classical filters), `gpu` (Vulkan with libplacebo) or `ai` (Real-ESRGAN in the `rmedia-sr` worker). `auto` picks CPU or GPU, never AI. | `upscale::Tier` | |

@@ -60,6 +60,8 @@ All fields are optional. A file containing `{}` is equivalent to the defaults.
 | `jobs` | integer (0 to 65535) | not set | Clips processed at once. Not set means half the CPU cores, between 1 and 4. The **Clips at once** field in the UI accepts 1 to 64. |
 | `proxy_cache_max_mb` | integer | `5120` | Size cap of the preview cache in MB (multiplied by 1024 × 1024). The UI field has a minimum of 100. |
 | `models_dir` | path string | not set | Folder searched first for model files (face detector, AI upscaler weights). Set in the desktop app with Settings › **Models folder** (a folder picker; the page cannot type a path). The AI tier uses a folder only when it holds all six Real-ESRGAN files (`realesr-animevideov3-x2/x3/x4` `.param` and `.bin`). |
+| `gifsicle_path`, `gifski_path` | path string | not set | The optional GIF engines (feature 003). Set in the desktop app with Settings › engine pickers (a native file dialog that checks the program's `--version`); the page cannot type a path. |
+| `gif_defaults` | object | `{}` | Last-used GIF choices (the JSON manifest `gif` keys). The desktop GIF view starts from these and saves each change here. |
 | `upscale_defaults` | object | `{}` | Last-used upscale choices (`enabled`, `preset`, `reframe`, `tier`, `hdr`, …). The desktop upscale view starts from these and saves each change here; kept apart from `defaults` so clip runs never turn upscaling on. |
 
 > **Unverified:** Setting `jobs` to `0` by editing the file is not rejected on load, and its effect
@@ -230,8 +232,10 @@ The cache is safe to delete while the app is closed.
 | `RMEDIA_FFMPEG` | `rmedia`, `rmedia-desktop`, test kit | Path to FFmpeg. Second in the [engine location order](#engine-location-order). In tests, the FFmpeg used to generate fixtures. | not set |
 | `RMEDIA_FFPROBE` | `rmedia`, `rmedia-desktop`, test kit | Path to ffprobe, as above. | not set |
 | `RMEDIA_SR` | `rmedia`, `rmedia-desktop` | Path to the AI worker `rmedia-sr`. Without it the worker is looked for next to the executable (and, in development builds, in the Cargo target folder). Added in 0.2.0. | not set |
+| `RMEDIA_GIFSICLE`, `RMEDIA_GIFSKI` | `rmedia`, `rmedia-desktop`, test kit | Paths to the optional GIF engines, after the `--gifsicle`/`--gifski` flags and the settings, before the bundled copies and `PATH`. In tests, they enable the engine tests. Added in 0.3.0. | not set |
+| `RMEDIA_REQUIRE_GIF_TOOLS` | test kit only | When `1`, the gifsicle and gifski tests fail instead of being skipped if the engines are missing. Set in the CI bundled-engine jobs. | not set |
 | `RMEDIA_STATE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the state directory (crash journal parent). Used by the CLI tests. | per-user state directory |
-| `RMEDIA_CONFIG_DIR` | `rmedia`, `rmedia-desktop` | Folder that holds `settings.json` and the user device presets (`presets/*.json`, read by `rmedia upscale`). Used by tests. | per-user config directory |
+| `RMEDIA_CONFIG_DIR` | `rmedia`, `rmedia-desktop` | Folder that holds `settings.json`, the user device presets (`presets/*.json`, read by `rmedia upscale`) and GIF targets (`gif-targets/*.json`). Used by tests. | per-user config directory |
 | `RMEDIA_CACHE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the cache root, which holds `preview/`, `reframe/` (smart-reframe analyses) and `models/`. Used by tests. Added in 0.2.0. | per-user cache directory |
 | `RMEDIA_REQUIRE_FFMPEG` | test kit only | When `1`, media tests fail instead of being skipped if FFmpeg is missing. Set in CI. | not set |
 | `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | Linux | Standard XDG base directories, honoured when they are absolute paths. | `~/.config`, `~/.local/state`, `~/.cache` |
