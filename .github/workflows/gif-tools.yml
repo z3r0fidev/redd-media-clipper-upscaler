@@ -197,7 +197,9 @@ jobs:
           echo "$GIFSKI_SHA256  sources/gifski-$GIFSKI_VERSION.crate" | sha256sum -c -
           echo "$VENDOR_SHA256  sources/gifski-$GIFSKI_VERSION-vendor.tar.gz" | sha256sum -c -
           mkdir build && tar -xzf "sources/gifsicle-$GIFSICLE_VERSION.tar.gz" -C build
-          mkdir -p "$RUNNER_TEMP/gifski" && tar --force-local -xzf "sources/gifski-$GIFSKI_VERSION.crate" -C "$RUNNER_TEMP/gifski"
+          # MSYS tar reads a drive-letter path as host:path; it gets the POSIX form.
+          tmp=$(cygpath -u "$RUNNER_TEMP")
+          mkdir -p "$tmp/gifski" && tar -xzf "sources/gifski-$GIFSKI_VERSION.crate" -C "$tmp/gifski"
           mkdir out
       - name: Build gifsicle (nmake, MSVC, static runtime)
         shell: cmd
@@ -220,7 +222,7 @@ jobs:
           set -euo pipefail
           export CARGO_HOME="$RUNNER_TEMP/cargo-home" RUSTUP_TOOLCHAIN=1.94
           cd "$RUNNER_TEMP/gifski/gifski-$GIFSKI_VERSION"
-          tar --force-local -xzf "$GITHUB_WORKSPACE/sources/gifski-$GIFSKI_VERSION-vendor.tar.gz"
+          tar -xzf "$(cygpath -u "$GITHUB_WORKSPACE")/sources/gifski-$GIFSKI_VERSION-vendor.tar.gz"
           cargo build --release --frozen --offline \
             --config 'source.crates-io.replace-with="vendored"' --config 'source.vendored.directory="vendor"'
           cp target/release/gifski.exe "$GITHUB_WORKSPACE/out/gifski-$GIFSKI_VERSION-x86_64-pc-windows-msvc.exe"

@@ -62,7 +62,7 @@ fn a_sampled_json_dry_run_has_the_gif_block_and_writes_nothing() {
     assert_eq!((doc["schema"].as_u64(), doc["type"].as_str()), (Some(1), Some("plan")));
     let job = &doc["jobs"][0];
     assert_eq!(job["kind"], "gif");
-    assert!(job["output"].as_str().unwrap().ends_with("gifs/land_reddit-post.gif"), "{job}");
+    assert!(Path::new(job["output"].as_str().unwrap()).ends_with("gifs/land_reddit-post.gif"), "{job}");
     let g = &job["gif"];
     assert_eq!((g["target"].as_str(), g["target_verified"].as_bool()), (Some("reddit-post"), Some(false)));
     assert_eq!((g["format"].as_str(), g["engine"].as_str()), (Some("gif"), Some("builtin")));
@@ -91,7 +91,8 @@ fn no_sample_leaves_the_estimate_pending_and_the_human_dry_run_says_so() {
 
     let o = rmedia(d.path()).args(["gif", "--dry-run", "--no-sample"]).arg(&src).output().unwrap();
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
-    let text = String::from_utf8_lossy(&o.stdout).replace(&*d.path().to_string_lossy(), "<dir>");
+    let text =
+        String::from_utf8_lossy(&o.stdout).replace(&*d.path().to_string_lossy(), "<dir>").replace('\\', "/");
     insta::assert_snapshot!(text, @r"
     #1   would write: <dir>/gifs/land_reddit-post.gif
          from <dir>/land.mp4  00:00:00.000 → 00:00:06.000  [gif]

@@ -32,8 +32,14 @@ async fn planned_gif_argv() {
     assert_eq!(cmds.len(), 2);
     assert!(cmds.iter().all(|c| c.program == Program::Ffmpeg));
     assert_eq!(cmds[1].args, job.args(), "args() is the encode");
-    let src_s = src.to_string_lossy().into_owned();
-    let show = |a: &[std::ffi::OsString]| display_args(a).join(" ").replace(&src_s, "[SRC]");
+    // The planner canonicalises the source, so its spelling differs by platform: redact the token.
+    let show = |a: &[std::ffi::OsString]| {
+        let v: Vec<String> = display_args(a)
+            .into_iter()
+            .map(|t| if t.starts_with("file:") { "file:[SRC]".to_owned() } else { t })
+            .collect();
+        v.join(" ")
+    };
     let palette = show(&cmds[0].args);
     let key = palette.split_whitespace().last().unwrap().to_owned();
     assert!(key.starts_with("p-") && key.ends_with(".png"), "{key}");
