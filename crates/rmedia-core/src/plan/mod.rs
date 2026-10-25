@@ -33,7 +33,7 @@ use ffargs::ClipSpec;
 use streams::Container;
 
 /// Filters smart reframe needs besides the common upscale ones (research R5, R6).
-const SMART_FILTERS: [&str; 6] = ["sendcmd", "scdet", "metadata", "split", "overlay", "crop"];
+pub(crate) const SMART_FILTERS: [&str; 6] = ["sendcmd", "scdet", "metadata", "split", "overlay", "crop"];
 
 /// How far before the target an approximate (coarse) input seek lands.
 const COARSE_SEEK_MARGIN: Ts = Ts::from_micros(10_000_000);
@@ -743,7 +743,19 @@ impl Planner<'_> {
                 let scratch = scratch_path(&output, &self.run_id, id);
                 // An engine found on PATH may not come from the input folder or the scratch.
                 let refused = [source_dir.clone(), scratch.clone()];
-                match crate::gif::plan::plan_gif(g, &self.targets, self.caps, media, &cut, &refused) {
+                // Whole videos keep their timestamps (as for upscaling): smart-reframe commands
+                // are written on that timeline.
+                let cmd_offset =
+                    if whole { (media.zero_point() - media.start_time).as_secs_f64() } else { 0.0 };
+                match crate::gif::plan::plan_gif(
+                    g,
+                    &self.targets,
+                    self.caps,
+                    media,
+                    &cut,
+                    &refused,
+                    cmd_offset,
+                ) {
                     Ok(p) => {
                         warnings.extend(p.warnings);
                         notices = p.notices;

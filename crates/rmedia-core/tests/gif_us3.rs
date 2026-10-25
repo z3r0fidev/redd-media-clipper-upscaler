@@ -66,6 +66,13 @@ async fn land6_as_a_reddit_mp4_is_silent_fast_start_h264_at_the_source_rate() {
     assert_eq!(info.streams.len(), 1, "video only: {:?}", info.streams);
     let v = info.first_video().unwrap();
     assert_eq!((v.codec.as_str(), v.codec_tag.as_deref()), ("h264", Some("avc1")));
+    let tags = (
+        v.color_space.as_deref(),
+        v.color_primaries.as_deref(),
+        v.color_transfer.as_deref(),
+        v.color_range.as_deref(),
+    );
+    assert_eq!(tags, (Some("bt709"), Some("bt709"), Some("bt709"), Some("tv")), "BT.709 limited, tagged");
     let dur = v.duration.or(info.duration).unwrap().as_secs_f64();
     assert!((dur - 6.0).abs() <= 1.0 / 30.0 + 0.02, "{dur}");
 }

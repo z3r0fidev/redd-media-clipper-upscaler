@@ -63,6 +63,18 @@ pub async fn run(cli: &Cli, args: &GifArgs) -> u8 {
     }
     let (tools, caps) = engine.expect("checked above");
     let mut plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
+    if let Some(file) = args.gif.crop_path.as_deref()
+        && !plan.has_errors()
+    {
+        // The crop path is written before anything encodes; the job reuses the analysis.
+        let ctrl_c = super::ctrl_c_token();
+        if rmedia_core::gif::estimate::analyze_plan(&mut plan, &tools, &ctrl_c.token).await.is_err() {
+            return exit::CANCELLED;
+        }
+        if let Err(code) = super::upscale::write_crop_path(&plan, file, &out) {
+            return code;
+        }
+    }
     if args.common.dry_run && !args.gif.no_sample && !plan.has_errors() {
         // The estimate runs short sample encodes in a temporary folder (research R4).
         let ctrl_c = super::ctrl_c_token();

@@ -137,7 +137,12 @@ pub fn frame_chain(g: &GraphInput, c: &GifChain<'_>) -> String {
     let (w, h) = g.geometry.target;
     let sharpen = c.sharpen.map(|a| format!(",unsharp=5:5:{a}:5:5:0")).unwrap_or_default();
     let (rgb, pix) = if c.mp4 {
-        (gif_rgb(g).replace(":out_range=pc", ":out_color_matrix=bt709:out_range=tv"), "yuv420p")
+        // The frames carry the tags too: the encoder takes their (unset) primaries and transfer
+        // over its own -color_* options.
+        (
+            gif_rgb(g).replace(":out_range=pc", ":out_color_matrix=bt709:out_range=tv"),
+            "yuv420p,setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709",
+        )
     } else {
         (gif_rgb(g), "rgb24")
     };

@@ -217,6 +217,16 @@ pub fn mp4_codec_args(crf: u8, output: &str) -> Vec<OsString> {
         "high",
         "-pix_fmt",
         "yuv420p",
+        // The frame chain converts to BT.709 limited range; say so in the stream (players guess
+        // BT.601 for small sizes otherwise).
+        "-colorspace",
+        "bt709",
+        "-color_primaries",
+        "bt709",
+        "-color_trc",
+        "bt709",
+        "-color_range",
+        "tv",
         "-tag:v",
         "avc1",
         "-movflags",
@@ -238,7 +248,7 @@ pub fn mp4_args(spec: &GifSpec, s: &Settings, output: &str) -> Vec<OsString> {
     a.extend(source);
     a.extend(range);
     a.extend(os(&["-filter_complex", &format!("{}[v]", spec.frame.chain(s)), "-map", "[v]"]));
-    a.extend(mp4_codec_args(s.crf.unwrap_or(23), output));
+    a.extend(mp4_codec_args(s.crf.unwrap_or(spec.gif.target.mp4.crf), output));
     a
 }
 

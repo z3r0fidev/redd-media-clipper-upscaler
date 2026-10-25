@@ -87,3 +87,19 @@ Accepted / deferred:
   bench asserts a provisional 5% floor until the owner either sets an automated bar for the
   synthetic set (as 002 did for its VMAF target) with 15% as a real-footage check, or changes
   the target's default lossy level.
+
+## US2/US3 review (2026-10-25)
+
+senior-code-reviewer over `3fd4283..1789478`: no high findings. Fixed:
+- A trimmed range is encoded at 90% of the length that fits `hard`, in whole frames, and a
+  trimmed full encode over `hard` retries shorter (the reported `fits_secs` keeps no margin).
+- The retry writes its own files (`enc2.*`/`opt2.*`); the first encode is kept when the retry
+  fails or ends over `hard` (`Found.attempt`).
+- The MP4 is tagged BT.709 limited (frames via `setparams`, as the encoder takes the frames'
+  tags over its own options); the MP4 hint samples at the MP4's own rate and CRF, over the
+  trimmed range when trimmed, and runs before verify; the MP4's width floor is even; the CRF
+  default is the target's; the search stage reports progress per sample.
+- Accepted: the retry's progress fills only the rest of the current stage; x264 output is
+  byte-identical per machine (T013), not across thread counts; the dry run predicts the search
+  but not a retry (it never sees the full encode); the MP4 sample model scales linearly (its
+  window-start I-frames make it conservative).

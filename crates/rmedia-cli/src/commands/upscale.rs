@@ -96,12 +96,13 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
 
 /// `--crop-path FILE`: the per-frame crop path of the one smart-reframe job, as
 /// `{"schema":1,"fps":…,"crop":[w,h],"x":[…]}` (contracts/json-output.md).
-fn write_crop_path(plan: &plan::Plan, file: &std::path::Path, out: &Output) -> Result<(), u8> {
+pub(crate) fn write_crop_path(plan: &plan::Plan, file: &std::path::Path, out: &Output) -> Result<(), u8> {
     let analysed: Vec<&rmedia_core::upscale::reframe::ReframeAnalysis> = plan
         .jobs
         .iter()
         .filter_map(|j| match &j.spec {
             plan::JobSpec::Upscale(u) => u.up.analysis(),
+            plan::JobSpec::Gif(g) => g.frame.smart.as_ref().and_then(|s| s.analysis.as_deref()),
             _ => None,
         })
         .collect();

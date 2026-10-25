@@ -24,6 +24,9 @@ const CRF_STEP: u8 = 3;
 const CRF_STEPS: u8 = 3;
 /// 7 samples + 1 full + 1 retry (R5); the executor asserts ≤ 10.
 pub const MAX_ENCODES: u8 = 9;
+/// A trimmed range is encoded at this share of the length that fits `hard` exactly: the windows
+/// sample the whole range, the encode only its start (the reported `fits_secs` has no margin).
+const TRIM_SAFETY: f64 = 0.9;
 
 /// What a sample (or a post-pass on it) predicts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +77,8 @@ pub struct Found {
     pub trimmed_to: Option<f64>,
     /// Over the soft limit, within the hard one (`OVER_RECOMMENDED`).
     pub over_recommended: bool,
+    /// Which full encode is the result: 0, or 1 for the retry.
+    pub attempt: usize,
 }
 
 /// The ladder's rungs, in order (FR-009). The built-in engine takes dither and colours; gifski
@@ -149,7 +154,9 @@ fn lower(rung: Rung, s: &Settings, input: &SearchInput) -> Option<Settings> {
                 .map(|&r| Settings { rate: (r, 1), ..s.clone() })
         }
         Rung::Width => {
-            let w = ((f64::from(s.width) * 0.85) as u32 & !1).max(input.floor_width);
+            // 4:2:0 (the MP4) needs an even width, the floor included.
+            let floor = if s.crf.is_some() { (input.floor_width + 1) & !1 } else { input.floor_width };
+            let w = ((f64::from(s.width) * 0.85) as u32 & !1).max(floor);
             (w < s.width).then(|| at_width(s, w))
         }
     }
@@ -171,6 +178,12 @@ fn floors(s: &Settings, input: &SearchInput) -> Settings {
 
 fn max_lossy(input: &SearchInput) -> u16 {
     (input.start.lossy + LOSSY_STEPS[LOSSY_STEPS.len() - 1]).min(MAX_LOSSY)
+}
+
+/// `secs` rounded down to whole frames at `rate`.
+fn whole_frames(secs: f64, rate: (u32, u32)) -> f64 {
+    let fps = fps_of(rate);
+    (secs * fps + 1e-9).floor() / fps
 }
 
 /// The length that fits `hard` at estimate `e` for a range of `len` s (R5, no extra margin).
@@ -282,8 +295,8 @@ pub async fn search(input: &SearchInput, sampler: &mut impl Sampler) -> Result<F
                     min_bytes: None,
                 });
             }
-            len = fits;
-            trimmed_to = Some(fits);
+            len = whole_frames(fits * TRIM_SAFETY, cur.rate).max(one_frame);
+            trimmed_to = Some(len);
         } else if est.bytes <= soft && last.width > cur.width && last_est.bytes > est.bytes {
             // The size grows with the area: interpolate width² between the floors and the last
             // rung (R5's linear-in-width form overshoots soft; see research R5).
@@ -301,19 +314,39 @@ pub async fn search(input: &SearchInput, sampler: &mut impl Sampler) -> Result<F
         }
     }
 
-    // The full encode, and one more step down when it misses soft.
+    // The full encode, and one more step down when it misses soft: the next rung (or the width
+    // floor), or, for a trimmed range over hard, a shorter range. The first result is kept when
+    // the retry does no better.
     let mut bytes = sampler.full(&cur, len).await?;
     log.push(StepKind::Full, &cur, bytes, est.bytes);
+    let mut attempt = 0;
     if bytes > soft && log.encodes < MAX_ENCODES {
-        let next_rung = RUNGS
-            .iter()
-            .skip(last_rung.map_or(0, |i| i + 1))
-            .find_map(|r| lower(*r, &cur, input))
-            .or_else(|| (cur.width > input.floor_width).then(|| at_width(&cur, input.floor_width)));
-        if let Some(next) = next_rung {
-            cur = next;
-            bytes = sampler.full(&cur, len).await?;
-            log.push(StepKind::Full, &cur, bytes, est.bytes);
+        let retry = if trimmed_to.is_some() && bytes > hard {
+            let shorter = whole_frames(len * hard as f64 / bytes as f64 * 0.95, cur.rate);
+            (shorter >= 1.0 / fps_of(cur.rate)).then(|| (cur.clone(), shorter))
+        } else {
+            RUNGS
+                .iter()
+                .skip(last_rung.map_or(0, |i| i + 1))
+                .find_map(|r| lower(*r, &cur, input))
+                .or_else(|| (cur.width > input.floor_width).then(|| at_width(&cur, input.floor_width)))
+                .map(|s| (s, len))
+        };
+        if let Some((next, next_len)) = retry {
+            match sampler.full(&next, next_len).await {
+                Ok(b) => {
+                    log.push(StepKind::Full, &next, b, est.bytes);
+                    if b <= hard || bytes > hard {
+                        (cur, len, bytes, attempt) = (next, next_len, b, 1);
+                        if trimmed_to.is_some() {
+                            trimmed_to = Some(len);
+                        }
+                    }
+                }
+                Err(Error::Cancelled) => return Err(Error::Cancelled),
+                Err(e) if bytes > hard => return Err(e),
+                Err(_) => {} // the first encode stands (within hard)
+            }
         }
     }
     if bytes > hard {
@@ -327,7 +360,7 @@ pub async fn search(input: &SearchInput, sampler: &mut impl Sampler) -> Result<F
     let fit = if bytes <= soft { Fit::Soft } else { Fit::Hard };
     let record =
         SearchRecord { encodes: log.encodes, fit, lowered: lowered(&input.start, &cur), steps: log.steps };
-    Ok(Found { chosen: cur, bytes, record, trimmed_to, over_recommended: bytes > soft })
+    Ok(Found { chosen: cur, bytes, record, trimmed_to, over_recommended: bytes > soft, attempt })
 }
 
 /// What a step of the search was.
@@ -480,6 +513,10 @@ mod tests {
         tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(search(i, f))
     }
 
+    fn run_with(i: &SearchInput, f: &mut impl Sampler) -> Result<Found> {
+        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(search(i, f))
+    }
+
     #[test]
     fn a_fitting_start_is_one_sample_and_one_full() {
         let mut f = Fake::new(100_000.0);
@@ -562,6 +599,8 @@ mod tests {
         let fits = found.trimmed_to.expect("trimmed");
         assert!(fits > 0.0 && fits < 10.0, "{fits}");
         assert_eq!(f.fulls, [fits], "the full encode covers the trimmed range");
+        let frames = fits * 10.0; // 10 fps at the floors
+        assert!((frames - frames.round()).abs() < 1e-6, "whole frames: {fits}");
         assert!(found.bytes <= 8_000_000);
     }
 
@@ -606,6 +645,32 @@ mod tests {
         let soft = f.size(&start(), 10.0) + 1000;
         let r = run(&input(soft, soft + 1), &mut f);
         assert!(matches!(r, Err(Error::BudgetUnreachable { best_bytes: Some(_), .. })), "{r:?}");
+    }
+
+    #[test]
+    fn a_retry_that_misses_hard_keeps_the_first_encode() {
+        // The first full is over soft, under hard; the retry (one rung down) comes out over hard.
+        struct Flaky(Fake, u32);
+        impl Sampler for Flaky {
+            async fn sample(&mut self, s: &Settings) -> Result<Estimate> {
+                self.0.sample(s).await
+            }
+            async fn post(&mut self, s: &Settings) -> Result<Estimate> {
+                self.0.post(s).await
+            }
+            async fn full(&mut self, s: &Settings, len: f64) -> Result<u64> {
+                self.1 += 1;
+                let b = self.0.full(s, len).await?;
+                Ok(if self.1 == 2 { b * 100 } else { b })
+            }
+        }
+        let mut f = Flaky(Fake::new(100_000.0), 0);
+        f.0.full_bias = 2.0;
+        let soft = f.0.size(&start(), 10.0) + 1000;
+        let found = run_with(&input(soft, soft * 3), &mut f).unwrap();
+        assert_eq!((found.attempt, found.record.encodes), (0, 3), "{:?}", found.record);
+        assert!(found.over_recommended && found.bytes <= soft * 3);
+        assert_eq!(found.chosen, start(), "the first encode's settings");
     }
 
     #[test]

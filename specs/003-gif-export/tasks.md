@@ -538,7 +538,7 @@ GIF.
 **Independent Test**: `MovingMarker` as a 4:5 smart GIF keeps the marker in frame in ≥ 95% of
 frames.
 
-- [ ] T057 [P] [US4] Write `core-tests/gif_us4.rs`, using `MarkerDetector` (the `test-support`
+- [X] T057 [P] [US4] Write `core-tests/gif_us4.rs`, using `MarkerDetector` (the `test-support`
   feature):
   - 9:16, 4:5 and 1:1 with centre and blur give the right shapes and the portrait widths;
   - smart: marker in frame in ≥ 95% of frames (SC-004 of 002, measured as in `us2_reframe.rs`);
@@ -546,12 +546,20 @@ frames.
   - sample windows' crops match the full encode's at the same timestamps;
   - the no-subject fallback is reported;
   - an upscaled 1080×2340 input is downscaled to 360/480 and never enlarged.
-- [ ] T058 [US4] Implement in `core/gif/mod.rs` and `core/exec/gif.rs`:
+- [X] T058 [US4] Implement in `core/gif/mod.rs` and `core/exec/gif.rs`:
   - shape and framing → `FramePlan` (geometry at the GIF size);
   - the `analyze` stage via `ReframeInput`;
   - sendcmd files for the full encode and for each sample window (offsets);
   - fallback reporting;
   - `--crop-path`.
+
+  Done 2026-10-25. `FramePlan.smart` carries 002's analysis setup (face model, cache, analysis
+  size, the whole-video command offset); the `analyze` stage (or the dry run, or `--crop-path`)
+  runs `analyze_cached` on `GifSpec::reframe_input()` once, and every sample and encode reuses
+  it. Samples get `sample.cmd` on the windows' joined timeline (`joined_analysis`). No subject:
+  the crop stays centred (002's behaviour) with a note; nothing that fits: the blurred
+  background, the analysis kept. Every command file starts with the opening crop (`sendcmd`
+  refuses an empty file). MovingMarker 4:5: the marker inside in 100% of 150 frames.
 
 **Checkpoint**: run `quickstart.md` › US4. Then fmt, clippy, tests and senior-code-reviewer.
 

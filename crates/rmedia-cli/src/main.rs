@@ -396,6 +396,9 @@ pub struct GifFlags {
     /// Without it, a dry run encodes short samples of each input in a temporary folder.
     #[arg(long)]
     pub no_sample: bool,
+    /// With smart framing, write the full crop path as JSON to FILE.
+    #[arg(long, value_name = "FILE")]
+    pub crop_path: Option<std::path::PathBuf>,
 }
 
 impl GifFlags {

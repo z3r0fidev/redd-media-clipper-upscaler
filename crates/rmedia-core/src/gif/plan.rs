@@ -69,6 +69,78 @@ pub struct FramePlan {
     pub graph: GraphInput,
     /// `unsharp` amount after the resample (flat-ui).
     pub sharpen: Option<f32>,
+    /// Smart framing's analysis (002's reframe), when it applies.
+    pub smart: Option<SmartPlan>,
+}
+
+/// What smart framing needs: the analysis setup, and the analysis once it has run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SmartPlan {
+    pub detector: crate::upscale::reframe::detect::DetectorSpec,
+    pub cache: Option<PathBuf>,
+    pub analysis_size: (u32, u32),
+    /// Where the filter timeline starts on the source's (whole videos keep their timestamps).
+    pub cmd_offset: f64,
+    pub motion: crate::upscale::Motion,
+    /// Set by the dry run or the executor's `analyze` stage.
+    pub analysis: Option<std::sync::Arc<crate::upscale::reframe::ReframeAnalysis>>,
+}
+
+impl GifSpec {
+    /// The smart-framing analysis input of this job (refactor B2): the GIF's own range, graph
+    /// and frame rate.
+    pub fn reframe_input(&self) -> Option<crate::upscale::reframe::ReframeInput<'_>> {
+        let sp = self.frame.smart.as_ref()?;
+        Some(crate::upscale::reframe::ReframeInput {
+            cut: &self.cut,
+            graph: &self.frame.graph,
+            detector: Some(&sp.detector),
+            cache_dir: sp.cache.as_deref(),
+            analysis_size: sp.analysis_size,
+            fps_out: self.gif.start.fps(),
+            display: self.frame.display,
+            crop: self.frame.graph.geometry.crop,
+            motion: sp.motion,
+        })
+    }
+
+    /// Applies a finished analysis: the crop follows its path (`reframe.cmd`), or the whole range
+    /// is the blurred background when nothing fits. Returns what to tell the user when there was
+    /// no subject (FR-014).
+    pub fn with_analysis(
+        &mut self,
+        a: std::sync::Arc<crate::upscale::reframe::ReframeAnalysis>,
+    ) -> Option<&'static str> {
+        let whole = a.fallback_ranges.first().is_some_and(|r| {
+            r.start <= a.clip_start
+                && r.end.as_secs_f64() >= a.clip_start.as_secs_f64() + a.len_secs() - 0.5 / a.fps
+        });
+        if whole {
+            // The blurred background throughout; the analysis stays (`--crop-path`, as in 002).
+            let kept = self.frame.smart.take();
+            self.blur();
+            self.frame.smart = kept.map(|sp| SmartPlan { analysis: Some(a), ..sp });
+            return Some("smart framing found no subject that fits the shape; using the blurred background");
+        }
+        let none = a.detections == 0;
+        let x0 = a.path.first().map_or(0, |x| (*x).max(0) as u32);
+        self.frame.graph.track =
+            Some(crate::upscale::graph::Track { x0, fallback: !a.fallback_ranges.is_empty() });
+        if let Some(sp) = &mut self.frame.smart {
+            sp.analysis = Some(a);
+        }
+        none.then_some("smart framing found no subject; the crop stays centred")
+    }
+
+    /// Smart framing could not run: the blurred background instead.
+    pub fn blur(&mut self) {
+        let size = self.frame.graph.geometry.target;
+        self.frame.framing_applied = Reframe::Blur;
+        self.frame.graph.reframe = Reframe::Blur;
+        self.frame.graph.geometry = geometry::plan(self.frame.display, size, Reframe::Blur);
+        self.frame.graph.track = None;
+        self.frame.smart = None;
+    }
 }
 
 impl FramePlan {
@@ -211,6 +283,8 @@ pub struct GifPlan {
     pub frames: u64,
     /// The range in seconds.
     pub len: f64,
+    /// The Reddit MP4's frame rate for this range (its own output, or a GIF's MP4 hint).
+    pub mp4_rate: (u32, u32),
     /// Identical inputs give identical bytes (research R14).
     pub deterministic: bool,
 }
@@ -269,6 +343,7 @@ pub fn plan_gif(
     media: &MediaInfo,
     cut: &ClipSpec,
     refused: &[PathBuf],
+    cmd_offset: f64,
 ) -> Result<Planned, Problem> {
     let Some(target) = targets.get(&o.target).cloned() else {
         return Err((
@@ -420,23 +495,44 @@ pub fn plan_gif(
     if mp4 {
         height = (height / 2 * 2).max(2);
     }
+    // Smart framing follows the subject with 002's analysis (FR-013, US4): it needs a crop that
+    // moves sideways, the face model and the filters the moving crop uses.
     let mut framing_applied = framing;
-    if framing == Reframe::Smart
-        && geometry::plan(display, (width, height), framing).overflow != Overflow::None
-    {
-        warnings.push("smart framing is not available for GIFs yet; using the blurred background".into());
-        framing_applied = Reframe::Blur;
+    let mut smart = None;
+    let overflow = geometry::plan(display, (width, height), framing).overflow;
+    if framing == Reframe::Smart && overflow != Overflow::None {
+        let lacking: Vec<&str> =
+            crate::plan::SMART_FILTERS.iter().copied().filter(|f| !caps.filters.contains(*f)).collect();
+        match (&caps.face, overflow) {
+            (None, _) => warnings.push("face model not found; using the blurred background".into()),
+            (Some(_), Overflow::Horizontal) if !lacking.is_empty() => warnings.push(format!(
+                "the ffmpeg build lacks {} needed for smart framing; using the blurred background",
+                lacking.join(", ")
+            )),
+            (Some(d), Overflow::Horizontal) => {
+                smart = Some(SmartPlan {
+                    detector: d.clone(),
+                    cache: caps.reframe_cache.clone(),
+                    analysis_size: crate::upscale::reframe::decode::analysis_size(display),
+                    cmd_offset,
+                    motion: crate::upscale::Motion::default(),
+                    analysis: None,
+                })
+            }
+            (Some(_), _) => warnings
+                .push("smart framing follows subjects sideways only; using the blurred background".into()),
+        }
+        if smart.is_none() {
+            framing_applied = Reframe::Blur;
+        }
     }
 
     // --- timing ---------------------------------------------------------------------------------
     let source_rate =
         if v.is_vfr() { v.r_frame_rate.or(v.frame_rate) } else { v.frame_rate.or(v.r_frame_rate) };
     // The MP4 keeps the source's rate up to the target's `mp4.max_fps` (no centisecond limit, R6).
-    let rate = if mp4 {
-        timing::cap(o.fps.unwrap_or(target.mp4.max_fps), source_rate)
-    } else {
-        timing::cap(fps, source_rate)
-    };
+    let mp4_rate = timing::cap(o.fps.unwrap_or(target.mp4.max_fps), source_rate);
+    let rate = if mp4 { mp4_rate } else { timing::cap(fps, source_rate) };
     if let Some(n) = timing::approximate_note(rate).filter(|_| !mp4) {
         notice(&mut warnings, IssueCode::TimingApproximate, n);
     }
@@ -513,6 +609,7 @@ pub fn plan_gif(
         framing_applied,
         graph: gi,
         sharpen: target.sharpen,
+        smart,
     };
     let (optimiser, optimiser_version) = optimiser.map_or((None, None), |(p, v)| (Some(p), v));
     let gif = GifPlan {
@@ -538,6 +635,7 @@ pub fn plan_gif(
         notes,
         frames,
         len,
+        mp4_rate,
         // Every engine passed the Phase 0 check (T013, research R14): gifski too.
         deterministic: true,
         target,

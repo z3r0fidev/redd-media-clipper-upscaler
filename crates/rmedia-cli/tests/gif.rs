@@ -303,3 +303,29 @@ fn the_mp4_format_and_the_mp4_note_once_per_run() {
     let text = String::from_utf8_lossy(&o.stdout);
     assert!(text.contains("libx264") && !text.contains("note: as a Reddit MP4"), "{text}");
 }
+
+/// T058: with smart framing, `--crop-path` writes the crop path before anything encodes.
+#[test]
+fn crop_path_writes_the_gifs_smart_framing_path() {
+    require_engine!("palettegen", "paletteuse", "sendcmd", "scdet");
+    let d = tempfile::tempdir().unwrap();
+    let src = copy(Fixture::MovingMarker, d.path(), "land.mp4");
+    let path = d.path().join("path.json");
+    let o = rmedia(d.path())
+        .args(["gif", "--shape", "4:5", "--dry-run", "--no-sample", "--crop-path"])
+        .arg(&path)
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let doc: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!((doc["schema"].as_u64(), doc["fps"].as_f64()), (Some(1), Some(15.0)), "the GIF's rate");
+    assert_eq!(doc["x"].as_array().map(Vec::len), Some(150), "10 s at 15 fps");
+    let o = rmedia(d.path())
+        .args(["gif", "--shape", "4:5", "--framing", "center", "--dry-run", "--no-sample", "--crop-path"])
+        .arg(d.path().join("p2.json"))
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2), "--crop-path needs a smart-framing job: {}", stderr(&o));
+}

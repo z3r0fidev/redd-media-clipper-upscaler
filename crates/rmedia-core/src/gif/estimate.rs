@@ -36,6 +36,15 @@ const CENTRES: [f64; 3] = [0.1, 0.5, 0.9];
 const SAMPLE: &str = "sample.gif";
 const SAMPLE_OPT: &str = "sample-opt.gif";
 const SAMPLE_MP4: &str = "sample.mp4";
+/// The job's `reframe.cmd`: the opening crop position, then the path's moves (a crop that never
+/// moves would leave `sendcmd` with no command, which it refuses).
+pub fn job_cmds(a: &crate::upscale::reframe::ReframeAnalysis, offset: f64) -> String {
+    let x0 = a.path.first().copied().unwrap_or(0);
+    format!("{offset:.6} crop@trk x {x0};\n{}", crate::upscale::reframe::sendcmd::to_sendcmd(a, offset))
+}
+/// The job's smart-framing commands (the frame chain reads them in its working folder).
+pub const REFRAME_CMD: &str = "reframe.cmd";
+const SAMPLE_CMD: &str = "sample.cmd";
 
 /// The source times the sample windows start at, for a range of `len` seconds from `start`;
 /// `None` when the range is short enough to encode whole.
@@ -43,6 +52,61 @@ pub fn windows(start: Ts, len: f64) -> Option<[Ts; 3]> {
     (len > WHOLE_UP_TO).then(|| {
         CENTRES.map(|c| start + Ts::from_secs_f64((c * len - WINDOW / 2.0).clamp(0.0, len - WINDOW)))
     })
+}
+
+/// The smart-framing commands of a sample in `dir`, when the job follows a subject: the job's own
+/// `reframe.cmd` for a whole-range sample, or `sample.cmd` on the windows' joined timeline
+/// (window `k` starts at `k` seconds).
+fn write_sample_cmds(spec: &GifSpec, starts: Option<&[Ts; 3]>, dir: &Path) -> Result<()> {
+    use crate::upscale::reframe::sendcmd::to_sendcmd;
+    let Some(sp) = &spec.frame.smart else { return Ok(()) };
+    let Some(a) = &sp.analysis else { return Ok(()) };
+    let (name, text) = match starts {
+        None => (REFRAME_CMD, job_cmds(a, sp.cmd_offset)),
+        Some(w) => {
+            let joined = joined_analysis(a, w, WINDOW);
+            let first = joined.path.first().copied().unwrap_or(0);
+            (SAMPLE_CMD, format!("0.000000 crop@trk x {first};\n{}", to_sendcmd(&joined, 0.0)))
+        }
+    };
+    std::fs::write(dir.join(name), text)
+        .map_err(|e| Error::OutputUnwritable { path: dir.join(name), message: e.to_string() })
+}
+
+/// The analysis of the sample windows `starts`, each `window` seconds long, laid end to end from
+/// 0 (the sample's `concat` timeline): the crop path and the fallback ranges of each window.
+pub fn joined_analysis(
+    a: &crate::upscale::reframe::ReframeAnalysis,
+    starts: &[Ts],
+    window: f64,
+) -> crate::upscale::reframe::ReframeAnalysis {
+    let per = (window * a.fps).round().max(1.0) as usize;
+    let last = a.path.len().saturating_sub(1);
+    let (mut path, mut ranges) = (Vec::new(), Vec::new());
+    for (k, s) in starts.iter().enumerate() {
+        let rel = s.as_secs_f64() - a.clip_start.as_secs_f64();
+        for j in 0..per {
+            let at = ((rel + j as f64 / a.fps) * a.fps).round().max(0.0) as usize;
+            path.push(a.path.get(at.min(last)).copied().unwrap_or(0));
+        }
+        let (from, to) = (s.as_secs_f64(), s.as_secs_f64() + window);
+        for r in &a.fallback_ranges {
+            let (on, off) = (r.start.as_secs_f64().max(from), r.end.as_secs_f64().min(to));
+            if on < off {
+                let base = k as f64 * window;
+                ranges.push(crate::event::Span {
+                    start: Ts::from_secs_f64(base + on - from),
+                    end: Ts::from_secs_f64(base + off - from),
+                });
+            }
+        }
+    }
+    crate::upscale::reframe::ReframeAnalysis {
+        path,
+        fallback_ranges: ranges,
+        clip_start: Ts::ZERO,
+        ..a.clone()
+    }
 }
 
 /// The frame chain of `s` reading from `label`, without the job's own trim (a sample seeks its
@@ -57,6 +121,12 @@ fn chain_from(spec: &GifSpec, s: &Settings, label: &str, trim: bool) -> String {
         &GifChain { rate: &s.rate_text(), sharpen: spec.frame.sharpen, mp4: s.crf.is_some() },
     );
     let rest = chain.strip_prefix("[0:v]").expect("a frame chain reads the first input's video");
+    // Windows have their own commands, on the joined timeline (see `write_sample_cmds`).
+    let rest = if trim {
+        rest.to_owned()
+    } else {
+        rest.replace(&format!("sendcmd=f={REFRAME_CMD}"), &format!("sendcmd=f={SAMPLE_CMD}"))
+    };
     format!("{label}{rest}")
 }
 
@@ -305,6 +375,7 @@ pub async fn sample_estimate(
         (Some(_), None) => SampleOut::Y4m,
         (None, None) => SampleOut::Gif(SAMPLE),
     };
+    write_sample_cmds(spec, starts.as_ref(), dir)?;
     let args = match &starts {
         Some(w) => sample_args(spec, s, w, out),
         None => whole_args(spec, s, out),
@@ -353,10 +424,11 @@ fn mp4_measure(spec: &GifSpec, dir: &Path) -> Result<budget::Estimate> {
 }
 
 /// The "MP4 would be smaller" hint of a GIF job (US3 scenario 2, R6): one MP4 sample of the same
-/// windows at the GIF's start size and frame rate.
+/// windows, at the GIF's start size and the MP4's own rate and CRF (what `--format mp4` makes).
 pub async fn mp4_hint(tools: &Tools, spec: &GifSpec, dir: &Path, cancel: &CancellationToken) -> Result<u64> {
     let mut s = spec.gif.start.clone();
     s.crf = Some(spec.gif.target.mp4.crf);
+    s.rate = spec.gif.mp4_rate;
     s.width &= !1;
     s.height = (s.height / 2 * 2).max(2);
     s.gifski = None;
@@ -514,6 +586,47 @@ impl Drop for TempDir {
     }
 }
 
+/// Runs the smart-framing analysis of `g` when it is still pending (002's analysis and cache),
+/// and applies it. A failed analysis switches the job to the blurred background and is
+/// returned (cancelling too); `Ok(Some(note))` when there was no subject to follow.
+pub async fn analyze(
+    g: &mut GifSpec,
+    tools: &Tools,
+    cancel: &CancellationToken,
+    progress: impl FnMut(f64) + Send,
+) -> Result<Option<&'static str>> {
+    let pending = g.frame.smart.as_ref().is_some_and(|sp| sp.analysis.is_none());
+    if !pending {
+        return Ok(None);
+    }
+    let input = g.reframe_input().expect("a smart plan");
+    match crate::upscale::reframe::analyze_cached(tools, &input, cancel, progress).await {
+        Ok((a, _)) => Ok(g.with_analysis(a)),
+        Err(e) => {
+            g.blur();
+            Err(e)
+        }
+    }
+}
+
+/// Runs the smart-framing analysis of every GIF job of `plan` that still needs one (for
+/// `--crop-path`; the executor and the dry run do it themselves otherwise). A failed analysis
+/// is a warning on its job; only cancelling is an error.
+pub async fn analyze_plan(plan: &mut Plan, tools: &Tools, cancel: &CancellationToken) -> Result<()> {
+    for job in &mut plan.jobs {
+        let JobSpec::Gif(g) = &mut job.spec else { continue };
+        match analyze(g, tools, cancel, |_| {}).await {
+            Ok(Some(note)) => job.warnings.push(note.into()),
+            Ok(None) => {}
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(e) => job
+                .warnings
+                .push(format!("smart framing analysis failed ({e}); using the blurred background")),
+        }
+    }
+    Ok(())
+}
+
 /// The dry run's prepare step: fills in the estimate of every GIF job that would run. A failed
 /// sample leaves its estimate pending, with a warning; only cancelling is an error.
 pub async fn prepare(plan: &mut Plan, tools: &Tools, cancel: &CancellationToken) -> Result<()> {
@@ -531,6 +644,14 @@ pub async fn prepare_in(
         let JobSpec::Gif(g) = &mut job.spec else { continue };
         if job.disposition != Disposition::Run || g.gif.estimate.from != EstimateFrom::Pending {
             continue;
+        }
+        match analyze(g, tools, cancel, |_| {}).await {
+            Ok(Some(note)) => job.warnings.push(note.into()),
+            Ok(None) => {}
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(e) => job
+                .warnings
+                .push(format!("smart framing analysis failed ({e}); using the blurred background")),
         }
         let dir = match TempDir::new(parent) {
             Ok(d) => d,
@@ -560,6 +681,38 @@ mod tests {
         let short = windows(Ts::ZERO, 5.0).unwrap();
         assert_eq!(short[0], Ts::ZERO, "clamped to the range's start");
         assert_eq!(short[2].as_secs_f64(), 4.0, "clamped so the window ends with the range");
+    }
+
+    #[test]
+    fn sample_windows_crop_like_the_full_encode_at_the_same_times() {
+        use crate::event::Span;
+        use crate::upscale::reframe::ReframeAnalysis;
+        // 10 s at 10 fps from 5 s: the crop x is the frame number; blurred background 6.5–7.5 s.
+        let a = ReframeAnalysis {
+            key: String::new(),
+            algo_version: 0,
+            source_size: (1280, 720),
+            crop: (576, 720),
+            crop_y: 0,
+            fps: 10.0,
+            clip_start: Ts::from_secs_f64(5.0),
+            shots: Vec::new(),
+            fallback_ranges: vec![Span { start: Ts::from_secs_f64(6.5), end: Ts::from_secs_f64(7.5) }],
+            path: (0..100).collect(),
+            detections: 1,
+            samples: 1,
+        };
+        let starts = [Ts::from_secs_f64(5.0), Ts::from_secs_f64(7.0), Ts::from_secs_f64(13.5)];
+        let j = joined_analysis(&a, &starts, 1.0);
+        assert_eq!(j.path.len(), 30);
+        assert_eq!(j.clip_start, Ts::ZERO);
+        for (k, s) in starts.iter().enumerate() {
+            let first = ((s.as_secs_f64() - 5.0) * 10.0).round() as i32;
+            let want: Vec<i32> = (first..first + 10).collect();
+            assert_eq!(j.path[k * 10..k * 10 + 10], want[..], "window {k}");
+        }
+        // 6.5–7.5 s overlaps the second window (7.0–8.0 s) over 7.0–7.5: joined 1.0–1.5 s.
+        assert_eq!(j.fallback_ranges, [Span { start: Ts::from_secs_f64(1.0), end: Ts::from_secs_f64(1.5) }]);
     }
 
     #[test]

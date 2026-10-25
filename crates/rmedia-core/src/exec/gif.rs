@@ -45,22 +45,46 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
         .scratch_dir()
         .ok_or_else(|| Error::InvalidInput("a GIF job needs its scratch folder".into()))?
         .to_path_buf();
-    let gifski = spec.gif.gifski.as_deref().filter(|_| spec.gif.engine == EngineUsed::Gifski);
+    let mut spec = spec.clone();
+    let analyse = spec.frame.smart.as_ref().is_some_and(|sp| sp.analysis.is_none());
+    let uses_gifski = spec.gif.gifski.is_some() && spec.gif.engine == EngineUsed::Gifski;
     let mp4 = spec.gif.format == Format::Mp4;
-    let optimise = spec.gif.optimiser.is_some() && gifski.is_none() && !mp4;
+    let optimise = spec.gif.optimiser.is_some() && !uses_gifski && !mp4;
     let budget = spec.gif.budget;
     let limit = budget.map_or(MAX_OUTPUT, |b| b.hard.saturating_mul(2));
     // The MP4 and the gifski pipe are one encode stage each.
-    let stages = Stages::new(gifski.is_some() || mp4, optimise, budget.is_some());
+    let stages = Stages::new(uses_gifski || mp4, optimise, budget.is_some(), analyse);
+    if analyse {
+        stages.enter(ctx, "analyze");
+        let total = spec.cut.requested.end.saturating_sub(spec.cut.requested.start);
+        let (tools, cancel) = (ctx.tools, ctx.cancel);
+        match estimate::analyze(&mut spec, tools, cancel, |f| ctx.stage_fraction(f, total)).await {
+            Ok(Some(note)) => ctx.warn(note.into()),
+            Ok(None) => {}
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(e) => ctx.warn(format!("smart framing analysis failed ({e}); using the blurred background")),
+        }
+    }
+    if let Some(a) = spec.frame.smart.as_ref().and_then(|sp| sp.analysis.as_ref().map(|a| (a, sp.cmd_offset)))
+    {
+        let path = scratch.join(estimate::REFRAME_CMD);
+        std::fs::write(&path, estimate::job_cmds(a.0, a.1))
+            .map_err(|e| Error::OutputUnwritable { path, message: e.to_string() })?;
+    }
+    let spec = &spec;
+    let gifski = spec.gif.gifski.as_deref().filter(|_| uses_gifski);
     let mut enc = Encoder { scratch: &scratch, gifski, mp4, optimise, limit, stages: &stages, fulls: 0 };
 
     let (s, len, result, search, over) = match budget {
         Some(b) => {
             stages.enter(ctx, "search");
-            let mut sampler = JobSampler { ctx: &mut *ctx, spec, enc: &mut enc, result: None };
+            let mut sampler =
+                JobSampler { ctx: &mut *ctx, spec, enc: &mut enc, results: Vec::new(), samples: 0 };
             let found = budget::search(&estimate::search_input(spec, b), &mut sampler).await?;
-            let result =
-                sampler.result.ok_or_else(|| Error::InvalidInput("the search encoded nothing".into()))?;
+            let result = *sampler
+                .results
+                .get(found.attempt)
+                .ok_or_else(|| Error::InvalidInput("the search encoded nothing".into()))?;
             debug_assert!(found.record.encodes <= 10, "{:?}", found.record);
             let len = found.trimmed_to.unwrap_or(spec.gif.len);
             (found.chosen, len, result, Some(found.record), found.over_recommended.then_some(found.bytes))
@@ -70,6 +94,17 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
             (spec.gif.start.clone(), spec.gif.len, result, None, None)
         }
     };
+    // "The MP4 would be smaller" (US3): one MP4 sample at the MP4's own settings over the same
+    // range, unless the dry run already made it.
+    let mut mp4_estimate = spec.gif.estimate.mp4_bytes;
+    if !mp4 && spec.gif.target.mp4.hint && mp4_estimate.is_none() {
+        let range = if len < spec.gif.len - 1e-6 { spec.trimmed(len) } else { spec.clone() };
+        match estimate::mp4_hint(ctx.tools, &range, &scratch, ctx.cancel).await {
+            Ok(b) => mp4_estimate = Some(b),
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(_) => {} // optional
+        }
+    }
     move_into(&scratch.join(result), ctx.temp)?;
 
     stages.enter(ctx, "verify");
@@ -96,7 +131,7 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
             frames,
             // gifsicle merges identical frames, and gifski rounds its own delays: both are
             // checked by their total display time.
-            length_cs: (result == OPTIMISED || gifski.is_some()).then(|| {
+            length_cs: (result.starts_with("opt") || gifski.is_some()).then(|| {
                 crate::gif::timing::delays(s.rate, frames as usize).into_iter().map(u64::from).sum()
             }),
             loop_count: spec.gif.loop_count,
@@ -120,15 +155,6 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
     ctx.stage_fraction(1.0, total);
     let start = spec.cut.requested.start;
     let trimmed = (len < spec.gif.len - 1e-6).then(|| Span { start, end: start + Ts::from_secs_f64(len) });
-    // "The MP4 would be smaller" (US3): one MP4 sample, unless the dry run already made it.
-    let mut mp4_estimate = spec.gif.estimate.mp4_bytes;
-    if !mp4 && spec.gif.target.mp4.hint && mp4_estimate.is_none() {
-        match estimate::mp4_hint(ctx.tools, spec, &scratch, ctx.cancel).await {
-            Ok(b) => mp4_estimate = Some(b),
-            Err(Error::Cancelled) => return Err(Error::Cancelled),
-            Err(_) => {} // optional
-        }
-    }
     Ok(measure(spec, &s, bytes, optimise, search, trimmed, mp4_estimate))
 }
 
@@ -139,8 +165,8 @@ struct Stages {
 }
 
 impl Stages {
-    fn new(gifski: bool, optimise: bool, search: bool) -> Stages {
-        let list: Vec<(&'static str, f64)> = match (gifski, search, optimise) {
+    fn new(gifski: bool, optimise: bool, search: bool, analyze: bool) -> Stages {
+        let mut list: Vec<(&'static str, f64)> = match (gifski, search, optimise) {
             (true, false, _) => vec![("encode", 0.9), ("verify", 0.1)],
             (true, true, _) => vec![("search", 0.3), ("encode", 0.6), ("verify", 0.1)],
             (false, false, true) => {
@@ -160,6 +186,9 @@ impl Stages {
                 vec![("search", 0.3), ("palette", 0.1), ("encode", 0.35), ("verify", 0.05)]
             }
         };
+        if analyze {
+            list.insert(0, ("analyze", 0.15));
+        }
         let sum: f64 = list.iter().map(|s| s.1).sum();
         Stages { list: list.into_iter().map(|(n, w)| (n, w / sum)).collect() }
     }
@@ -200,9 +229,11 @@ impl Encoder<'_> {
     /// encode stage instead of moving on.
     async fn full(&mut self, ctx: &mut JobCtx<'_>, spec: &GifSpec, s: &Settings) -> Result<&'static str> {
         let retry = self.fulls > 0;
+        // Each attempt has its own files, so a retry never overwrites the first result (the
+        // search may keep it); every tool runs with `-n` or its own no-clobber rule.
+        let (encoded, optimised, encoded_mp4) = attempt_names(self.fulls);
         self.fulls += 1;
-        // Every tool runs with `-n` (or its own no-clobber rule): clear the last attempt.
-        for f in [ENCODED, OPTIMISED, ENCODED_MP4] {
+        for f in [encoded, optimised, encoded_mp4] {
             let _ = std::fs::remove_file(self.scratch.join(f));
         }
         let span = spec.cut.requested;
@@ -217,9 +248,9 @@ impl Encoder<'_> {
         }
         if self.mp4 {
             enter(ctx, "encode");
-            let args = mp4_args(spec, s, ENCODED_MP4);
-            encode_watched(ctx, self.scratch, &args, total, self.limit, ENCODED_MP4).await?;
-            return Ok(ENCODED_MP4);
+            let args = mp4_args(spec, s, encoded_mp4);
+            encode_watched(ctx, self.scratch, &args, total, self.limit, encoded_mp4).await?;
+            return Ok(encoded_mp4);
         }
         if let Some(gifski) = self.gifski {
             enter(ctx, "encode");
@@ -227,7 +258,7 @@ impl Encoder<'_> {
             let pipe = Gifski {
                 program: gifski,
                 dir: self.scratch,
-                output: ENCODED,
+                output: encoded,
                 limit: self.limit,
                 timeout: None,
             };
@@ -247,16 +278,22 @@ impl Encoder<'_> {
                 }
             }
             enter(ctx, "encode");
-            let args = encode_args(spec, s, &palette, ENCODED);
-            encode_watched(ctx, self.scratch, &args, total, self.limit, ENCODED).await?;
+            let args = encode_args(spec, s, &palette, encoded);
+            encode_watched(ctx, self.scratch, &args, total, self.limit, encoded).await?;
         }
         if let (true, Some(gifsicle)) = (self.optimise, spec.gif.optimiser.as_deref()) {
             enter(ctx, "optimise");
-            run_gifsicle(ctx, gifsicle, self.scratch, s.lossy, self.limit).await?;
-            return Ok(OPTIMISED);
+            run_gifsicle(ctx, gifsicle, self.scratch, s.lossy, self.limit, (encoded, optimised)).await?;
+            return Ok(optimised);
         }
-        Ok(ENCODED)
+        Ok(encoded)
     }
+}
+
+/// The scratch file names of full encode `n` (0: the first, 1: the search's retry): encoded,
+/// optimised, MP4.
+fn attempt_names(n: u32) -> (&'static str, &'static str, &'static str) {
+    if n == 0 { (ENCODED, OPTIMISED, ENCODED_MP4) } else { ("enc2.gif", "opt2.gif", "enc2.mp4") }
 }
 
 /// The job's [`budget::Sampler`]: samples and post-passes in the scratch folder (their own file
@@ -265,13 +302,20 @@ struct JobSampler<'a, 'c, 'e> {
     ctx: &'a mut JobCtx<'c>,
     spec: &'a GifSpec,
     enc: &'a mut Encoder<'e>,
-    /// The last full encode's result name.
-    result: Option<&'static str>,
+    /// Each full encode's result name, by attempt.
+    results: Vec<&'static str>,
+    samples: u32,
 }
 
 impl budget::Sampler for JobSampler<'_, '_, '_> {
     async fn sample(&mut self, s: &Settings) -> Result<budget::Estimate> {
-        estimate::sample_estimate(self.ctx.tools, self.spec, s, self.enc.scratch, self.ctx.cancel).await
+        let e =
+            estimate::sample_estimate(self.ctx.tools, self.spec, s, self.enc.scratch, self.ctx.cancel).await;
+        // The search stage moves by samples (at most 7, R5).
+        self.samples += 1;
+        let total = self.spec.cut.requested.end.saturating_sub(self.spec.cut.requested.start);
+        self.ctx.stage_fraction(f64::from(self.samples) / 7.0, total);
+        e
     }
 
     async fn post(&mut self, s: &Settings) -> Result<budget::Estimate> {
@@ -281,7 +325,7 @@ impl budget::Sampler for JobSampler<'_, '_, '_> {
     async fn full(&mut self, s: &Settings, len: f64) -> Result<u64> {
         let spec = if len < self.spec.gif.len - 1e-6 { self.spec.trimmed(len) } else { self.spec.clone() };
         let name = self.enc.full(self.ctx, &spec, s).await?;
-        self.result = Some(name);
+        self.results.push(name);
         std::fs::metadata(self.enc.scratch.join(name))
             .map(|m| m.len())
             .map_err(|e| Error::engine_failed(format!("the GIF was not written: {e}"), String::new()))
@@ -536,11 +580,12 @@ async fn run_gifsicle(
     scratch: &Path,
     lossy: u16,
     limit: u64,
+    (input, output): (&str, &str),
 ) -> Result<()> {
     let env = crate::gif::engines::engine_env();
-    let args = gifsicle_args(lossy, ENCODED, OPTIMISED);
+    let args = gifsicle_args(lossy, input, output);
     let stop = ctx.cancel.child_token();
-    let watch = SizeWatch::start(scratch.join(OPTIMISED), limit, &stop);
+    let watch = SizeWatch::start(scratch.join(output), limit, &stop);
     let deadline = Deadline::start(GIFSICLE_TIMEOUT, &stop);
     let r = process::run_lines_env(gifsicle, &args, Some(scratch), Some(&env), &stop, |_| {}).await;
     watch.stop()?;
