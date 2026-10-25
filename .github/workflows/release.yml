@@ -6,6 +6,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      gifski:
+        description: "Bundle gifski (AGPL-3.0). Off builds without it, so the release gate passes before the licence decision."
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -14,6 +19,10 @@ permissions:
 defaults:
   run:
     shell: bash
+
+env:
+  # Tag pushes have no inputs: gifski is bundled, and the release gate decides.
+  WITH_GIFSKI: ${{ github.event_name != 'workflow_dispatch' || inputs.gifski }}
 
 jobs:
   package:
@@ -55,7 +64,11 @@ jobs:
             apps/desktop/src-tauri -> target
       - name: Stage bundled programs and models (pinned FFmpeg, ncnn and models; release CLI and AI worker)
         run: |
-          cargo xtask fetch-tools --target ${{ matrix.triple }}
+          if [ "$WITH_GIFSKI" = true ]; then
+            cargo xtask fetch-tools --target ${{ matrix.triple }}
+          else
+            cargo xtask fetch-tools --target ${{ matrix.triple }} --no-gifski
+          fi
           # Never reuse cached archives or libraries for a release: fetch and verify afresh.
           rm -rf third_party target/xtask-archives
           cargo xtask fetch-ncnn --target ${{ matrix.triple }}
@@ -78,7 +91,17 @@ jobs:
         run: cargo xtask notices && git diff --exit-code -- THIRD_PARTY_NOTICES.md
       - name: Build installers
         working-directory: apps/desktop
-        run: npx tauri build --bundles ${{ matrix.bundles }}
+        run: |
+          if [ "$WITH_GIFSKI" = true ]; then
+            npx tauri build --bundles ${{ matrix.bundles }}
+          else
+            # A JSON merge patch over tauri.conf.json: the sidecar list without gifski, and its
+            # licence files removed (null).
+            jq -c '{bundle: {externalBin: [.bundle.externalBin[] | select(endswith("/rmedia-gifski") | not)],
+              resources: (.bundle.resources | with_entries(select(.key | contains("/GIFSKI-")) | .value = null))}}' \
+              src-tauri/tauri.conf.json > "$RUNNER_TEMP/no-gifski.json"
+            npx tauri build --bundles ${{ matrix.bundles }} --config "$RUNNER_TEMP/no-gifski.json"
+          fi
       - name: Standalone CLI archive
         shell: bash
         run: |
@@ -90,8 +113,14 @@ jobs:
           cp models/face_detection_yunet_2026may.onnx models/realesr-animevideov3-x?.param models/realesr-animevideov3-x?.bin "dist/$name/models/"
           cp binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffmpeg${{ matrix.exe }}"
           cp binaries/rmedia-ffprobe-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffprobe${{ matrix.exe }}"
+          cp binaries/rmedia-gifsicle-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-gifsicle${{ matrix.exe }}"
           cp THIRD_PARTY_NOTICES.md licenses/FFMPEG-NOTICE.md licenses/FFMPEG-LICENSE.txt licenses/NCNN-NOTICE.md \
-            licenses/NCNN-LICENSE.txt licenses/GLSLANG-LICENSE.txt "dist/$name/licenses/"
+            licenses/NCNN-LICENSE.txt licenses/GLSLANG-LICENSE.txt licenses/GIFSICLE-NOTICE.md \
+            licenses/GIFSICLE-COPYING.txt "dist/$name/licenses/"
+          if [ "$WITH_GIFSKI" = true ]; then
+            cp binaries/rmedia-gifski-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-gifski${{ matrix.exe }}"
+            cp licenses/GIFSKI-NOTICE.md licenses/GIFSKI-LICENSE.txt licenses/GIFSKI-DEPS.md "dist/$name/licenses/"
+          fi
           cp README.md "dist/$name/"
           cd dist && if [ "${{ runner.os }}" = "Windows" ]; then 7z a "$name.zip" "$name" >/dev/null; else tar -czf "$name.tar.gz" "$name"; fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

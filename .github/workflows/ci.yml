@@ -72,6 +72,10 @@ jobs:
         env:
           RMEDIA_FFMPEG: ${{ github.workspace }}/binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }}
           RMEDIA_FFPROBE: ${{ github.workspace }}/binaries/rmedia-ffprobe-${{ matrix.triple }}${{ matrix.exe }}
+          # The pinned GIF engines (feature 003); the minimum-engine job runs without them (FR-024).
+          RMEDIA_GIFSICLE: ${{ github.workspace }}/binaries/rmedia-gifsicle-${{ matrix.triple }}${{ matrix.exe }}
+          RMEDIA_GIFSKI: ${{ github.workspace }}/binaries/rmedia-gifski-${{ matrix.triple }}${{ matrix.exe }}
+          RMEDIA_REQUIRE_GIF_TOOLS: "1"
         run: |
           cargo test --workspace --no-fail-fast
           cargo test --workspace --release -- --ignored bench

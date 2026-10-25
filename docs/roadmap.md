@@ -103,8 +103,10 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - US1 (T033–T044) done: `rmedia gif` with the built-in engine and gifski (`max-quality`, with
   fallback), dry run with a sample size estimate, verify and cancel. SC-010: gifski 99.98 vs
   98.80 VMAF (Land6), 84.63 vs 83.50 (Busy10).
-- Next: T010 (staging, `externalBin`, CI environment), then T013 (Phase 0 measurements), then
-  the US1 checkpoint (quickstart, code and security reviews).
+- T010 done: both engines are desktop sidecars and in the CLI archive; CI's bundled-engine jobs
+  run the GIF tests with them. A manual release run can leave gifski out.
+- Next: T013 (Phase 0 measurements), then the US1 checkpoint (quickstart, code and security
+  reviews).
 - Then: US2 automatic size budget, US3 Reddit MP4, US4 portrait and square, US5 batch and `clip`
   integration, US6 desktop GIF view, and Polish (T045–T080).
 

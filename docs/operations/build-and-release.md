@@ -233,7 +233,8 @@ Weekly update PRs for:
 
 ## Release Workflow (`release.yml`)
 
-Triggers: push of a tag matching `v*`, or manual `workflow_dispatch`. Permissions:
+Triggers: push of a tag matching `v*`, or manual `workflow_dispatch`, whose `gifski` input
+(default on) chooses whether gifski is bundled. A tag push always bundles it. Permissions:
 `contents: read`. The workflow **builds** installers and CLI archives and uploads them as workflow
 artifacts. It does not create a GitHub release, sign, or publish anything.
 
@@ -250,18 +251,26 @@ Steps per platform:
 2. Linux: install `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev patchelf
    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base
    gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav`.
-3. Stage the bundled programs and models: `cargo xtask fetch-tools --target <T>`,
+3. Release gate: `cargo xtask check-release-gate` runs before and after staging. A tree with
+   gifski staged fails until the application licence is decided (FR-025, docs/roadmap.md), so
+   today only a manual run with `gifski` off can pass.
+4. Stage the bundled programs and models: `cargo xtask fetch-tools --target <T>` (with
+   `--no-gifski` when the input is off; gifsicle is always staged),
    `cargo xtask fetch-ncnn --target <T>`, `cargo xtask fetch-models` and
    `cargo xtask stage-cli --target <T>`.
-4. Run `cargo test --workspace` against the bundled engine (`RMEDIA_REQUIRE_FFMPEG=1`).
-5. `npm ci` in `apps/desktop`.
-6. Linux: check that `THIRD_PARTY_NOTICES.md` is current. The file covers both platforms.
-7. `npx tauri build --bundles <bundles>` in `apps/desktop`.
-8. Assemble the standalone CLI archive `rmedia-cli-<ref>-<triple>` (`.tar.gz` on Linux, `.zip` via
-   `7z` on Windows) with `rmedia`, `rmedia-sr`, `rmedia-ffmpeg`, `rmedia-ffprobe`, `README.md`,
-   `models/` (YuNet and Real-ESRGAN x2/x3/x4) and `licenses/{THIRD_PARTY_NOTICES.md,
-   FFMPEG-NOTICE.md,FFMPEG-LICENSE.txt,NCNN-NOTICE.md,NCNN-LICENSE.txt,GLSLANG-LICENSE.txt}`.
-9. Upload the `.deb`, `.AppImage`, `.exe`, `.msi`, and archives as artifact `rmedia-<triple>`.
+5. Run `cargo test --workspace` against the bundled engine (`RMEDIA_REQUIRE_FFMPEG=1`).
+6. `npm ci` in `apps/desktop`.
+7. Linux: check that `THIRD_PARTY_NOTICES.md` is current. The file covers both platforms.
+8. `npx tauri build --bundles <bundles>` in `apps/desktop`. Without gifski it adds `--config`
+   with a JSON merge patch (made by `jq` from `tauri.conf.json`) that drops `rmedia-gifski` from
+   `externalBin` and sets its licence resources to `null`.
+9. Assemble the standalone CLI archive `rmedia-cli-<ref>-<triple>` (`.tar.gz` on Linux, `.zip` via
+   `7z` on Windows) with `rmedia`, `rmedia-sr`, `rmedia-ffmpeg`, `rmedia-ffprobe`,
+   `rmedia-gifsicle`, `README.md`, `models/` (YuNet and Real-ESRGAN x2/x3/x4) and
+   `licenses/{THIRD_PARTY_NOTICES.md,FFMPEG-NOTICE.md,FFMPEG-LICENSE.txt,NCNN-NOTICE.md,
+   NCNN-LICENSE.txt,GLSLANG-LICENSE.txt,GIFSICLE-NOTICE.md,GIFSICLE-COPYING.txt}`; with gifski,
+   also `rmedia-gifski` and `GIFSKI-{NOTICE.md,LICENSE.txt,DEPS.md}`.
+10. Upload the `.deb`, `.AppImage`, `.exe`, `.msi`, and archives as artifact `rmedia-<triple>`.
    The upload fails if no files are found.
 
 The release workflow does not run clippy, the frontend tests, or the desktop backend tests. It
@@ -272,9 +281,11 @@ relies on CI having passed on the tagged commit.
 ### Sidecars
 
 `tauri.conf.json` → `bundle.externalBin` lists `binaries/rmedia-ffmpeg`, `binaries/rmedia-ffprobe`,
-`binaries/rmedia` and `binaries/rmedia-sr` (the AI worker). Tauri appends the target triple when it
+`binaries/rmedia`, `binaries/rmedia-sr` (the AI worker) and the GIF engines
+`binaries/rmedia-gifsicle` and `binaries/rmedia-gifski`. Tauri appends the target triple when it
 looks for each file and strips it in the installed package, so the installed names are
-`rmedia-ffmpeg`, `rmedia-ffprobe`, `rmedia` and `rmedia-sr`, next to `rmedia-desktop`. This is why
+`rmedia-ffmpeg`, `rmedia-ffprobe`, `rmedia`, `rmedia-sr`, `rmedia-gifsicle` and `rmedia-gifski`,
+next to `rmedia-desktop`. This is why
 `fetch-tools`, `fetch-ncnn` and `stage-cli` must run before any
 `tauri build` or `tauri dev`, and before `cargo build` of the desktop crate (tauri-build checks that
 the files exist).
@@ -285,8 +296,9 @@ executable ([Engine location order](../administration/configuration.md#engine-lo
 ### Resources
 
 The license files are bundled as resources under `licenses/`: `THIRD_PARTY_NOTICES.md`,
-`FFMPEG-NOTICE.md`, `FFMPEG-LICENSE.txt`, `NCNN-NOTICE.md`, `NCNN-LICENSE.txt` and
-`GLSLANG-LICENSE.txt`. In the deb they install to `/usr/lib/rmedia/licenses/`.
+`FFMPEG-NOTICE.md`, `FFMPEG-LICENSE.txt`, `NCNN-NOTICE.md`, `NCNN-LICENSE.txt`,
+`GLSLANG-LICENSE.txt`, `GIFSICLE-NOTICE.md`, `GIFSICLE-COPYING.txt`, `GIFSKI-NOTICE.md`,
+`GIFSKI-LICENSE.txt` and `GIFSKI-DEPS.md`. In the deb they install to `/usr/lib/rmedia/licenses/`.
 
 The models are bundled as resources under `models/` (YuNet and the six Real-ESRGAN files; never
 the test-only portrait), so `fetch-models` must also run before a desktop build. On Windows they

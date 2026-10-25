@@ -52,7 +52,9 @@
       "../../../binaries/rmedia-ffmpeg",
       "../../../binaries/rmedia-ffprobe",
       "../../../binaries/rmedia",
-      "../../../binaries/rmedia-sr"
+      "../../../binaries/rmedia-sr",
+      "../../../binaries/rmedia-gifsicle",
+      "../../../binaries/rmedia-gifski"
     ],
     "resources": {
       "../../../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
@@ -61,6 +63,11 @@
       "../../../licenses/NCNN-NOTICE.md": "licenses/NCNN-NOTICE.md",
       "../../../licenses/NCNN-LICENSE.txt": "licenses/NCNN-LICENSE.txt",
       "../../../licenses/GLSLANG-LICENSE.txt": "licenses/GLSLANG-LICENSE.txt",
+      "../../../licenses/GIFSICLE-NOTICE.md": "licenses/GIFSICLE-NOTICE.md",
+      "../../../licenses/GIFSICLE-COPYING.txt": "licenses/GIFSICLE-COPYING.txt",
+      "../../../licenses/GIFSKI-NOTICE.md": "licenses/GIFSKI-NOTICE.md",
+      "../../../licenses/GIFSKI-LICENSE.txt": "licenses/GIFSKI-LICENSE.txt",
+      "../../../licenses/GIFSKI-DEPS.md": "licenses/GIFSKI-DEPS.md",
       "../../../models/face_detection_yunet_2026may.onnx": "models/face_detection_yunet_2026may.onnx",
       "../../../models/realesr-animevideov3-x2.bin": "models/realesr-animevideov3-x2.bin",
       "../../../models/realesr-animevideov3-x2.param": "models/realesr-animevideov3-x2.param",
