@@ -147,7 +147,15 @@ impl FramePlan {
     /// The graph for an output of `size` (the budget search lowers the width).
     pub fn graph_at(&self, size: (u32, u32)) -> GraphInput {
         let mut g = self.graph.clone();
-        g.geometry = geometry::plan(self.display, size, self.framing_applied);
+        let mut geo = geometry::plan(self.display, size, self.framing_applied);
+        // The same source window at every width: a smart-framing path was found for the start
+        // size's crop, and the rounded heights of lower widths would move its edges.
+        if self.framing_applied == Reframe::Smart
+            && let (Some(start), Some(_)) = (self.graph.geometry.crop, geo.crop)
+        {
+            geo.crop = Some(start);
+        }
+        g.geometry = geo;
         g
     }
 

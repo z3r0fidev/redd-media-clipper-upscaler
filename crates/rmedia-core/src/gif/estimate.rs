@@ -602,6 +602,7 @@ pub async fn analyze(
     let input = g.reframe_input().expect("a smart plan");
     match crate::upscale::reframe::analyze_cached(tools, &input, cancel, progress).await {
         Ok((a, _)) => Ok(g.with_analysis(a)),
+        Err(Error::Cancelled) => Err(Error::Cancelled),
         Err(e) => {
             g.blur();
             Err(e)

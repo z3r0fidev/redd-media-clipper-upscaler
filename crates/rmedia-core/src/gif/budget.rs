@@ -336,7 +336,9 @@ pub async fn search(input: &SearchInput, sampler: &mut impl Sampler) -> Result<F
             match sampler.full(&next, next_len).await {
                 Ok(b) => {
                     log.push(StepKind::Full, &next, b, est.bytes);
-                    if b <= hard || bytes > hard {
+                    // The smaller result wins (under hard first, then smaller): a retry that does
+                    // no better leaves the first encode as the result.
+                    if b < bytes {
                         (cur, len, bytes, attempt) = (next, next_len, b, 1);
                         if trimmed_to.is_some() {
                             trimmed_to = Some(len);

@@ -231,6 +231,7 @@ impl Encoder<'_> {
         let retry = self.fulls > 0;
         // Each attempt has its own files, so a retry never overwrites the first result (the
         // search may keep it); every tool runs with `-n` or its own no-clobber rule.
+        debug_assert!(self.fulls < 2, "the search encodes in full at most twice (R5)");
         let (encoded, optimised, encoded_mp4) = attempt_names(self.fulls);
         self.fulls += 1;
         for f in [encoded, optimised, encoded_mp4] {

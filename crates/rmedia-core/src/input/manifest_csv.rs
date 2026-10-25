@@ -324,6 +324,10 @@ fn gif_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<crate::
     };
     let hard = hard.and_then(|h| size("gif_hard_limit", h, issues));
     let budget = match budget {
+        Some(b) if b.eq_ignore_ascii_case("none") && hard.is_some() => {
+            issues.push("gif_hard_limit cannot be combined with gif_budget=none".into());
+            None
+        }
         Some(b) if b.eq_ignore_ascii_case("none") => Some(None),
         Some(b) => size("gif_budget", b, issues).map(|soft| Some(BudgetSpec { soft: Some(soft), hard })),
         None => hard.map(|h| Some(BudgetSpec { soft: None, hard: Some(h) })),
@@ -352,10 +356,16 @@ fn gif_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<crate::
             })
             .ok()
     });
+    let format: Option<crate::gif::Format> = choice("gif_format", *format, "gif, mp4", issues);
+    if format != Some(crate::gif::Format::Mp4)
+        && let Some(f) = fps.and_then(|f| f.parse::<u32>().ok()).filter(|f| *f > 50)
+    {
+        issues.push(format!("gif_fps {f}: a GIF plays at most 50 fps (2 cs per frame)"));
+    }
     Some(PartialGif {
         enabled: None,
         target: target.map(str::to_owned),
-        format: choice("gif_format", *format, "gif, mp4", issues),
+        format,
         shape: choice("gif_shape", *shape, "source, 9:16, 4:5, 1:1", issues),
         framing: choice("gif_framing", *framing, "smart, center, blur", issues),
         width: number("gif_width", *width, (64u32, 1920), issues),
