@@ -148,8 +148,10 @@ jobs:
           cd out
           gs="./gifsicle-$GIFSICLE_VERSION-x86_64-unknown-linux-gnu"
           gk="./gifski-$GIFSKI_VERSION-x86_64-unknown-linux-gnu"
-          "$gs" --version | head -1 | grep -qx "LCDF Gifsicle $GIFSICLE_VERSION"
-          "$gk" --version | head -1 | grep -qx "gifski $GIFSKI_VERSION"
+          v=$("$gs" --version); echo "${v%%$'\n'*}"
+          [ "${v%%$'\n'*}" = "LCDF Gifsicle $GIFSICLE_VERSION" ]
+          v=$("$gk" --version); echo "${v%%$'\n'*}"
+          [ "${v%%$'\n'*}" = "gifski $GIFSKI_VERSION" ]
           python3 -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 420 t420.y4m
           python3 -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 444 t444.y4m
           "$gk" --fps 10 --quality 80 -o t.gif - < t420.y4m
@@ -232,8 +234,11 @@ jobs:
           cd out
           gs="./gifsicle-$GIFSICLE_VERSION-x86_64-pc-windows-msvc.exe"
           gk="./gifski-$GIFSKI_VERSION-x86_64-pc-windows-msvc.exe"
-          "$gs" --version | head -1 | tr -d '\r' | grep -qx "LCDF Gifsicle $GIFSICLE_VERSION"
-          "$gk" --version | head -1 | tr -d '\r' | grep -qx "gifski $GIFSKI_VERSION"
+          # Captured first: under pipefail, `head` closing the pipe early fails the writer.
+          v=$("$gs" --version | tr -d '\r'); echo "${v%%$'\n'*}"
+          [ "${v%%$'\n'*}" = "LCDF Gifsicle $GIFSICLE_VERSION" ]
+          v=$("$gk" --version | tr -d '\r'); echo "${v%%$'\n'*}"
+          [ "${v%%$'\n'*}" = "gifski $GIFSKI_VERSION" ]
           python -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 420 t420.y4m
           python -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 444 t444.y4m
           "$gk" --fps 10 --quality 80 -o t.gif - < t420.y4m
