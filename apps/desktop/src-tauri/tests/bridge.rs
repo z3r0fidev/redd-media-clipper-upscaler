@@ -149,7 +149,11 @@ async fn settings_from_the_page_cannot_set_engine_paths() {
     st.set_settings(s).unwrap();
     let now = st.get_settings();
     assert_eq!((now.ffmpeg_path, now.ffprobe_path), (None, None));
-    assert_eq!((now.gifsicle_path, now.gifski_path), (None, None), "GIF engine paths are not taken from the page");
+    assert_eq!(
+        (now.gifsicle_path, now.gifski_path),
+        (None, None),
+        "GIF engine paths are not taken from the page"
+    );
     assert!(st.set_engine_path(Some("/bin/sh".into())).is_err(), "only a program named ffmpeg is accepted");
 }
 
@@ -442,6 +446,128 @@ async fn upscale_queue_and_exported_manifest_give_identical_outputs() {
     for job in &summary.jobs {
         let JobOutcome::Succeeded { output, .. } = &job.outcome else { panic!() };
         let twin = cli_out.join(output.strip_prefix(&gui_out).unwrap());
+        assert_eq!(sha256(output), sha256(&twin), "{} differs between app and CLI", output.display());
+    }
+}
+
+// --- feature 003: the GIF view ------------------------------------------------------------------
+
+/// T066: targets, the estimate's single flight and scratch, outputs, and `plan`/`run` with `gif`.
+#[tokio::test(flavor = "multi_thread")]
+async fn gif_targets_estimates_and_outputs() {
+    require_ffmpeg!();
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("land.mp4");
+    std::fs::copy(fixture(Fixture::Land6), &src).unwrap();
+    // A stale estimate folder from a crash is removed at startup.
+    std::fs::create_dir_all(d.path().join("cache/gif-estimates/rmedia-sample-1-2")).unwrap();
+    let st = state(d.path()).await;
+    assert!(!d.path().join("cache/gif-estimates/rmedia-sample-1-2").exists(), "stale scratch cleaned");
+
+    let targets = st.list_gif_targets();
+    assert_eq!(targets["default"], "reddit-post");
+    assert!(targets["targets"].as_array().unwrap().iter().any(|t| t["id"] == "reddit-comment"));
+
+    let opts = rmedia_core::gif::GifOptions { width: Some(320), ..Default::default() };
+    let none = |_e: AnalysisEvent| {};
+    assert!(
+        st.gif_estimate("e0".into(), &src, None, &opts, &none).await.unwrap_err().contains("was not opened")
+    );
+    st.allow(std::slice::from_ref(&src));
+    // The core re-checks the page's options.
+    let bad = rmedia_core::gif::GifOptions { width: Some(5000), ..Default::default() };
+    assert!(st.gif_estimate("e1".into(), &src, None, &bad, &none).await.unwrap_err().contains("width 5000"));
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let seen = events.clone();
+    let on = move |e: AnalysisEvent| seen.lock().unwrap().push(format!("{e:?}"));
+    let e = st
+        .gif_estimate("e2".into(), &src, Some(RangeArg { start: 0.0, end: Some(3.0) }), &opts, &on)
+        .await
+        .unwrap();
+    assert!(e.estimate["bytes"].as_u64().is_some_and(|b| b > 0), "{:?}", e.estimate);
+    assert_eq!(e.estimate["from"], "search", "reddit-post has a budget");
+    assert!(events.lock().unwrap().last().is_some_and(|l| l.contains("Done")));
+    let leftovers = std::fs::read_dir(d.path().join("cache/gif-estimates")).map_or(0, |r| r.count());
+    assert_eq!(leftovers, 0, "the sample folder is removed");
+
+    // Single flight: a second estimate cancels the first.
+    let st = Arc::new(st);
+    let (a, b) = (st.clone(), st.clone());
+    let (s1, s2) = (src.clone(), src.clone());
+    let slow = rmedia_core::gif::GifOptions { width: Some(720), ..Default::default() };
+    let first = tokio::spawn(async move { a.gif_estimate("slow".into(), &s1, None, &slow, &|_| {}).await });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let second = b.gif_estimate("next".into(), &s2, None, &opts, &|_| {}).await;
+    assert!(second.is_ok(), "{second:?}");
+    let first = first.await.unwrap();
+    assert!(first.is_err_and(|e| e.to_lowercase().contains("cancel")), "the first estimate was cancelled");
+
+    // open_output serves only this app's committed outputs.
+    assert!(st.open_output("no-run", 1).await.is_err());
+    let out = d.path().join("gifs");
+    let manifest = json!({"version":1,"defaults":{"output_dir": out, "gif": {"width": 320, "budget": null}},
+        "videos":[{"input": src, "clips":[{"start":0,"end":2}]}]});
+    let plan = st.plan(&manifest).await.unwrap();
+    assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+    assert_eq!(plan.jobs[0].kind(), "gif");
+    let summary = st.run(&plan.run_id, Arc::new(Collect::default())).await.unwrap();
+    assert_eq!(summary.succeeded, 1, "{summary:?}");
+    let info = st.open_output(&plan.run_id, summary.jobs[0].id).await.unwrap();
+    assert_eq!((info.kind, info.width), ("image", 320));
+    let (head, body) = http_get(&info.url).await;
+    assert!(head.contains("image/gif") && body.starts_with(b"GIF89a"), "{head}");
+    #[cfg(unix)]
+    {
+        let JobOutcome::Succeeded { output, .. } = &summary.jobs[0].outcome else { panic!() };
+        let real = output.with_extension("real.gif");
+        std::fs::rename(output, &real).unwrap();
+        std::os::unix::fs::symlink(&real, output).unwrap();
+        assert!(st.open_output(&plan.run_id, summary.jobs[0].id).await.is_err(), "a symlink is refused");
+    }
+}
+
+/// T071 (SC-007's output half): a desktop GIF run, its exported manifest, and a CLI `batch` of
+/// it give byte-identical GIFs (built-in engine).
+#[tokio::test(flavor = "multi_thread")]
+async fn gif_queue_and_exported_manifest_give_identical_outputs() {
+    require_ffmpeg!();
+    if !cli_bin().is_file() {
+        panic!("build the CLI first (cargo build -p rmedia-cli) or set RMEDIA_CLI_BIN");
+    }
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("land.mp4");
+    std::fs::copy(fixture(Fixture::Land6), &src).unwrap();
+    let st = state(d.path()).await;
+    st.allow(std::slice::from_ref(&src));
+    let gui_out = d.path().join("gui");
+    let manifest = json!({"version":1,"defaults":{"output_dir": gui_out},"videos":[{"input": src, "clips":[
+        {"start":0,"end":3,"options":{"gif":{"target":"reddit-comment","engine":"builtin","width":320}}},
+        {"start":2,"end":5,"options":{"gif":{"engine":"builtin","shape":"1:1","framing":"blur","budget":null}}}]}]});
+    let plan = st.plan(&manifest).await.unwrap();
+    assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+    let summary = st.run(&plan.run_id, Arc::new(Collect::default())).await.unwrap();
+    assert_eq!(summary.succeeded, 2, "{summary:?}");
+
+    let export = d.path().join("queue.json");
+    st.allowed.lock().unwrap().allow_save(&export);
+    st.export_manifest(&manifest, &export).unwrap();
+    let cli_out = d.path().join("cli");
+    let text = std::fs::read_to_string(&export)
+        .unwrap()
+        .replace(&*gui_out.to_string_lossy(), &cli_out.to_string_lossy());
+    std::fs::write(&export, text).unwrap();
+    let o = Command::new(cli_bin())
+        .arg("batch")
+        .arg(&export)
+        .arg("-q")
+        .env("RMEDIA_STATE_DIR", d.path())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    for job in &summary.jobs {
+        let JobOutcome::Succeeded { output, .. } = &job.outcome else { panic!() };
+        let twin = cli_out.join(output.file_name().unwrap());
         assert_eq!(sha256(output), sha256(&twin), "{} differs between app and CLI", output.display());
     }
 }

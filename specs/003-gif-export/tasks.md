@@ -611,9 +611,9 @@ gives three GIFs with the right budgets and leaves no intermediates.
 **Independent Test**: open a video, pick a range and "Reddit comment"; an estimate appears, and
 after encoding the GIF plays with its real size within the stated margin.
 
-- [ ] T065 [P] [US6] Write media server tests in `apps/desktop/src-tauri/tests/media_server.rs`:
+- [X] T065 [P] [US6] Write media server tests in `apps/desktop/src-tauri/tests/media_server.rs`:
   `.gif` is served as `image/gif` with `nosniff`; ranges work.
-- [ ] T066 [P] [US6] Write bridge tests in `apps/desktop/src-tauri/tests/bridge.rs`:
+- [X] T066 [P] [US6] Write bridge tests in `apps/desktop/src-tauri/tests/bridge.rs`:
   - `list_gif_targets`;
   - `gif_estimate`: single flight (a second call kills the first), cancel, scratch removed on
     every path, stale scratch cleaned at startup, options re-clamped;
@@ -621,7 +621,7 @@ after encoding the GIF plays with its real size within the stated margin.
   - `set_settings` ignores page-supplied `gifsicle_path`/`gifski_path`;
   - `pick_engine` kinds;
   - `plan`/`run` with `options.gif`.
-- [ ] T067 [US6] Implement in `apps/desktop/src-tauri/src/{commands,ops,media_server,lib}.rs`:
+- [X] T067 [US6] Implement in `apps/desktop/src-tauri/src/{commands,ops,media_server,lib}.rs`:
   `list_gif_targets`, `gif_estimate`, `cancel_estimate`, `open_output`, the `pick_engine` kinds,
   the `set_settings` copy-back, the gif content type, and pausing estimates during runs. Then
   `cargo xtask gen-bindings`.
@@ -643,7 +643,7 @@ after encoding the GIF plays with its real size within the stated margin.
   - the overrides drawer with full CLI parity;
   - the estimate, and the result card (`<img>`/`<video>` from `open_output`, size, lowered
     settings, Trim to N s).
-- [ ] T071 [US6] Write the parity test in `apps/desktop/src-tauri/tests/bridge.rs`: a desktop
+- [X] T071 [US6] Write the parity test in `apps/desktop/src-tauri/tests/bridge.rs`: a desktop
   run, then `export_manifest`, then a CLI `batch` of that manifest gives byte-identical outputs
   (built-in engine; gifski per R14). This is SC-007's output half.
 - [ ] T072 [US6] SC-007 interaction check under a private Xvfb (`:99`, never the user's display):

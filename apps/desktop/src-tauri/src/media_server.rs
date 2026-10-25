@@ -213,6 +213,8 @@ fn content_type(path: &Path) -> &'static str {
         Some("mkv") => "video/x-matroska",
         Some("ogv") => "video/ogg",
         Some("png") => "image/png",
+        // A finished GIF plays in an <img> (feature 003, research R12).
+        Some("gif") => "image/gif",
         _ => "application/octet-stream",
     }
 }

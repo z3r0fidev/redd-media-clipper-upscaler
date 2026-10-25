@@ -187,10 +187,37 @@ pub async fn thumbnails(state: State<'_, AppState>, path: PathBuf, n: usize) -> 
     state.thumbnails(&path, n).await
 }
 
-/// Choose the ffmpeg program with the native dialog (ffprobe must sit next to it), or reset to
-/// automatic (bundled, then PATH) with `reset = true`.
+/// Choose an engine program with the native dialog, or reset it to automatic (bundled, then
+/// PATH) with `reset = true`. `kind`: `ffmpeg` (the default; ffprobe must sit next to it),
+/// `gifsicle` or `gifski` (the GIF engines, checked by their version banner).
 #[tauri::command]
-pub async fn pick_engine(app: AppHandle, state: State<'_, AppState>, reset: bool) -> OpResult<DoctorReport> {
+pub async fn pick_engine(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    reset: bool,
+    kind: Option<String>,
+) -> OpResult<DoctorReport> {
+    use rmedia_core::gif::engines::EngineKind;
+    let gif = match kind.as_deref().unwrap_or("ffmpeg") {
+        "ffmpeg" => None,
+        "gifsicle" => Some(EngineKind::Gifsicle),
+        "gifski" => Some(EngineKind::Gifski),
+        other => return Err(format!("unknown engine kind {other:?}")),
+    };
+    if let Some(k) = gif {
+        if reset {
+            state.set_gif_engine_path(k, None)?;
+        } else {
+            let dialog = app.dialog().file().set_title(format!("Choose the {} program", k.name()));
+            let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
+                .await
+                .map_err(|e| e.to_string())?;
+            if let Some(path) = picked.and_then(|p| p.into_path().ok()) {
+                state.set_gif_engine_path(k, Some(path))?;
+            }
+        }
+        return state.doctor_checked(CheckMode::Cached).await;
+    }
     if reset {
         state.set_engine_path(None)?;
     } else {
@@ -265,4 +292,38 @@ pub async fn pick_models_dir(app: AppHandle, state: State<'_, AppState>, reset: 
         }
     }
     Ok(state.get_settings())
+}
+
+/// GIF targets for the GIF view.
+#[tauri::command]
+pub fn list_gif_targets(state: State<'_, AppState>) -> Value {
+    state.list_gif_targets()
+}
+
+/// The predicted size of a GIF job (research R4), with progress over `on_event`.
+#[tauri::command]
+pub async fn gif_estimate(
+    state: State<'_, AppState>,
+    estimate_id: String,
+    path: PathBuf,
+    span: Option<RangeArg>,
+    options: rmedia_core::gif::GifOptions,
+    on_event: Channel<AnalysisEvent>,
+) -> OpResult<crate::ops::GifEstimate> {
+    state.gif_estimate(estimate_id, &path, span, &options, &move |e| drop(on_event.send(e))).await
+}
+
+#[tauri::command]
+pub fn cancel_estimate(state: State<'_, AppState>, estimate_id: String) {
+    state.cancel_estimate(&estimate_id);
+}
+
+/// A finished output of this app's run, for playback in the GIF view.
+#[tauri::command]
+pub async fn open_output(
+    state: State<'_, AppState>,
+    run_id: String,
+    job_id: u32,
+) -> OpResult<crate::ops::OutputInfo> {
+    state.open_output(&run_id, job_id).await
 }

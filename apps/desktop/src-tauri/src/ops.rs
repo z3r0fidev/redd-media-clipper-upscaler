@@ -15,7 +15,10 @@ use rmedia_core::discover::{self, ScanEvent, ScanOptions, ScanResult};
 use rmedia_core::doctor::{self, DoctorReport};
 use rmedia_core::event::{EventSink, RunSummary};
 use rmedia_core::exec::{self, RunConfig, RunControl};
+use rmedia_core::gif::GifOptions;
+use rmedia_core::gif::engines::EngineKind;
 use rmedia_core::input::{cliplist, manifest_csv, manifest_json};
+use rmedia_core::plan::JobSpec;
 use rmedia_core::plan::{self, Caps, Issue, Plan};
 use rmedia_core::preset::PresetRegistry;
 use rmedia_core::preview::{self, PreviewCache, ProxyCodec};
@@ -105,6 +108,10 @@ pub struct AppState {
     runs: Mutex<HashMap<String, RunControl>>,
     scans: Mutex<HashMap<String, CancellationToken>>,
     analyses: Mutex<HashMap<String, CancellationToken>>,
+    /// GIF size estimates in flight (one at a time: a new one cancels the others).
+    estimates: Mutex<HashMap<String, CancellationToken>>,
+    /// Each run's committed outputs by job id: the only files `open_output` serves.
+    outputs: Mutex<HashMap<String, Vec<(u32, PathBuf)>>>,
     /// The preview being rendered (a new one cancels it: only the latest is shown).
     preview: Mutex<Option<CancellationToken>>,
     /// Preview stills registered with the media server, oldest first (capped).
@@ -127,6 +134,8 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 impl AppState {
     pub async fn new(settings: Settings, cache_dir: PathBuf) -> std::io::Result<AppState> {
+        // GIF estimates sample in private folders under the app cache; a crash can leave some.
+        let _ = std::fs::remove_dir_all(cache_dir.join(GIF_ESTIMATES));
         // The saved default output folder was chosen with the folder dialog (set_settings only
         // keeps picked folders), so it stays usable across restarts.
         let mut allowed = Allowed::default();
@@ -142,6 +151,8 @@ impl AppState {
             runs: Mutex::new(HashMap::new()),
             scans: Mutex::new(HashMap::new()),
             analyses: Mutex::new(HashMap::new()),
+            estimates: Mutex::new(HashMap::new()),
+            outputs: Mutex::new(HashMap::new()),
             preview: Mutex::new(None),
             preview_files: Mutex::new(VecDeque::new()),
             settings_save: Mutex::new(()),
@@ -223,8 +234,13 @@ impl AppState {
     /// Locates the engine (cached until settings change), without the GPU check.
     pub fn doctor(&self) -> DoctorReport {
         let s = lock(&self.settings).clone();
-        let (report, found) =
-            doctor::run(&LocateOptions { ffmpeg: s.ffmpeg_path, ffprobe: s.ffprobe_path, gifsicle: s.gifsicle_path, gifski: s.gifski_path, bundled_dir: None });
+        let (report, found) = doctor::run(&LocateOptions {
+            ffmpeg: s.ffmpeg_path,
+            ffprobe: s.ffprobe_path,
+            gifsicle: s.gifsicle_path,
+            gifski: s.gifski_path,
+            bundled_dir: None,
+        });
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = found;
         report
     }
@@ -249,8 +265,13 @@ impl AppState {
             None
         };
         let s = lock(&self.settings).clone();
-        let (mut report, mut found) =
-            doctor::run(&LocateOptions { ffmpeg: s.ffmpeg_path, ffprobe: s.ffprobe_path, gifsicle: s.gifsicle_path, gifski: s.gifski_path, bundled_dir: None });
+        let (mut report, mut found) = doctor::run(&LocateOptions {
+            ffmpeg: s.ffmpeg_path,
+            ffprobe: s.ffprobe_path,
+            gifsicle: s.gifsicle_path,
+            gifski: s.gifski_path,
+            bundled_dir: None,
+        });
         doctor::check_capability(&mut report, found.as_mut(), mode, &CancellationToken::new()).await;
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = found;
         Ok(report)
@@ -403,10 +424,23 @@ impl AppState {
         }
         let (tools, _) = self.engine()?;
         let jobs = lock(&self.settings).jobs.map_or_else(exec::default_jobs, usize::from);
+        // Estimates pause while a run encodes (they would compete for the CPU).
+        for c in lock(&self.estimates).values() {
+            c.cancel();
+        }
         let handle = exec::start(plan, tools, RunConfig { jobs, ..RunConfig::default() }, sink);
         lock(&self.runs).insert(run_id.to_owned(), handle.control());
         let summary = handle.wait().await;
         lock(&self.runs).remove(run_id);
+        let done: Vec<(u32, PathBuf)> = summary
+            .jobs
+            .iter()
+            .filter_map(|j| match &j.outcome {
+                rmedia_core::event::JobOutcome::Succeeded { output, .. } => Some((j.id, output.clone())),
+                _ => None,
+            })
+            .collect();
+        lock(&self.outputs).insert(run_id.to_owned(), done);
         Ok(summary)
     }
 
@@ -428,6 +462,9 @@ impl AppState {
             c.cancel();
         }
         for c in lock(&self.analyses).values() {
+            c.cancel();
+        }
+        for c in lock(&self.estimates).values() {
             c.cancel();
         }
         if let Some(c) = lock(&self.preview).as_ref() {
@@ -543,6 +580,175 @@ impl AppState {
         *lock(&self.settings) = s;
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         Ok(())
+    }
+
+    /// Sets (or resets) a GIF engine's program. Only from the native file dialog in Rust, never
+    /// from the page: a regular file (no symlink, no folder) that identifies itself as the engine.
+    pub fn set_gif_engine_path(&self, kind: EngineKind, path: Option<PathBuf>) -> OpResult<()> {
+        let path = match path {
+            None => None,
+            Some(p) => {
+                let meta = std::fs::symlink_metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+                if !meta.file_type().is_file() {
+                    return Err(format!(
+                        "{} is not a program file (links and folders are refused)",
+                        p.display()
+                    ));
+                }
+                let status = rmedia_core::gif::engines::locate(kind, Some(&p), None, None, &[]);
+                if !status.ok {
+                    return Err(format!(
+                        "{}: {}",
+                        p.display(),
+                        status.reason.unwrap_or_else(|| format!("not {}", kind.name()))
+                    ));
+                }
+                Some(p)
+            }
+        };
+        let _saving = lock(&self.settings_save);
+        let mut s = lock(&self.settings).clone();
+        match kind {
+            EngineKind::Gifsicle => s.gifsicle_path = path,
+            EngineKind::Gifski => s.gifski_path = path,
+        }
+        s.save().map_err(|e| e.to_string())?;
+        *lock(&self.settings) = s;
+        *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        Ok(())
+    }
+
+    /// Built-in and user GIF targets for the GIF view (`rmedia gif --list-targets --json`).
+    pub fn list_gif_targets(&self) -> Value {
+        let reg =
+            rmedia_core::gif::target::GifTargetRegistry::load(rmedia_core::settings::config_dir().as_deref());
+        let targets: Vec<_> = reg.list().map(|(t, _)| t.clone()).collect();
+        let problems: Vec<_> = reg
+            .problems()
+            .iter()
+            .map(|p| serde_json::json!({"file": rmedia_core::pathser::lossy(&p.file), "message": p.message}))
+            .collect();
+        serde_json::json!({ "default": rmedia_core::gif::target::DEFAULT_TARGET, "targets": targets, "problems": problems })
+    }
+
+    /// The size a GIF job of `path` would have (research R4: the budget search's prediction from
+    /// samples, nothing encoded in full), in a private folder under the app cache that is
+    /// removed on every path. One estimate runs at a time; a run pauses them.
+    pub async fn gif_estimate(
+        &self,
+        estimate_id: String,
+        path: &Path,
+        span: Option<RangeArg>,
+        options: &GifOptions,
+        on_event: &(dyn Fn(AnalysisEvent) + Send + Sync),
+    ) -> OpResult<GifEstimate> {
+        if estimate_id.is_empty() || estimate_id.len() > 64 {
+            return Err("invalid estimate id".into());
+        }
+        if !lock(&self.runs).is_empty() {
+            return Err("estimates wait while a run encodes".into());
+        }
+        let (start, end) = span.map(RangeArg::span).transpose()?.unwrap_or((Ts::ZERO, EndSpec::EndOfMedia));
+        let path = self.require_allowed(path)?;
+        let (tools, caps) = self.engine()?;
+        let cancel = CancellationToken::new();
+        {
+            let mut running = lock(&self.estimates);
+            if running.contains_key(&estimate_id) {
+                return Err("this estimate is already running".into());
+            }
+            for c in running.values() {
+                c.cancel();
+            }
+            running.insert(estimate_id.clone(), cancel.clone());
+        }
+        let result = async {
+            use rmedia_core::request::{ClipRequest, OnExists, Origin, SourceRequest};
+            // The core re-checks every option (the page's values are untrusted). Nothing is
+            // written: an existing output must not make the plan skip the job.
+            let req = BatchRequest {
+                defaults: Options {
+                    gif: Some(options.clone()),
+                    on_exists: OnExists::Overwrite,
+                    output_dir: Some(self.cache_dir.join(GIF_ESTIMATES)),
+                    ..Options::default()
+                },
+                sources: vec![SourceRequest {
+                    path: path.clone(),
+                    clips: vec![ClipRequest {
+                        start,
+                        end,
+                        name: None,
+                        overrides: PartialOptions::default(),
+                        origin: Origin::Gui,
+                    }],
+                    overrides: PartialOptions::default(),
+                    origin: Origin::Gui,
+                }],
+            };
+            let mut p = plan::plan(&req, &tools, &caps, &cancel).await;
+            let errors: Vec<String> = p
+                .issues
+                .iter()
+                .filter(|i| i.severity == rmedia_core::plan::Severity::Error)
+                .map(|i| i.message.clone())
+                .collect();
+            if !errors.is_empty() {
+                return Err(errors.join("; "));
+            }
+            on_event(AnalysisEvent::Progress { fraction: 0.05 });
+            let parent = self.cache_dir.join(GIF_ESTIMATES);
+            std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
+            rmedia_core::gif::estimate::prepare_in(&mut p, &tools, &cancel, &parent)
+                .await
+                .map_err(|e| e.to_string())?;
+            let job = p.jobs.pop().ok_or("nothing to estimate")?;
+            let JobSpec::Gif(g) = job.spec else { return Err("not a GIF job".into()) };
+            // The `estimate` object of the JSON contract (json-output.md).
+            Ok(GifEstimate {
+                estimate: g.gif.to_json()["estimate"].clone(),
+                notes: job.warnings,
+                notices: job.notices,
+            })
+        }
+        .await;
+        lock(&self.estimates).remove(&estimate_id);
+        if result.is_ok() {
+            on_event(AnalysisEvent::Done);
+        }
+        result
+    }
+
+    pub fn cancel_estimate(&self, estimate_id: &str) {
+        if let Some(c) = lock(&self.estimates).get(estimate_id) {
+            c.cancel();
+        }
+    }
+
+    /// Registers a committed output of one of this app's runs with the media server. The page
+    /// names the run and job; the path comes from the run's own outcome (contracts › Path policy).
+    pub async fn open_output(&self, run_id: &str, job_id: u32) -> OpResult<OutputInfo> {
+        let path = lock(&self.outputs)
+            .get(run_id)
+            .and_then(|jobs| jobs.iter().find(|(id, _)| *id == job_id).map(|(_, p)| p.clone()))
+            .ok_or("no such output of this app's runs")?;
+        let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if !meta.file_type().is_file() {
+            return Err(format!("{} is no longer the file the run wrote", path.display()));
+        }
+        let (tools, _) = self.engine()?;
+        let info = probe::probe(&tools, &path, &CancellationToken::new()).await.map_err(|e| e.to_string())?;
+        let v = info.first_video().ok_or("the output has no video")?;
+        let kind =
+            if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")) { "image" } else { "video" };
+        let url = self.media.register(&path).map_err(|e| e.to_string())?;
+        Ok(OutputInfo {
+            url,
+            kind,
+            bytes: meta.len(),
+            width: v.width.unwrap_or(0),
+            height: v.height.unwrap_or(0),
+        })
     }
 
     /// Built-in and user presets for the upscale view (`rmedia upscale --list-presets --json`).
@@ -714,6 +920,27 @@ fn seconds(t: f64) -> OpResult<Ts> {
     } else {
         Err(format!("invalid time {t}"))
     }
+}
+
+/// The app-cache folder GIF estimates sample in.
+const GIF_ESTIMATES: &str = "gif-estimates";
+
+/// `gif_estimate`'s result (contracts/tauri-commands.md).
+#[derive(Debug, Clone, Serialize)]
+pub struct GifEstimate {
+    pub estimate: Value,
+    pub notes: Vec<String>,
+    pub notices: Vec<rmedia_core::plan::Notice>,
+}
+
+/// `open_output`'s result: a media-server URL for the page's `<img>` or `<video>`.
+#[derive(Debug, Clone, Serialize)]
+pub struct OutputInfo {
+    pub url: String,
+    pub kind: &'static str,
+    pub bytes: u64,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// `analyze_reframe`'s result: the analysis, or why there is none.

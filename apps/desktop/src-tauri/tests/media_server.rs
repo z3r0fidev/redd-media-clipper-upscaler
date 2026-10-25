@@ -92,6 +92,28 @@ async fn serves_only_registered_files_with_the_token() {
     .unwrap();
 }
 
+/// T065: a finished GIF is served as `image/gif`, unsniffed, with ranges.
+#[tokio::test(flavor = "multi_thread")]
+async fn gifs_are_served_as_image_gif() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("out.gif");
+    std::fs::write(&file, b"GIF89a0123").unwrap();
+    let server = MediaServer::start().await.unwrap();
+    let port = server.port();
+    let url = server.register(&file).unwrap();
+    let path = url.strip_prefix(&format!("http://127.0.0.1:{port}")).unwrap().to_owned();
+    tokio::task::spawn_blocking(move || {
+        let (st, head, body) = get(port, &path, "");
+        assert_eq!((st, body.as_slice()), (200, &b"GIF89a0123"[..]));
+        assert!(head.contains("Content-Type: image/gif"), "{head}");
+        assert!(head.contains("X-Content-Type-Options: nosniff"), "{head}");
+        let (st, _, body) = get(port, &path, "Range: bytes=0-5\r\n");
+        assert_eq!((st, body.as_slice()), (206, &b"GIF89a"[..]));
+    })
+    .await
+    .unwrap();
+}
+
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_registered_file_swapped_for_a_symlink_is_not_served() {
