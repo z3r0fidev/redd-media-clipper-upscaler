@@ -35,6 +35,20 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
         eprintln!("error: {} {verb} --upscale", given.join(", "));
         return exit::USAGE;
     }
+    if !args.gif && args.gifo.any() {
+        let given = args.gifo.given();
+        let verb = if given.len() == 1 { "needs" } else { "need" };
+        eprintln!("error: {} {verb} --gif", given.join(", "));
+        return exit::USAGE;
+    }
+    if let Some(msg) = args.gifo.usage_error().filter(|_| args.gif) {
+        eprintln!("error: {msg}");
+        return exit::USAGE;
+    }
+    if args.gifo.crop_path.is_some() {
+        eprintln!("error: --crop-path is for `rmedia gif` (one video) or `rmedia upscale`");
+        return exit::USAGE;
+    }
     let opts = cli.locate();
     let (mut report, mut engine) = doctor::run(&opts);
     let Some(found) = engine.as_mut() else {
@@ -59,6 +73,9 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     if args.upscale {
         defaults.upscale = Some(args.up.options());
     }
+    if args.gif {
+        defaults.gif = Some(args.gifo.options());
+    }
     let req = BatchRequest {
         defaults,
         sources: inputs
@@ -77,7 +94,14 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     let (tools, caps) = engine.expect("checked above");
 
     let cancel = CancellationToken::new();
-    let plan = plan::plan(&req, &tools, &caps, &cancel).await;
+    let mut plan = plan::plan(&req, &tools, &caps, &cancel).await;
+    if args.gif && args.common.dry_run && !args.gifo.no_sample && !plan.has_errors() {
+        // As `rmedia gif`: the estimate runs short samples in a temporary folder (research R4).
+        let ctrl_c = super::ctrl_c_token();
+        if rmedia_core::gif::estimate::prepare(&mut plan, &tools, &ctrl_c.token).await.is_err() {
+            return exit::CANCELLED;
+        }
+    }
     execute(plan, tools, args.common.dry_run, args.common.jobs, &out).await
 }
 

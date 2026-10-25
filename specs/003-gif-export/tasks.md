@@ -586,16 +586,16 @@ gives three GIFs with the right budgets and leaves no intermediates.
   - the writer emits `gif_*` only when needed.
 - [X] T061 [US5] Implement the manifest JSON/CSV readers and writers (`core/input/manifest_json.rs`,
   `core/input/manifest_csv.rs`), making T059/T060 pass.
-- [ ] T062 [P] [US5] Write CLI tests in `cli-tests/gif_clip_batch.rs`:
+- [X] T062 [P] [US5] Write CLI tests in `cli-tests/gif_clip_batch.rs`:
   - `clip -s/-e --gif`, `clip -l list --gif` (two clips, two files via the clip template);
   - "--target needs --gif" (exit 2);
   - `clip --gif --upscale` gives one job, the note "upscale skipped", and no intermediate
     `.mp4`;
   - `batch --gif`, with `batch --dry-run` defaulting to no sample.
-- [ ] T063 [US5] Implement `--gif` on `clip`/`batch` in `crates/rmedia-cli/src/main.rs` and
+- [X] T063 [US5] Implement `--gif` on `clip`/`batch` in `crates/rmedia-cli/src/main.rs` and
   `commands/{clip,batch}.rs`, and chained planning in `core/gif/mod.rs` (research R16), making
   T062 pass.
-- [ ] T064 [US5] Write the integration test `core-tests/gif_us5.rs`, the spec's independent test:
+- [X] T064 [US5] Write the integration test `core-tests/gif_us5.rs`, the spec's independent test:
   - 2 videos, 3 clips, one comment override: budgets correct;
   - one failure doesn't stop the others;
   - no leftovers.

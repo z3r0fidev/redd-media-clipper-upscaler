@@ -40,6 +40,22 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
     if args.upscale {
         defaults.upscale = Some(args.up.options());
     }
+    if let Some(msg) = args.gifo.usage_error() {
+        eprintln!("error: {msg}");
+        return crate::exit::USAGE;
+    }
+    if args.gifo.crop_path.is_some() || args.gifo.no_sample {
+        // A batch dry run never samples (manifests can be long); the crop path needs one video.
+        eprintln!("error: --crop-path and --no-sample do not apply to batch (its dry run does not sample)");
+        return crate::exit::USAGE;
+    }
+    // GIF flags fill the clips the manifest makes GIFs; only --gif turns GIF export on for all.
+    if args.gif || args.gifo.any() {
+        defaults.gif_fill = Some(args.gifo.options());
+    }
+    if args.gif {
+        defaults.gif = Some(args.gifo.options());
+    }
 
     let ext = manifest.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     let parsed = match ext.as_str() {
@@ -60,6 +76,13 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
         eprintln!(
             "warning: {} had no effect: the manifest upscales no video (add an \"upscale\" object, or use --upscale)",
             args.up.given().join(", ")
+        );
+    }
+
+    if args.gifo.any() && !req.resolved().any(|o| o.gif.is_some()) {
+        eprintln!(
+            "warning: {} had no effect: the manifest makes no GIF (add a \"gif\" object, or use --gif)",
+            args.gifo.given().join(", ")
         );
     }
 

@@ -116,6 +116,11 @@ pub struct ClipArgs {
     pub upscale: bool,
     #[command(flatten)]
     pub up: UpscaleFlags,
+    /// Make every clip a GIF (or Reddit MP4) instead (feature 003; see `rmedia gif`).
+    #[arg(long)]
+    pub gif: bool,
+    #[command(flatten)]
+    pub gifo: GifFlags,
     #[command(flatten)]
     pub common: CommonArgs,
 }
@@ -436,6 +441,40 @@ impl GifFlags {
         self.partial().apply(None).expect("a layer without `enabled: false` turns GIF export on")
     }
 
+    /// Whether any GIF flag was given.
+    pub fn any(&self) -> bool {
+        self.partial() != rmedia_core::gif::PartialGif::default()
+            || self.no_sample
+            || self.crop_path.is_some()
+    }
+
+    /// The flag names given, for usage errors.
+    pub fn given(&self) -> Vec<&'static str> {
+        [
+            ("--target", self.target.is_some()),
+            ("--format", self.format.is_some()),
+            ("--width", self.width.is_some()),
+            ("--fps", self.fps.is_some()),
+            ("--colors", self.colors.is_some()),
+            ("--dither", self.dither.is_some()),
+            ("--lossy", self.lossy.is_some()),
+            ("--loop", self.loop_count.is_some()),
+            ("--budget", self.budget.is_some()),
+            ("--hard-limit", self.hard_limit.is_some()),
+            ("--allow-trim", self.allow_trim),
+            ("--engine", self.engine.is_some()),
+            ("--strict-engine", self.strict_engine),
+            ("--no-optimise", self.no_optimise),
+            ("--shape", self.shape.is_some()),
+            ("--framing", self.framing.is_some()),
+            ("--no-sample", self.no_sample),
+            ("--crop-path", self.crop_path.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(n, set)| set.then_some(n))
+        .collect()
+    }
+
     /// A combination clap cannot check.
     pub fn usage_error(&self) -> Option<String> {
         if self.format != Some(FormatArg::Mp4)
@@ -570,6 +609,12 @@ pub struct BatchArgs {
     /// Upscale settings for the videos that are upscaled, under the manifest's own values.
     #[command(flatten)]
     pub up: UpscaleFlags,
+    /// Make a GIF of every clip the manifest does not turn GIF export off for (feature 003).
+    #[arg(long)]
+    pub gif: bool,
+    /// GIF settings for the clips that are GIFs, under the manifest's own values.
+    #[command(flatten)]
+    pub gifo: GifFlags,
     /// Show what would be done without writing anything.
     #[arg(long)]
     pub dry_run: bool,
