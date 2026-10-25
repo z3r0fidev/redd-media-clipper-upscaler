@@ -39,7 +39,7 @@ rmedia gif --list-targets [--json]
 | `--no-optimise` | never run gifsicle | optimise when present |
 | `--shape` | `source` \| `9:16` \| `4:5` \| `1:1` | `source` |
 | `--framing` | `smart` \| `center` \| `blur` | `smart` |
-| `--no-sample` / `--sample` | with `--dry-run`: skip or run the sample encodes (estimate `pending` when skipped) | sample for `gif` and `clip`; **no sample for `batch`** |
+| `--no-sample` | with `--dry-run`: skip or run the sample encodes (estimate `pending` when skipped) | sample for `gif` and `clip`; **no sample for `batch`** |
 | `--crop-path FILE` | with smart framing, as in 002 | — |
 
 Sizes are decimal (`MB` = 10^6) unless a binary suffix (`MiB`) is used. They must be positive and
@@ -106,10 +106,13 @@ Unchanged:
 
 - `--gif` turns GIF export on for every job and accepts all `GifFlags`. Each clip becomes a GIF
   or MP4 in one job, with no intermediate video (FR-016).
-- A GIF flag without `--gif` is a usage error (exit 2): "error: --target needs --gif".
-- `--gif` with `--upscale` chains the steps: the 002 reframe or upscale geometry, then the GIF
-  downscale, in one job. The upscale preset decides the framing; the GIF target decides the
-  final width (FR-014).
+- `clip`: a GIF flag without `--gif` is a usage error (exit 2): "error: --target needs --gif".
+  `batch` (like its upscale flags in 002): GIF flags without `--gif` fill the clips the
+  manifest makes GIFs, with a warning when it makes none. `--crop-path` and `--no-sample` do
+  not apply to `batch`.
+- `--gif` with `--upscale` stays one GIF job: the upscale is skipped, with the note "upscale
+  skipped: a GIF is never larger than its source" (research R16; FR-004). The GIF's own shape
+  and framing apply 002's reframe at the GIF size.
 - `clip` keeps its own range flags (`-s`, `-e`, `-d`, `-l`), so `rmedia clip in.mp4 -s 0:01 -e 0:03 --gif`
   and `rmedia clip in.mp4 -l clips.txt --gif` both work.
 

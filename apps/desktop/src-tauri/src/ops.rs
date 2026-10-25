@@ -110,8 +110,11 @@ pub struct AppState {
     analyses: Mutex<HashMap<String, CancellationToken>>,
     /// GIF size estimates in flight (one at a time: a new one cancels the others).
     estimates: Mutex<HashMap<String, CancellationToken>>,
-    /// Each run's committed outputs by job id: the only files `open_output` serves.
-    outputs: Mutex<HashMap<String, Vec<(u32, PathBuf)>>>,
+    /// Each run's committed outputs by job id: the only files `open_output` serves (the last
+    /// `MAX_RUNS_KEPT` runs).
+    outputs: Mutex<VecDeque<RunOutputs>>,
+    /// Outputs registered with the media server, oldest first (capped like preview stills).
+    output_files: Mutex<VecDeque<PathBuf>>,
     /// The preview being rendered (a new one cancels it: only the latest is shown).
     preview: Mutex<Option<CancellationToken>>,
     /// Preview stills registered with the media server, oldest first (capped).
@@ -152,7 +155,8 @@ impl AppState {
             scans: Mutex::new(HashMap::new()),
             analyses: Mutex::new(HashMap::new()),
             estimates: Mutex::new(HashMap::new()),
-            outputs: Mutex::new(HashMap::new()),
+            outputs: Mutex::new(VecDeque::new()),
+            output_files: Mutex::new(VecDeque::new()),
             preview: Mutex::new(None),
             preview_files: Mutex::new(VecDeque::new()),
             settings_save: Mutex::new(()),
@@ -424,12 +428,12 @@ impl AppState {
         }
         let (tools, _) = self.engine()?;
         let jobs = lock(&self.settings).jobs.map_or_else(exec::default_jobs, usize::from);
+        let handle = exec::start(plan, tools, RunConfig { jobs, ..RunConfig::default() }, sink);
+        lock(&self.runs).insert(run_id.to_owned(), handle.control());
         // Estimates pause while a run encodes (they would compete for the CPU).
         for c in lock(&self.estimates).values() {
             c.cancel();
         }
-        let handle = exec::start(plan, tools, RunConfig { jobs, ..RunConfig::default() }, sink);
-        lock(&self.runs).insert(run_id.to_owned(), handle.control());
         let summary = handle.wait().await;
         lock(&self.runs).remove(run_id);
         let done: Vec<(u32, PathBuf)> = summary
@@ -440,7 +444,12 @@ impl AppState {
                 _ => None,
             })
             .collect();
-        lock(&self.outputs).insert(run_id.to_owned(), done);
+        let mut outputs = lock(&self.outputs);
+        outputs.push_back((run_id.to_owned(), done));
+        while outputs.len() > MAX_RUNS_KEPT {
+            outputs.pop_front();
+        }
+        drop(outputs);
         Ok(summary)
     }
 
@@ -645,14 +654,18 @@ impl AppState {
         if estimate_id.is_empty() || estimate_id.len() > 64 {
             return Err("invalid estimate id".into());
         }
-        if !lock(&self.runs).is_empty() {
-            return Err("estimates wait while a run encodes".into());
-        }
         let (start, end) = span.map(RangeArg::span).transpose()?.unwrap_or((Ts::ZERO, EndSpec::EndOfMedia));
         let path = self.require_allowed(path)?;
         let (tools, caps) = self.engine()?;
         let cancel = CancellationToken::new();
         {
+            // Under the runs lock: a run that starts after this check cancels the estimate
+            // (`run` registers itself, then cancels the estimates), and one already running
+            // refuses it.
+            let runs = lock(&self.runs);
+            if !runs.is_empty() {
+                return Err("estimates wait while a run encodes".into());
+            }
             let mut running = lock(&self.estimates);
             if running.contains_key(&estimate_id) {
                 return Err("this estimate is already running".into());
@@ -729,19 +742,43 @@ impl AppState {
     /// names the run and job; the path comes from the run's own outcome (contracts › Path policy).
     pub async fn open_output(&self, run_id: &str, job_id: u32) -> OpResult<OutputInfo> {
         let path = lock(&self.outputs)
-            .get(run_id)
-            .and_then(|jobs| jobs.iter().find(|(id, _)| *id == job_id).map(|(_, p)| p.clone()))
+            .iter()
+            .find(|(id, _)| id == run_id)
+            .and_then(|(_, jobs)| jobs.iter().find(|(id, _)| *id == job_id).map(|(_, p)| p.clone()))
             .ok_or("no such output of this app's runs")?;
+        // The file itself, never a link swapped in: the parent resolved, the name kept, and the
+        // registered (canonical) path must be exactly that.
+        let not_ours = || format!("{} is no longer the file the run wrote", path.display());
         let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         if !meta.file_type().is_file() {
-            return Err(format!("{} is no longer the file the run wrote", path.display()));
+            return Err(not_ours());
+        }
+        let expected = match (path.parent().map(std::fs::canonicalize), path.file_name()) {
+            (Some(Ok(dir)), Some(name)) => dir.join(name),
+            _ => return Err(not_ours()),
+        };
+        let url = self.media.register(&path).map_err(|e| e.to_string())?;
+        if std::fs::canonicalize(&path).ok().as_deref() != Some(expected.as_path()) {
+            self.media.forget(&path);
+            return Err(not_ours());
+        }
+        {
+            let mut files = lock(&self.output_files);
+            if !files.contains(&expected) {
+                files.push_back(expected.clone());
+            }
+            while files.len() > MAX_PREVIEW_URLS {
+                if let Some(old) = files.pop_front() {
+                    self.media.forget(&old);
+                }
+            }
         }
         let (tools, _) = self.engine()?;
-        let info = probe::probe(&tools, &path, &CancellationToken::new()).await.map_err(|e| e.to_string())?;
+        let info =
+            probe::probe(&tools, &expected, &CancellationToken::new()).await.map_err(|e| e.to_string())?;
         let v = info.first_video().ok_or("the output has no video")?;
         let kind =
             if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")) { "image" } else { "video" };
-        let url = self.media.register(&path).map_err(|e| e.to_string())?;
         Ok(OutputInfo {
             url,
             kind,
@@ -924,6 +961,10 @@ fn seconds(t: f64) -> OpResult<Ts> {
 
 /// The app-cache folder GIF estimates sample in.
 const GIF_ESTIMATES: &str = "gif-estimates";
+/// A run's id and its committed outputs by job id.
+type RunOutputs = (String, Vec<(u32, PathBuf)>);
+/// How many runs' outputs `open_output` remembers.
+const MAX_RUNS_KEPT: usize = 16;
 
 /// `gif_estimate`'s result (contracts/tauri-commands.md).
 #[derive(Debug, Clone, Serialize)]

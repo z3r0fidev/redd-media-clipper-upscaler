@@ -646,7 +646,7 @@ after encoding the GIF plays with its real size within the stated margin.
 - [X] T071 [US6] Write the parity test in `apps/desktop/src-tauri/tests/bridge.rs`: a desktop
   run, then `export_manifest`, then a CLI `batch` of that manifest gives byte-identical outputs
   (built-in engine; gifski per R14). This is SC-007's output half.
-- [ ] T072 [US6] SC-007 interaction check under a private Xvfb (`:99`, never the user's display):
+- [X] T072 [US6] SC-007 interaction check under a private Xvfb (`:99`, never the user's display):
   choose the GIF tab, keep the default target, click Export now. That is 3 interactions, and the
   output appears. Record the result in `checklists/validation.md`.
 

@@ -150,14 +150,14 @@
 
   {#if gif.result}
     <div class="result" aria-label="Result">
+      <p class="note">
+        {megabytes(gif.result.output.bytes)} · {gif.result.output.width}×{gif.result.output.height}{#if measure} · {measure.fps.toFixed(1)} fps{#if measure.search?.lowered.length} · lowered {loweredText(measure.search.lowered)}{/if}{/if}
+      </p>
       {#if gif.result.output.kind === "image"}
         <img src={gif.result.output.url} alt="The exported GIF" />
       {:else}
         <video src={gif.result.output.url} autoplay loop muted playsinline></video>
       {/if}
-      <p class="note">
-        {megabytes(gif.result.output.bytes)} · {gif.result.output.width}×{gif.result.output.height}{#if measure} · {measure.fps.toFixed(1)} fps{#if measure.search?.lowered.length} · lowered {loweredText(measure.search.lowered)}{/if}{/if}
-      </p>
     </div>
   {:else if gif.failure}
     <div class="result" role="alert">
@@ -192,7 +192,7 @@
   .grid label.check { flex-direction: row; align-items: center; gap: 6px; }
   .estimate { display: flex; gap: var(--space-3); min-height: 18px; }
   .result { display: flex; flex-direction: column; gap: 6px; }
-  .result img, .result video { max-height: 220px; max-width: 100%; align-self: start; border-radius: var(--radius-m); }
+  .result img, .result video { max-height: 120px; max-width: 100%; align-self: start; border-radius: var(--radius-m); }
   footer { display: flex; align-items: center; gap: var(--space-2); }
   .spacer { flex: 1; }
 </style>

@@ -103,3 +103,25 @@ senior-code-reviewer over `3fd4283..1789478`: no high findings. Fixed:
   byte-identical per machine (T013), not across thread counts; the dry run predicts the search
   but not a retry (it never sees the full encode); the MP4 sample model scales linearly (its
   window-start I-frames make it conservative).
+
+## US4/US5 review (2026-10-25)
+
+senior-code-reviewer over `1789478..f4729ec`: no high findings. Fixed: a retried full encode is
+kept only when it is smaller; smart framing keeps the analysed crop window at every width the
+search tries; a cancelled analysis no longer switches the job to blur; CSV rows reject
+`gif_budget=none` with `gif_hard_limit` and a GIF `gif_fps` above 50 (with the row number); the
+CLI and manifest contracts say what the code does (`--gif --upscale` skips the upscale; `batch`
+fills). Accepted: smart-framing fallbacks are warnings without an issue code; sample windows'
+commands assume whole-second windows (under a frame of drift); a whole-range blur fallback still
+writes its unused command file.
+
+## US6 / SC-007 (2026-10-25, private Xvfb display :99, never the real display)
+
+Debug desktop build (`tauri build --debug --no-bundle`), isolated config, state and cache, bundled
+FFmpeg n9.0.2 and gifsicle. Opened `land.mp4` (Land6, 1280x720, 6 s) from the command line, then:
+(1) **GIF for Reddit**: the view shows "Reddit post (limits unverified)", "aim 8.0 MB, at most
+20.0 MB" and, within a few seconds, "≈ 2.1 MB · MP4 ≈ 465 kB"; the default target needs no
+click; (2) **Export now**: "Finished · 1 succeeded", `gifs/land_reddit-post.gif` 2 092 390 bytes
+(the estimate's 2.1 MB), playing in the result card. Two interactions after opening the video
+(the bar is three). Found and fixed: the result card overflowed the panel, hiding its size line
+(the caption now comes first and the picture is smaller).

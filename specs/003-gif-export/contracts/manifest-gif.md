@@ -42,7 +42,7 @@ for that layer and below. Unknown keys are rejected with the line number.
 
 Other rules:
 - A video with no `clips` and GIF on becomes a whole-video GIF job, as for upscale.
-- `gif` together with `upscale` means a chained job (see cli.md).
+- `gif` together with `upscale` is one GIF job; the upscale is skipped with a note (see cli.md).
 - The output `container` key is ignored for GIF jobs; `format` decides it.
 - When the user exports the desktop queue as a manifest, it carries these keys, so the CLI
   reproduces the result (FR-020, SC-007).
