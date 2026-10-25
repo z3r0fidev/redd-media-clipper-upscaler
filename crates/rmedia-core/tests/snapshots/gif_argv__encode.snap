@@ -1,0 +1,5 @@
+---
+source: crates/rmedia-core/tests/gif_argv.rs
+expression: "show(&cmds[1].args).replace(&key, \"p-[KEY].png\")"
+---
+-hide_banner -nostdin -n -loglevel warning -progress pipe:1 -nostats -stats_period 0.25 -ss 1.000000 -protocol_whitelist file,pipe -i file:[SRC] -i p-[KEY].png -t 2.000000 -filter_complex [0:v]fps=15/1,scale=720:405:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle[g] -map [g] -an -sn -dn -map_metadata -1 -f gif -fflags +bitexact -loop 0 enc.gif

@@ -84,7 +84,7 @@ pub fn input_args(spec: &ClipSpec) -> Vec<OsString> {
 
 /// [`input_args`] in two parts: through `-i file:<input>`, and the output-side `-ss`/`-t`
 /// (which must follow any further input, or they would apply to it).
-fn input_parts(spec: &ClipSpec) -> (Vec<OsString>, Vec<OsString>) {
+pub(crate) fn input_parts(spec: &ClipSpec) -> (Vec<OsString>, Vec<OsString>) {
     let mut a = Vec::new();
     let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
     if spec.trim.is_some() {

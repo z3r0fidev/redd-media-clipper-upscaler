@@ -17,8 +17,9 @@ use crate::exec::commit::{scratch_path, temp_path};
 use crate::preset::{Preset, PresetRegistry, VideoCodec};
 use crate::probe::{self, MediaInfo};
 use crate::request::{
-    BatchRequest, ClipRequest, DEFAULT_NAME_TEMPLATE, MULTI_SOURCE_NAME_TEMPLATE, Mode, OnExists, Origin,
-    SourceRequest, UPSCALE_CLIP_NAME_TEMPLATE, UPSCALE_MULTI_CLIP_NAME_TEMPLATE, UPSCALE_NAME_TEMPLATE,
+    BatchRequest, ClipRequest, DEFAULT_NAME_TEMPLATE, GIF_CLIP_NAME_TEMPLATE, GIF_MULTI_CLIP_NAME_TEMPLATE,
+    GIF_NAME_TEMPLATE, MULTI_SOURCE_NAME_TEMPLATE, Mode, OnExists, Origin, SourceRequest,
+    UPSCALE_CLIP_NAME_TEMPLATE, UPSCALE_MULTI_CLIP_NAME_TEMPLATE, UPSCALE_NAME_TEMPLATE,
 };
 use crate::time::{EndSpec, Ts};
 use crate::tools::Tools;
@@ -88,11 +89,13 @@ pub enum Disposition {
     Skip { reason: String },
 }
 
-/// The work a job performs. Feature 003 adds a `Gif` variant.
+/// The work a job performs.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JobSpec {
     Clip(Box<ClipSpec>),
     Upscale(Box<crate::upscale::UpscaleSpec>),
+    /// A GIF or Reddit MP4 (feature 003).
+    Gif(Box<crate::gif::GifSpec>),
 }
 
 /// What a job occupies while it runs. Every job takes one of the `--jobs` slots; GPU jobs also
@@ -163,6 +166,15 @@ impl PlannedJob {
         match &self.spec {
             JobSpec::Clip(c) => ffargs::clip_args(c, &self.temp),
             JobSpec::Upscale(u) => ffargs::upscale_args(u, &self.temp),
+            JobSpec::Gif(g) => {
+                let s = &g.gif.start;
+                crate::gif::graph::encode_args(
+                    g,
+                    s,
+                    &crate::gif::graph::palette_name(g, s),
+                    crate::gif::graph::ENCODED,
+                )
+            }
         }
     }
 
@@ -178,6 +190,19 @@ impl PlannedJob {
     /// are [`PlannedJob::args`].
     pub fn commands(&self) -> Vec<JobCommand> {
         let ffmpeg = |args| JobCommand { program: Program::Ffmpeg, args };
+        if let JobSpec::Gif(g) = &self.spec {
+            use crate::gif::graph::{ENCODED, OPTIMISED, gifsicle_args, palette_args, palette_name};
+            let s = &g.gif.start;
+            let palette = palette_name(g, s);
+            let mut cmds = vec![ffmpeg(palette_args(g, s, &palette)), ffmpeg(self.args())];
+            if g.gif.optimiser.is_some() {
+                cmds.push(JobCommand {
+                    program: Program::Gifsicle,
+                    args: gifsicle_args(s.lossy, ENCODED, OPTIMISED),
+                });
+            }
+            return cmds;
+        }
         match self.pipeline() {
             Some(p) => vec![
                 ffmpeg(p.decode),
@@ -196,7 +221,7 @@ impl PlannedJob {
     /// The scarce resource this job needs besides a job slot.
     pub fn resource(&self) -> Resource {
         match &self.spec {
-            JobSpec::Clip(_) => Resource::Cpu,
+            JobSpec::Clip(_) | JobSpec::Gif(_) => Resource::Cpu,
             JobSpec::Upscale(u) => match u.up.tier.tier {
                 crate::upscale::tier::Tier::Cpu => Resource::Cpu,
                 _ => Resource::Gpu,
@@ -209,6 +234,7 @@ impl PlannedJob {
         match &self.spec {
             JobSpec::Clip(_) => "clip",
             JobSpec::Upscale(_) => "upscale",
+            JobSpec::Gif(_) => "gif",
         }
     }
 
@@ -216,7 +242,7 @@ impl PlannedJob {
     pub fn mode(&self) -> Option<Mode> {
         match &self.spec {
             JobSpec::Clip(c) => Some(c.mode),
-            JobSpec::Upscale(_) => None,
+            JobSpec::Upscale(_) | JobSpec::Gif(_) => None,
         }
     }
 
@@ -224,7 +250,7 @@ impl PlannedJob {
     pub fn predicted(&self) -> Option<Span> {
         match &self.spec {
             JobSpec::Clip(c) => c.predicted,
-            JobSpec::Upscale(_) => None,
+            JobSpec::Upscale(_) | JobSpec::Gif(_) => None,
         }
     }
 }
@@ -254,16 +280,31 @@ impl Plan {
 /// Validates every request and resolves outputs. Reports all problems at once (FR-003).
 /// Upscale presets come from the built-ins plus the user's preset folder.
 pub async fn plan(req: &BatchRequest, tools: &Tools, caps: &Caps, cancel: &CancellationToken) -> Plan {
-    let presets = PresetRegistry::load(crate::settings::config_dir().as_deref());
-    plan_with(req, tools, caps, presets, cancel).await
+    let config = crate::settings::config_dir();
+    let presets = PresetRegistry::load(config.as_deref());
+    let targets = crate::gif::target::GifTargetRegistry::load(config.as_deref());
+    plan_with_targets(req, tools, caps, presets, targets, cancel).await
 }
 
-/// [`plan`] with an explicit preset registry (tests use the built-ins only).
+/// [`plan`] with an explicit preset registry and the built-in GIF targets (tests).
 pub async fn plan_with(
     req: &BatchRequest,
     tools: &Tools,
     caps: &Caps,
     presets: PresetRegistry,
+    cancel: &CancellationToken,
+) -> Plan {
+    plan_with_targets(req, tools, caps, presets, crate::gif::target::GifTargetRegistry::builtin(), cancel)
+        .await
+}
+
+/// [`plan`] with explicit preset and GIF target registries.
+pub async fn plan_with_targets(
+    req: &BatchRequest,
+    tools: &Tools,
+    caps: &Caps,
+    presets: PresetRegistry,
+    targets: crate::gif::target::GifTargetRegistry,
     cancel: &CancellationToken,
 ) -> Plan {
     let mut planner = Planner {
@@ -277,6 +318,7 @@ pub async fn plan_with(
         sources: HashSet::new(),
         probes: HashMap::new(),
         presets,
+        targets,
     };
     for s in &req.sources {
         if let Ok(c) = std::fs::canonicalize(&s.path) {
@@ -308,6 +350,7 @@ struct Planner<'a> {
     sources: HashSet<std::ffi::OsString>,
     probes: HashMap<PathBuf, Result<MediaInfo, String>>,
     presets: PresetRegistry,
+    targets: crate::gif::target::GifTargetRegistry,
 }
 
 impl Planner<'_> {
@@ -383,11 +426,22 @@ impl Planner<'_> {
             },
             None => None,
         };
+        // --- GIF export (feature 003): reframes and downscales only, so no upscale tier runs
+        // (research R16); the chained `--gif --upscale` job arrives with US5.
+        let gif = opts.gif.as_ref();
+        let up = match (gif, up) {
+            (Some(_), Some(_)) => {
+                warnings.push("upscale skipped: a GIF is never larger than its source".into());
+                None
+            }
+            (_, up) => up,
+        };
         let whole = clip.start == Ts::ZERO && clip.end == EndSpec::EndOfMedia;
         // Named like a whole-video upscale unless the user named the clip (names stay distinct).
         let whole_video = whole && clip.name.is_none();
-        // Upscaling always re-encodes, so it cuts like accurate mode (and `mode` is ignored).
-        let mode = if up.is_some() { Mode::Accurate } else { opts.mode };
+        // Upscaling and GIF export always re-encode, so they cut like accurate mode (and `mode`
+        // is ignored).
+        let mode = if up.is_some() || gif.is_some() { Mode::Accurate } else { opts.mode };
 
         // --- times ---------------------------------------------------------------------------
         let duration = media.duration;
@@ -449,22 +503,25 @@ impl Planner<'_> {
             }
             (Some(_), _) => "mp4".to_owned(),
         };
-        let (mut container, mut out_ext) = match Container::from_ext(&ext) {
-            Some(c) => (c, ext.clone()),
-            None if opts.container.is_some() => {
+        let (mut container, mut out_ext) = match (gif, Container::from_ext(&ext)) {
+            // GIF jobs: `format` decides the file (the container key is ignored); the streams
+            // are selected as for a video-only MP4.
+            (Some(g), _) => (Container::Mp4, g.format.ext().to_owned()),
+            (None, Some(c)) => (c, ext.clone()),
+            (None, None) if opts.container.is_some() => {
                 return self.error(
                     origin,
                     IssueCode::InvalidInput,
                     format!("unsupported output container .{ext}"),
                 );
             }
-            None => {
+            (None, None) => {
                 warnings.push(format!("unknown container .{ext}; writing .mkv"));
                 (Container::Mkv, "mkv".to_owned())
             }
         };
         let mut encode = None;
-        if mode == Mode::Accurate && up.is_none() {
+        if mode == Mode::Accurate && up.is_none() && gif.is_none() {
             if container.encode_profile().is_none() {
                 warnings.push(format!(
                     "accurate mode cannot write .{out_ext}; writing .mp4 instead (choose --container to override)"
@@ -492,7 +549,13 @@ impl Planner<'_> {
             }
         }
 
-        let mut stream_plan = match streams::select_streams(media, &opts.streams, container, mode) {
+        // A GIF or Reddit MP4 is silent and has no subtitles.
+        let silent = crate::request::StreamSelection {
+            audio: crate::request::AudioSel::None,
+            subtitles: crate::request::SubSel::None,
+        };
+        let selection = if gif.is_some() { &silent } else { &opts.streams };
+        let mut stream_plan = match streams::select_streams(media, selection, container, mode) {
             Ok(p) => p,
             Err(msg) => return self.error(origin, IssueCode::InvalidInput, msg),
         };
@@ -505,17 +568,31 @@ impl Planner<'_> {
         let out_dir = match &opts.output_dir {
             Some(d) if d.is_absolute() => d.clone(),
             Some(d) => std::path::absolute(d).unwrap_or_else(|_| d.clone()),
+            None if gif.is_some() => source_dir.join("gifs"),
             None => source_dir.join(if up.is_some() && whole_video { "upscaled" } else { "clips" }),
         };
-        let template = match &up {
-            Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE && whole_video => UPSCALE_NAME_TEMPLATE,
-            Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE => UPSCALE_CLIP_NAME_TEMPLATE,
-            // Whole-video names are unique per folder already; clips keep their sub-folder.
-            Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE && whole_video => {
-                UPSCALE_NAME_TEMPLATE
+        let template = match (&up, gif) {
+            (_, Some(_)) if opts.name_template == DEFAULT_NAME_TEMPLATE && whole_video => GIF_NAME_TEMPLATE,
+            (_, Some(_)) if opts.name_template == DEFAULT_NAME_TEMPLATE => GIF_CLIP_NAME_TEMPLATE,
+            (_, Some(_)) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE && whole_video => {
+                GIF_NAME_TEMPLATE
             }
-            Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE => UPSCALE_MULTI_CLIP_NAME_TEMPLATE,
-            _ => opts.name_template.as_str(),
+            (_, Some(_)) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE => GIF_MULTI_CLIP_NAME_TEMPLATE,
+            (_, Some(_)) => opts.name_template.as_str(),
+            (up, None) => match up {
+                Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE && whole_video => {
+                    UPSCALE_NAME_TEMPLATE
+                }
+                Some(_) if opts.name_template == DEFAULT_NAME_TEMPLATE => UPSCALE_CLIP_NAME_TEMPLATE,
+                // Whole-video names are unique per folder already; clips keep their sub-folder.
+                Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE && whole_video => {
+                    UPSCALE_NAME_TEMPLATE
+                }
+                Some(_) if opts.name_template == MULTI_SOURCE_NAME_TEMPLATE => {
+                    UPSCALE_MULTI_CLIP_NAME_TEMPLATE
+                }
+                _ => opts.name_template.as_str(),
+            },
         };
         let stem = source.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let rel = match naming::render(
@@ -528,6 +605,8 @@ impl Planner<'_> {
                 end: requested_end,
                 ext: &out_ext,
                 preset: up.as_ref().map(|(u, ..)| u.preset.as_str()),
+                target: gif.map(|g| g.target.as_str()),
+                format: gif.map(|g| g.format.ext()),
             },
         ) {
             Ok(p) => p,
@@ -537,7 +616,7 @@ impl Planner<'_> {
             origin,
             out_dir.join(rel),
             opts.on_exists,
-            if up.is_some() { "jobs" } else { "clips" },
+            if up.is_some() || gif.is_some() { "jobs" } else { "clips" },
             &mut warnings,
         ) else {
             return;
@@ -624,9 +703,26 @@ impl Planner<'_> {
             encode,
             streams: stream_plan,
         };
-        let (spec, scratch) = match up {
-            None => (JobSpec::Clip(Box::new(cut)), None),
-            Some((u, preset, tier)) => {
+        let mut notices = Vec::new();
+        let (spec, scratch) = match (gif, up) {
+            (Some(g), _) => {
+                let scratch = scratch_path(&output, &self.run_id, id);
+                // An engine found on PATH may not come from the input folder or the scratch.
+                let refused = [source_dir.clone(), scratch.clone()];
+                match crate::gif::plan::plan_gif(g, &self.targets, self.caps, media, &cut, &refused) {
+                    Ok(p) => {
+                        warnings.extend(p.warnings);
+                        notices = p.notices;
+                        (
+                            JobSpec::Gif(Box::new(crate::gif::GifSpec { cut, frame: p.frame, gif: p.gif })),
+                            Some(scratch),
+                        )
+                    }
+                    Err((code, msg)) => return self.error(origin, code, msg),
+                }
+            }
+            (None, None) => (JobSpec::Clip(Box::new(cut)), None),
+            (None, Some((u, preset, tier))) => {
                 let plan = self.upscale_plan(origin, u, preset, tier, media, &cut, whole, &mut warnings);
                 let scratch = scratch_path(&output, &self.run_id, id);
                 (JobSpec::Upscale(Box::new(UpscaleSpec { cut, up: plan })), Some(scratch))
@@ -642,7 +738,7 @@ impl Planner<'_> {
             disposition,
             requested,
             warnings,
-            notices: Vec::new(),
+            notices,
             spec,
         });
     }
@@ -921,10 +1017,15 @@ impl Planner<'_> {
     fn check_free_space(&mut self) {
         let mut needs: std::collections::BTreeMap<PathBuf, u64> = std::collections::BTreeMap::new();
         for job in &self.jobs {
-            if let (JobSpec::Upscale(u), Some(dir)) = (&job.spec, job.output.parent())
+            let bytes = match &job.spec {
+                JobSpec::Upscale(u) => u.up.estimate.bytes,
+                JobSpec::Gif(g) => crate::gif::plan::rough_bytes(&g.gif),
+                JobSpec::Clip(_) => continue,
+            };
+            if let Some(dir) = job.output.parent()
                 && job.disposition == Disposition::Run
             {
-                *needs.entry(dir.to_path_buf()).or_default() += u.up.estimate.bytes;
+                *needs.entry(dir.to_path_buf()).or_default() += bytes;
             }
         }
         for message in estimate::check_space(&needs, estimate::free_space) {

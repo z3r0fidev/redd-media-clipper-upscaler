@@ -1,8 +1,9 @@
 //! Output naming templates and cross-platform file name sanitizing (FR-016).
 //!
 //! Placeholders: `{source}` `{index}` `{index:0N}` `{name}` `{name-or-start}` `{name-or-range}`
-//! `{start}` `{end}` `{range}` (`{start}_{end}`) `{ext}`, and `{preset}` for upscale jobs. A `/` in
-//! the template creates a sub-folder of the output directory.
+//! `{start}` `{end}` `{range}` (`{start}_{end}`) `{ext}`, `{preset}` for upscale jobs, and
+//! `{target}` and `{format}` for GIF jobs. A `/` in the template creates a sub-folder of the
+//! output directory.
 
 use std::path::PathBuf;
 
@@ -19,6 +20,9 @@ pub struct NameVars<'a> {
     pub ext: &'a str,
     /// Upscale jobs: the device preset id. `{preset}` is unknown for clip jobs.
     pub preset: Option<&'a str>,
+    /// GIF jobs: the GIF target id and the format (`gif`/`mp4`); unknown for other jobs.
+    pub target: Option<&'a str>,
+    pub format: Option<&'a str>,
 }
 
 /// Renders a template into a relative path. Errors describe the problem for the user.
@@ -70,6 +74,8 @@ fn expand(key: &str, v: &NameVars<'_>) -> Option<String> {
         "end" => v.end.filename(),
         "ext" => clean(v.ext),
         "preset" => clean(v.preset?),
+        "target" => clean(v.target?),
+        "format" => clean(v.format?),
         _ => {
             let width = key.strip_prefix("index:0")?;
             let width: usize = width.parse().ok().filter(|w| (1..=9).contains(w))?;
@@ -155,7 +161,23 @@ mod tests {
             end: Ts::from_secs_f64(120.0),
             ext: "mkv",
             preset: None,
+            target: None,
+            format: None,
         }
+    }
+
+    #[test]
+    fn target_and_format_placeholders_only_for_gif_jobs() {
+        let t = crate::request::GIF_NAME_TEMPLATE;
+        assert!(render(t, &vars(None)).is_err(), "{{target}} is unknown for clips");
+        let gif = NameVars { target: Some("reddit-post"), format: Some("gif"), ext: "gif", ..vars(None) };
+        assert_eq!(render(t, &gif).unwrap(), PathBuf::from("match 12_reddit-post.gif"));
+        let clip = crate::request::GIF_CLIP_NAME_TEMPLATE;
+        assert_eq!(
+            render(clip, &gif).unwrap(),
+            PathBuf::from("match 12_007_00-01-30.500_00-02-00.000_reddit-post.gif")
+        );
+        assert_eq!(render("{source}.{format}", &gif).unwrap(), PathBuf::from("match 12.gif"));
     }
 
     #[test]

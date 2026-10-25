@@ -286,7 +286,7 @@ dry run and estimate, progress, cancel and verify.
 
 ### Tests for User Story 1 ⚠️ (write first, confirm they fail)
 
-- [ ] T033 [P] [US1] Write `core-tests/gif_us1.rs`, one test per acceptance scenario:
+- [X] T033 [P] [US1] Write `core-tests/gif_us1.rs`, one test per acceptance scenario:
   - `Land6` defaults: ≤ 8 MB, 720×405, only 6/7 cs delays, loop forever, the outcome reports
     size, width, fps and duration;
   - `Narrow` keeps 640 with a note;
@@ -335,7 +335,7 @@ dry run and estimate, progress, cancel and verify.
 
 ### Implementation for User Story 1
 
-- [ ] T039 [US1] Implement the planning side:
+- [X] T039 [US1] Implement the planning side:
   - `GifPlan`, `GifSpec` and `check_gif`/`plan_gif` in `core/gif/mod.rs`;
   - `JobSpec::Gif` arms everywhere (`core/plan/mod.rs` `args`/`commands`/`pipeline`/`resource`/
     `kind`/`mode`/`predicted`, `check_free_space`, `core/upscale/mod.rs` `prepare_plan`,
@@ -343,7 +343,7 @@ dry run and estimate, progress, cancel and verify.
   - scratch allocation and accurate mode;
   - `TARGET_UNKNOWN`, the 2-frame minimum, the static 64 KiB floor;
   - notes and notices (`TIMING_APPROXIMATE`, `LONG_RANGE`, narrower source).
-- [ ] T040 [US1] Implement `core/gif/graph.rs`: the palette and encode argv on top of
+- [X] T040 [US1] Implement `core/gif/graph.rs`: the palette and encode argv on top of
   `frame_chain`, with `-f gif -fflags +bitexact`, the loop table, `-an -sn -dn -map_metadata -1`
   and relative names. Add insta snapshots of the argv.
 - [ ] T041 [US1] Implement `core/gif/estimate.rs`:
@@ -352,7 +352,7 @@ dry run and estimate, progress, cancel and verify.
   - `predict()` for the no-budget case;
   - the dry-run prepare step that fills `GifPlan.estimate` in a temporary scratch folder
     (makes T036 pass).
-- [ ] T042 [US1] Implement `core/exec/gif.rs`:
+- [X] T042 [US1] Implement `core/exec/gif.rs`:
   - stages palette → encode → verify with weights (data-model.md);
   - the size watchdog;
   - `JobMeasure::Gif`;

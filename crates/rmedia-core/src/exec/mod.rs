@@ -500,6 +500,7 @@ async fn run_job(
     let result = match &job.spec {
         JobSpec::Clip(spec) => clip::execute(spec, &mut ctx).await,
         JobSpec::Upscale(spec) => upscale::execute(spec, &mut ctx).await,
+        JobSpec::Gif(spec) => gif::execute(spec, &mut ctx).await,
     };
     let committed = match result {
         Ok(measure) => {

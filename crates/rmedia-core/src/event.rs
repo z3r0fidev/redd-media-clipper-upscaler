@@ -114,6 +114,39 @@ pub enum JobMeasure {
         /// The source was already at or above the target size (FR-005).
         no_upscale_needed: bool,
     },
+    /// A GIF or Reddit MP4 (feature 003, contracts/json-output.md › Outcome).
+    Gif {
+        span: Span,
+        format: crate::gif::Format,
+        bytes: u64,
+        width: u32,
+        height: u32,
+        fps: f64,
+        timing: crate::gif::timing::Timing,
+        /// Palette size, dithering and gifsicle lossy level (built-in engine only).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        colours: Option<u16>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        dither: Option<crate::gif::target::Dither>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        lossy: Option<u16>,
+        engine: crate::gif::plan::EngineUsed,
+        /// gifsicle optimised the output.
+        optimiser: bool,
+        #[serde(rename = "loop")]
+        loop_count: crate::gif::LoopCount,
+        /// The same input and options give the same bytes (research R14).
+        deterministic: bool,
+        /// The range was shortened to fit the budget (`--allow-trim`, FR-011).
+        trimmed: Option<Span>,
+        /// The budget search, when there was a budget (FR-012).
+        search: Option<crate::gif::budget::SearchRecord>,
+        /// The Reddit MP4 of the same frames, for the hint (US3).
+        mp4_estimate: Option<u64>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

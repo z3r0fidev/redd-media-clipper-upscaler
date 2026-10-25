@@ -5,6 +5,7 @@ pub mod budget;
 pub mod engines;
 pub mod estimate;
 pub mod graph;
+pub mod plan;
 pub mod target;
 pub mod timing;
 pub mod verify;
@@ -12,6 +13,7 @@ pub mod verify;
 use serde::{Deserialize, Serialize};
 
 use crate::upscale::Reframe;
+pub use plan::{GifPlan, GifSpec};
 use target::Dither;
 
 /// GIF, or the Reddit MP4 (a silent H.264 loop; recommended for posts, research R6).

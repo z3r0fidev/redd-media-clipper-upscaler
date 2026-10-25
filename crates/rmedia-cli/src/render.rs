@@ -165,6 +165,21 @@ impl Output {
                 JobOutcome::Succeeded { output, measure: JobMeasure::Upscale { .. } } => {
                     println!("✓ {}", output.display());
                 }
+                JobOutcome::Succeeded {
+                    output,
+                    measure: JobMeasure::Gif { bytes, width, height, fps, colours, dither, engine, .. },
+                } => {
+                    let palette = match (colours, dither) {
+                        (Some(c), Some(d)) => format!(", {c} colours, dither {}", d.label()),
+                        _ => String::new(),
+                    };
+                    println!(
+                        "✓ {}  ({}, {width}x{height}, {fps:.3} fps{palette}, {})",
+                        output.display(),
+                        rmedia_core::upscale::estimate::human_bytes(*bytes),
+                        format!("{engine:?}").to_lowercase()
+                    );
+                }
                 JobOutcome::Skipped { reason } => println!("- {} skipped: {reason}", j.output.display()),
                 JobOutcome::Failed { error } => {
                     println!("✗ {} failed: {}", j.output.display(), error.message);
