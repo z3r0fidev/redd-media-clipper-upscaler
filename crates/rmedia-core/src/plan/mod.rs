@@ -170,6 +170,9 @@ impl PlannedJob {
             JobSpec::Gif(g) if g.gif.engine == crate::gif::plan::EngineUsed::Gifski => {
                 crate::gif::graph::y4m_args(g, &g.gif.start, crate::gif::graph::PROGRESS)
             }
+            JobSpec::Gif(g) if g.gif.format == crate::gif::Format::Mp4 => {
+                crate::gif::graph::mp4_args(g, &g.gif.start, crate::gif::graph::ENCODED_MP4)
+            }
             JobSpec::Gif(g) => {
                 let s = &g.gif.start;
                 crate::gif::graph::encode_args(
@@ -207,6 +210,9 @@ impl PlannedJob {
                         args: gifski_args(s.rate, p, g.gif.loop_count, ENCODED),
                     },
                 ];
+            }
+            if g.gif.format == crate::gif::Format::Mp4 {
+                return vec![ffmpeg(self.args())];
             }
             let palette = palette_name(g, s);
             let mut cmds = vec![ffmpeg(palette_args(g, s, &palette)), ffmpeg(self.args())];

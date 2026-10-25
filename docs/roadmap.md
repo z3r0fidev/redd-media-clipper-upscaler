@@ -118,8 +118,9 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   as one job.
 - US6 (T065–T072) done: desktop GIF commands, the GIF view, GIF parity with the CLI; SC-007 two
   interactions, the estimate matched the output.
-- Now: Polish (T073–T080): documentation, notices and release checks, the quickstart, final
-  reviews.
+- Polish (T073–T080): docs, notices and pin checks, the Linux quickstart and the final reviews
+  are done (78/80, [progress](../specs/003-gif-export/progress.md)). Open: the `release.yml`
+  dispatch with gifski off (owner approval) and the Windows results. Stopped for owner review.
 
 ### Open owner decisions
 

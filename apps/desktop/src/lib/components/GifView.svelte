@@ -8,7 +8,7 @@
   import type { GifShape } from "../bindings/GifShape";
   import type { Reframe } from "../bindings/Reframe";
   import { toast } from "../stores/app.svelte";
-  import { megabytes } from "../stores/gif";
+  import { megabytes, resolveBudget } from "../stores/gif";
   import { addGifToQueue, exportNow, gif, setGifOptions } from "../stores/gif.svelte";
   import { canRun, runner } from "../stores/runner.svelte";
   import { baseName, fmt } from "../time";
@@ -44,13 +44,10 @@
     !validRange ? "Out must be after In" : range.start <= 0 && range.end == null ? "Whole video" : `Part: ${fmt(range.start)} → ${range.end == null ? "end" : fmt(range.end)}`,
   );
   const blockedWhy = $derived(!validRange ? "Set In before Out" : !canRun() ? "Another run is in progress" : "");
-  const budgetText = $derived(
-    o.budget === null
-      ? "no size limit"
-      : target?.budget
-        ? `aim ${megabytes(o.budget.soft ?? target.budget.soft)}, at most ${megabytes(o.budget.hard ?? target.budget.hard)}`
-        : "no size limit",
-  );
+  const budgetText = $derived.by(() => {
+    const b = o.budget === null ? null : resolveBudget(o.budget ?? {}, target?.budget ?? null);
+    return b ? `aim ${megabytes(b.soft)}, at most ${megabytes(b.hard)}` : "no size limit";
+  });
   const est = $derived(gif.estimate?.estimate ?? null);
   const loweredText = (l: { setting: string; from: unknown; to: unknown }[]) =>
     l.map((x) => `${x.setting} ${JSON.stringify(x.from)} → ${JSON.stringify(x.to)}`).join(", ");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addGif, DEFAULT_GIF, fullGif, gifClip, isGif, megabytes, resolveGif, withTrim } from "./gif";
+import { addGif, DEFAULT_GIF, fullGif, gifClip, isGif, megabytes, resolveBudget, resolveGif, withTrim } from "./gif";
 import { emptyQueue } from "./queue";
 
 describe("gif options", () => {
@@ -38,5 +38,17 @@ describe("gif options", () => {
     expect(c.options?.gif?.allow_trim).toBe(true);
     expect(megabytes(2_400_000)).toBe("2.4 MB");
     expect(megabytes(68_000)).toBe("68 kB");
+  });
+});
+
+describe("resolveBudget", () => {
+  const t = { soft: 8e6, hard: 20e6 };
+  it("follows the core's rules", () => {
+    expect(resolveBudget({ soft: 3e6 }, t)).toEqual({ soft: 3e6, hard: 3e6 });
+    expect(resolveBudget({ hard: 5e6 }, t)).toEqual({ soft: 5e6, hard: 5e6 });
+    expect(resolveBudget({ hard: 30e6 }, t)).toEqual({ soft: 8e6, hard: 30e6 });
+    expect(resolveBudget({ soft: 2e6, hard: 4e6 }, null)).toEqual({ soft: 2e6, hard: 4e6 });
+    expect(resolveBudget({}, null)).toBeNull();
+    expect(resolveBudget({}, t)).toEqual(t);
   });
 });

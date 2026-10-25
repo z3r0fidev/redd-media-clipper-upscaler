@@ -87,3 +87,14 @@ export function megabytes(bytes: number): string {
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1e3))} kB`;
 }
+
+/** The limits a budget gives over the target's, as the core resolves them (`BudgetSpec::resolve`):
+ *  `soft` alone sets `hard = soft`; `hard` alone keeps the target's soft, capped at `hard`. */
+export function resolveBudget(
+  b: { soft?: number; hard?: number },
+  target: { soft: number; hard: number } | null,
+): { soft: number; hard: number } | null {
+  if (b.soft != null) return { soft: b.soft, hard: b.hard ?? b.soft };
+  if (b.hard != null) return { soft: target ? Math.min(target.soft, b.hard) : b.hard, hard: b.hard };
+  return target;
+}

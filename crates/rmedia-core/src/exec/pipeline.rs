@@ -110,14 +110,19 @@ impl WorkerReport {
         {
             // The worker is less trusted: no control characters reach terminals or logs.
             let s = |k: &str| {
-                v[k].as_str().unwrap_or_default().chars().filter(|c| !c.is_control()).take(500).collect()
+                v[k].as_str()
+                    .unwrap_or_default()
+                    .chars()
+                    .filter(|c| !crate::gif::target::unsafe_char(*c))
+                    .take(500)
+                    .collect()
             };
             self.error = Some((s("code"), s("message")));
         }
         if self.tail.len() == TAIL_LINES {
             self.tail.remove(0);
         }
-        self.tail.push(line.chars().filter(|c| !c.is_control()).collect());
+        self.tail.push(line.chars().filter(|c| !crate::gif::target::unsafe_char(*c)).collect());
     }
 }
 
@@ -126,7 +131,9 @@ async fn read_report(stderr: Option<tokio::process::ChildStderr>, report: Report
         Report::Tail => (process::collect_stderr(stderr).await, WorkerReport::default()),
         Report::CleanTail => {
             let tail = process::collect_stderr(stderr).await;
-            let clean = tail.lines().map(|l| l.chars().filter(|c| !c.is_control()).collect::<String>());
+            let clean = tail
+                .lines()
+                .map(|l| l.chars().filter(|c| !crate::gif::target::unsafe_char(*c)).collect::<String>());
             (clean.collect::<Vec<_>>().join("\n"), WorkerReport::default())
         }
         Report::Worker => {
@@ -334,8 +341,10 @@ async fn tail_progress(
     tx: tokio::sync::mpsc::UnboundedSender<ProgressBlock>,
     finish: CancellationToken,
 ) {
+    use tokio::io::AsyncReadExt;
     let mut parser = ProgressParser::default();
-    let mut offset = 0usize;
+    let mut file: Option<tokio::fs::File> = None;
+    let mut data = Vec::new();
     let mut partial = String::new();
     loop {
         // `finish`: read once more, then stop.
@@ -343,20 +352,22 @@ async fn tail_progress(
             () = tokio::time::sleep(PROGRESS_POLL) => false,
             () = finish.cancelled() => true,
         };
-        let Ok(data) = tokio::fs::read(&path).await else {
-            if last {
-                return;
-            }
-            continue;
+        if file.is_none() {
+            file = tokio::fs::File::open(&path).await.ok();
+        }
+        // Only the bytes written since the last poll: the handle keeps its position.
+        data.clear();
+        let read = match file.as_mut() {
+            Some(f) => f.read_to_end(&mut data).await.is_ok(),
+            None => false,
         };
-        if data.len() <= offset {
+        if !read || data.is_empty() {
             if last {
                 return;
             }
             continue;
         }
-        partial.push_str(&String::from_utf8_lossy(&data[offset..]));
-        offset = data.len();
+        partial.push_str(&String::from_utf8_lossy(&data));
         while let Some(i) = partial.find('\n') {
             let line: String = partial.drain(..=i).collect();
             if let Some(block) = parser.feed(line.trim_end()) {

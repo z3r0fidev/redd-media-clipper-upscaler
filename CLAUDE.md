@@ -11,8 +11,9 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
 - Active feature: **003 GIF export for Reddit** (`specs/003-gif-export/`, 6 stories; gifsicle and
   gifski bundled as optional engines, gifski's AGPL gates releases on the app licence). Tasks
-  written (T001–T080); Phases 1 and 2 done; the engines are pinned
-  (`xtask/gif-tools.lock.json`) and staged as sidecars. US1 (T033–T044) done and reviewed; next US2. Progress list: `docs/roadmap.md`.
+  written (T001–T080); 78/80 done (`specs/003-gif-export/progress.md`): US1–US6 and the final
+  reviews done; open: T078 release dispatch (owner approval) and T079 Windows results. Stopped
+  for owner review. Progress list: `docs/roadmap.md`.
 - Done: 001 (`specs/001-video-clipping/`, 0.1.0) and 002 (`specs/002-mobile-upscale/`, 112/112,
   0.2.0 release candidate; owner checks left: two-phone gallery test, Reddit upload, +3 VMAF on
   real footage). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and

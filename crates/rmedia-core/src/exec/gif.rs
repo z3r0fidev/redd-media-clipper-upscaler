@@ -564,7 +564,8 @@ impl Gifski<'_> {
 /// A failed optional engine, named by `tool`, with its last stderr line (control characters
 /// removed: these programs are less trusted than ffmpeg).
 fn tool_failed(tool: &str, status: Option<ExitStatus>, stderr_tail: &str) -> Error {
-    let tail: String = stderr_tail.chars().filter(|c| !c.is_control() || *c == '\n').collect();
+    let tail: String =
+        stderr_tail.chars().filter(|c| !crate::gif::target::unsafe_char(*c) || *c == '\n').collect();
     let last = tail.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("no message").trim().to_owned();
     Error::EngineFailed {
         tool: tool.into(),

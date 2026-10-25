@@ -194,7 +194,7 @@ pub struct GifTarget {
 
 /// Characters that could rewrite or reorder a terminal line: controls, and bidi overrides,
 /// embeddings and isolates.
-fn unsafe_char(c: char) -> bool {
+pub(crate) fn unsafe_char(c: char) -> bool {
     c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}')
 }
 

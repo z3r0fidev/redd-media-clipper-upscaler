@@ -287,15 +287,16 @@ pub async fn search(input: &SearchInput, sampler: &mut impl Sampler) -> Result<F
         }
         if est.bytes > hard {
             let fits = fits_secs(input.len, hard, est);
+            // An animation needs at least two frames: fewer is unreachable, never a still.
             let one_frame = 1.0 / fps_of(cur.rate);
-            if !input.allow_trim || fits < one_frame {
+            if !input.allow_trim || fits * TRIM_SAFETY < 2.0 * one_frame {
                 return Err(Error::BudgetUnreachable {
                     fits_secs: Some(fits),
                     best_bytes: Some(est.bytes),
                     min_bytes: None,
                 });
             }
-            len = whole_frames(fits * TRIM_SAFETY, cur.rate).max(one_frame);
+            len = whole_frames(fits * TRIM_SAFETY, cur.rate).max(2.0 * one_frame);
             trimmed_to = Some(len);
         } else if est.bytes <= soft && last.width > cur.width && last_est.bytes > est.bytes {
             // The size grows with the area: interpolate width² between the floors and the last
@@ -604,6 +605,15 @@ mod tests {
         let frames = fits * 10.0; // 10 fps at the floors
         assert!((frames - frames.round()).abs() < 1e-6, "whole frames: {fits}");
         assert!(found.bytes <= 8_000_000);
+    }
+
+    #[test]
+    fn a_trim_shorter_than_two_frames_is_unreachable_not_a_still() {
+        let mut f = Fake::new(10_000_000_000.0);
+        let i = SearchInput { allow_trim: true, ..input(3_000_000, 8_000_000) };
+        let r = run(&i, &mut f);
+        assert!(matches!(r, Err(Error::BudgetUnreachable { fits_secs: Some(s), .. }) if s < 0.2), "{r:?}");
+        assert!(!f.calls.iter().any(|c| c.starts_with("full")), "nothing is encoded in full");
     }
 
     #[test]

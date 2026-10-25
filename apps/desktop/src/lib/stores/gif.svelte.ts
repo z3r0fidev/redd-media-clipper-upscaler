@@ -143,5 +143,9 @@ export async function exportNow(path: string, range: RangeArg, trim = false): Pr
     }
   } else if (job.status === "failed") {
     gif.failure = { message: job.error.message, fitsSecs: job.error.detail?.fits_secs ?? null };
+  } else if (job.status === "skipped") {
+    gif.failure = { message: `Not exported: ${job.reason}`, fitsSecs: null };
+  } else {
+    gif.failure = { message: "Export cancelled", fitsSecs: null };
   }
 }

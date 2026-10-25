@@ -461,9 +461,9 @@ pub fn pin(run_id: u64, without_debian: bool) -> Result<()> {
 
     // Downloads are untrusted until verified: an empty folder of their own, outside the
     // repository (so no parent .cargo/config or rust-toolchain applies to the crate).
-    let work = std::env::temp_dir().join(format!("rmedia-pin-gif-tools-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&work);
-    std::fs::create_dir_all(&work)?;
+    // A fresh, randomly named 0700 folder (never one another user pre-created), removed on drop.
+    let tmp = tempfile::Builder::new().prefix("rmedia-pin-gif-tools-").tempdir()?;
+    let work = tmp.path().to_path_buf();
     gh(&["release", "download", &release, "-R", &repo, "--dir", &work.to_string_lossy()])?;
     let sums = parse_sums(
         &std::fs::read_to_string(work.join("SHA256SUMS")).context("the release has no SHA256SUMS")?,
@@ -716,7 +716,7 @@ pub fn pin(run_id: u64, without_debian: bool) -> Result<()> {
             t.source.mirrors.iter().chain(t.vendor.iter().flat_map(|v| &v.mirrors)).collect();
         std::fs::write(&path, with_mirrors(&std::fs::read_to_string(&path)?, &urls))?;
     }
-    let _ = std::fs::remove_dir_all(&work);
+    drop(tmp);
     println!("pinned gifsicle {GIFSICLE_VERSION} and gifski {GIFSKI_VERSION} from {release} (run {run_id})");
     println!(
         "notices updated with the mirrored sources; next: `cargo xtask check-pins --online`, then commit"

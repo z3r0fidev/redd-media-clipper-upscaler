@@ -154,3 +154,31 @@ click; (2) **Export now**: "Finished · 1 succeeded", `gifs/land_reddit-post.gif
 
 Quickstart corrections made: the rename suffix is `_1` (not `-1`), and manifest videos use
 `input` (not `path`).
+
+## T080 final reviews (2026-10-25)
+
+Range `e02b26a..HEAD`. Neither review found a High.
+
+**senior-code-reviewer**
+
+| # | Finding | Outcome |
+|---|---|---|
+| M1 | The MP4 refused `--fps` 51–60 (`plan_gif` used the GIF limit) | Fixed: `timing::validate_for(fps, mp4)`; CLI test `an_mp4_dry_run_shows_its_own_encode_and_takes_60_fps` |
+| M2 | MP4 dry runs showed the palette/GIF argv and GIF colours/timing | Fixed: `PlannedJob::args`/`commands` return the one `mp4_args` encode; the human line reads "WxH, N fps, H.264, silent loop" (same test) |
+| M3 | The GIF view showed the target's hard limit when only "Aim for" was set | Fixed: `resolveBudget` mirrors `BudgetSpec::resolve` (vitest) |
+| L4 | `--allow-trim` could keep a one-frame GIF | Fixed: fewer than two frames is `BUDGET_UNREACHABLE` (unit test) |
+| L7 | "Export now" ignored skipped and cancelled jobs | Fixed: the view says "Not exported: …" or "Export cancelled" |
+| L5 | No integration test reaches the executor's retry path | Open (test gap; the pure search's retry is unit-tested) |
+| L6 | The plan-time free-space check uses `rough_bytes` (hard limit) and is not re-run after sampling | Open |
+| L8 | `GifTarget::width_for`, `GifTargetRegistry::label` used only by tests | Open (dead code) |
+| L9 | The 50/60 fps rule lives in four places | Partly: core has `validate_for`; CLI and CSV keep their own checks |
+
+**security-auditor**
+
+| # | Finding | Outcome |
+|---|---|---|
+| M1 | `pin-gif-tools` used a predictable folder in the shared temp dir (pre-created by another user → writes through planted links) | Fixed: `tempfile` random 0700 folder, removed on drop |
+| L1 | The gifski progress tailer re-read the whole file every 250 ms | Fixed: one handle, only new bytes are read |
+| L4 | Engine stderr kept bidi/format characters | Fixed: `target::unsafe_char` in `tool_failed` and the pipe's stderr tail |
+| L2 | `budget=none` jobs can use about 8 GiB of scratch each (4 GiB cap × 2 files), no free-space preflight | Open (accepted: user-chosen) |
+| L3 | The release gate checks staged file names, not the built bundles | Open (maintainer-error risk; a post-build scan is a follow-up) |

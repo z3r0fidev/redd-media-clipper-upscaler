@@ -686,7 +686,7 @@ tests, senior-code-reviewer, and security-auditor (new IPC, media server, settin
 - [ ] T079 Run all of `quickstart.md` on Linux, record the results, and the Windows results from
   CI and release artifacts, in `checklists/validation.md`. Owner checks stay open: Reddit's
   limits, a real Reddit upload, the licence decision.
-- [ ] T080 Final senior-code-reviewer and security-auditor passes over all 003 changes, fixing
+- [X] T080 Final senior-code-reviewer and security-auditor passes over all 003 changes, fixing
   the high and medium findings. Then:
   - mark the tasks `[X]`;
   - write `specs/003-gif-export/progress.md`;

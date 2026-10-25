@@ -376,7 +376,7 @@ pub fn plan_gif(
         return Err(invalid(format!("width {w} is out of range (64 to 1920)")));
     }
     let fps = o.fps.unwrap_or(target.fps);
-    timing::validate(fps).map_err(invalid)?;
+    timing::validate_for(fps, mp4).map_err(invalid)?;
     if let Some(c) = o.colours.filter(|c| !(2..=256).contains(c)) {
         return Err(invalid(format!("colours {c} is out of range (2 to 256)")));
     }

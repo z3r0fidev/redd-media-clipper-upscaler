@@ -22,6 +22,20 @@ pub struct Timing {
     pub avg_cs: f32,
 }
 
+/// The fastest Reddit MP4 (`--format mp4`): no centisecond delays, so up to 60 fps.
+pub const MP4_MAX_FPS: u32 = 60;
+
+/// Checks a requested frame rate for `mp4` or a GIF: 1 to [`MP4_MAX_FPS`] or [`MAX_FPS`].
+pub fn validate_for(fps: u32, mp4: bool) -> Result<(), String> {
+    match fps {
+        f if mp4 && f > MP4_MAX_FPS => {
+            Err(format!("{f} fps is too fast: a Reddit MP4 plays at most {MP4_MAX_FPS} fps"))
+        }
+        f if mp4 && f > 0 => Ok(()),
+        f => validate(f),
+    }
+}
+
 /// Checks a requested GIF frame rate: 1 to [`MAX_FPS`].
 pub fn validate(fps: u32) -> Result<(), String> {
     match fps {

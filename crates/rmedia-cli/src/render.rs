@@ -266,19 +266,24 @@ fn gif_lines(g: &rmedia_core::gif::GifPlan) {
         g.engine_reason
     );
     let s = &g.start;
-    let timing = s.timing();
-    let fps = rmedia_core::gif::timing::fps_text(s.rate);
-    let fps = if timing.exact {
-        format!("{fps} fps")
+    if g.format == rmedia_core::gif::Format::Mp4 {
+        let fps = rmedia_core::gif::timing::fps_text(g.mp4_rate);
+        println!("     {}x{}, {fps} fps, H.264, silent loop", s.width, s.height);
     } else {
-        format!("{fps} fps (≈ {:.2} cs, approximate)", timing.avg_cs)
-    };
-    let palette = if s.gifski.is_some() {
-        String::new()
-    } else {
-        format!(", {} colours, dither {}", s.colours, s.dither.label())
-    };
-    println!("     {}x{}, {fps}{palette}", s.width, s.height);
+        let timing = s.timing();
+        let fps = rmedia_core::gif::timing::fps_text(s.rate);
+        let fps = if timing.exact {
+            format!("{fps} fps")
+        } else {
+            format!("{fps} fps (≈ {:.2} cs, approximate)", timing.avg_cs)
+        };
+        let palette = if s.gifski.is_some() {
+            String::new()
+        } else {
+            format!(", {} colours, dither {}", s.colours, s.dither.label())
+        };
+        println!("     {}x{}, {fps}{palette}", s.width, s.height);
+    }
     if let Some(b) = g.budget {
         println!("     budget {} soft / {} hard", human_bytes(b.soft), human_bytes(b.hard));
     }

@@ -304,6 +304,28 @@ fn the_mp4_format_and_the_mp4_note_once_per_run() {
     assert!(text.contains("libx264") && !text.contains("note: as a Reddit MP4"), "{text}");
 }
 
+/// T080 review: the MP4 accepts up to 60 fps, and its dry run shows the one H.264 encode it runs.
+#[test]
+fn an_mp4_dry_run_shows_its_own_encode_and_takes_60_fps() {
+    require_engine!("palettegen", "paletteuse", "libx264");
+    let d = tempfile::tempdir().unwrap();
+    let src = copy(Fixture::Land6, d.path(), "land.mp4");
+    let args = ["gif", "--format", "mp4", "--fps", "60", "--dry-run", "--no-sample"];
+    let o = rmedia(d.path()).args(args).arg("--json").arg(&src).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let job = &json(&o)["jobs"][0];
+    let argv = job["argv"].to_string();
+    assert!(argv.contains("libx264") && !argv.contains("palette"), "{argv}");
+    assert_eq!(job["pipeline"].as_array().unwrap().len(), 1, "{}", job["pipeline"]);
+    let gif =
+        rmedia(d.path()).args(["gif", "--fps", "60", "--dry-run", "--no-sample"]).arg(&src).output().unwrap();
+    assert_eq!(gif.status.code(), Some(2), "a GIF still stops at 50 fps: {}", stderr(&gif));
+
+    let o = rmedia(d.path()).args(args).arg(&src).output().unwrap();
+    let text = String::from_utf8_lossy(&o.stdout);
+    assert!(text.contains("H.264, silent loop") && !text.contains("colours"), "{text}");
+}
+
 /// T058: with smart framing, `--crop-path` writes the crop path before anything encodes.
 #[test]
 fn crop_path_writes_the_gifs_smart_framing_path() {
