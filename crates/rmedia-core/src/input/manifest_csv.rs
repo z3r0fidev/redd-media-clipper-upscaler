@@ -9,7 +9,7 @@ use crate::request::{BatchRequest, ClipRequest, Mode, Options, Origin, PartialOp
 use crate::time::{EndSpec, Ts};
 use crate::upscale::{MAX_CRF, PartialUpscale};
 
-const COLUMNS: [&str; 13] = [
+const COLUMNS: [&str; 29] = [
     "input",
     "start",
     "end",
@@ -23,10 +23,29 @@ const COLUMNS: [&str; 13] = [
     "upscale_hdr",
     "upscale_motion",
     "upscale_crf",
+    "gif_target",
+    "gif_format",
+    "gif_shape",
+    "gif_framing",
+    "gif_width",
+    "gif_fps",
+    "gif_colours",
+    "gif_dither",
+    "gif_lossy",
+    "gif_loop",
+    "gif_budget",
+    "gif_hard_limit",
+    "gif_allow_trim",
+    "gif_engine",
+    "gif_optimise",
+    "gif_strict_engine",
 ];
 
-/// Columns a plain 001 manifest has; the `upscale_*` ones are written only when needed.
+/// Columns a plain 001 manifest has; the `upscale_*` and `gif_*` ones are written only when
+/// needed.
 const CLIP_COLUMNS: usize = 7;
+/// Where the `gif_*` columns start (after the six `upscale_*` ones).
+const GIF_COLUMNS: usize = CLIP_COLUMNS + 6;
 
 pub fn load(path: &Path, cli: &Options) -> Result<BatchRequest, Vec<Issue>> {
     match std::fs::read(path) {
@@ -70,8 +89,10 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
             issues.push(issue(path, header_line, format!("column \"{h}\" appears more than once")));
         }
     }
-    // `start` may be left out when the rows can be whole videos (upscaling).
-    let can_be_whole = cli.upscale.is_some() || headers.iter().any(|h| h.starts_with("upscale_"));
+    // `start` may be left out when the rows can be whole videos (upscaling, GIF export).
+    let can_be_whole = cli.upscale.is_some()
+        || cli.gif.is_some()
+        || headers.iter().any(|h| h.starts_with("upscale_") || h.starts_with("gif_"));
     for required in ["input", "start"] {
         let optional = required == "start" && can_be_whole;
         if !optional && !headers.iter().any(|h| h == required) {
@@ -85,7 +106,8 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
     let (c_input, c_start) = (col("input").expect("checked"), col("start"));
     let (c_end, c_dur, c_name, c_mode, c_out) =
         (col("end"), col("duration"), col("name"), col("mode"), col("output"));
-    let c_up: Vec<Option<usize>> = COLUMNS[CLIP_COLUMNS..].iter().map(|c| col(c)).collect();
+    let c_up: Vec<Option<usize>> = COLUMNS[CLIP_COLUMNS..GIF_COLUMNS].iter().map(|c| col(c)).collect();
+    let c_gif: Vec<Option<usize>> = COLUMNS[GIF_COLUMNS..].iter().map(|c| col(c)).collect();
 
     let mut sources: Vec<SourceRequest> = Vec::new();
     for record in rdr.records() {
@@ -108,11 +130,11 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
             }
         };
         let upscale = upscale_cells(&c_up.iter().map(|&c| get(c)).collect::<Vec<_>>(), &mut row_issues);
-        // A row with upscaling on and no times is the whole video.
-        let upscaling = PartialOptions { upscale: upscale.clone(), ..PartialOptions::default() }
-            .apply(cli)
-            .upscale
-            .is_some();
+        let gif = gif_cells(&c_gif.iter().map(|&c| get(c)).collect::<Vec<_>>(), &mut row_issues);
+        // A row with upscaling or GIF export on and no times is the whole video.
+        let on = PartialOptions { upscale: upscale.clone(), gif: gif.clone(), ..PartialOptions::default() }
+            .apply(cli);
+        let upscaling = on.upscale.is_some() || on.gif.is_some();
         let no_times = get(c_start).is_none() && get(c_end).is_none() && get(c_dur).is_none();
         let start = match get(c_start).map(Ts::parse) {
             Some(Ok(t)) => Some(t),
@@ -159,6 +181,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
                 mode,
                 output_dir: get(c_out).map(|o| resolve(&base, Path::new(o))),
                 upscale,
+                gif,
                 ..PartialOptions::default()
             },
             origin: Origin::Line { file: path.to_path_buf(), line },
@@ -226,6 +249,165 @@ fn upscale_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<Par
     })
 }
 
+/// The row's `gif_*` cells (in `COLUMNS` order) as one layer: any non-empty cell turns GIF export
+/// on, `gif_target=off` turns it off (contracts/manifest-gif.md). `None` = all empty.
+fn gif_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<crate::gif::PartialGif> {
+    use crate::gif::{BudgetSpec, PartialGif};
+    if cells.iter().all(Option::is_none) {
+        return None;
+    }
+    let [
+        target,
+        format,
+        shape,
+        framing,
+        width,
+        fps,
+        colours,
+        dither,
+        lossy,
+        lp,
+        budget,
+        hard,
+        trim,
+        engine,
+        optimise,
+        strict,
+    ] = cells
+    else {
+        unreachable!("sixteen gif columns")
+    };
+    if target.is_some_and(|t| t.eq_ignore_ascii_case("off")) {
+        if cells[1..].iter().any(Option::is_some) {
+            issues.push("gif_target=off cannot be combined with other gif_* values".into());
+        }
+        return Some(PartialGif { enabled: Some(false), ..PartialGif::default() });
+    }
+    fn choice<T: serde::de::DeserializeOwned>(
+        col: &str,
+        v: Option<&str>,
+        allowed: &str,
+        issues: &mut Vec<String>,
+    ) -> Option<T> {
+        let v = v?;
+        serde_json::from_value(serde_json::Value::String(v.to_ascii_lowercase()))
+            .map_err(|_| issues.push(format!("{col} must be one of {allowed}, not {v:?}")))
+            .ok()
+    }
+    fn number<T: std::str::FromStr + PartialOrd + std::fmt::Display>(
+        col: &str,
+        v: Option<&str>,
+        (lo, hi): (T, T),
+        issues: &mut Vec<String>,
+    ) -> Option<Option<T>> {
+        let v = v?;
+        match v.parse::<T>() {
+            Ok(n) if n >= lo && n <= hi => Some(Some(n)),
+            _ => {
+                issues.push(format!("{col} must be a whole number from {lo} to {hi}, not {v:?}"));
+                None
+            }
+        }
+    }
+    fn flag(col: &str, v: Option<&str>, issues: &mut Vec<String>) -> Option<bool> {
+        match v?.to_ascii_lowercase().as_str() {
+            "true" | "yes" | "1" => Some(true),
+            "false" | "no" | "0" => Some(false),
+            other => {
+                issues.push(format!("{col} must be true or false (yes/no, 1/0), not {other:?}"));
+                None
+            }
+        }
+    }
+    let size = |col: &str, v: &str, issues: &mut Vec<String>| {
+        crate::gif::parse_size(v).map_err(|e| issues.push(format!("{col}: {e}"))).ok()
+    };
+    let hard = hard.and_then(|h| size("gif_hard_limit", h, issues));
+    let budget = match budget {
+        Some(b) if b.eq_ignore_ascii_case("none") => Some(None),
+        Some(b) => size("gif_budget", b, issues).map(|soft| Some(BudgetSpec { soft: Some(soft), hard })),
+        None => hard.map(|h| Some(BudgetSpec { soft: None, hard: Some(h) })),
+    };
+    let loop_count = lp.and_then(|v| {
+        if v.eq_ignore_ascii_case("forever") {
+            return Some(crate::gif::LoopCount::Forever);
+        }
+        match v.parse::<u16>() {
+            Ok(n @ 1..) => Some(crate::gif::LoopCount::Plays(n)),
+            _ => {
+                issues.push(format!(
+                    "gif_loop must be forever or a number of plays from 1 to 65535, not {v:?}"
+                ));
+                None
+            }
+        }
+    });
+    let dither = dither.and_then(|d| {
+        crate::gif::target::Dither::parse(d)
+            .map(Some)
+            .map_err(|_| {
+                issues.push(format!(
+                    "gif_dither must be one of none, bayer, bayer:S, floyd-steinberg, sierra, not {d:?}"
+                ))
+            })
+            .ok()
+    });
+    Some(PartialGif {
+        enabled: None,
+        target: target.map(str::to_owned),
+        format: choice("gif_format", *format, "gif, mp4", issues),
+        shape: choice("gif_shape", *shape, "source, 9:16, 4:5, 1:1", issues),
+        framing: choice("gif_framing", *framing, "smart, center, blur", issues),
+        width: number("gif_width", *width, (64u32, 1920), issues),
+        fps: number("gif_fps", *fps, (1u32, 60), issues),
+        colours: number("gif_colours", *colours, (2u16, 256), issues),
+        dither,
+        lossy: number("gif_lossy", *lossy, (0u16, 200), issues),
+        loop_count,
+        budget,
+        allow_trim: flag("gif_allow_trim", *trim, issues),
+        engine: choice("gif_engine", *engine, "auto, builtin, gifski", issues),
+        optimise: flag("gif_optimise", *optimise, issues),
+        strict_engine: flag("gif_strict_engine", *strict, issues),
+    })
+}
+
+/// The `gif_*` cells of a row with GIF export resolved to `g` (written in full, as for upscale).
+fn gif_row(g: Option<&crate::gif::GifOptions>) -> Vec<String> {
+    let Some(g) = g else {
+        let mut off = vec!["off".to_owned()];
+        off.resize(COLUMNS.len() - GIF_COLUMNS, String::new());
+        return off;
+    };
+    let opt = |v: Option<String>| v.unwrap_or_default();
+    let (budget, hard) = match g.budget {
+        None => ("none".to_owned(), String::new()),
+        Some(b) => (opt(b.soft.map(|v| v.to_string())), opt(b.hard.map(|v| v.to_string()))),
+    };
+    let lp = match g.loop_count {
+        crate::gif::LoopCount::Forever => "forever".to_owned(),
+        crate::gif::LoopCount::Plays(n) => n.to_string(),
+    };
+    vec![
+        g.target.clone(),
+        word(&g.format),
+        word(&g.shape),
+        word(&g.framing),
+        opt(g.width.map(|v| v.to_string())),
+        opt(g.fps.map(|v| v.to_string())),
+        opt(g.colours.map(|v| v.to_string())),
+        opt(g.dither.map(|d| d.label())),
+        opt(g.lossy.map(|v| v.to_string())),
+        lp,
+        budget,
+        hard,
+        g.allow_trim.to_string(),
+        word(&g.engine),
+        g.optimise.to_string(),
+        g.strict_engine.to_string(),
+    ]
+}
+
 /// 1-based line of the record starting at `byte`. The csv crate reports a record that follows a
 /// comment at the comment's position (and its own line counter skips comments), so skip forward
 /// over comment and blank lines.
@@ -266,10 +448,19 @@ fn resolve(base: &Path, p: &Path) -> PathBuf {
 /// (container, name template, streams…) are not written — use JSON to keep them.
 pub fn write(req: &BatchRequest) -> String {
     let resolved = |s: &SourceRequest, c: &ClipRequest| c.overrides.apply(&s.overrides.apply(&req.defaults));
-    let upscaled = req.sources.iter().any(|s| s.clips.iter().any(|c| resolved(s, c).upscale.is_some()));
-    let columns = if upscaled { &COLUMNS[..] } else { &COLUMNS[..CLIP_COLUMNS] };
+    let any =
+        |f: &dyn Fn(&Options) -> bool| req.sources.iter().any(|s| s.clips.iter().any(|c| f(&resolved(s, c))));
+    let upscaled = any(&|o| o.upscale.is_some());
+    let gifs = any(&|o| o.gif.is_some());
+    let mut columns: Vec<&str> = COLUMNS[..CLIP_COLUMNS].to_vec();
+    if upscaled {
+        columns.extend(&COLUMNS[CLIP_COLUMNS..GIF_COLUMNS]);
+    }
+    if gifs {
+        columns.extend(&COLUMNS[GIF_COLUMNS..]);
+    }
     let mut w = csv::Writer::from_writer(Vec::new());
-    let _ = w.write_record(columns);
+    let _ = w.write_record(&columns);
     let text = |t: Ts| match time_value(t) {
         serde_json::Value::String(s) => s,
         v => v.to_string(),
@@ -311,6 +502,9 @@ pub fn write(req: &BatchRequest) -> String {
                         row.extend(["off".to_owned(), "".into(), "".into(), "".into(), "".into(), "".into()])
                     }
                 }
+            }
+            if gifs {
+                row.extend(gif_row(o.gif.as_ref()));
             }
             let _ = w.write_record(&row);
         }
@@ -492,6 +686,78 @@ mod tests {
         // A plain manifest keeps the 001 columns.
         let plain = parse(Path::new("/m/j.csv"), "input,start\n/v/a.mp4,1\n", &Options::default()).unwrap();
         assert!(write(&plain).starts_with("input,start,end,duration,name,mode,output\n"));
+    }
+
+    fn gif_of(req: &BatchRequest, v: usize, c: usize) -> Option<crate::gif::GifOptions> {
+        let src = &req.sources[v];
+        src.clips[c].overrides.apply(&src.overrides.apply(&req.defaults)).gif
+    }
+
+    /// T060: each `gif_*` column, `off`, sizes and booleans, optional `start`, errors by row.
+    #[test]
+    fn gif_columns() {
+        use crate::gif::{Format, LoopCount, Shape};
+        let text = "input,start,end,gif_target,gif_format,gif_shape,gif_framing,gif_width,gif_fps,gif_colours,gif_dither,gif_lossy,gif_loop,gif_budget,gif_hard_limit,gif_allow_trim,gif_engine,gif_optimise,gif_strict_engine\n\
+                    a.mp4,1,3,reddit-comment,mp4,4:5,blur,480,20,128,bayer:5,60,3,2MB,4MB,yes,builtin,no,1\n\
+                    a.mp4,5,6,off,,,,,,,,,,,,,,,\n\
+                    b.mp4,,,,,,,,,,,,,none,,,,,\n";
+        let req = parse(Path::new("/m/j.csv"), text, &Options::default()).unwrap();
+        let g = gif_of(&req, 0, 0).unwrap();
+        assert_eq!((g.target.as_str(), g.format, g.shape), ("reddit-comment", Format::Mp4, Shape::Feed));
+        assert_eq!((g.width, g.fps, g.colours, g.lossy), (Some(480), Some(20), Some(128), Some(60)));
+        assert_eq!(g.loop_count, LoopCount::Plays(3));
+        let b = g.budget.unwrap();
+        assert_eq!((b.soft, b.hard), (Some(2_000_000), Some(4_000_000)));
+        assert_eq!((g.allow_trim, g.optimise, g.strict_engine), (true, false, true));
+        assert_eq!(gif_of(&req, 0, 1), None, "gif_target=off");
+        let whole = gif_of(&req, 1, 0).unwrap();
+        assert_eq!(
+            (whole.budget, req.sources[1].clips[0].start),
+            (None, Ts::ZERO),
+            "none, and no start: whole video"
+        );
+
+        let bad = "input,start,end,gif_target,gif_dither,gif_loop,gif_allow_trim,gif_width\n\
+                   a.mp4,1,2,off,none,,,\n\
+                   a.mp4,1,2,,dots,0,maybe,4000\n";
+        let err = parse(Path::new("j.csv"), bad, &Options::default()).unwrap_err();
+        let at: Vec<(usize, String)> = err
+            .iter()
+            .map(|i| match &i.origin {
+                Origin::Line { line, .. } => (*line, i.message.clone()),
+                _ => (0, i.message.clone()),
+            })
+            .collect();
+        assert!(at.iter().any(|(l, m)| *l == 2 && m.contains("gif_target=off cannot be combined")), "{at:?}");
+        assert!(
+            at.iter().any(|(l, m)| *l == 3
+                && m.starts_with("gif_dither must be one of none, bayer, bayer:S, floyd-steinberg, sierra")),
+            "{at:?}"
+        );
+        assert!(at.iter().any(|(l, m)| *l == 3 && m.starts_with("gif_loop must be")), "{at:?}");
+        assert!(
+            at.iter().any(|(l, m)| *l == 3 && m.starts_with("gif_allow_trim must be true or false")),
+            "{at:?}"
+        );
+        assert!(
+            at.iter()
+                .any(|(l, m)| *l == 3 && m.starts_with("gif_width must be a whole number from 64 to 1920")),
+            "{at:?}"
+        );
+    }
+
+    #[test]
+    fn gif_rows_round_trip_and_plain_manifests_stay_plain() {
+        let text = "input,start,end,gif_target,gif_dither,gif_budget\n/v/a.mp4,1,2,reddit-comment,floyd-steinberg,3MB\n/v/b.mp4,1,2,off,,\n";
+        let req = parse(Path::new("/m/j.csv"), text, &Options::default()).unwrap();
+        let written = write(&req);
+        assert!(written.lines().next().unwrap().ends_with(",gif_optimise,gif_strict_engine"), "{written}");
+        let again = parse(Path::new("/m/j.csv"), &written, &Options::default()).unwrap();
+        assert_eq!(gif_of(&again, 0, 0), gif_of(&req, 0, 0));
+        assert_eq!(gif_of(&again, 1, 0), None);
+        let plain =
+            parse(Path::new("/m/j.csv"), "input,start,end\n/v/a.mp4,1,2\n", &Options::default()).unwrap();
+        assert!(!write(&plain).contains("gif_"), "the writer emits gif_* only when needed");
     }
 
     #[test]

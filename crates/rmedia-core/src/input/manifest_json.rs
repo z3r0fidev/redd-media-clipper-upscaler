@@ -88,7 +88,9 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
     for (vi, v) in raw.videos.into_iter().enumerate() {
         let vpath = format!("videos[{vi}]");
         let video_own = v.options.apply(&own);
-        let whole = v.clips.is_none() && v.options.apply(&defaults).upscale.is_some();
+        // A video without clips is one whole-video job when upscaling or GIF export is on.
+        let on = v.options.apply(&defaults);
+        let whole = v.clips.is_none() && (on.upscale.is_some() || on.gif.is_some());
         let raw_clips = match v.clips {
             Some(c) if c.is_empty() => {
                 issues.push(issue(path, &format!("{vpath}.clips"), "no clips for this video".into()));
@@ -159,7 +161,8 @@ fn check_container(
     found: &mut std::collections::BTreeSet<(String, String)>,
 ) {
     let Some(ext) = resolved.container.as_deref() else { return };
-    if resolved.upscale.is_none() || ext.eq_ignore_ascii_case("mp4") {
+    // A GIF job's `format` decides its container (contracts/manifest-gif.md).
+    if resolved.upscale.is_none() || resolved.gif.is_some() || ext.eq_ignore_ascii_case("mp4") {
         return;
     }
     let at = if level.container.is_some() {
@@ -491,6 +494,58 @@ mod tests {
         let text = r#"{"version":1,"videos":[{"input":"a.mp4","options":{"upscale":{"scale":2}}}]}"#;
         let err = parse(Path::new("j.json"), text, &Options::default()).unwrap_err();
         assert!(err[0].message.contains("unknown field `scale`"), "{}", err[0].message);
+    }
+
+    /// T059: `gif` at every level, layering, `enabled:false`, whole videos, containers ignored,
+    /// chained with `upscale`, unknown keys, and the writer.
+    #[test]
+    fn gif_at_every_level() {
+        let text = r#"{ "version": 1,
+            "defaults": { "gif": { "target": "reddit-post", "shape": "4:5", "framing": "smart" } },
+            "videos": [
+              { "input": "game.mkv", "clips": [
+                  { "start": 62, "end": 69 },
+                  { "start": 130, "end": 134, "options": { "gif": { "target": "reddit-comment", "allow_trim": true } } },
+                  { "start": 180, "end": 200, "options": { "gif": { "format": "mp4" } } },
+                  { "start": 210, "end": 212, "options": { "gif": { "enabled": false } } } ] },
+              { "input": "clip.mp4", "options": { "gif": { "budget": { "soft": 5000000 }, "loop": 3 }, "container": "mkv" } },
+              { "input": "up.mp4", "options": { "upscale": {}, "gif": {}, "container": "mkv" } } ] }"#;
+        let req = parse(Path::new("/m/jobs.json"), text, &Options::default()).unwrap();
+        let g = |v, c| resolved(&req, v, c).gif;
+        let first = g(0, 0).unwrap();
+        assert_eq!((first.target.as_str(), first.shape), ("reddit-post", crate::gif::Shape::Feed));
+        let comment = g(0, 1).unwrap();
+        assert_eq!(
+            (comment.target.as_str(), comment.allow_trim, comment.shape),
+            ("reddit-comment", true, crate::gif::Shape::Feed)
+        );
+        assert_eq!(g(0, 2).unwrap().format, crate::gif::Format::Mp4);
+        assert_eq!(g(0, 3), None, "enabled:false at the clip");
+        // No clips and GIF on: one whole-video job; its container is ignored (format decides).
+        assert_eq!(req.sources[1].clips.len(), 1, "a whole-video GIF job");
+        let whole = g(1, 0).unwrap();
+        assert_eq!(
+            (whole.budget.and_then(|b| b.soft), whole.loop_count),
+            (Some(5_000_000), crate::gif::LoopCount::Plays(3))
+        );
+        // GIF together with upscale is one chained job.
+        let chained = resolved(&req, 2, 0);
+        assert!(chained.upscale.is_some() && chained.gif.is_some(), "{chained:?}");
+
+        let bad = r#"{"version":1,"videos":[{"input":"a.mp4","options":{"gif":{"colors":64}}}]}"#;
+        let err = parse(Path::new("j.json"), bad, &Options::default()).unwrap_err();
+        assert!(err[0].message.contains("unknown field `colors`"), "{}", err[0].message);
+
+        let again =
+            parse(Path::new("/m/jobs.json"), &write(&req, &PartialOptions::default()), &Options::default())
+                .unwrap();
+        for (a, b) in req.sources.iter().zip(&again.sources) {
+            assert_eq!(a.overrides, b.overrides);
+            assert_eq!(
+                a.clips.iter().map(|c| &c.overrides).collect::<Vec<_>>(),
+                b.clips.iter().map(|c| &c.overrides).collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]

@@ -572,19 +572,19 @@ frames.
 **Independent Test**: a manifest with two videos and three clips, one of them `reddit-comment`,
 gives three GIFs with the right budgets and leaves no intermediates.
 
-- [ ] T059 [P] [US5] Write JSON manifest tests in `core/input/manifest_json.rs` tests:
+- [X] T059 [P] [US5] Write JSON manifest tests in `core/input/manifest_json.rs` tests:
   - `gif` at the defaults, video and clip levels;
   - layering, `enabled:false`, unknown keys reported with the line;
   - a whole-video GIF without clips;
   - `container` ignored;
   - chained `gif` + `upscale`;
   - the writer round-trip.
-- [ ] T060 [P] [US5] Write CSV tests in `core/input/manifest_csv.rs` tests:
+- [X] T060 [P] [US5] Write CSV tests in `core/input/manifest_csv.rs` tests:
   - each `gif_*` column, `gif_target=off` exclusivity;
   - size syntax, booleans, enum error text with the row number;
   - optional `start` with `gif_*`;
   - the writer emits `gif_*` only when needed.
-- [ ] T061 [US5] Implement the manifest JSON/CSV readers and writers (`core/input/manifest_json.rs`,
+- [X] T061 [US5] Implement the manifest JSON/CSV readers and writers (`core/input/manifest_json.rs`,
   `core/input/manifest_csv.rs`), making T059/T060 pass.
 - [ ] T062 [P] [US5] Write CLI tests in `cli-tests/gif_clip_batch.rs`:
   - `clip -s/-e --gif`, `clip -l list --gif` (two clips, two files via the clip template);
