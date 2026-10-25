@@ -4,7 +4,7 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-10-22.
+Last updated: 2026-10-25.
 
 ## Status at a Glance
 
@@ -12,7 +12,7 @@ Last updated: 2026-10-22.
 |---|---|---|
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, not yet tagged | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0 release candidate, not yet tagged | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
-| 003 GIF export for Reddit | ▶ Planned (2026-10-23); tasks next | Nothing yet (plan: `specs/003-gif-export/plan.md`) |
+| 003 GIF export for Reddit | ▶ In progress (2026-10-25): tasks written, Phase 1 and most of Phase 2 done, US1 under way | Nothing yet for users (plan: `specs/003-gif-export/plan.md`, tasks: `specs/003-gif-export/tasks.md`) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -81,14 +81,39 @@ owner on real footage.
 ## Feature 003: GIF Export for Reddit
 
 Specified on 2026-10-22: [spec](../specs/003-gif-export/spec.md); planned on 2026-10-23:
-[plan](../specs/003-gif-export/plan.md); no task list yet.
+[plan](../specs/003-gif-export/plan.md); tasks: [tasks](../specs/003-gif-export/tasks.md) (T001–T080).
 Research: `research/05-gif-export.md`. Six stories: a GIF that fits a Reddit post (P1), automatic
 size-budget search (P2), a silent "Reddit MP4" alternative (P3), portrait and square shapes via
 002's reframe (P4), batch and `clip` integration (P5), and a desktop GIF view (P6). It reuses the
 job model that feature 002 introduced. Owner decision: gifsicle (GPL-2.0) and gifski (AGPL-3.0)
 are optional engines, and (2026-10-23) both are bundled, pinned and built from source; a release
 that bundles gifski fails until the application licence (a root `LICENSE`) exists. Owner check
-before release: confirm Reddit's GIF size limits in its Help Center. Next step: `/speckit-tasks`.
+before release: confirm Reddit's GIF size limits in its Help Center.
+
+### Progress (2026-10-25)
+
+- Done: Phase 1 (T001–T005 setup) and Phase 2 apart from three tasks: GIF types and options,
+  targets, timing, probe, estimate, `gif::verify`, engine lookup and `doctor`, refactors B1–B4
+  (reframe input, N-stage pipelines), the GIF engine supply chain (`xtask pin-gif-tools`,
+  `check-release-gate`, `.github/workflows/gif-tools.yml`, notices) and its security review
+  (`specs/003-gif-export/checklists/validation.md`). Tasks T001–T008, T011, T012, T014–T032.
+- Next step: **T009**, dispatch `.github/workflows/gif-tools.yml` on `main` (owner-approved, not
+  yet run), then `cargo xtask pin-gif-tools <run-id>` locally and commit the lock. T010 (staging,
+  `externalBin`, CI environment) waits for T009; T013 (Phase 0 measurements) follows T010.
+- In progress: US1 (T033–T044). Planning, ffmpeg argv, the executor and the T033 acceptance tests
+  are drafted but do not build yet (the CLI `render.rs` lacks a `JobMeasure::Gif` arm). They are
+  kept on the **local, unpushed branch `wip/003-us1`**. Not written yet: dry-run estimate (T041),
+  gifski engine (T043), CLI (T044), tests T034–T038.
+- Then: US2 automatic size budget, US3 Reddit MP4, US4 portrait and square, US5 batch and `clip`
+  integration, US6 desktop GIF view, and Polish (T045–T080).
+
+### Open owner decisions
+
+- Application licence (gates any release that bundles gifski: `cargo xtask check-release-gate`).
+- Visual C++ runtime for the 002 Windows installers.
+- Tag `v0.1.0` and `v0.2.0`; Dependabot notices automation.
+- Owner checks: two-phone gallery test, a Reddit upload, +3 VMAF on real footage, Reddit's GIF
+  limits. The Windows installers and desktop app are untested on real hardware.
 
 ## Release and Project Housekeeping
 

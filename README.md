@@ -21,7 +21,7 @@ held upright, using a device preset (default 1080x2340):
 - Cut and upscale in one pass (`clip --upscale`), upscale from batch manifests, and a desktop
   **Upscale for phone** view with a before/after preview.
 
-Planned next: high-quality GIF export for Reddit (feature 003). See
+In progress: high-quality GIF export for Reddit (feature 003; no user-facing command yet). See
 [`docs/roadmap.md`](docs/roadmap.md), `specs/` and `research/`.
 
 ## Install

@@ -24,7 +24,7 @@ to avoid.
 | **indexed container / indexed seeking** | Formats whose demuxer seek is exact (ffprobe `format_name` `mov`, `mp4`, `matroska`, `webm`). Decides the seek strategy. | `MediaInfo::has_indexed_seeking` | |
 | **issue** | A planning or parsing problem (`severity` error/warning, `code`, `origin`, `message`). Any error-severity issue means nothing runs. | `plan::Issue` | |
 | **job** | One clip request resolved to a concrete output path, with state queued/running/succeeded/failed/cancelled/skipped | `plan::PlannedJob`, spec.md | task |
-| **job kind** | The work a job does: `JobSpec::Clip` or `JobSpec::Upscale` (0.2.0); `Gif` (003) is planned | `plan::JobSpec` | |
+| **job kind** | The work a job does: `JobSpec::Clip` or `JobSpec::Upscale` (0.2.0); `Gif` (003) is in progress and not on `main` yet | `plan::JobSpec` | |
 | **preset (device preset)** | A data file that describes an upscale target: size, codec, quality, platform limits. Seven are built in; users add JSON files to `<config>/presets/`. | `preset/`, `--list-presets` | profile |
 | **reframe** | How a video of one shape fills a screen of another: `smart` (follow faces), `center` or `blur` | `upscale::Reframe` | |
 | **tier** | The engine quality level of an upscale: `cpu` (classical filters), `gpu` (Vulkan with libplacebo) or `ai` (Real-ESRGAN in the `rmedia-sr` worker). `auto` picks CPU or GPU, never AI. | `upscale::Tier` | |

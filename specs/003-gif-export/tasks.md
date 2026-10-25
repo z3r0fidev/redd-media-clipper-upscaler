@@ -9,6 +9,10 @@ description: "Task list for 003 GIF Export for Reddit"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R16), data-model.md (B1–B4), contracts/,
 quickstart.md
 
+**Status (2026-10-25)**: T001–T008, T011, T012, T014–T032 done. Open: T009 (owner-approved
+dispatch of `gif-tools.yml`, not yet run), T010, T013. US1 T033–T044 are drafted on the local
+unpushed branch `wip/003-us1` (does not build yet; none marked done). Roadmap: `docs/roadmap.md`.
+
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.
 - Media comes from `rmedia-testkit` lavfi fixtures. No binary fixtures or engine binaries are

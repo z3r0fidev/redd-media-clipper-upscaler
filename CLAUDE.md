@@ -9,9 +9,11 @@ for Reddit (003). Spec-driven via Spec Kit.
   04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
-- Active feature: **003 GIF export for Reddit** — spec and plan done (`specs/003-gif-export/`,
-  6 stories; gifsicle and gifski bundled as optional engines, gifski's AGPL gates releases on the
-  app licence). Next step: `/speckit-tasks`.
+- Active feature: **003 GIF export for Reddit** (`specs/003-gif-export/`, 6 stories; gifsicle and
+  gifski bundled as optional engines, gifski's AGPL gates releases on the app licence). Tasks
+  written (T001–T080); Phase 2 done except T009 (owner-approved dispatch of `gif-tools.yml`, then
+  `cargo xtask pin-gif-tools <run-id>`), T010 and T013. US1 (T033–T044) in progress: unfinished
+  work is on the local, unpushed branch `wip/003-us1`. Progress list: `docs/roadmap.md`.
 - Done: 001 (`specs/001-video-clipping/`, 0.1.0) and 002 (`specs/002-mobile-upscale/`, 112/112,
   0.2.0 release candidate; owner checks left: two-phone gallery test, Reddit upload, +3 VMAF on
   real footage). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and

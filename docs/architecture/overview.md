@@ -303,7 +303,9 @@ into the binary plus user files in `<config>/presets/`.
 **Planned** (not implemented):
 
 - **003 GIF export:** `JobSpec::Gif` with a two-pass palette pipeline and a size-budget search,
-  reusing segment, executor, events and commit. Research: `research/05-gif-export.md`. No spec yet.
+  reusing segment, executor, events and commit. Research: `research/05-gif-export.md`. Spec, plan and tasks exist (`specs/003-gif-export/`); the
+  engine, option and verify modules (`crates/rmedia-core/src/gif/`) are in `main`, the planner and
+  CLI are not yet (see the [Roadmap](../roadmap.md)).
 
 Feature 002 is implemented: user stories 1 to 6 (CPU tier, smart reframe, GPU tier and
 capability record, batch and `clip --upscale`, the desktop upscale view, and the AI tier with

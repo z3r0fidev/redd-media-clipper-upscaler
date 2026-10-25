@@ -227,7 +227,7 @@ Also available: `/speckit-checklist`, `/speckit-converge`, and `/speckit-tasksto
   or `[unverified]` are not yet confirmed (`CLAUDE.md`).
 
 Feature 002 (mobile upscaling with smart reframing) is in progress: user story 1 is done and the
-rest is planned. Feature 003 (GIF export for Reddit) is planned. See the [Roadmap](../roadmap.md).
+rest is planned. Feature 003 (GIF export for Reddit) is in progress (core modules only; no CLI yet). See the [Roadmap](../roadmap.md).
 
 ## Add a New Job Kind
 
