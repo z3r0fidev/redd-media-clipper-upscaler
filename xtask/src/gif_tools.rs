@@ -498,20 +498,39 @@ pub fn pin(run_id: u64) -> Result<()> {
     if index_checksum(&index, GIFSKI_VERSION).as_deref() != Some(GIFSKI_SHA256) {
         bail!("the crates.io index checksum of gifski {GIFSKI_VERSION} is not the pinned {GIFSKI_SHA256}");
     }
+    // Debian's orig tarball is a snapshot of the upstream repository, not the release tarball:
+    // the hashes never match, so the trees are compared. Every file in both must be identical,
+    // and the release may add only autotools output (which this check does not cover).
     let debian =
         format!("https://deb.debian.org/debian/pool/main/g/gifsicle/gifsicle_{GIFSICLE_VERSION}.orig.tar.gz");
     let debian_dir = work.join("debian");
     std::fs::create_dir_all(&debian_dir)?;
     let deb_file = debian_dir.join("orig.tar.gz");
-    let deb_ok = crate::download(&debian, &deb_file).is_ok();
-    match deb_ok.then(|| file_sha256(&deb_file).ok()).flatten() {
-        Some(h) if h == GIFSICLE_SHA256 => println!("gifsicle source matches Debian's {debian}"),
-        Some(h) => bail!(
-            "Debian's gifsicle {GIFSICLE_VERSION} orig tarball is {h}, not the pinned {GIFSICLE_SHA256}"
-        ),
-        None => println!(
+    if crate::download(&debian, &deb_file).is_ok() {
+        let (release_tree, debian_tree) = (work.join("gifsicle-release"), debian_dir.join("tree"));
+        for (archive, dir) in
+            [(&work.join(source_file(GIFSICLE_SOURCE)), &release_tree), (&deb_file, &debian_tree)]
+        {
+            std::fs::create_dir_all(dir)?;
+            crate::run(Command::new(crate::tar()).arg("-xzf").arg(archive).arg("-C").arg(dir))?;
+        }
+        let cmp = compare_source_trees(&single_dir(&release_tree)?, &single_dir(&debian_tree)?)?;
+        if !cmp.problems.is_empty() {
+            bail!(
+                "gifsicle {GIFSICLE_VERSION} differs from Debian's {debian}:\n  {}",
+                cmp.problems.join("\n  ")
+            );
+        }
+        println!(
+            "gifsicle source matches Debian's {debian}: {} files identical; release-only autotools output \
+             not covered: {}",
+            cmp.same,
+            cmp.release_only.join(", ")
+        );
+    } else {
+        println!(
             "no Debian orig tarball for gifsicle {GIFSICLE_VERSION}: not compared (say so in the commit)"
-        ),
+        );
     }
 
     // gifski's Cargo.lock: the vendored tree's, checked with cargo deny (and cargo audit when
@@ -544,9 +563,9 @@ pub fn pin(run_id: u64) -> Result<()> {
         Command::new("cargo")
             .args(["deny", "--manifest-path"])
             .arg(&manifest)
-            .args(["--locked", "check", "--config"])
+            .args(["--locked", "--config"])
             .arg(root().join("deny-gifski.toml"))
-            .args(["licenses", "bans", "advisories", "sources"]),
+            .args(["check", "licenses", "bans", "advisories", "sources"]),
     )?;
     match Command::new("cargo").args(["audit", "--file"]).arg(&cargo_lock).status() {
         Ok(s) if s.success() => println!("cargo audit: no advisories"),
@@ -680,6 +699,70 @@ fn lock_checksums(lock: &str) -> BTreeMap<String, String> {
 
 /// Vendored packages (`<name>-<version>/.cargo-checksum.json`) whose `package` checksum is not
 /// the one `locked` has for them, or that the lock does not list.
+/// Files the gifsicle release tarball adds to the repository: autotools output.
+const AUTOTOOLS_OUTPUT: &[&str] =
+    &["aclocal.m4", "compile", "config.h.in", "configure", "depcomp", "install-sh", "missing", "Makefile.in"];
+
+#[derive(Debug, Default, PartialEq)]
+struct TreeComparison {
+    same: usize,
+    release_only: Vec<String>,
+    problems: Vec<String>,
+}
+
+/// The one folder a source tarball unpacks to.
+fn single_dir(dir: &Path) -> Result<PathBuf> {
+    let entries: Vec<PathBuf> =
+        std::fs::read_dir(dir)?.map(|e| e.map(|e| e.path())).collect::<Result<_, _>>()?;
+    match entries.as_slice() {
+        [one] if one.is_dir() => Ok(one.clone()),
+        _ => bail!("{} does not hold exactly one folder", dir.display()),
+    }
+}
+
+/// sha256 of every regular file under `dir`, keyed by its `/`-separated relative path.
+fn tree_hashes(dir: &Path) -> Result<BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d)? {
+            let entry = entry?;
+            let (path, kind) = (entry.path(), entry.file_type()?);
+            if kind.is_dir() {
+                stack.push(path);
+            } else if kind.is_file() {
+                let rel = path.strip_prefix(dir)?.components();
+                let rel: Vec<String> = rel.map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+                out.insert(rel.join("/"), file_sha256(&path)?);
+            } else {
+                bail!("{} is a link or special file", path.display());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The release tree against a repository snapshot: shared files must be identical, and the
+/// release may add only autotools output. Files only in the snapshot (CI, fuzzers) are fine.
+fn compare_source_trees(release: &Path, snapshot: &Path) -> Result<TreeComparison> {
+    let (r, s) = (tree_hashes(release)?, tree_hashes(snapshot)?);
+    let mut cmp = TreeComparison::default();
+    for (path, sha) in &r {
+        match s.get(path) {
+            Some(other) if other == sha => cmp.same += 1,
+            Some(_) => cmp.problems.push(format!("{path}: contents differ")),
+            None if AUTOTOOLS_OUTPUT.contains(&path.rsplit('/').next().unwrap_or(path)) => {
+                cmp.release_only.push(path.clone())
+            }
+            None => cmp.problems.push(format!("{path}: only in the release tarball")),
+        }
+    }
+    if cmp.same == 0 {
+        cmp.problems.push("no files in common".into());
+    }
+    Ok(cmp)
+}
+
 fn vendor_mismatches(vendor: &Path, locked: &BTreeMap<String, String>) -> Result<Vec<String>> {
     let mut bad = Vec::new();
     for entry in std::fs::read_dir(vendor).with_context(|| format!("read {}", vendor.display()))? {
@@ -1046,5 +1129,38 @@ mod tests {
         for bad in ["gif-tools-2026-1-24", "gif-tools-", "mirror-2026-10-24", "gif-tools-2026-10-24x"] {
             assert!(!is_release_tag(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn source_trees_compare_by_contents() {
+        let base = std::env::temp_dir().join(format!("rmedia-xtask-trees-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let write = |dir: &str, file: &str, text: &str| {
+            let p = base.join(dir).join(file);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        };
+        for d in ["rel", "snap"] {
+            write(d, "src/gifsicle.c", "int main;");
+        }
+        write("rel", "configure", "#!/bin/sh");
+        write("rel", "src/Makefile.in", "all:");
+        write("snap", ".github/ci.yml", "on: push");
+        let ok = compare_source_trees(&base.join("rel"), &base.join("snap")).unwrap();
+        assert_eq!((ok.same, ok.problems.len()), (1, 0), "{ok:?}");
+        assert_eq!(ok.release_only, ["configure", "src/Makefile.in"]);
+
+        write("rel", "src/extra.c", "evil");
+        write("snap", "src/gifsicle.c", "int main; /* changed */");
+        let bad = compare_source_trees(&base.join("rel"), &base.join("snap")).unwrap();
+        assert_eq!(
+            bad.problems,
+            [
+                "src/extra.c: only in the release tarball",
+                "src/gifsicle.c: contents differ",
+                "no files in common"
+            ]
+        );
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }

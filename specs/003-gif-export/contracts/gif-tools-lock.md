@@ -56,8 +56,12 @@ This runs locally and records nothing until every check below passes.
    in its `outputs`, read through the Actions API, and the digest computed after download.
 3. The gifski `.crate` sha256 equals the checksum in the crates.io index entry, fetched at pin
    time.
-4. For gifsicle, the tarball hash is compared once against an independent copy (Debian's orig
-   tarball, when one exists for this version). The result is recorded in the commit message.
+4. For gifsicle, the release tarball is compared once against an independent copy (Debian's orig
+   tarball, when one exists for this version). Debian's is a snapshot of the upstream repository,
+   not the release tarball, so the hashes never match and the unpacked trees are compared: every
+   file in both must be identical, and the release may add only autotools output (`configure`,
+   `aclocal.m4`, `Makefile.in`, …), which this check does not cover. The result is recorded in the
+   commit message.
 5. gifski's `Cargo.lock`, taken from the crate, is checked with `cargo deny check` (a
    `deny-gifski.toml` that allows gifski's own licence set) and with `cargo audit`. Its sha256
    becomes `cargo_lock_sha256`.
