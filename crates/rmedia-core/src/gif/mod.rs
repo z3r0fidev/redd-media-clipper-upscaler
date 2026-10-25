@@ -278,7 +278,8 @@ pub struct PartialGif {
     pub colours: Option<Option<u16>>,
     /// `null` clears an override set by a layer below (back to the target's).
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "some_or_null")]
-    #[cfg_attr(feature = "ts", ts(optional, type = "Dither | null"))]
+    // Not a `type = "…"` string: ts-rs only imports the types it sees (`dither?: Dither | null`).
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub dither: Option<Option<Dither>>,
     /// `null` clears an override set by a layer below (back to the target's).
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "some_or_null")]
@@ -286,7 +287,7 @@ pub struct PartialGif {
     pub lossy: Option<Option<u16>>,
     /// `null` turns the budget search off; an object sets limits (`{}`: the target's).
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "some_or_null")]
-    #[cfg_attr(feature = "ts", ts(optional, type = "BudgetSpec | null"))]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub budget: Option<Option<BudgetSpec>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
