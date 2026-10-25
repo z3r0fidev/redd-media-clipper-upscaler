@@ -65,7 +65,7 @@ async fn max_quality_encodes_through_the_gifski_pipe() {
         panic!("{measure:?}")
     };
     assert_eq!((engine, width, colours, optimiser), (EngineUsed::Gifski, 320, None, false));
-    assert!(!deterministic, "gifski outcomes are not byte-reproducible (research R14)");
+    assert!(deterministic, "gifski passed the Phase 0 determinism check (research R14)");
     assert_eq!(rmedia_testkit::gif_loop(&output), Some(0), "loops forever");
     let delays = rmedia_testkit::gif_delays(&output);
     assert!(delays.iter().all(|&d| d >= 2), "{delays:?}");
@@ -80,6 +80,18 @@ async fn a_gifski_gif_that_plays_once_has_no_loop_block() {
     let (output, _) = encode(&fixture(Fixture::Land6), o, d.path()).await;
     // gifski's own `--repeat -1` writes repeat 0 (forever): the executor removes the block.
     assert_eq!(rmedia_testkit::gif_loop(&output), None);
+}
+
+/// SC-007 for gifski: the same request gives the same bytes (research R14, T013).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_gifski_gif_is_byte_reproducible() {
+    require_engine!("palettegen");
+    require_tool!(gifski);
+    let d = tempfile::tempdir().unwrap();
+    let o = GifOptions { width: Some(320), ..max_quality() };
+    let (a, _) = encode(&fixture(Fixture::Busy10), o.clone(), &d.path().join("a")).await;
+    let (b, _) = encode(&fixture(Fixture::Busy10), o, &d.path().join("b")).await;
+    assert!(std::fs::read(&a).unwrap() == std::fs::read(&b).unwrap(), "two gifski runs differ");
 }
 
 #[tokio::test(flavor = "multi_thread")]

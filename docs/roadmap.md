@@ -105,8 +105,8 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   98.80 VMAF (Land6), 84.63 vs 83.50 (Busy10).
 - T010 done: both engines are desktop sidecars and in the CLI archive; CI's bundled-engine jobs
   run the GIF tests with them. A manual release run can leave gifski out.
-- Next: T013 (Phase 0 measurements), then the US1 checkpoint (quickstart, code and security
-  reviews).
+- T013 done: gifski, gifsicle `--lossy` and x264 are byte-reproducible on repeated runs.
+- Next: the US1 checkpoint (quickstart, code and security reviews), then US2.
 - Then: US2 automatic size budget, US3 Reddit MP4, US4 portrait and square, US5 batch and `clip`
   integration, US6 desktop GIF view, and Polish (T045–T080).
 

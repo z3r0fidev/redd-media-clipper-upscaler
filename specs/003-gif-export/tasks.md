@@ -9,8 +9,8 @@ description: "Task list for 003 GIF Export for Reddit"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R16), data-model.md (B1–B4), contracts/,
 quickstart.md
 
-**Status (2026-10-25)**: T001–T012 and T014–T044 done (US1 complete, checkpoint review
-pending). Open in Phase 2: T013. Roadmap: `docs/roadmap.md`.
+**Status (2026-10-25)**: T001–T044 done: Phases 1 and 2, and US1 (checkpoint review
+pending). Next: US2 (T045–). Roadmap: `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.
@@ -157,7 +157,7 @@ green after every task.**
 
   Call it first and again after staging in every `release.yml` job. Add a CI step that runs it
   against a temp tree with a fake staged file and expects failure (research R10).
-- [ ] T013 Run the Phase 0 measurements (after T010) and record the results in research R7 and
+- [X] T013 Run the Phase 0 measurements (after T010) and record the results in research R7 and
   R14:
   - gifski determinism (encode twice, compare);
   - gifski accepting 4:4:4 y4m;
@@ -166,6 +166,10 @@ green after every task.**
 
   If gifski is not deterministic, apply the R14 fallback (`deterministic: false`, and narrow
   the byte-identity tests).
+
+  Done 2026-10-25: every engine gave identical bytes on repeated runs (R14), and gifski accepts
+  4:4:4 (R7). `deterministic` is now true for gifski, with a byte-identity test in
+  `gif_gifski.rs`.
 
 ### Refactors B1–B4 (data-model.md › Refactors)
 

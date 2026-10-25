@@ -488,7 +488,8 @@ pub fn plan_gif(
         notes,
         frames,
         len,
-        deterministic: engine != EngineUsed::Gifski,
+        // Every engine passed the Phase 0 check (T013, research R14): gifski too.
+        deterministic: true,
         target,
     };
     Ok(Planned { frame, gif, warnings, notices })

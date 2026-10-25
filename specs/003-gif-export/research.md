@@ -222,8 +222,8 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
   `gifski --fps F --quality Q [--lossy-quality L] [--motion-quality M] --repeat <R15> -o out.gif -`
   (parameters in R14).
   - y4m on stdin is gifski's default `binary` feature [V crates.io features, 2026-10-23].
-  - [U] Whether gifski accepts 4:4:4 y4m is checked in Phase 0. The fallback is `yuv420p`, with a
-    note.
+  - [V] gifski accepts 4:4:4 y4m (`C444 XYSCSS=444 XCOLORRANGE=FULL`): the gif-tools smoke test
+    on Linux and Windows, and T013. No `yuv420p` fallback is needed.
   - [V] T043, 2026-10-25, from the pinned 1.34.0 source (`src/bin/y4m_source.rs`): `C444` is
     read. The range comes from the header's `COLORRANGE=` (ffmpeg 6.1 and 8.x write
     `XCOLORRANGE=FULL` for `out_range=pc`), but the matrix is guessed from the frame size
@@ -436,6 +436,12 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
     (Principle II). Size bounds and verification still apply.
   - The same Phase 0 check covers gifsicle `--lossy` (expected deterministic) and x264 at a
     fixed thread count.
+  - [V] T013, 2026-10-25, pinned builds, 12-thread Linux machine: gifski 1.34.0 gave identical
+    bytes 5 times out of 5 (720×405 mandelbrot, quality 90) and 2 out of 2 with motion and lossy
+    quality 60; gifsicle 1.98 `-O3 --lossy=80` 3 out of 3; x264 at `-threads 4` and at the
+    default thread count, twice each. So `deterministic` is true for every engine, and
+    `a_gifski_gif_is_byte_reproducible` keeps the check. Not measured: the same bytes across
+    machines with different core counts.
 
 ## R15. Loop count and transparency
 
