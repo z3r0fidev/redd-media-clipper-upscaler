@@ -61,11 +61,15 @@ This runs locally and records nothing until every check below passes.
    tarball, when one exists for this version). Debian's is a snapshot of the upstream repository,
    not the release tarball, so the hashes never match and the unpacked trees are compared: every
    file in both must be identical, and the release may add only autotools output (`configure`,
-   `aclocal.m4`, `Makefile.in`, …), which this check does not cover. The result is recorded in the
-   commit message.
+   `aclocal.m4`, `Makefile.in`, …, by exact path), which this check does not cover. Debian's
+   tarball is scanned for links and escaping paths before it is unpacked. Without a Debian copy
+   the pin fails unless `--without-debian` is given. The result is recorded in the commit
+   message.
 5. gifski's `Cargo.lock` is the crate's plus the security updates in `GIFSKI_LOCK_UPDATES`
    (gif-tools.yml) / `lock_updates` (the lock file); the lock used ships in the vendor tarball,
-   and pinning fails unless it differs from the crate's in exactly those packages. That lock is
+   and pinning fails unless it differs from the crate's in exactly those packages and has only
+   crates.io sources. Every vendored package is compared file by file with its `.crate`
+   downloaded from crates.io and checked against the lock's checksum. That lock is
    checked with `cargo deny check` (a `deny-gifski.toml` that allows gifski's own licence set)
    and with `cargo audit`. The sha256 of the crate's own lock becomes `cargo_lock_sha256`.
 6. `licenses/GIFSKI-DEPS.md` is generated from that lock: the name, version and licence of every

@@ -4,6 +4,7 @@
 //! scratch folder.
 
 use std::ffi::OsString;
+use std::path::Path;
 
 use super::LoopCount;
 use super::plan::{GifSpec, Settings};
@@ -159,15 +160,39 @@ pub fn gifski_args(rate: (u32, u32), p: GifskiParams, loop_count: LoopCount, out
 const ONCE_BLOCK: [u8; 19] = *b"\x21\xff\x0bNETSCAPE2.0\x03\x01\x00\x00\x00";
 const SCREEN_END: usize = 13;
 
-/// Removes gifski's loop block from `gif` when it is exactly where and what gifski writes;
-/// otherwise leaves the file as it is (verification then reports the loop count).
-pub fn strip_loop_block(gif: &mut Vec<u8>) -> bool {
-    let at_start = gif.get(10).is_some_and(|flags| flags & 0x80 == 0)
-        && gif.get(SCREEN_END..SCREEN_END + ONCE_BLOCK.len()) == Some(&ONCE_BLOCK[..]);
-    if at_start {
-        gif.drain(SCREEN_END..SCREEN_END + ONCE_BLOCK.len());
+/// Whether `head` (the file's first bytes) holds gifski's loop block exactly where gifski
+/// writes it: right after the screen descriptor, with no global palette.
+fn has_loop_block(head: &[u8]) -> bool {
+    head.get(10).is_some_and(|flags| flags & 0x80 == 0)
+        && head.get(SCREEN_END..SCREEN_END + ONCE_BLOCK.len()) == Some(&ONCE_BLOCK[..])
+}
+
+/// Removes gifski's loop block from the GIF at `path` when it is exactly where and what gifski
+/// writes; otherwise leaves the file as it is (verification then reports the loop count). Only
+/// the head is read; the rest is streamed into `<path>.strip` (created new), which replaces the
+/// file. Blocking I/O.
+pub fn strip_loop_block(path: &Path) -> std::io::Result<bool> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    let mut src = std::fs::File::open(path)?;
+    let mut head = [0u8; SCREEN_END + ONCE_BLOCK.len()];
+    let n = src.read(&mut head)?;
+    if n < head.len() || !has_loop_block(&head) {
+        return Ok(false);
     }
-    at_start
+    let tmp = path.with_extension("strip");
+    let mut out = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+    let r = (|| {
+        out.write_all(&head[..SCREEN_END])?;
+        src.seek(SeekFrom::Start(head.len() as u64))?;
+        std::io::copy(&mut src, &mut out)?;
+        out.sync_all()?;
+        drop(src);
+        std::fs::rename(&tmp, path)
+    })();
+    if r.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    r.map(|()| true)
 }
 
 /// The gifsicle post-pass: `-O3`, optionally lossy, from `input` to `output` (both relative;
@@ -248,14 +273,24 @@ mod tests {
 
     #[test]
     fn only_gifskis_play_once_block_is_removed() {
-        let mut once = gif_with(&ONCE_BLOCK);
-        assert!(strip_loop_block(&mut once));
-        assert_eq!(once, gif_with(&[]));
+        let d = tempfile::tempdir().unwrap();
+        let strip = |bytes: &[u8]| {
+            let p = d.path().join("enc.gif");
+            std::fs::write(&p, bytes).unwrap();
+            let changed = strip_loop_block(&p).unwrap();
+            (changed, std::fs::read(&p).unwrap())
+        };
+        assert_eq!(strip(&gif_with(&ONCE_BLOCK)), (true, gif_with(&[])));
         let forever_twice: &[u8] = b"\x21\xff\x0bNETSCAPE2.0\x03\x01\x02\x00\x00";
-        let mut repeat = gif_with(forever_twice);
-        assert!(!strip_loop_block(&mut repeat), "a real repeat count stays");
+        assert_eq!(
+            strip(&gif_with(forever_twice)),
+            (false, gif_with(forever_twice)),
+            "a real repeat count stays"
+        );
         let mut palette = gif_with(&ONCE_BLOCK);
         palette[10] = 0x80;
-        assert!(!strip_loop_block(&mut palette), "with a global palette the block is elsewhere");
+        assert!(!strip(&palette).0, "with a global palette the block is elsewhere");
+        assert!(!strip(b"GIF89a").0, "a short file is left alone");
+        assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 1, "no .strip file is left");
     }
 }

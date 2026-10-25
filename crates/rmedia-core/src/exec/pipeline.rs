@@ -247,7 +247,10 @@ pub(super) async fn run_stages(
         });
     }
     let tail_file = match progress {
-        ProgressFrom::File(path) => Some(tokio::spawn(tail_progress(path.clone(), tx))),
+        ProgressFrom::File(path) => {
+            let finish = CancellationToken::new();
+            Some((tokio::spawn(tail_progress(path.clone(), tx, finish.clone())), finish))
+        }
         ProgressFrom::ConsumerStdout => {
             drop(tx);
             None
@@ -294,8 +297,12 @@ pub(super) async fn run_stages(
             running.kill_running(&mut ends);
         }
     }
-    if let Some(t) = tail_file {
-        t.abort();
+    // One last read after the children exit, so the final `progress=end` block is not lost.
+    if let Some((mut t, finish)) = tail_file {
+        finish.cancel();
+        if tokio::time::timeout(Duration::from_secs(1), &mut t).await.is_err() {
+            t.abort();
+        }
     }
     while let Ok(b) = blocks.try_recv() {
         on_progress(b);
@@ -322,14 +329,30 @@ pub(super) async fn run_stages(
 }
 
 /// Follows an ffmpeg `-progress` file, sending each block (the file may not exist yet).
-async fn tail_progress(path: PathBuf, tx: tokio::sync::mpsc::UnboundedSender<ProgressBlock>) {
+async fn tail_progress(
+    path: PathBuf,
+    tx: tokio::sync::mpsc::UnboundedSender<ProgressBlock>,
+    finish: CancellationToken,
+) {
     let mut parser = ProgressParser::default();
     let mut offset = 0usize;
     let mut partial = String::new();
     loop {
-        tokio::time::sleep(PROGRESS_POLL).await;
-        let Ok(data) = tokio::fs::read(&path).await else { continue };
+        // `finish`: read once more, then stop.
+        let last = tokio::select! {
+            () = tokio::time::sleep(PROGRESS_POLL) => false,
+            () = finish.cancelled() => true,
+        };
+        let Ok(data) = tokio::fs::read(&path).await else {
+            if last {
+                return;
+            }
+            continue;
+        };
         if data.len() <= offset {
+            if last {
+                return;
+            }
             continue;
         }
         partial.push_str(&String::from_utf8_lossy(&data[offset..]));
@@ -339,6 +362,9 @@ async fn tail_progress(path: PathBuf, tx: tokio::sync::mpsc::UnboundedSender<Pro
             if let Some(block) = parser.feed(line.trim_end()) {
                 let _ = tx.send(block);
             }
+        }
+        if last {
+            return;
         }
     }
 }
@@ -359,11 +385,13 @@ fn lost_reader(end: &StageEnd) -> bool {
 
 /// The cause of a producer → consumer pipe's failure (research R7): a producer that failed on
 /// its own is the cause, even when the consumer exited 0 (its output is from a cut-short
-/// stream); otherwise a failed consumer is; a producer that only lost its reader is not.
+/// stream); otherwise a failed consumer is. A producer that only lost its reader points at the
+/// consumer, even one that exited 0: it stopped reading before the end.
 pub(super) fn blame_pair(producer: &StageEnd, consumer: &StageEnd) -> Option<usize> {
-    if producer.failed() && !lost_reader(producer) {
+    let lost = producer.failed() && lost_reader(producer);
+    if producer.failed() && !lost {
         Some(0)
-    } else if consumer.failed() {
+    } else if consumer.failed() || lost {
         Some(1)
     } else {
         None
@@ -622,6 +650,26 @@ mod tests {
         return std::os::unix::process::ExitStatusExt::from_raw(0);
         #[cfg(windows)]
         return std::os::windows::process::ExitStatusExt::from_raw(0);
+    }
+
+    fn exit_1() -> ExitStatus {
+        #[cfg(unix)]
+        return std::os::unix::process::ExitStatusExt::from_raw(1 << 8);
+        #[cfg(windows)]
+        return std::os::windows::process::ExitStatusExt::from_raw(1);
+    }
+
+    #[test]
+    fn a_consumer_that_stops_reading_early_is_blamed() {
+        let producer = StageEnd {
+            status: Some(exit_1()),
+            tail: "Error writing trailer: Broken pipe".into(),
+            ..StageEnd::default()
+        };
+        let exited_0 = StageEnd { status: Some(success()), ..StageEnd::default() };
+        assert_eq!(blame_pair(&producer, &exited_0), Some(1), "a truncated pipe is the consumer's");
+        let ok = StageEnd { status: Some(success()), ..StageEnd::default() };
+        assert_eq!(blame_pair(&ok, &exited_0), None);
     }
 
     #[tokio::test(flavor = "multi_thread")]

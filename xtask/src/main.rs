@@ -105,11 +105,10 @@ fn main() -> Result<()> {
         }
         Some("pin-tools") => pin_tools(),
         Some("pin-gif-tools") => {
-            let run: u64 = args
-                .get(1)
-                .and_then(|r| r.parse().ok())
-                .context("usage: cargo xtask pin-gif-tools <run-id> (the gif-tools.yml run)")?;
-            gif_tools::pin(run)
+            let run: u64 = args.get(1).and_then(|r| r.parse().ok()).context(
+                "usage: cargo xtask pin-gif-tools <run-id> [--without-debian] (the gif-tools.yml run)",
+            )?;
+            gif_tools::pin(run, args.iter().any(|a| a == "--without-debian"))
         }
         Some("check-release-gate") => {
             let tree = args
@@ -145,7 +144,7 @@ fn main() -> Result<()> {
         }
         _ => {
             eprintln!(
-                "usage: cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online] | check-release-gate [--tree DIR]>"
+                "usage: cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> [--without-debian] | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online] | check-release-gate [--tree DIR]>"
             );
             std::process::exit(2);
         }

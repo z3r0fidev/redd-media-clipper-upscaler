@@ -104,7 +104,7 @@ Tags:
       one sendcmd file on the joined timeline does the same job: window `k` starts at `k` s,
       so each window's commands are shifted by `k − window start`.
   - One ffmpeg run, counted as one encode.
-  - A range of 4 s or less is encoded whole: the sample is the real output, and the result is
+  - A range of 3 s or less (4 s before the US1 review: the sample stays within 3 s / 150 frames) is encoded whole: the sample is the real output, and the result is
     reused if it is chosen.
 - **Model** (the code review's H3 bias fix): each window's GIF bytes are split into its first
   frame and its delta frames, read from ffprobe `packet=size`.

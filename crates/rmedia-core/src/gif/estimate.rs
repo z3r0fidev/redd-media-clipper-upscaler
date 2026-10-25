@@ -22,8 +22,13 @@ use crate::upscale::graph::{GifChain, frame_chain};
 
 /// The length of one sample window, in seconds.
 pub const WINDOW: f64 = 1.0;
-/// Ranges up to this long are encoded whole: the sample is the output itself.
-pub const WHOLE_UP_TO: f64 = 4.0;
+/// Ranges up to this long are encoded whole: the sample is the output itself. With three
+/// windows of [`WINDOW`] the sample never covers more than 3 s (150 frames at 50 fps), the
+/// bound in contracts/tauri-commands.md.
+pub const WHOLE_UP_TO: f64 = 3.0;
+/// A sample that grows past this, or runs longer than [`SAMPLE_TIMEOUT`], is stopped.
+const SAMPLE_LIMIT: u64 = 512 << 20;
+const SAMPLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 /// Where the windows are centred, as fractions of the range.
 const CENTRES: [f64; 3] = [0.1, 0.5, 0.9];
 
@@ -174,7 +179,14 @@ pub fn model(sample: &SampleSize, windows: usize, frames: u64) -> u64 {
         .map(|(_, f)| f.1)
         .collect();
     if deltas.is_empty() {
-        return header + first;
+        // Every later frame starts a window (a very low frame rate): their mean is all there
+        // is. A single frame is a static sample that gifsicle merged: the GIF is one frame too.
+        let rest: Vec<u64> = sample.frames.iter().skip(1).map(|f| f.1).collect();
+        if rest.is_empty() {
+            return header + first;
+        }
+        let mean = rest.iter().sum::<u64>() as f64 / rest.len() as f64;
+        return header + first + (mean * frames.saturating_sub(1) as f64).round() as u64;
     }
     let mean = deltas.iter().sum::<u64>() as f64 / deltas.len() as f64;
     header + first + (mean * frames.saturating_sub(1) as f64).round() as u64
@@ -212,6 +224,31 @@ async fn frame_sizes(tools: &Tools, path: &Path, cancel: &CancellationToken) -> 
     Ok(SampleSize { bytes, frames })
 }
 
+/// Runs `run` (given its own stop token) under the sample's size watchdog on `file` and its
+/// wall-clock limit.
+async fn bounded<T, F>(
+    file: std::path::PathBuf,
+    cancel: &CancellationToken,
+    run: impl FnOnce(CancellationToken) -> F,
+) -> Result<T>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    use crate::exec::gif::{Deadline, SizeWatch};
+    let stop = cancel.child_token();
+    let watch = SizeWatch::start(file, SAMPLE_LIMIT, &stop);
+    let deadline = Deadline::start(SAMPLE_TIMEOUT, &stop);
+    let r = run(stop.clone()).await;
+    watch.stop()?;
+    if deadline.fired() && !cancel.is_cancelled() {
+        return Err(Error::engine_failed(
+            format!("the sample took longer than {} s and was stopped", SAMPLE_TIMEOUT.as_secs()),
+            String::new(),
+        ));
+    }
+    r
+}
+
 /// Encodes the sample of `s` in `dir` and measures it (optimised by gifsicle when the job is;
 /// through gifski when that is the engine). Returns the predicted size of the job's GIF.
 pub async fn sample(
@@ -233,12 +270,20 @@ pub async fn sample(
         None => whole_args(spec, s, out),
     };
     if let Some(program) = gifski {
-        let pipe =
-            crate::exec::gif::Gifski { program, dir, output: SAMPLE, limit: crate::exec::gif::MAX_OUTPUT };
+        let pipe = crate::exec::gif::Gifski {
+            program,
+            dir,
+            output: SAMPLE,
+            limit: SAMPLE_LIMIT,
+            timeout: Some(SAMPLE_TIMEOUT),
+        };
         let job_output = dir.join(SAMPLE);
         pipe.run(tools, args, s, spec.gif.loop_count, None, &job_output, cancel, |_| {}).await?;
     } else {
-        let out = process::run_lines_in(&tools.ffmpeg.path, &args, Some(dir), cancel, |_| {}).await?;
+        let out = bounded(dir.join(SAMPLE), cancel, |stop| async move {
+            process::run_lines_in(&tools.ffmpeg.path, &args, Some(dir), &stop, |_| {}).await
+        })
+        .await?;
         if !out.status.success() {
             return Err(Error::engine_failed("the sample encode failed", out.stderr_tail));
         }
@@ -247,7 +292,10 @@ pub async fn sample(
     if let Some(gifsicle) = spec.gif.optimiser.as_deref() {
         let env = super::engines::engine_env();
         let a = gifsicle_args(s.lossy, SAMPLE, SAMPLE_OPT);
-        let out = process::run_lines_env(gifsicle, &a, Some(dir), Some(&env), cancel, |_| {}).await?;
+        let out = bounded(dir.join(SAMPLE_OPT), cancel, |stop| async move {
+            process::run_lines_env(gifsicle, &a, Some(dir), Some(&env), &stop, |_| {}).await
+        })
+        .await?;
         if !out.status.success() {
             return Err(Error::EngineFailed {
                 tool: "gifsicle".into(),
@@ -351,7 +399,8 @@ mod tests {
 
     #[test]
     fn short_ranges_are_encoded_whole() {
-        assert!(windows(Ts::ZERO, 4.0).is_none());
+        assert!(windows(Ts::ZERO, 3.0).is_none());
+        assert!(windows(Ts::ZERO, 3.5).is_some(), "longer ranges are sampled in 3 × 1 s");
         assert!(windows(Ts::ZERO, 1.5).is_none());
     }
 
@@ -374,5 +423,14 @@ mod tests {
     fn a_static_sample_is_header_plus_frames_of_the_first_size() {
         let sample = SampleSize { bytes: 1100, frames: vec![(0.0, 1000)] };
         assert_eq!(model(&sample, 3, 1), 1100);
+        assert_eq!(model(&sample, 3, 90), 1100, "gifsicle merged a static sample to one frame");
+    }
+
+    #[test]
+    fn one_frame_per_window_uses_the_later_frames() {
+        // 1 fps: each 1 s window holds one frame, so every later frame starts a window.
+        let sample =
+            SampleSize { bytes: 100 + 1000 + 600 + 400, frames: vec![(0.0, 1000), (1.0, 600), (2.0, 400)] };
+        assert_eq!(model(&sample, 3, 10), 100 + 1000 + 9 * 500);
     }
 }

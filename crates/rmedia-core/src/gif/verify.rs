@@ -27,10 +27,11 @@ pub struct GifExpect {
     pub height: u32,
     /// Planned frame count (±1 allowed).
     pub frames: u64,
-    /// Set when gifsicle optimised the GIF: its `-O3` merges identical consecutive frames and adds
-    /// up their delays, so fewer frames are allowed and this planned display time (centiseconds)
-    /// is checked instead, within one frame.
-    pub optimised_cs: Option<u64>,
+    /// Set when the engine may merge frames or round delays its own way (gifsicle `-O3` merges
+    /// identical consecutive frames and adds up their delays; gifski times frames itself): fewer
+    /// frames are allowed, and this planned display time (centiseconds) is checked instead,
+    /// within one frame.
+    pub length_cs: Option<u64>,
     pub loop_count: LoopCount,
     /// The hard size limit, when there is a budget.
     pub max_bytes: Option<u64>,
@@ -61,7 +62,7 @@ pub fn check_gif(f: &GifFacts, e: &GifExpect) -> std::result::Result<(), String>
         return Err(format!("a frame delay is {d} cs, under the {MIN_DELAY_CS} cs minimum"));
     }
     let frames = f.delays.len() as u64;
-    match e.optimised_cs {
+    match e.length_cs {
         None if frames.abs_diff(e.frames) > 1 => {
             return Err(format!("the GIF has {frames} frames, expected {}", e.frames));
         }
@@ -237,7 +238,7 @@ mod tests {
             width: 720,
             height: 405,
             frames: 90,
-            optimised_cs: None,
+            length_cs: None,
             loop_count: LoopCount::Forever,
             max_bytes: Some(8_000_000),
         }
@@ -281,9 +282,9 @@ mod tests {
     }
 
     #[test]
-    fn an_optimised_gif_may_merge_frames_but_not_change_its_length() {
+    fn a_merged_gif_may_lose_frames_but_not_change_its_length() {
         let planned: u64 = facts().delays.iter().map(|&d| u64::from(d)).sum();
-        let opt = GifExpect { optimised_cs: Some(planned), ..expect() };
+        let opt = GifExpect { length_cs: Some(planned), ..expect() };
         let merged = GifFacts { delays: vec![200, 200, planned as u32 - 400], ..facts() };
         assert_eq!(check_gif(&merged, &opt), Ok(()), "3 merged frames, same length");
         assert_eq!(check_gif(&facts(), &opt), Ok(()));

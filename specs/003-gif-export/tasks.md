@@ -9,8 +9,8 @@ description: "Task list for 003 GIF Export for Reddit"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R16), data-model.md (B1–B4), contracts/,
 quickstart.md
 
-**Status (2026-10-25)**: T001–T044 done: Phases 1 and 2, and US1 (checkpoint review
-pending). Next: US2 (T045–). Roadmap: `docs/roadmap.md`.
+**Status (2026-10-25)**: T001–T044 done: Phases 1 and 2, and US1 with its checkpoint (quickstart,
+code and security reviews: `checklists/validation.md`). Next: US2 (T045–). Roadmap: `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.

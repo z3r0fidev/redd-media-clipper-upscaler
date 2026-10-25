@@ -418,7 +418,8 @@ fn curl_text(url: &str) -> Result<Option<String>> {
 }
 
 /// `cargo xtask pin-gif-tools <run-id>`: checks the run and every asset, then writes the lock.
-pub fn pin(run_id: u64) -> Result<()> {
+/// `without_debian`: pin even when Debian has no copy of this gifsicle to compare with.
+pub fn pin(run_id: u64, without_debian: bool) -> Result<()> {
     let repo = gh(&["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])?;
     let run: RunInfo = serde_json::from_str(&gh(&["api", &format!("repos/{repo}/actions/runs/{run_id}")])?)?;
     check_run(&run, run_id)?;
@@ -532,6 +533,11 @@ pub fn pin(run_id: u64) -> Result<()> {
         for (archive, dir) in
             [(&work.join(source_file(GIFSICLE_SOURCE)), &release_tree), (&deb_file, &debian_tree)]
         {
+            // Debian's copy is not hash-pinned: only plain files and folders, no escaping paths.
+            let unsafe_members = unsafe_members(&tar_list(archive, "-tzf")?, &tar_list(archive, "-tvzf")?);
+            if !unsafe_members.is_empty() {
+                bail!("{} has unsafe members:\n  {}", archive.display(), unsafe_members.join("\n  "));
+            }
             std::fs::create_dir_all(dir)?;
             crate::run(Command::new(crate::tar()).arg("-xzf").arg(archive).arg("-C").arg(dir))?;
         }
@@ -548,9 +554,14 @@ pub fn pin(run_id: u64) -> Result<()> {
             cmp.same,
             cmp.release_only.join(", ")
         );
-    } else {
+    } else if without_debian {
         println!(
             "no Debian orig tarball for gifsicle {GIFSICLE_VERSION}: not compared (say so in the commit)"
+        );
+    } else {
+        bail!(
+            "cannot fetch Debian's gifsicle {GIFSICLE_VERSION} ({debian}) to compare with; pass \
+             --without-debian to pin without that check"
         );
     }
 
@@ -587,11 +598,41 @@ pub fn pin(run_id: u64) -> Result<()> {
         bail!("the shipped Cargo.lock changes {changes:?}, not the listed updates {expected:?}");
     }
     std::fs::copy(&shipped_lock, &cargo_lock)?;
+    let foreign = non_registry_sources(&shipped);
+    if !foreign.is_empty() {
+        bail!("the shipped Cargo.lock has non-registry sources:\n  {}", foreign.join("\n  "));
+    }
     let locked = lock_checksums(&shipped);
     let mismatched = vendor_mismatches(&vendor_dir.join("vendor"), &locked)?;
     if !mismatched.is_empty() {
         bail!("vendored packages that are not the locked ones:\n  {}", mismatched.join("\n  "));
     }
+    // `.cargo-checksum.json` is written by whoever made the tarball, so each vendored package is
+    // compared with its `.crate` from crates.io, checked against the lock's checksum.
+    let crates_dir = work.join("crates");
+    let mut differ = Vec::new();
+    for (key, checksum) in &locked {
+        let (name, version) = key.split_once(' ').context("a lock key without a version")?;
+        let file = crates_dir.join(format!("{name}-{version}.crate"));
+        std::fs::create_dir_all(&crates_dir)?;
+        crate::download(&format!("https://static.crates.io/crates/{name}/{name}-{version}.crate"), &file)?;
+        if file_sha256(&file)? != *checksum {
+            bail!("crates.io's {name} {version} is not the locked checksum {checksum}");
+        }
+        let unpacked = crates_dir.join(format!("{name}-{version}.d"));
+        let members = unsafe_members(&tar_list(&file, "-tzf")?, &tar_list(&file, "-tvzf")?);
+        if !members.is_empty() {
+            bail!("{name} {version} has unsafe members:\n  {}", members.join("\n  "));
+        }
+        std::fs::create_dir_all(&unpacked)?;
+        crate::run(Command::new(crate::tar()).arg("-xzf").arg(&file).arg("-C").arg(&unpacked))?;
+        let vendored = vendor_dir.join("vendor").join(format!("{name}-{version}"));
+        differ.extend(vendored_differences(&vendored, &unpacked.join(format!("{name}-{version}")))?);
+    }
+    if !differ.is_empty() {
+        bail!("vendored sources that differ from crates.io:\n  {}", differ.join("\n  "));
+    }
+    println!("vendored sources: {} packages identical to their crates.io .crate files", locked.len());
     crate::run(
         Command::new("cargo")
             .args(["deny", "--manifest-path"])
@@ -745,6 +786,28 @@ fn lock_changes(before: &BTreeMap<String, String>, after: &BTreeMap<String, Stri
     out
 }
 
+/// Packages in a Cargo.lock whose `source` is not crates.io (git, other registries).
+fn non_registry_sources(lock: &str) -> Vec<String> {
+    lock.lines()
+        .map(str::trim)
+        .filter_map(|l| l.strip_prefix("source = "))
+        .filter(|v| *v != "\"registry+https://github.com/rust-lang/crates.io-index\"")
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Files of a vendored package that are not byte-identical in the unpacked `.crate` (`cargo
+/// vendor` may leave files out, and adds `.cargo-checksum.json`).
+fn vendored_differences(vendored: &Path, unpacked: &Path) -> Result<Vec<String>> {
+    let (v, c) = (tree_hashes(vendored)?, tree_hashes(unpacked)?);
+    let name = vendored.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    Ok(v.iter()
+        .filter(|(path, _)| path.as_str() != ".cargo-checksum.json")
+        .filter(|(path, sha)| c.get(*path) != Some(*sha))
+        .map(|(path, _)| format!("{name}/{path}"))
+        .collect())
+}
+
 /// `name version → checksum` of every registry package in a Cargo.lock.
 fn lock_checksums(lock: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
@@ -774,9 +837,37 @@ fn lock_checksums(lock: &str) -> BTreeMap<String, String> {
 
 /// Vendored packages (`<name>-<version>/.cargo-checksum.json`) whose `package` checksum is not
 /// the one `locked` has for them, or that the lock does not list.
-/// Files the gifsicle release tarball adds to the repository: autotools output.
-const AUTOTOOLS_OUTPUT: &[&str] =
-    &["aclocal.m4", "compile", "config.h.in", "configure", "depcomp", "install-sh", "missing", "Makefile.in"];
+/// Files the gifsicle release tarball adds to the repository: autotools output, by exact path.
+/// The Debian comparison does not cover them (the Linux build runs `configure`); the release's
+/// sha256 pin is their only check (validation.md).
+const AUTOTOOLS_OUTPUT: &[&str] = &[
+    "Makefile.in",
+    "aclocal.m4",
+    "compile",
+    "config.h.in",
+    "configure",
+    "depcomp",
+    "install-sh",
+    "missing",
+    "src/Makefile.in",
+];
+
+/// The member list of a gzip tarball (`-tzf` names, `-tvzf` long listing).
+fn tar_list(archive: &Path, flag: &str) -> Result<String> {
+    let out = Command::new(crate::tar()).arg(flag).arg(archive).output()?;
+    if !out.status.success() {
+        bail!("tar {flag} {} failed", archive.display());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Members that are links or special files, or whose paths are absolute or contain `..`.
+fn unsafe_members(names: &str, long: &str) -> Vec<String> {
+    let bad_path = |n: &&str| n.starts_with('/') || n.split('/').any(|c| c == "..") || n.contains(':');
+    let mut out: Vec<String> = names.lines().filter(bad_path).map(|n| format!("path {n}")).collect();
+    out.extend(long.lines().filter(|l| !l.starts_with(['-', 'd'])).map(|l| format!("entry {l}")));
+    out
+}
 
 #[derive(Debug, Default, PartialEq)]
 struct TreeComparison {
@@ -826,9 +917,7 @@ fn compare_source_trees(release: &Path, snapshot: &Path) -> Result<TreeCompariso
         match s.get(path) {
             Some(other) if other == sha => cmp.same += 1,
             Some(_) => cmp.problems.push(format!("{path}: contents differ")),
-            None if AUTOTOOLS_OUTPUT.contains(&path.rsplit('/').next().unwrap_or(path)) => {
-                cmp.release_only.push(path.clone())
-            }
+            None if AUTOTOOLS_OUTPUT.contains(&path.as_str()) => cmp.release_only.push(path.clone()),
             None => cmp.problems.push(format!("{path}: only in the release tarball")),
         }
     }
@@ -1234,6 +1323,10 @@ mod tests {
         write("rel", "configure", "#!/bin/sh");
         write("rel", "src/Makefile.in", "all:");
         write("snap", ".github/ci.yml", "on: push");
+        write("rel", "src/configure", "#!/bin/sh evil");
+        let nested = compare_source_trees(&base.join("rel"), &base.join("snap")).unwrap();
+        assert_eq!(nested.problems, ["src/configure: only in the release tarball"], "exact paths only");
+        std::fs::remove_file(base.join("rel/src/configure")).unwrap();
         let ok = compare_source_trees(&base.join("rel"), &base.join("snap")).unwrap();
         assert_eq!((ok.same, ok.problems.len()), (1, 0), "{ok:?}");
         assert_eq!(ok.release_only, ["configure", "src/Makefile.in"]);
@@ -1250,6 +1343,39 @@ mod tests {
             ]
         );
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn vendored_files_must_match_the_crate() {
+        let base = tempfile_dir("vendored");
+        let write = |p: &str, text: &str| {
+            let p = base.join(p);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        };
+        write("v/rgb-0.8.0/src/lib.rs", "pub struct Rgb;");
+        write("v/rgb-0.8.0/.cargo-checksum.json", "{}");
+        write("c/rgb-0.8.0/src/lib.rs", "pub struct Rgb;");
+        write("c/rgb-0.8.0/Cargo.toml.orig", "[package]");
+        let check = || vendored_differences(&base.join("v/rgb-0.8.0"), &base.join("c/rgb-0.8.0")).unwrap();
+        assert_eq!(check(), Vec::<String>::new());
+        write("v/rgb-0.8.0/src/lib.rs", "pub struct Rgb; // patched");
+        write("v/rgb-0.8.0/build.rs", "fn main() {}");
+        assert_eq!(check(), ["rgb-0.8.0/build.rs", "rgb-0.8.0/src/lib.rs"]);
+        let lock = "source = \"registry+https://github.com/rust-lang/crates.io-index\"\nsource = \"git+https://x/y#abc\"\n";
+        assert_eq!(non_registry_sources(lock), ["\"git+https://x/y#abc\""]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn unsafe_tar_members_are_named() {
+        let names = "g-1/\ng-1/src/a.c\n/etc/passwd\ng-1/../x\nC:/w\n";
+        let long = "drwxr-xr-x 0/0 0 2026-01-01 g-1/\n-rw-r--r-- 0/0 1 2026-01-01 g-1/src/a.c\n\
+                    lrwxrwxrwx 0/0 0 2026-01-01 g-1/l -> /etc\n";
+        let bad = unsafe_members(names, long);
+        assert_eq!(bad.len(), 4, "{bad:?}");
+        assert!(bad[3].starts_with("entry l"), "{bad:?}");
+        assert!(unsafe_members("g-1/\ng-1/a\n", "drwx g-1/\n-rw g-1/a\n").is_empty());
     }
 
     #[test]

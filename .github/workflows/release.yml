@@ -100,6 +100,9 @@ jobs:
             jq -c '{bundle: {externalBin: [.bundle.externalBin[] | select(endswith("/rmedia-gifski") | not)],
               resources: (.bundle.resources | with_entries(select(.key | contains("/GIFSKI-")) | .value = null))}}' \
               src-tauri/tauri.conf.json > "$RUNNER_TEMP/no-gifski.json"
+            # The patch must drop exactly one sidecar and the three gifski licence files.
+            jq -e '[.bundle.externalBin[] | select(endswith("/rmedia-gifski"))] | length == 1' src-tauri/tauri.conf.json
+            jq -e '.bundle.resources | length == 3' "$RUNNER_TEMP/no-gifski.json"
             npx tauri build --bundles ${{ matrix.bundles }} --config "$RUNNER_TEMP/no-gifski.json"
           fi
       - name: Standalone CLI archive

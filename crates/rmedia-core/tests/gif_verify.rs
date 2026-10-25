@@ -46,7 +46,7 @@ async fn gifs_made_by_the_engine_pass_and_wrong_expectations_fail() {
         width: 320,
         height: 180,
         frames: 30,
-        optimised_cs: None,
+        length_cs: None,
         loop_count: LoopCount::Forever,
         max_bytes: None,
     };
@@ -120,4 +120,25 @@ async fn mp4s_are_checked_for_streams_faststart_size_and_length() {
     assert!(o.status.success());
     let info = rmedia_core::probe::probe(&tools, &out, &cancel).await.unwrap();
     assert!(check_mp4(&info, true, &expect).unwrap_err().contains("aac"));
+}
+
+/// ffprobe reports the delays as written, so a 1 cs delay (100 fps) is caught.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delay_under_two_centiseconds_is_caught() {
+    require_engine!("palettegen");
+    let (tools, _) = common::engine();
+    let dir = tempfile::tempdir().unwrap();
+    let fast = make(dir.path(), "fast.gif", &["-vf", "fps=100", "-frames:v", "10", "-f", "gif"]);
+    let facts = gif_facts(&tools, &fast, &CancellationToken::new()).await.unwrap();
+    assert!(facts.delays.iter().all(|d| *d == 1), "{:?}", facts.delays);
+    let expect = GifExpect {
+        width: 320,
+        height: 180,
+        frames: 10,
+        length_cs: None,
+        loop_count: LoopCount::Forever,
+        max_bytes: None,
+    };
+    let err = check_gif(&facts, &expect).unwrap_err();
+    assert!(err.contains("1 cs"), "{err}");
 }

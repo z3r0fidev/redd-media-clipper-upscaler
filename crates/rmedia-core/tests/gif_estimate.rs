@@ -56,7 +56,7 @@ async fn estimate_and_real(src: &Path, end: EndSpec) -> (u64, u64) {
 async fn a_short_range_is_sampled_whole_and_exact() {
     require_engine!("palettegen", "paletteuse");
     let (est, real) = estimate_and_real(&fixture(Fixture::Land6), EndSpec::At(secs(3.0))).await;
-    assert_eq!(est, real, "a range of 4 s or less is the output itself");
+    assert_eq!(est, real, "a range of 3 s or less is the output itself");
 }
 
 #[tokio::test(flavor = "multi_thread")]

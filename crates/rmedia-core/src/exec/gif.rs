@@ -34,6 +34,8 @@ pub(crate) const MAX_OUTPUT: u64 = 4 << 30;
 /// The gifski pipe is stopped when ffmpeg reports no progress for this long. gifski holds only
 /// a few frames, so it finishes soon after ffmpeg does.
 const PIPE_STALL: Duration = Duration::from_secs(300);
+/// The gifsicle post-pass is stopped after this long (it takes seconds on a Reddit-sized GIF).
+const GIFSICLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobMeasure> {
     let span = spec.cut.requested;
@@ -64,7 +66,7 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
     if let Some(gifski) = gifski {
         next(ctx);
         let (tools, cancel, output) = (ctx.tools, ctx.cancel.clone(), ctx.output.to_path_buf());
-        let pipe = Gifski { program: gifski, dir: &scratch, output: ENCODED, limit };
+        let pipe = Gifski { program: gifski, dir: &scratch, output: ENCODED, limit, timeout: None };
         let producer = y4m_args(spec, &s, PROGRESS);
         pipe.run(tools, producer, &s, spec.gif.loop_count, Some(PROGRESS), &output, &cancel, |b| {
             ctx.progress(b, total)
@@ -87,7 +89,7 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
     let mut result = ENCODED;
     if let (true, Some(gifsicle)) = (optimise, spec.gif.optimiser.as_deref()) {
         next(ctx);
-        run_gifsicle(ctx, gifsicle, &scratch, s.lossy).await?;
+        run_gifsicle(ctx, gifsicle, &scratch, s.lossy, limit).await?;
         result = OPTIMISED;
     }
     move_into(&scratch.join(result), ctx.temp)?;
@@ -98,12 +100,15 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
         width: s.width,
         height: s.height,
         frames: spec.gif.frames,
-        optimised_cs: (result == OPTIMISED).then(|| {
+        // gifsicle merges identical frames, and gifski rounds its own delays: both are checked
+        // by their total display time.
+        length_cs: (result == OPTIMISED || gifski.is_some()).then(|| {
             crate::gif::timing::delays(s.rate, spec.gif.frames as usize).into_iter().map(u64::from).sum()
         }),
         loop_count: spec.gif.loop_count,
         max_bytes: spec.gif.budget.map(|b| b.hard),
     };
+    // Over the hard limit fails here until US2's budget search lowers the settings.
     check_gif(&facts, &expect).map_err(Error::VerifyFailed)?;
     ctx.stage_fraction(1.0, total);
     Ok(measure(spec, &s, facts.bytes, optimise))
@@ -156,15 +161,16 @@ async fn encode_watched(
     if out.status.success() { Ok(()) } else { Err(classify_failure(&out.stderr_tail, ctx.output)) }
 }
 
-/// Research R7's size watchdog: cancels `stop` once `file` passes `limit` bytes.
-struct SizeWatch {
+/// Research R7's size watchdog: cancels `stop` once `file` passes `limit` bytes. Dropping it
+/// stops the watching task.
+pub(crate) struct SizeWatch {
     task: tokio::task::JoinHandle<()>,
     over: Arc<AtomicBool>,
     limit: u64,
 }
 
 impl SizeWatch {
-    fn start(file: PathBuf, limit: u64, stop: &CancellationToken) -> SizeWatch {
+    pub(crate) fn start(file: PathBuf, limit: u64, stop: &CancellationToken) -> SizeWatch {
         let over = Arc::new(AtomicBool::new(false));
         let (flag, stop) = (over.clone(), stop.clone());
         let task = tokio::spawn(async move {
@@ -181,7 +187,7 @@ impl SizeWatch {
     }
 
     /// Stops watching; an error when the file grew past the limit (the run was cancelled for it).
-    fn stop(self) -> Result<()> {
+    pub(crate) fn stop(self) -> Result<()> {
         self.task.abort();
         if self.over.load(Ordering::SeqCst) {
             return Err(Error::engine_failed(
@@ -193,6 +199,41 @@ impl SizeWatch {
     }
 }
 
+impl Drop for SizeWatch {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// Cancels `stop` after `after`; `fired()` tells whether it did.
+pub(crate) struct Deadline {
+    task: tokio::task::JoinHandle<()>,
+    fired: Arc<AtomicBool>,
+}
+
+impl Deadline {
+    pub(crate) fn start(after: Duration, stop: &CancellationToken) -> Deadline {
+        let fired = Arc::new(AtomicBool::new(false));
+        let (flag, stop) = (fired.clone(), stop.clone());
+        let task = tokio::spawn(async move {
+            tokio::time::sleep(after).await;
+            flag.store(true, Ordering::SeqCst);
+            stop.cancel();
+        });
+        Deadline { task, fired }
+    }
+
+    pub(crate) fn fired(&self) -> bool {
+        self.fired.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for Deadline {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 /// The ffmpeg → gifski pipe (research R7), writing `output` in `dir`.
 pub(crate) struct Gifski<'a> {
     pub program: &'a Path,
@@ -200,6 +241,8 @@ pub(crate) struct Gifski<'a> {
     pub output: &'a str,
     /// The size watchdog's limit.
     pub limit: u64,
+    /// A wall-clock limit, for runs without a progress file (no stall can be seen there).
+    pub timeout: Option<Duration>,
 }
 
 impl Gifski<'_> {
@@ -250,11 +293,28 @@ impl Gifski<'_> {
         let watch = SizeWatch::start(file.clone(), self.limit, &stop);
         // Without a progress file nothing reports progress, so nothing can show a stall.
         let stall = progress.map(|_| PIPE_STALL);
+        let deadline = self.timeout.map(|t| Deadline::start(t, &stop));
         let r = run_stages(&stages, Some(self.dir), &from, stall, &stop, on_progress).await;
         watch.stop()?;
+        if let (Some(d), Some(t)) = (&deadline, self.timeout)
+            && d.fired()
+            && !cancel.is_cancelled()
+        {
+            return Err(Error::engine_failed(
+                format!("the gifski pipe took longer than {} s and was stopped", t.as_secs()),
+                String::new(),
+            ));
+        }
         let ends = r?;
         match blame_pair(&ends[0], &ends[1]) {
             Some(0) => return Err(classify_failure(&ends[0].tail, job_output)),
+            Some(_) if !ends[1].failed() => {
+                return Err(Error::EngineFailed {
+                    tool: "gifski".into(),
+                    message: "gifski stopped reading frames before the end".into(),
+                    stderr_tail: ends[1].tail.clone(),
+                });
+            }
             Some(_) => return Err(tool_failed("gifski", ends[1].status, &ends[1].tail)),
             None => {}
         }
@@ -263,10 +323,11 @@ impl Gifski<'_> {
                 path: job_output.to_path_buf(),
                 message: e.to_string(),
             };
-            let mut gif = std::fs::read(&file).map_err(unwritable)?;
-            if strip_loop_block(&mut gif) {
-                std::fs::write(&file, gif).map_err(unwritable)?;
-            }
+            let path = file.clone();
+            tokio::task::spawn_blocking(move || strip_loop_block(&path))
+                .await
+                .map_err(|e| unwritable(std::io::Error::other(e)))?
+                .map_err(unwritable)?;
         }
         Ok(())
     }
@@ -284,11 +345,33 @@ fn tool_failed(tool: &str, status: Option<ExitStatus>, stderr_tail: &str) -> Err
     }
 }
 
-/// The gifsicle post-pass (`-O3`, lossy when set) with a cleared environment.
-async fn run_gifsicle(ctx: &mut JobCtx<'_>, gifsicle: &Path, scratch: &Path, lossy: u16) -> Result<()> {
+/// The gifsicle post-pass (`-O3`, lossy when set) with a cleared environment, the size watchdog
+/// on its output and a wall-clock limit.
+async fn run_gifsicle(
+    ctx: &mut JobCtx<'_>,
+    gifsicle: &Path,
+    scratch: &Path,
+    lossy: u16,
+    limit: u64,
+) -> Result<()> {
     let env = crate::gif::engines::engine_env();
     let args = gifsicle_args(lossy, ENCODED, OPTIMISED);
-    let out = process::run_lines_env(gifsicle, &args, Some(scratch), Some(&env), ctx.cancel, |_| {}).await?;
+    let stop = ctx.cancel.child_token();
+    let watch = SizeWatch::start(scratch.join(OPTIMISED), limit, &stop);
+    let deadline = Deadline::start(GIFSICLE_TIMEOUT, &stop);
+    let r = process::run_lines_env(gifsicle, &args, Some(scratch), Some(&env), &stop, |_| {}).await;
+    watch.stop()?;
+    if deadline.fired() && !ctx.cancel.is_cancelled() {
+        return Err(Error::EngineFailed {
+            tool: "gifsicle".into(),
+            message: format!(
+                "gifsicle took longer than {} min and was stopped",
+                GIFSICLE_TIMEOUT.as_secs() / 60
+            ),
+            stderr_tail: String::new(),
+        });
+    }
+    let out = r?;
     if out.status.success() {
         Ok(())
     } else {
@@ -297,12 +380,20 @@ async fn run_gifsicle(ctx: &mut JobCtx<'_>, gifsicle: &Path, scratch: &Path, los
 }
 
 /// Moves the finished GIF from the scratch folder to the temp file (a copy when they are on
-/// different file systems).
+/// different file systems). The copy goes into a newly created file, never through whatever
+/// already sits at `temp` (a planted link).
 fn move_into(from: &Path, temp: &Path) -> Result<()> {
     let unwritable =
         |e: std::io::Error| Error::OutputUnwritable { path: temp.to_path_buf(), message: e.to_string() };
     if std::fs::rename(from, temp).is_err() {
-        std::fs::copy(from, temp).map_err(unwritable)?;
+        match std::fs::remove_file(temp) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(unwritable(e)),
+            _ => {}
+        }
+        let mut out =
+            std::fs::OpenOptions::new().write(true).create_new(true).open(temp).map_err(unwritable)?;
+        let mut src = std::fs::File::open(from).map_err(unwritable)?;
+        std::io::copy(&mut src, &mut out).map_err(unwritable)?;
         let _ = std::fs::remove_file(from);
     }
     Ok(())
