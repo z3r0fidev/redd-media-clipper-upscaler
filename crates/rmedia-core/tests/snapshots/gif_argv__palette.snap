@@ -2,4 +2,4 @@
 source: crates/rmedia-core/tests/gif_argv.rs
 expression: "palette.replace(&key, \"p-[KEY].png\")"
 ---
--hide_banner -nostdin -n -loglevel warning -progress pipe:1 -nostats -stats_period 0.25 -ss 1.000000 -protocol_whitelist file,pipe -i file:[SRC] -t 2.000000 -filter_complex [0:v]fps=15/1,scale=720:405:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,palettegen=max_colors=256:stats_mode=diff:reserve_transparent=1[p] -map [p] -frames:v 1 -update 1 -f image2 p-[KEY].png
+-hide_banner -nostdin -n -loglevel warning -progress pipe:1 -nostats -stats_period 0.25 -ss 1.000000 -protocol_whitelist file,pipe -i file:[SRC] -t 2.000000 -filter_complex [0:v]fps=15/1,scale=720:405:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1,palettegen=max_colors=256:stats_mode=diff:reserve_transparent=1[p] -map [p] -frames:v 1 -update 1 -f image2 p-[KEY].png

@@ -146,7 +146,9 @@ pub fn frame_chain(g: &GraphInput, c: &GifChain<'_>) -> String {
     } else {
         (gif_rgb(g), "rgb24")
     };
-    let to_rgb = format!("{sharpen},scale=flags=accurate_rnd+full_chroma_int:{rgb},format={pix}");
+    // Square pixels: a GIF (or MP4) of rounded size would otherwise carry scale's non-square
+    // SAR, which ffmpeg 6.1's gif muxer writes as the pixel-aspect byte (63:64 stretches it).
+    let to_rgb = format!("{sharpen},scale=flags=accurate_rnd+full_chroma_int:{rgb},format={pix},setsar=1");
     let overflow = g.geometry.overflow != Overflow::None;
     match (g.reframe, &g.track, g.geometry.crop) {
         (Reframe::Smart, Some(t), Some(cr)) if overflow => {
@@ -176,7 +178,7 @@ pub fn frame_chain(g: &GraphInput, c: &GifChain<'_>) -> String {
             if c.sharpen.is_some() {
                 chain.push(format!("{}{to_rgb}", scaler(g, w, h, Flavor::Gif)));
             } else {
-                chain.push(format!("scale={w}:{h}:flags={GIF_SCALER}:{rgb},format={pix}"));
+                chain.push(format!("scale={w}:{h}:flags={GIF_SCALER}:{rgb},format={pix},setsar=1"));
             }
             format!("[0:v]{}", chain.join(","))
         }

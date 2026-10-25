@@ -50,7 +50,7 @@ fn accepted(chain: &str, src: &Path) {
 fn source_shape_is_one_resample_to_rgb() {
     let g = input((1280, 720), (720, 405), Reframe::Smart);
     let chain = frame_chain(&g, &AT_15);
-    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,scale=720:405:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,scale=720:405:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     require_engine!("palettegen");
     accepted(&chain, &fixture(Fixture::Land6));
 }
@@ -59,7 +59,7 @@ fn source_shape_is_one_resample_to_rgb() {
 fn centre_crop_to_square() {
     let g = input((1280, 720), (480, 480), Reframe::Center);
     let chain = frame_chain(&g, &AT_15);
-    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,crop=720:720:280:0,scale=480:480:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,crop=720:720:280:0,scale=480:480:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     require_engine!("palettegen");
     accepted(&chain, &fixture(Fixture::Land6));
 }
@@ -68,7 +68,7 @@ fn centre_crop_to_square() {
 fn blur_pad_converts_both_layers_together() {
     let g = input((1280, 720), (480, 600), Reframe::Blur);
     let chain = frame_chain(&g, &AT_15);
-    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,split[bg0][fg0];[bg0]scale=48:60:force_original_aspect_ratio=increase,crop=48:60,gblur=sigma=3,eq=brightness=-0.08,scale=480:600,setsar=1[bg];[fg0]scale=480:270:flags=lanczos+accurate_rnd+full_chroma_int[fg];[bg][fg]overlay=0:164,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,split[bg0][fg0];[bg0]scale=48:60:force_original_aspect_ratio=increase,crop=48:60,gblur=sigma=3,eq=brightness=-0.08,scale=480:600,setsar=1[bg];[fg0]scale=480:270:flags=lanczos+accurate_rnd+full_chroma_int[fg];[bg][fg]overlay=0:164,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     assert!(!chain.contains("zscale"), "no video colour conversion: {chain}");
     require_engine!("palettegen", "gblur");
     accepted(&chain, &fixture(Fixture::Land6));
@@ -79,10 +79,10 @@ fn smart_crop_moves_with_sendcmd_and_can_fall_back() {
     let mut g = input((1280, 720), (480, 600), Reframe::Smart);
     g.track = Some(Track { x0: 300, fallback: false });
     let chain = frame_chain(&g, &AT_15);
-    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,sendcmd=f=reframe.cmd,crop@trk=w=576:h=720:x=300:y=0,scale=480:600:flags=lanczos+accurate_rnd+full_chroma_int,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,sendcmd=f=reframe.cmd,crop@trk=w=576:h=720:x=300:y=0,scale=480:600:flags=lanczos+accurate_rnd+full_chroma_int,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     g.track = Some(Track { x0: 300, fallback: true });
     let fallback = frame_chain(&g, &AT_15);
-    insta::assert_snapshot!(fallback, @"[0:v]fps=15/1,split[a][b];[a]sendcmd=f=reframe.cmd,crop@trk=w=576:h=720:x=300:y=0,scale=480:600:flags=lanczos+accurate_rnd+full_chroma_int[crop];[b]split[bg0][fg0];[bg0]scale=48:60:force_original_aspect_ratio=increase,crop=48:60,gblur=sigma=3,eq=brightness=-0.08,scale=480:600,setsar=1[bg];[fg0]scale=480:270:flags=lanczos+accurate_rnd+full_chroma_int[fg];[bg][fg]overlay=0:164[pad];[crop][pad]overlay@fb=0:0:enable=0,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(fallback, @"[0:v]fps=15/1,split[a][b];[a]sendcmd=f=reframe.cmd,crop@trk=w=576:h=720:x=300:y=0,scale=480:600:flags=lanczos+accurate_rnd+full_chroma_int[crop];[b]split[bg0][fg0];[bg0]scale=48:60:force_original_aspect_ratio=increase,crop=48:60,gblur=sigma=3,eq=brightness=-0.08,scale=480:600,setsar=1[bg];[fg0]scale=480:270:flags=lanczos+accurate_rnd+full_chroma_int[fg];[bg][fg]overlay=0:164[pad];[crop][pad]overlay@fb=0:0:enable=0,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     require_engine!("palettegen", "sendcmd", "gblur");
     accepted(&chain, &fixture(Fixture::Land6));
     accepted(&fallback, &fixture(Fixture::Land6));
@@ -94,7 +94,7 @@ fn hdr_is_tone_mapped_before_the_resample() {
     g.tonemap = true;
     g.colour_in = "min=2020_ncl:tin=smpte2084:pin=2020:rin=limited".into();
     let chain = frame_chain(&g, &AT_15);
-    insta::assert_snapshot!(chain, @"[0:v]zscale=min=2020_ncl:tin=smpte2084:pin=2020:rin=limited:t=linear:npl=100,format=gbrpf32le,zscale=p=709,tonemap=tonemap=hable:desat=0,zscale=t=709:m=709:r=limited,format=yuv420p,fps=15/1,scale=480:270:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]zscale=min=2020_ncl:tin=smpte2084:pin=2020:rin=limited:t=linear:npl=100,format=gbrpf32le,zscale=p=709,tonemap=tonemap=hable:desat=0,zscale=t=709:m=709:r=limited,format=yuv420p,fps=15/1,scale=480:270:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     require_engine!("palettegen", "zscale", "tonemap");
     accepted(&chain, &fixture(Fixture::HdrTagged));
 }
@@ -105,7 +105,7 @@ fn alpha_is_flattened_onto_black_first() {
     g.flatten_alpha = true;
     g.trim = Some((Ts::from_secs_f64(0.5), Some(Ts::from_secs_f64(2.0))));
     let chain = frame_chain(&g, &AT_15);
-    insta::assert_snapshot!(chain, @"[0:v]trim=start=0.500000:end=2.000000,setpts=PTS-STARTPTS,split[fa][fb];[fa]format=yuv420p,drawbox=c=black:t=fill[fk];[fk][fb]overlay=format=auto,fps=15/1,scale=480:270:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]trim=start=0.500000:end=2.000000,setpts=PTS-STARTPTS,split[fa][fb];[fa]format=yuv420p,drawbox=c=black:t=fill[fk];[fk][fb]overlay=format=auto,fps=15/1,scale=480:270:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     require_engine!("palettegen", "drawbox", "overlay");
     accepted(&chain, &fixture(Fixture::Alpha));
 }
@@ -115,7 +115,7 @@ fn a_narrower_source_keeps_its_width() {
     // The planner sets W = min(target width, crop width): a 640 px source stays 640 wide.
     let g = input((640, 360), (640, 360), Reframe::Smart);
     let chain = frame_chain(&g, &AT_15);
-    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,scale=640:360:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,scale=640:360:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     assert!(g.geometry.no_upscale_needed);
 }
 
@@ -125,7 +125,7 @@ fn the_rate_is_whatever_the_planner_capped_it_to_and_sd_uses_bt601() {
     g.colour_in = zscale_input(&ColourTags::default(), 576);
     g.square_pixels = true;
     let chain = frame_chain(&g, &GifChain { rate: "25/1", sharpen: None, mp4: false });
-    insta::assert_snapshot!(chain, @"[0:v]scale=720:576,setsar=1,fps=25/1,scale=480:384:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt601:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]scale=720:576,setsar=1,fps=25/1,scale=480:384:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt601:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     let ntsc = frame_chain(&g, &GifChain { rate: "30000/1001", sharpen: None, mp4: false });
     assert!(ntsc.contains(",fps=30000/1001,"), "{ntsc}");
 }
@@ -134,7 +134,7 @@ fn the_rate_is_whatever_the_planner_capped_it_to_and_sd_uses_bt601() {
 fn flat_ui_sharpens_between_the_resample_and_rgb() {
     let g = input((1280, 720), (720, 405), Reframe::Smart);
     let chain = frame_chain(&g, &GifChain { rate: "15/1", sharpen: Some(0.5), mp4: false });
-    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,scale=720:405:flags=lanczos+accurate_rnd+full_chroma_int,unsharp=5:5:0.5:5:5:0,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
+    insta::assert_snapshot!(chain, @"[0:v]fps=15/1,scale=720:405:flags=lanczos+accurate_rnd+full_chroma_int,unsharp=5:5:0.5:5:5:0,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1");
     require_engine!("palettegen", "unsharp");
     accepted(&chain, &fixture(Fixture::FlatUi));
 }
