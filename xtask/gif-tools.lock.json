@@ -1,0 +1,59 @@
+{
+  "comment": "Pinned GIF engines bundled with rmedia, built from source by .github/workflows/gif-tools.yml. Refresh with `cargo xtask pin-gif-tools <run-id>`.",
+  "release": "gif-tools-2026-10-25.40211502841",
+  "build_run": 40211502841,
+  "build_commit": "50565d9fb1a0a7675bc116e2a6ea1d5fd5b24bbc",
+  "gifsicle": {
+    "version": "1.98",
+    "license": "GPL-2.0-only",
+    "source": {
+      "url": "https://www.lcdf.org/gifsicle/gifsicle-1.98.tar.gz",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifsicle-1.98.tar.gz"
+      ],
+      "sha256": "e9d4cc0816db95c64d32e79f778836db0f1f7eb15868490bd330104e5146b66e"
+    },
+    "targets": {
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifsicle-1.98-x86_64-pc-windows-msvc.exe",
+        "sha256": "094a9f72f798254b873363f29e8e01b542a9c0e311d2ae887c2dbfaa77c203f9"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifsicle-1.98-x86_64-unknown-linux-gnu",
+        "sha256": "56bc5d6c1707b4e095031d4f33488abfd86d5c6c8c4900e9b4f717cc02b7d903"
+      }
+    }
+  },
+  "gifski": {
+    "version": "1.34.0",
+    "license": "AGPL-3.0-or-later",
+    "source": {
+      "url": "https://static.crates.io/crates/gifski/gifski-1.34.0.crate",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifski-1.34.0.crate"
+      ],
+      "sha256": "c246c795a61d4a2476fb1c8ab70bedfaa825c734882adc40e117fc837df81190"
+    },
+    "cargo_lock_sha256": "76abe4dcfd5f5c2feef63dad33a3769c891310821a3ecff8eef5e7bd6c4145a2",
+    "lock_updates": [
+      "crossbeam-epoch 0.9.18 -> 0.9.20 (RUSTSEC-2026-0204)"
+    ],
+    "vendor": {
+      "url": "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifski-1.34.0-vendor.tar.gz",
+      "mirrors": [
+        "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifski-1.34.0-vendor.tar.gz"
+      ],
+      "sha256": "79bcb4999e05293707cd40ad4e63c5ff06075e7dfca11974417f075c9d0761fe"
+    },
+    "targets": {
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifski-1.34.0-x86_64-pc-windows-msvc.exe",
+        "sha256": "5576d4bc91ba8199423a961a9b17e9bfc868172c882b0a6eb59eb541e6ef76ee"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifski-1.34.0-x86_64-unknown-linux-gnu",
+        "sha256": "e19ac47e975ba83ae69247afd885464a391b827b1b7032c90ecdae5f5fcec210"
+      }
+    }
+  }
+}

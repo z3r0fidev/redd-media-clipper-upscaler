@@ -43,6 +43,8 @@ Windows adds `RUSTFLAGS="-C target-feature=+crt-static"`.
   and listed here:
 
 <!-- mirrored sources: cargo xtask pin-gif-tools -->
+- https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifski-1.34.0.crate
+- https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/download/gif-tools-2026-10-25.40211502841/gifski-1.34.0-vendor.tar.gz
 
 On request, the rmedia maintainers will provide this source for at least three years after the
 last distribution of a release that contains this binary.

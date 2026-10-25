@@ -600,10 +600,15 @@ pub fn pin(run_id: u64) -> Result<()> {
             .arg(root().join("deny-gifski.toml"))
             .args(["check", "licenses", "bans", "advisories", "sources"]),
     )?;
-    match Command::new("cargo").args(["audit", "--file"]).arg(&cargo_lock).status() {
-        Ok(s) if s.success() => println!("cargo audit: no advisories"),
-        Ok(_) => bail!("cargo audit found advisories in gifski's Cargo.lock"),
-        Err(_) => println!("cargo audit is not installed: advisories were checked by cargo deny only"),
+    // `cargo` itself starts without cargo-audit and exits non-zero, so ask for its version first.
+    let audit_installed =
+        Command::new("cargo").args(["audit", "--version"]).output().is_ok_and(|o| o.status.success());
+    if !audit_installed {
+        println!("cargo audit is not installed: advisories were checked by cargo deny only");
+    } else if Command::new("cargo").args(["audit", "--file"]).arg(&cargo_lock).status()?.success() {
+        println!("cargo audit: no advisories");
+    } else {
+        bail!("cargo audit found advisories in gifski's Cargo.lock");
     }
     std::fs::write(root().join("licenses/GIFSKI-DEPS.md"), dependency_notice(&manifest)?)?;
 
