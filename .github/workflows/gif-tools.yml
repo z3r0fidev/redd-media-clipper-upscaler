@@ -7,7 +7,8 @@ name: GIF tools
 #
 # - gifsicle 1.98 (GPL-2.0): lcdf.org tarball; autotools on Linux, nmake + MSVC (/MT) on Windows.
 # - gifski 1.34.0 (AGPL-3.0-or-later): the crates.io crate with its own Cargo.lock; its
-#   dependencies are vendored once (the only job that talks to crates.io) and built offline.
+#   dependencies are vendored once (the only job that talks to crates.io) and built offline,
+#   after the security updates in GIFSKI_LOCK_UPDATES; the lock used ships in the vendor tarball.
 on:
   workflow_dispatch:
 
@@ -29,6 +30,9 @@ env:
   GIFSKI_VERSION: "1.34.0"
   GIFSKI_URL: https://static.crates.io/crates/gifski/gifski-1.34.0.crate
   GIFSKI_SHA256: c246c795a61d4a2476fb1c8ab70bedfaa825c734882adc40e117fc837df81190
+  # Security updates to the crate's Cargo.lock, `name@from:to` (xtask GIFSKI_LOCK_UPDATES, which
+  # `pin-gif-tools` checks against the shipped lock): crossbeam-epoch for RUSTSEC-2026-0204.
+  GIFSKI_LOCK_UPDATES: crossbeam-epoch@0.9.18:0.9.20
 
 jobs:
   vendor:
@@ -73,15 +77,19 @@ jobs:
             [ "$pinned" = "$lock_sha" ] || { echo "Cargo.lock $lock_sha is not the pinned $pinned"; exit 1; }
           fi
       - run: rustup show active-toolchain || rustup toolchain install
-      - name: Vendor gifski's dependencies (fresh CARGO_HOME, the crate's own lock)
+      - name: Vendor gifski's dependencies (fresh CARGO_HOME, the crate's lock plus the listed updates)
         id: pack
         run: |
           set -euo pipefail
           export CARGO_HOME="$RUNNER_TEMP/cargo-home" RUSTUP_TOOLCHAIN=1.94
           cd "$RUNNER_TEMP/crate/gifski-$GIFSKI_VERSION"
+          for u in $GIFSKI_LOCK_UPDATES; do
+            cargo update --package "${u%%:*}" --precise "${u#*:}"
+          done
           cargo vendor --locked --versioned-dirs vendor > /dev/null
-          # A reproducible tarball: sorted names, fixed times and owners, no gzip timestamp.
-          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - vendor \
+          # A reproducible tarball: sorted names, fixed times and owners, no gzip timestamp. It holds
+          # the Cargo.lock it vendors, which replaces the crate's when unpacked in the crate folder.
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - Cargo.lock vendor \
             | gzip -n > "$GITHUB_WORKSPACE/sources/gifski-$GIFSKI_VERSION-vendor.tar.gz"
           cd "$GITHUB_WORKSPACE"
           echo "vendor_sha256=$(sha256sum sources/gifski-$GIFSKI_VERSION-vendor.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"

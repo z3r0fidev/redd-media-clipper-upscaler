@@ -43,6 +43,10 @@ pub struct GifTool {
     /// gifski: sha256 of the `Cargo.lock` shipped in the crate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cargo_lock_sha256: Option<String>,
+    /// gifski: packages the build moved off the crate's `Cargo.lock` (security updates), as
+    /// `name old -> new (advisory)`. The lock the build used ships in the vendor tarball.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lock_updates: Vec<String>,
     /// gifski: the vendored dependency sources the build used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vendor: Option<Pinned>,
@@ -250,8 +254,15 @@ pub fn stage(target: &str, with_gifski: bool) -> Result<()> {
 /// Application licences under which gifski (AGPL-3.0-or-later) may ship inside rmedia, or the
 /// marker for a bought gifski licence. The owner edits this list only together with the
 /// licence decision.
-pub const GATE_ALLOWLIST: [&str; 5] =
-    ["AGPL-3.0-only", "AGPL-3.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "commercial-gifski"];
+/// `commercial-gifski-imagequant`: bought licences for both gifski and imagequant (GPL-3.0-or-later,
+/// compiled into gifski); a gifski licence alone does not cover imagequant.
+pub const GATE_ALLOWLIST: [&str; 5] = [
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "commercial-gifski-imagequant",
+];
 
 /// Why a release may not ship from `tree` (`None`: it may). It may when no gifski is staged in
 /// `tree/binaries/`, or when `tree` has a root `LICENSE` and `[workspace.metadata.rmedia]
@@ -388,6 +399,10 @@ const GIFSICLE_SHA256: &str = "e9d4cc0816db95c64d32e79f778836db0f1f7eb15868490bd
 const GIFSKI_VERSION: &str = "1.34.0";
 const GIFSKI_SOURCE: &str = "https://static.crates.io/crates/gifski/gifski-1.34.0.crate";
 const GIFSKI_SHA256: &str = "c246c795a61d4a2476fb1c8ab70bedfaa825c734882adc40e117fc837df81190";
+/// Security updates applied to gifski's `Cargo.lock` before vendoring (name, from, to, advisory);
+/// the same list as `GIFSKI_LOCK_UPDATES` in gif-tools.yml, checked against the shipped lock.
+const GIFSKI_LOCK_UPDATES: &[(&str, &str, &str, &str)] =
+    &[("crossbeam-epoch", "0.9.18", "0.9.20", "RUSTSEC-2026-0204")];
 
 fn curl_text(url: &str) -> Result<Option<String>> {
     let out = Command::new("curl")
@@ -554,7 +569,19 @@ pub fn pin(run_id: u64) -> Result<()> {
     crate::run(
         Command::new(crate::tar()).arg("-xzf").arg(work.join(&vendor_name)).arg("-C").arg(&vendor_dir),
     )?;
-    let locked = lock_checksums(&std::fs::read_to_string(&cargo_lock)?);
+    // The lock the build used ships in the vendor tarball: it may differ from the crate's only by
+    // the listed updates. It then replaces the crate's for every check below.
+    let shipped_lock = vendor_dir.join("Cargo.lock");
+    let shipped = std::fs::read_to_string(&shipped_lock).context("the vendor tarball has no Cargo.lock")?;
+    let changes =
+        lock_changes(&lock_checksums(&std::fs::read_to_string(&cargo_lock)?), &lock_checksums(&shipped));
+    let expected: Vec<String> =
+        GIFSKI_LOCK_UPDATES.iter().map(|u| format!("{} {} -> {}", u.0, u.1, u.2)).collect();
+    if changes != expected {
+        bail!("the shipped Cargo.lock changes {changes:?}, not the listed updates {expected:?}");
+    }
+    std::fs::copy(&shipped_lock, &cargo_lock)?;
+    let locked = lock_checksums(&shipped);
     let mismatched = vendor_mismatches(&vendor_dir.join("vendor"), &locked)?;
     if !mismatched.is_empty() {
         bail!("vendored packages that are not the locked ones:\n  {}", mismatched.join("\n  "));
@@ -601,6 +628,7 @@ pub fn pin(run_id: u64) -> Result<()> {
                 sha256: GIFSICLE_SHA256.into(),
             },
             cargo_lock_sha256: None,
+            lock_updates: Vec::new(),
             vendor: None,
             targets: built("gifsicle", GIFSICLE_VERSION),
         },
@@ -613,6 +641,10 @@ pub fn pin(run_id: u64) -> Result<()> {
                 sha256: GIFSKI_SHA256.into(),
             },
             cargo_lock_sha256: Some(cargo_lock_sha256),
+            lock_updates: GIFSKI_LOCK_UPDATES
+                .iter()
+                .map(|u| format!("{} {} -> {} ({})", u.0, u.1, u.2, u.3))
+                .collect(),
             vendor: Some(Pinned {
                 url: download(&vendor_name),
                 mirrors: vec![download(&vendor_name)],
@@ -668,6 +700,38 @@ fn attest_args(file: &str, repo: &str, commit: &str) -> Vec<String> {
 /// Whether release notes name `run` on a line of their own (`build_run: 12` is not run 123).
 fn names_run(body: &str, run: u64) -> bool {
     body.lines().any(|l| l.trim() == format!("build_run: {run}"))
+}
+
+/// How `after` moves packages off `before` (both from [`lock_checksums`]): `name old -> new` for
+/// each name whose single version changed, and `+ name version` / `- name version` for anything
+/// else, sorted. A changed checksum for the same version is reported as `~ name version`.
+fn lock_changes(before: &BTreeMap<String, String>, after: &BTreeMap<String, String>) -> Vec<String> {
+    let names = |m: &BTreeMap<String, String>, k: &str| -> Vec<String> {
+        m.keys().filter(|p| p.split(' ').next() == Some(k)).cloned().collect()
+    };
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for key in before.keys().chain(after.keys()) {
+        let name = key.split(' ').next().unwrap_or(key).to_owned();
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        let (b, a) = (names(before, &name), names(after, &name));
+        let removed: Vec<&String> = b.iter().filter(|k| !after.contains_key(*k)).collect();
+        let added: Vec<&String> = a.iter().filter(|k| !before.contains_key(*k)).collect();
+        if let ([r], [n]) = (removed.as_slice(), added.as_slice()) {
+            let v = |k: &str| k.split(' ').nth(1).unwrap_or_default().to_owned();
+            out.push(format!("{name} {} -> {}", v(r), v(n)));
+        } else {
+            out.extend(removed.iter().map(|k| format!("- {k}")));
+            out.extend(added.iter().map(|k| format!("+ {k}")));
+        }
+        for k in b.iter().filter(|k| after.get(*k).is_some_and(|c| Some(c) != before.get(*k))) {
+            out.push(format!("~ {k}"));
+        }
+    }
+    out.sort();
+    out
 }
 
 /// `name version → checksum` of every registry package in a Cargo.lock.
@@ -877,6 +941,7 @@ mod tests {
                 license: "GPL-2.0-only".into(),
                 source: pinned(GIFSICLE_SOURCE, "gifsicle-1.98.tar.gz"),
                 cargo_lock_sha256: None,
+                lock_updates: Vec::new(),
                 vendor: None,
                 targets: built("gifsicle"),
             },
@@ -885,6 +950,7 @@ mod tests {
                 license: "AGPL-3.0-or-later".into(),
                 source: pinned(GIFSKI_SOURCE, "gifski-1.34.0.crate"),
                 cargo_lock_sha256: Some(hex('c')),
+                lock_updates: vec!["crossbeam-epoch 0.9.18 -> 0.9.20 (RUSTSEC-2026-0204)".into()],
                 vendor: Some(pinned(
                     &format!("{rel}gifski-1.34.0-vendor.tar.gz"),
                     "gifski-1.34.0-vendor.tar.gz",
@@ -1010,7 +1076,11 @@ mod tests {
         let wrong = release_gate(&tree(true, Some("MIT OR Apache-2.0"), true)).unwrap().unwrap();
         assert!(wrong.contains("is not one it may ship under"), "{wrong}");
         assert_eq!(release_gate(&tree(true, Some("AGPL-3.0-or-later"), true)).unwrap(), None);
-        assert_eq!(release_gate(&tree(true, Some("commercial-gifski"), true)).unwrap(), None);
+        assert_eq!(release_gate(&tree(true, Some("commercial-gifski-imagequant"), true)).unwrap(), None);
+        assert!(
+            release_gate(&tree(true, Some("commercial-gifski"), true)).unwrap().is_some(),
+            "imagequant too"
+        );
     }
 
     #[test]
@@ -1133,8 +1203,7 @@ mod tests {
 
     #[test]
     fn source_trees_compare_by_contents() {
-        let base = std::env::temp_dir().join(format!("rmedia-xtask-trees-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        let base = tempfile_dir("trees");
         let write = |dir: &str, file: &str, text: &str| {
             let p = base.join(dir).join(file);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -1161,6 +1230,17 @@ mod tests {
                 "no files in common"
             ]
         );
-        std::fs::remove_dir_all(&base).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn lock_changes_name_each_move() {
+        let m = |v: &[(&str, &str)]| v.iter().map(|(k, c)| (k.to_string(), c.to_string())).collect();
+        let before = m(&[("crossbeam-epoch 0.9.18", "a"), ("rayon 1.10.0", "b"), ("rgb 0.8.50", "c")]);
+        let bumped = m(&[("crossbeam-epoch 0.9.20", "d"), ("rayon 1.10.0", "b"), ("rgb 0.8.50", "c")]);
+        assert_eq!(lock_changes(&before, &bumped), ["crossbeam-epoch 0.9.18 -> 0.9.20"]);
+        assert_eq!(lock_changes(&before, &before), Vec::<String>::new());
+        let sneaky = m(&[("crossbeam-epoch 0.9.18", "a"), ("evil 1.0.0", "e"), ("rayon 1.10.0", "x")]);
+        assert_eq!(lock_changes(&before, &sneaky), ["+ evil 1.0.0", "- rgb 0.8.50", "~ rayon 1.10.0"]);
     }
 }

@@ -29,6 +29,7 @@ the build and integrity chain below.
                 "mirrors": ["…/gif-tools-2026-10-24/gifski-1.34.0.crate"],
                 "sha256": "c246c795a61d4a2476fb1c8ab70bedfaa825c734882adc40e117fc837df81190" },
     "cargo_lock_sha256": "…",
+    "lock_updates": ["crossbeam-epoch 0.9.18 -> 0.9.20 (RUSTSEC-2026-0204)"],
     "vendor": { "url": "…/gif-tools-2026-10-24/gifski-1.34.0-vendor.tar.gz", "mirrors": ["…"], "sha256": "…" },
     "targets": { "…": "as above" }
   }
@@ -62,9 +63,11 @@ This runs locally and records nothing until every check below passes.
    file in both must be identical, and the release may add only autotools output (`configure`,
    `aclocal.m4`, `Makefile.in`, …), which this check does not cover. The result is recorded in the
    commit message.
-5. gifski's `Cargo.lock`, taken from the crate, is checked with `cargo deny check` (a
-   `deny-gifski.toml` that allows gifski's own licence set) and with `cargo audit`. Its sha256
-   becomes `cargo_lock_sha256`.
+5. gifski's `Cargo.lock` is the crate's plus the security updates in `GIFSKI_LOCK_UPDATES`
+   (gif-tools.yml) / `lock_updates` (the lock file); the lock used ships in the vendor tarball,
+   and pinning fails unless it differs from the crate's in exactly those packages. That lock is
+   checked with `cargo deny check` (a `deny-gifski.toml` that allows gifski's own licence set)
+   and with `cargo audit`. The sha256 of the crate's own lock becomes `cargo_lock_sha256`.
 6. `licenses/GIFSKI-DEPS.md` is generated from that lock: the name, version and licence of every
    dependency compiled into the binary (L3).
 
@@ -159,7 +162,8 @@ The lock change is a normal reviewed commit.
   - a root `LICENSE` file;
   - `[workspace.metadata.rmedia] app_licence = "<SPDX>"` in the root `Cargo.toml`, naming an id
     from the gate's allowlist (`AGPL-3.0-only`, `AGPL-3.0-or-later`, `GPL-3.0-only`,
-    `GPL-3.0-or-later`, or a `commercial-gifski` marker for a bought gifski licence). The owner
+    `GPL-3.0-or-later`, or a `commercial-gifski-imagequant` marker for bought gifski and
+    imagequant licences: imagequant, compiled into gifski, is GPL-3.0-or-later on its own). The owner
     edits this allowlist only together with the licence decision.
 - **Message:** "gifski (AGPL-3.0) is staged but the application licence is undecided
   (docs/roadmap.md)".
