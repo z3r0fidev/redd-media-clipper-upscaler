@@ -625,10 +625,10 @@ after encoding the GIF plays with its real size within the stated margin.
   `list_gif_targets`, `gif_estimate`, `cancel_estimate`, `open_output`, the `pick_engine` kinds,
   the `set_settings` copy-back, the gif content type, and pausing estimates during runs. Then
   `cargo xtask gen-bindings`.
-- [ ] T068 [P] [US6] Write pure store tests in `apps/desktop/src/lib/stores/gif.test.ts`:
+- [X] T068 [P] [US6] Write pure store tests in `apps/desktop/src/lib/stores/gif.test.ts`:
   options → `PartialGif`, the queue entry, the manifest export shape, the defaults from
   `gif_defaults`.
-- [ ] T069 [US6] Implement `apps/desktop/src/lib/stores/gif.ts` and `gif.svelte.ts`:
+- [X] T069 [US6] Implement `apps/desktop/src/lib/stores/gif.ts` and `gif.svelte.ts`:
   - the 400 ms debounce;
   - one estimate in flight, cancel;
   - `partial` estimates;
@@ -636,7 +636,7 @@ after encoding the GIF plays with its real size within the stated margin.
   - "Export now" and "Add to queue".
 
   Add `gif.svelte.test.ts` with a mocked api.
-- [ ] T070 [US6] Implement `apps/desktop/src/lib/components/GifView.svelte`:
+- [X] T070 [US6] Implement `apps/desktop/src/lib/components/GifView.svelte`:
   - the `"gif"` view in `stores/app.svelte.ts` and a tab in `Player.svelte`;
   - the target picker with "(limits unverified)";
   - format, shape and framing;

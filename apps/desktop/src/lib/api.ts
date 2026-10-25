@@ -15,6 +15,9 @@ import type { ScanResult } from "./bindings/ScanResult";
 import type { ReframeAnalysis } from "./bindings/ReframeAnalysis";
 import type { Settings } from "./bindings/Settings";
 import type { UpscaleOptions } from "./bindings/UpscaleOptions";
+import type { GifOptions } from "./bindings/GifOptions";
+import type { GifTarget } from "./bindings/GifTarget";
+import type { Notice } from "./bindings/Notice";
 import type { Manifest } from "./manifest";
 
 export interface PreviewInfo {
@@ -56,6 +59,38 @@ export interface UpscalePreview {
   /** AI tier: the "after" still comes from the standard scaler (the render is sharper). */
   classical: boolean;
 }
+
+export interface GifTargetList {
+  default: string;
+  targets: GifTarget[];
+  problems: { file: string; message: string }[];
+}
+
+/** The `estimate` object of the GIF plan JSON (contracts/json-output.md). */
+export interface GifEstimateValue {
+  bytes: number | null;
+  from: "search" | "sample" | "pending";
+  lowered: { setting: string; from: unknown; to: unknown }[];
+  settings: Record<string, unknown>;
+  mp4_bytes: number | null;
+}
+
+export interface GifEstimateResult {
+  estimate: GifEstimateValue;
+  notes: string[];
+  notices: Notice[];
+}
+
+/** A finished output of this app's run, served by the local media server. */
+export interface OutputInfo {
+  url: string;
+  kind: "image" | "video";
+  bytes: number;
+  width: number;
+  height: number;
+}
+
+export type EngineKind = "ffmpeg" | "gifsicle" | "gifski";
 
 export const api = {
   doctor: () => invoke<DoctorReport>("doctor"),
@@ -104,7 +139,7 @@ export const api = {
   },
   thumbnails: (path: string, n: number) => invoke<string[]>("thumbnails", { path, n }),
   /** Choose ffmpeg with the native dialog (reset = back to automatic). */
-  pickEngine: (reset: boolean) => invoke<DoctorReport>("pick_engine", { reset }),
+  pickEngine: (reset: boolean, kind: EngineKind = "ffmpeg") => invoke<DoctorReport>("pick_engine", { reset, kind }),
   getSettings: () => invoke<Settings>("get_settings"),
   setSettings: (settings: Settings) => invoke<void>("set_settings", { settings }),
   listPresets: () => invoke<PresetList>("list_presets"),
@@ -118,6 +153,14 @@ export const api = {
     invoke<UpscalePreview>("upscale_preview", { path, span, at, options }),
   /** Choose the models folder with the native dialog (reset = back to the default search). */
   pickModelsDir: (reset: boolean) => invoke<Settings>("pick_models_dir", { reset }),
+  listGifTargets: () => invoke<GifTargetList>("list_gif_targets"),
+  gifEstimate(estimateId: string, path: string, span: RangeArg | null, options: GifOptions, onEvent: (e: AnalysisEvent) => void) {
+    const ch = new Channel<AnalysisEvent>();
+    ch.onmessage = onEvent;
+    return invoke<GifEstimateResult>("gif_estimate", { estimateId, path, span, options, onEvent: ch });
+  },
+  cancelEstimate: (estimateId: string) => invoke<void>("cancel_estimate", { estimateId }),
+  openOutput: (runId: string, jobId: number) => invoke<OutputInfo>("open_output", { runId, jobId }),
   onDropped: (f: (paths: string[]) => void): Promise<UnlistenFn> =>
     listen<string[]>("rmedia://dropped", (e) => f(e.payload)),
 };

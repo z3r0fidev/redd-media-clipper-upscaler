@@ -9,6 +9,8 @@
   import { initUpscale, stopView, syncView, upscale } from "../stores/upscale.svelte";
   import UpscaleCompare from "./UpscaleCompare.svelte";
   import UpscaleView from "./UpscaleView.svelte";
+  import GifView from "./GifView.svelte";
+  import { gif, initGif, stopEstimate, syncEstimate } from "../stores/gif.svelte";
 
   type Mode = "empty" | "loading" | "direct" | "proxy-h264" | "proxy-vp8" | "still" | "error";
 
@@ -72,6 +74,20 @@
     // Retried when the settings arrive (the saved choices come from them).
     if (upscaling && app.settings) untrack(() => void initUpscale());
     else stopView();
+  });
+  // GIF view: the estimate follows the source, the In/Out range and the options.
+  const gifing = $derived(app.view === "gif" && !!path && mode !== "empty" && mode !== "error");
+  $effect(() => {
+    if (gifing && app.settings) untrack(() => void initGif());
+    else stopEstimate();
+  });
+  $effect(() => {
+    if (!gifing || !path || mode === "loading" || !(duration > 0)) return;
+    const r = { ...range };
+    void gif.options;
+    void gif.ready;
+    const p = path;
+    untrack(() => syncEstimate(p, r));
   });
   $effect(() => {
     overlayT = current;
@@ -300,6 +316,7 @@
       <div class="tabs" role="group" aria-label="What to do with this video">
         <button aria-pressed={app.view === "clip"} class:on={app.view === "clip"} onclick={() => (app.view = "clip")}>Clip</button>
         <button aria-pressed={app.view === "upscale"} class:on={app.view === "upscale"} onclick={() => (app.view = "upscale")}>Upscale for phone</button>
+        <button aria-pressed={app.view === "gif"} class:on={app.view === "gif"} onclick={() => (app.view = "gif")}>GIF for Reddit</button>
       </div>
       <h2 title={path}>{path ? baseName(path) : ""}</h2>
       {#if mode === "direct"}
@@ -415,6 +432,8 @@
     {#if upscaling && path}
       {#if segments.length}<p class="legend faint"><span class="swatch" aria-hidden="true"></span>Hatched: no single face fits, so the whole frame is shown over a blurred copy</p>{/if}
       <UpscaleView {path} {range} />
+    {:else if gifing && path}
+      <GifView {path} {range} />
     {:else}
     <div class="clipbar">
       <input type="text" placeholder="Clip name (optional)" bind:value={clipName} onkeydown={(e) => e.key === "Enter" && addCurrentClip()} />
