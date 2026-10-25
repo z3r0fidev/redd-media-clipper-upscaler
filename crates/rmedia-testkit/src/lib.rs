@@ -1057,18 +1057,25 @@ pub fn first_frame_psnr(a: &Path, b: &Path, b_time: f64) -> f64 {
 /// Both go through RGB (the source with its own tagged matrix) and then the same RGB → YUV
 /// conversion, so only the picture is compared, not a matrix convention.
 pub fn vmaf_gif(gif: &Path, source: &Path, fps: u32) -> f64 {
+    vmaf_gif_at(gif, source, fps, 0.0)
+}
+
+/// [`vmaf_gif`] for a GIF of the source from `start` seconds. The GIF's frames are retimed by
+/// their own timestamps (`fps`), so frames that gifsicle merged count for every frame they
+/// stand for; both sides are compared in 4:4:4 (a GIF may have an odd size).
+pub fn vmaf_gif_at(gif: &Path, source: &Path, fps: u32, start: f64) -> f64 {
     let (w, h) = display_size(gif);
     let work = tempfile_dir("vmaf-gif");
     let graph = format!(
-        "[0:v]setpts=N/({fps}*TB),format=rgb24,format=yuv420p[d];\
-         [1:v]fps={fps},scale={w}:{h}:flags=bicubic,format=rgb24,setpts=N/({fps}*TB),format=yuv420p[r];\
+        "[0:v]fps={fps},setpts=N/({fps}*TB),scale={w}:{h}:flags=neighbor,format=rgb24,format=yuv444p[d];\
+         [1:v]fps={fps},scale={w}:{h}:flags=bicubic,format=rgb24,setpts=N/({fps}*TB),format=yuv444p[r];\
          [d][r]libvmaf=log_fmt=json:log_path=vmaf.json:n_threads=4:shortest=1"
     );
     let out = Command::new(ffmpeg())
         .current_dir(&work)
         .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-i"])
         .arg(gif)
-        .arg("-i")
+        .args(["-ss", &format!("{start:.3}"), "-i"])
         .arg(source)
         .args(["-lavfi", &graph, "-f", "null", "-"])
         .output()

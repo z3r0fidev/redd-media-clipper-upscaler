@@ -30,7 +30,7 @@ fn input(display: (u32, u32), target: (u32, u32), reframe: Reframe) -> GraphInpu
     }
 }
 
-const AT_15: GifChain<'static> = GifChain { rate: "15/1", sharpen: None };
+const AT_15: GifChain<'static> = GifChain { rate: "15/1", sharpen: None, mp4: false };
 
 /// Runs `chain` on the first second of `src` into a palette, in a folder holding `reframe.cmd`.
 fn accepted(chain: &str, src: &Path) {
@@ -124,16 +124,16 @@ fn the_rate_is_whatever_the_planner_capped_it_to_and_sd_uses_bt601() {
     let mut g = input((720, 576), (480, 384), Reframe::Smart);
     g.colour_in = zscale_input(&ColourTags::default(), 576);
     g.square_pixels = true;
-    let chain = frame_chain(&g, &GifChain { rate: "25/1", sharpen: None });
+    let chain = frame_chain(&g, &GifChain { rate: "25/1", sharpen: None, mp4: false });
     insta::assert_snapshot!(chain, @"[0:v]scale=720:576,setsar=1,fps=25/1,scale=480:384:flags=lanczos+accurate_rnd+full_chroma_int:in_color_matrix=bt601:in_range=tv:out_range=pc,format=rgb24");
-    let ntsc = frame_chain(&g, &GifChain { rate: "30000/1001", sharpen: None });
+    let ntsc = frame_chain(&g, &GifChain { rate: "30000/1001", sharpen: None, mp4: false });
     assert!(ntsc.contains(",fps=30000/1001,"), "{ntsc}");
 }
 
 #[test]
 fn flat_ui_sharpens_between_the_resample_and_rgb() {
     let g = input((1280, 720), (720, 405), Reframe::Smart);
-    let chain = frame_chain(&g, &GifChain { rate: "15/1", sharpen: Some(0.5) });
+    let chain = frame_chain(&g, &GifChain { rate: "15/1", sharpen: Some(0.5), mp4: false });
     insta::assert_snapshot!(chain, @"[0:v]fps=15/1,scale=720:405:flags=lanczos+accurate_rnd+full_chroma_int,unsharp=5:5:0.5:5:5:0,scale=flags=accurate_rnd+full_chroma_int:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24");
     require_engine!("palettegen", "unsharp");
     accepted(&chain, &fixture(Fixture::FlatUi));

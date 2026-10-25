@@ -1,4 +1,4 @@
-//! T046 (003 US2): the gifsicle post-pass (research R2, FR-024): `-O3` and `--lossy` shrink the
+//! T046 (003 US2): the gifsicle post-pass (research R2, FR-024): `-O2` and `--lossy` shrink the
 //! GIF, the loop block survives, only generated names reach its argv, and without gifsicle the
 //! job skips the pass (`ENGINE_FALLBACK` only when `--lossy` was asked for).
 
@@ -47,7 +47,7 @@ fn bytes(m: &JobMeasure) -> u64 {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn o3_and_lossy_shrink_the_gif_and_keep_its_loop() {
+async fn o2_and_lossy_shrink_the_gif_and_keep_its_loop() {
     require_engine!("palettegen", "paletteuse");
     require_tool!(gifsicle);
     let src = fixture(Fixture::Land6);
@@ -59,12 +59,12 @@ async fn o3_and_lossy_shrink_the_gif_and_keep_its_loop() {
     let lossy =
         encode(planned(&src, opts(&d.path().join("c"), |g| g.lossy = Some(80)), false).await, d.path()).await;
     let (p, o, l) = (bytes(&plain.1), bytes(&o3.1), bytes(&lossy.1));
-    eprintln!("gifsicle on Land6 480 px: plain {p}, -O3 {o}, --lossy=80 {l}");
-    assert!(o < p, "-O3 shrinks: {o} vs {p}");
+    eprintln!("gifsicle on Land6 480 px: plain {p}, -O2 {o}, --lossy=80 {l}");
+    assert!(o < p, "-O2 shrinks: {o} vs {p}");
     assert!(l < o, "--lossy shrinks more: {l} vs {o}");
     let JobMeasure::Gif { optimiser, lossy: level, .. } = &lossy.1 else { unreachable!() };
     assert_eq!((*optimiser, *level), (true, Some(80)));
-    assert_eq!(gif_loop(&lossy.0), Some(0), "the loop block survives -O3");
+    assert_eq!(gif_loop(&lossy.0), Some(0), "the loop block survives -O2");
 
     let thrice = |g: &mut GifOptions| g.loop_count = LoopCount::Plays(3);
     let (out, _) = encode(planned(&src, opts(&d.path().join("d"), thrice), false).await, d.path()).await;

@@ -195,10 +195,10 @@ pub fn strip_loop_block(path: &Path) -> std::io::Result<bool> {
     r.map(|()| true)
 }
 
-/// The gifsicle post-pass: `-O3`, optionally lossy, from `input` to `output` (both relative;
+/// The gifsicle post-pass: `-O2`, optionally lossy, from `input` to `output` (both relative;
 /// `--` ends the options, so no name is read as one).
 pub fn gifsicle_args(lossy: u16, input: &str, output: &str) -> Vec<OsString> {
-    let mut a = os(&["--no-warnings", "-O3"]);
+    let mut a = os(&["--no-warnings", "-O2"]);
     if lossy > 0 {
         a.push(format!("--lossy={lossy}").into());
     }
@@ -216,7 +216,7 @@ mod tests {
             .iter()
             .map(|s| s.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(a, ["--no-warnings", "-O3", "--lossy=40", "-o", "opt.gif", "--", "enc.gif"]);
+        assert_eq!(a, ["--no-warnings", "-O2", "--lossy=40", "-o", "opt.gif", "--", "enc.gif"]);
         let plain: Vec<String> =
             gifsicle_args(0, "a.gif", "b.gif").iter().map(|s| s.to_string_lossy().into_owned()).collect();
         assert!(!plain.iter().any(|s| s.starts_with("--lossy")));

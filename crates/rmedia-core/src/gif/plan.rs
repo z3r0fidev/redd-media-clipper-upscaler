@@ -83,7 +83,7 @@ impl FramePlan {
     pub fn chain(&self, s: &Settings) -> String {
         graph::frame_chain(
             &self.graph_at((s.width, s.height)),
-            &GifChain { rate: &s.rate_text(), sharpen: self.sharpen },
+            &GifChain { rate: &s.rate_text(), sharpen: self.sharpen, mp4: s.crf.is_some() },
         )
     }
 }
@@ -114,6 +114,8 @@ pub struct Settings {
     pub lossy: u16,
     /// The best-quality engine's parameters (gifski jobs).
     pub gifski: Option<GifskiParams>,
+    /// The Reddit MP4's x264 CRF (MP4 jobs only).
+    pub crf: Option<u8>,
 }
 
 impl Settings {
@@ -143,6 +145,9 @@ impl Settings {
         });
         if let Some(p) = self.gifski {
             v["gifski"] = json!(p);
+        }
+        if let Some(crf) = self.crf {
+            v["crf"] = json!(crf);
         }
         v
     }
@@ -271,14 +276,17 @@ pub fn plan_gif(
             format!("unknown GIF target {:?} (known: {})", o.target, targets.ids().join(", ")),
         ));
     };
-    if o.format == Format::Mp4 {
-        return Err(invalid("the Reddit MP4 format (--format mp4) is not available yet"));
-    }
-    let missing = caps.missing(&crate::doctor::GIF_NEEDS);
+    let mp4 = o.format == Format::Mp4;
+    let (needs, what) = if mp4 {
+        (&crate::doctor::MP4_NEEDS[..], "the Reddit MP4")
+    } else {
+        (&crate::doctor::GIF_NEEDS[..], "GIF export")
+    };
+    let missing = caps.missing(needs);
     if !missing.is_empty() {
         return Err((
             IssueCode::EngineMissing,
-            format!("the ffmpeg build lacks {} needed for GIF export", missing.join(", ")),
+            format!("the ffmpeg build lacks {} needed for {what}", missing.join(", ")),
         ));
     }
     if let Some(w) = o.width.filter(|w| !(64..=1920).contains(w)) {
@@ -323,12 +331,14 @@ pub fn plan_gif(
 
     // --- engine -------------------------------------------------------------------------------
     let engines = caps.gif_engines.clone().refusing(refused);
-    let wants_gifski = match o.engine {
-        EngineChoice::Gifski => true,
-        EngineChoice::Builtin => false,
-        EngineChoice::Auto => target.engine == TargetEngine::Best,
-    };
+    let wants_gifski = !mp4
+        && match o.engine {
+            EngineChoice::Gifski => true,
+            EngineChoice::Builtin => false,
+            EngineChoice::Auto => target.engine == TargetEngine::Best,
+        };
     let (engine, engine_reason, gifski) = match (wants_gifski, engines.gifski.program()) {
+        (false, _) if mp4 => (EngineUsed::Libx264, "Reddit MP4: libx264".to_owned(), None),
         (false, _) => {
             let why = if o.engine == EngineChoice::Builtin {
                 "built-in requested"
@@ -357,14 +367,15 @@ pub fn plan_gif(
     let optimiser = (engine == EngineUsed::Builtin && o.optimise)
         .then(|| engines.gifsicle.program().map(|p| (p.to_path_buf(), engines.gifsicle.version.clone())))
         .flatten();
-    if engine == EngineUsed::Gifski {
+    if engine != EngineUsed::Builtin {
+        let name = if mp4 { "the Reddit MP4" } else { "gifski" };
         for (set, flag) in [
             (o.colours.is_some(), "--colors"),
             (o.dither.is_some(), "--dither"),
             (o.lossy.is_some(), "--lossy"),
         ] {
             if set {
-                notes.push(format!("{flag} is ignored by gifski"));
+                notes.push(format!("{flag} is ignored by {name}"));
             }
         }
     }
@@ -394,7 +405,10 @@ pub fn plan_gif(
     let crop_w =
         if dw / dh > ratio_w / ratio_h { (dh * ratio_w / ratio_h).floor() as u32 } else { display.0 };
     let limit = if framing == Reframe::Blur { display.0 } else { crop_w };
-    let width = wanted.min(limit).max(16);
+    let mut width = wanted.min(limit).max(16);
+    if mp4 {
+        width &= !1; // 4:2:0 needs even sizes
+    }
     if wanted > limit {
         notes.push(if o.width.is_some() {
             format!("kept source width {limit} (a GIF is never enlarged)")
@@ -402,7 +416,10 @@ pub fn plan_gif(
             format!("source narrower than {wanted} px: kept {limit}")
         });
     }
-    let height = ((f64::from(width) * ratio_h / ratio_w).round() as u32).max(2);
+    let mut height = ((f64::from(width) * ratio_h / ratio_w).round() as u32).max(2);
+    if mp4 {
+        height = (height / 2 * 2).max(2);
+    }
     let mut framing_applied = framing;
     if framing == Reframe::Smart
         && geometry::plan(display, (width, height), framing).overflow != Overflow::None
@@ -414,15 +431,20 @@ pub fn plan_gif(
     // --- timing ---------------------------------------------------------------------------------
     let source_rate =
         if v.is_vfr() { v.r_frame_rate.or(v.frame_rate) } else { v.frame_rate.or(v.r_frame_rate) };
-    let rate = timing::cap(fps, source_rate);
-    if let Some(n) = timing::approximate_note(rate) {
+    // The MP4 keeps the source's rate up to the target's `mp4.max_fps` (no centisecond limit, R6).
+    let rate = if mp4 {
+        timing::cap(o.fps.unwrap_or(target.mp4.max_fps), source_rate)
+    } else {
+        timing::cap(fps, source_rate)
+    };
+    if let Some(n) = timing::approximate_note(rate).filter(|_| !mp4) {
         notice(&mut warnings, IssueCode::TimingApproximate, n);
     }
     let len = cut.requested.end.saturating_sub(cut.requested.start).as_secs_f64();
     let frames = crate::upscale::reframe::frame_count(len, f64::from(rate.0) / f64::from(rate.1)) as u64;
     if frames < 2 {
         return Err(invalid(format!(
-            "a GIF needs at least 2 frames: the range is {len:.3} s at {} fps",
+            "an animation needs at least 2 frames: the range is {len:.3} s at {} fps",
             timing::fps_text(rate)
         )));
     }
@@ -481,6 +503,7 @@ pub fn plan_gif(
         gifski: (engine == EngineUsed::Gifski).then(|| {
             target.gifski.unwrap_or(GifskiParams { quality: 90, motion_quality: None, lossy_quality: None })
         }),
+        crf: mp4.then_some(target.mp4.crf),
     };
     warnings.extend(notes.iter().cloned());
     let frame = FramePlan {

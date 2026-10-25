@@ -368,6 +368,7 @@ mod tests {
             stats: StatsMode::Diff,
             lossy: 30,
             gifski: None,
+            crf: None,
         }
     }
 

@@ -488,7 +488,7 @@ fn tool_failed(tool: &str, status: Option<ExitStatus>, stderr_tail: &str) -> Err
     }
 }
 
-/// The gifsicle post-pass (`-O3`, lossy when set) with a cleared environment, the size watchdog
+/// The gifsicle post-pass (`-O2`, lossy when set) with a cleared environment, the size watchdog
 /// on its output and a wall-clock limit.
 async fn run_gifsicle(
     ctx: &mut JobCtx<'_>,

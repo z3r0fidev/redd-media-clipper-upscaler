@@ -125,6 +125,8 @@ pub struct GifChain<'a> {
     pub rate: &'a str,
     /// `unsharp` luma amount after the resample (flat-ui).
     pub sharpen: Option<f32>,
+    /// The Reddit MP4: end in BT.709 limited-range `yuv420p` instead of full-range RGB.
+    pub mp4: bool,
 }
 
 /// The GIF frame chain (refactor B1): `[0:v]` → frames at the GIF size in full-range RGB. It
@@ -134,8 +136,12 @@ pub fn frame_chain(g: &GraphInput, c: &GifChain<'_>) -> String {
     let pre = pre_chain_at(g, Flavor::Gif, Some(c.rate));
     let (w, h) = g.geometry.target;
     let sharpen = c.sharpen.map(|a| format!(",unsharp=5:5:{a}:5:5:0")).unwrap_or_default();
-    let rgb = gif_rgb(g);
-    let to_rgb = format!("{sharpen},scale=flags=accurate_rnd+full_chroma_int:{rgb},format=rgb24");
+    let (rgb, pix) = if c.mp4 {
+        (gif_rgb(g).replace(":out_range=pc", ":out_color_matrix=bt709:out_range=tv"), "yuv420p")
+    } else {
+        (gif_rgb(g), "rgb24")
+    };
+    let to_rgb = format!("{sharpen},scale=flags=accurate_rnd+full_chroma_int:{rgb},format={pix}");
     let overflow = g.geometry.overflow != Overflow::None;
     match (g.reframe, &g.track, g.geometry.crop) {
         (Reframe::Smart, Some(t), Some(cr)) if overflow => {
@@ -165,7 +171,7 @@ pub fn frame_chain(g: &GraphInput, c: &GifChain<'_>) -> String {
             if c.sharpen.is_some() {
                 chain.push(format!("{}{to_rgb}", scaler(g, w, h, Flavor::Gif)));
             } else {
-                chain.push(format!("scale={w}:{h}:flags={GIF_SCALER}:{rgb},format=rgb24"));
+                chain.push(format!("scale={w}:{h}:flags={GIF_SCALER}:{rgb},format={pix}"));
             }
             format!("[0:v]{}", chain.join(","))
         }

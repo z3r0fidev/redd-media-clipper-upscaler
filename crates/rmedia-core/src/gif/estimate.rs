@@ -51,7 +51,10 @@ fn chain_from(spec: &GifSpec, s: &Settings, label: &str, trim: bool) -> String {
     if !trim {
         g.trim = None;
     }
-    let chain = frame_chain(&g, &GifChain { rate: &s.rate_text(), sharpen: spec.frame.sharpen });
+    let chain = frame_chain(
+        &g,
+        &GifChain { rate: &s.rate_text(), sharpen: spec.frame.sharpen, mp4: s.crf.is_some() },
+    );
     let rest = chain.strip_prefix("[0:v]").expect("a frame chain reads the first input's video");
     format!("{label}{rest}")
 }

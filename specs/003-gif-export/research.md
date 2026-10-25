@@ -218,10 +218,14 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
 
 ## R7. Process model
 
-- **gifsicle post-pass:** `gifsicle -O3 [--lossy=N] -o out.gif -- in.gif`, through
+- **gifsicle post-pass:** `gifsicle -O2 [--lossy=N] -o out.gif -- in.gif` (`-O3` until T052), through
   `exec::process::run_lines_in`, with cwd = scratch.
   - There is no `--colors`: re-quantising without dither would undo the palette.
   - The input is always the built-in engine's own output, inside scratch.
+  - [V] T052, 2026-10-25: `-O3` cost 4.0 s per pass on a 5.4 MB Busy10 sample, `-O2` 1.16 s
+    for the same size (4 866 812 vs 4 866 575 bytes; `-O1` 0.57 s, +1.6%). With up to two
+    post-passes and seven samples per search, `-O3` alone broke SC-003 (Busy10 → reddit-post
+    took 50.6 s against a 30 s bar), so the post-pass uses `-O2`.
 - **gifski:** ffmpeg `<chain> -pix_fmt yuv444p -f yuv4mpegpipe -` piped into
   `gifski --fps F --quality Q [--lossy-quality L] [--motion-quality M] --repeat <R15> -o out.gif -`
   (parameters in R14).
@@ -457,7 +461,7 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
   | N plays (N ≥ 2) | `-loop N-1` | `--repeat N-1` | present, repeat N-1 |
   | 1 play | `-loop -1` | `--repeat -1` | absent |
 
-  gifsicle keeps the block as it is (`-O3` does not touch loop extensions). Verify checks this
+  gifsicle keeps the block as it is (`-O2` does not touch loop extensions). Verify checks this
   after the post-pass.
   - [V] T043, 2026-10-25: gifski 1.34.0 maps `--repeat -1` to `Repeat::Finite(0)`, and gif
     0.13.3 writes that as a NETSCAPE block with count 0, which loops forever. For 1 play, the

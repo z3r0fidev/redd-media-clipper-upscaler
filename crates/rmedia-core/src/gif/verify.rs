@@ -27,7 +27,7 @@ pub struct GifExpect {
     pub height: u32,
     /// Planned frame count (±1 allowed).
     pub frames: u64,
-    /// Set when the engine may merge frames or round delays its own way (gifsicle `-O3` merges
+    /// Set when the engine may merge frames or round delays its own way (gifsicle `-O2` merges
     /// identical consecutive frames and adds up their delays; gifski times frames itself): fewer
     /// frames are allowed, and this planned display time (centiseconds) is checked instead,
     /// within one frame.

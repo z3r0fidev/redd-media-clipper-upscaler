@@ -125,3 +125,30 @@ async fn bench_upscale_sc005_smart_reframe_overhead() {
     eprintln!("60 s 1080p: centre render {render:?}, smart analysis {analysis:?}");
     assert!(analysis.as_secs_f64() <= render.as_secs_f64() * 0.5, "SC-005 violated");
 }
+
+/// 003 SC-003: `Busy10` fits the default Reddit-post budget in at most 3× the clip's duration
+/// (search included), asserted on the reference class of machine (≥ 12 threads).
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "benchmark"]
+async fn bench_gif_sc003_busy10_to_the_post_budget() {
+    rmedia_testkit::require_engine!("palettegen", "paletteuse");
+    let src = fixture(Fixture::Busy10);
+    let (tools, caps) = engine();
+    let out = tempfile::tempdir().unwrap();
+    let o = rmedia_core::request::Options {
+        gif: Some(rmedia_core::gif::GifOptions::default()),
+        output_dir: Some(out.path().to_path_buf()),
+        ..Default::default()
+    };
+    let plan = make_plan(&request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], o), &tools, &caps).await;
+    assert!(!plan.has_errors(), "{:?}", plan.issues);
+    let t0 = Instant::now();
+    let (summary, _) = run_plan(plan, tools, out.path()).await;
+    let elapsed = t0.elapsed();
+    assert_eq!(summary.succeeded, 1, "{:?}", summary.jobs[0].outcome);
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    eprintln!("GIF SC-003 Busy10 → reddit-post: {elapsed:?} on {threads} threads (bar 30 s)");
+    if threads >= 12 {
+        assert!(elapsed <= Duration::from_secs(30), "SC-003 violated: {elapsed:?}");
+    }
+}
