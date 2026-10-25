@@ -34,18 +34,18 @@ fn stats(m: StatsMode) -> &'static str {
     }
 }
 
+/// The `palettegen` filter of `s`.
+pub fn palette_settings(s: &Settings) -> String {
+    format!("palettegen=max_colors={}:stats_mode={}:reserve_transparent=1", s.colours, stats(s.stats))
+}
+
 /// Pass 1: the palette of the final-size frames (FR-002) into `palette` (relative).
 pub fn palette_args(spec: &GifSpec, s: &Settings, palette: &str) -> Vec<OsString> {
     let (source, range) = input_parts(&spec.cut);
     let mut a = common_args();
     a.extend(source);
     a.extend(range);
-    let graph = format!(
-        "{},palettegen=max_colors={}:stats_mode={}:reserve_transparent=1[p]",
-        spec.frame.chain(s),
-        s.colours,
-        stats(s.stats)
-    );
+    let graph = format!("{},{}[p]", spec.frame.chain(s), palette_settings(s));
     a.extend(os(&[
         "-filter_complex",
         &graph,

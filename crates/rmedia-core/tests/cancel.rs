@@ -145,3 +145,57 @@ async fn cancelling_an_upscale_is_fast_and_clean() {
     assert!(!scratch.exists(), "scratch dir left behind");
     assert!(child_engines().is_empty(), "orphaned engine processes: {:?}", child_engines());
 }
+
+/// T034 (003 US1): cancelling a GIF job during `stage` stops within 2 s and leaves no `.part`,
+/// no scratch folder and no engine process.
+async fn cancel_gif_during(stage: &str) {
+    let _serial = SERIAL.lock().await;
+    rmedia_testkit::require_engine!("palettegen", "paletteuse");
+    let src = fixture(Fixture::Busy10);
+    let (tools, caps) = engine();
+    let out = tempfile::tempdir().unwrap();
+    let mut o = opts(out.path(), Mode::Accurate);
+    o.gif = Some(rmedia_core::gif::GifOptions {
+        budget: None,
+        width: Some(1280),
+        fps: Some(25),
+        ..Default::default()
+    });
+    let plan = make_plan(&request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], o), &tools, &caps).await;
+    assert!(!plan.has_errors(), "{:?}", plan.issues);
+    let scratch = plan.jobs[0].scratch.clone().expect("GIF jobs have a scratch folder");
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let cfg = RunConfig { jobs: 1, state_dir: Some(out.path().join("state")) };
+    let handle = exec::start(plan, tools, cfg, Arc::new(Notify(tx)));
+    loop {
+        match tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
+            Ok(Some(Event::JobStage { stage: s, .. })) if s == stage => break,
+            Ok(Some(_)) => continue,
+            other => panic!("no {stage} stage: {other:?}"),
+        }
+    }
+    // Let the stage's process start.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!child_engines().is_empty(), "ffmpeg should be running in the {stage} stage");
+    let t0 = Instant::now();
+    handle.cancel();
+    let summary = handle.wait().await;
+    let elapsed = t0.elapsed();
+    assert!(elapsed < Duration::from_secs(2), "cancel took {elapsed:?}");
+    assert_eq!(summary.exit_code, 130);
+    assert!(matches!(summary.jobs[0].outcome, JobOutcome::Cancelled), "{:?}", summary.jobs[0].outcome);
+    assert!(partials(out.path()).is_empty(), "partial files left: {:?}", partials(out.path()));
+    assert!(!scratch.exists(), "scratch folder left behind");
+    assert!(child_engines().is_empty(), "orphaned engine processes: {:?}", child_engines());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_gif_in_the_palette_stage_is_fast_and_clean() {
+    cancel_gif_during("palette").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_gif_in_the_encode_stage_is_fast_and_clean() {
+    cancel_gif_during("encode").await;
+}

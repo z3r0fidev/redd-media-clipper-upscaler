@@ -9,9 +9,9 @@ description: "Task list for 003 GIF Export for Reddit"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R16), data-model.md (B1–B4), contracts/,
 quickstart.md
 
-**Status (2026-10-25)**: T001–T008, T011, T012, T014–T032 done. Open: T009 (owner-approved
-dispatch of `gif-tools.yml`, not yet run), T010, T013. US1 T033–T044 are drafted on the local
-unpushed branch `wip/003-us1` (does not build yet; none marked done). Roadmap: `docs/roadmap.md`.
+**Status (2026-10-25)**: T001–T008, T011, T012, T014–T037, T039–T042 and T044 done. Open:
+T009 (owner-approved dispatch of `gif-tools.yml`, not yet run), T010, T013, and the gifski engine
+T038/T043 (needs the T009 binaries). Roadmap: `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.
@@ -301,10 +301,10 @@ dry run and estimate, progress, cancel and verify.
   - a range over the target's `max_duration` plans with a `LONG_RANGE` notice (code and message)
     and still encodes;
   - a collision follows `--on-exists`.
-- [ ] T034 [P] [US1] Write cancel tests in `core-tests/cancel.rs` (extend): cancel during the
+- [X] T034 [P] [US1] Write cancel tests in `core-tests/cancel.rs` (extend): cancel during the
   palette and the encode stages. Within 2 s: no `.part`, no `.d`, no ffmpeg process. Linux and
   Windows.
-- [ ] T035 [P] [US1] Write CLI tests in `cli-tests/gif.rs`:
+- [X] T035 [P] [US1] Write CLI tests in `cli-tests/gif.rs`:
   - human and `--json` dry-run snapshots (the `gif` block, `notices`, `argv`/`pipeline`,
     "limits unverified");
   - a dry run writes nothing, and `--no-sample` gives `pending`;
@@ -314,18 +314,23 @@ dry run and estimate, progress, cancel and verify.
     `BUDGET_UNREACHABLE` and `"detail":{"min_bytes":65536}` (exit 3, nothing written);
   - a GIF job whose predicted output exceeds free space warns per output folder, using
     `estimate::check_space` with a fake free-space function as
-    `upscale/estimate.rs::free_space_shortfall_warns_per_folder` does;
+    `upscale/estimate.rs::free_space_shortfall_warns_per_folder` does (written in
+    `core-tests/gif_us1.rs` over the new `plan::space_needs`: the CLI cannot fake free space);
   - `doctor` lines, with and without engines.
-- [ ] T036 [P] [US1] Write estimate tests in `core/gif/estimate.rs` and
+- [X] T036 [P] [US1] Write estimate tests in `core/gif/estimate.rs` and
   `core-tests/gif_estimate.rs`:
   - the window layout (10/50/90%, separate seeks);
   - ranges of 4 s or less are encoded whole and reused;
   - the first-frame + delta model against the real size on `Land6`, `FlatUi`, `Static6` and
-    `Busy10` (record the error; the SC-004 assertion is in T053);
+    `Busy10` (record the error; the SC-004 assertion is in T053). Recorded 2026-10-25: +1.2%,
+    −1.0%, +0.0%, −6.0%;
   - the sample scratch is removed.
-- [ ] T037 [P] [US1] Write the SC-005 test in `core-tests/quality.rs` (extend): the default
+- [X] T037 [P] [US1] Write the SC-005 test in `core-tests/quality.rs` (extend): the default
   `reddit-post` GIF of `Land6` scores ≥ a plain one-pass `ffmpeg -vf fps,scale` GIF of the same
   width, fps and similar bytes, on VMAF against the source frames.
+  Done 2026-10-25 without the same-size part: 49.98 vs 48.81 VMAF, ours 1.56× the bytes (Land6
+  is now tagged BT.709, and `vmaf_gif` compares both sides through RGB). T053 repeats it with
+  the budget set to the plain GIF's size.
 - [ ] T038 [P] [US1] Write gifski tests in `core-tests/gif_gifski.rs`, behind `require_tool!(gifski)`:
   - `max-quality` uses gifski, through the 2-stage pipe;
   - a missing gifski falls back with `ENGINE_FALLBACK`, and `--strict-engine` exits 4;
@@ -346,7 +351,7 @@ dry run and estimate, progress, cancel and verify.
 - [X] T040 [US1] Implement `core/gif/graph.rs`: the palette and encode argv on top of
   `frame_chain`, with `-f gif -fflags +bitexact`, the loop table, `-an -sn -dn -map_metadata -1`
   and relative names. Add insta snapshots of the argv.
-- [ ] T041 [US1] Implement `core/gif/estimate.rs`:
+- [X] T041 [US1] Implement `core/gif/estimate.rs`:
   - the sample builder (per-window `-ss` inputs, concat, per-window sendcmd hooks for US4);
   - the size model;
   - `predict()` for the no-budget case;
@@ -361,7 +366,7 @@ dry run and estimate, progress, cancel and verify.
   Also `JobMeasure::Gif` in `core/event.rs` (makes T033/T034 pass).
 - [ ] T043 [US1] Implement the gifski engine in `core/exec/gif.rs`: a 2-stage pipe (ffmpeg y4m
   → gifski) through B3, the R14 parameters, fallback and strict mode, notes (makes T038 pass).
-- [ ] T044 [US1] Implement the CLI in `crates/rmedia-cli/src/commands/gif.rs` and `main.rs`:
+- [X] T044 [US1] Implement the CLI in `crates/rmedia-cli/src/commands/gif.rs` and `main.rs`:
   - the `GifFlags` group (reusable, without the range), with gif-only `-s/-e/-d`;
   - `--list-targets`, `--gifsicle`/`--gifski`;
   - render the plan block, summary and NDJSON in `render.rs`;
@@ -433,7 +438,8 @@ handling and consented trimming.
   - **SC-004:** estimate within 25% for ≥ 90% of a 10-clip lavfi set (fixtures × ranges);
   - **SC-002:** 100% ≤ hard, and ≥ 90% ≤ soft when achievable;
   - **SC-009:** the default `reddit-post` with gifsicle is ≥ 15% smaller, and loses ≤ 1 VMAF
-    point.
+    point;
+  - **SC-005 at the same size:** the T037 test with `--budget` set to the plain GIF's bytes.
 
   Tune the `estimate.rs` constants and the targets' default `lossy` until these pass, and
   record the values in research R2/R4.

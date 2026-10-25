@@ -98,6 +98,11 @@ Tags:
     - [V] T005(d), 2026-10-24: per-window files work as designed. An empty sendcmd file is an
       error ("No commands were specified"), so each window's file starts with the crop's
       position at the window start.
+    - [V] T041, 2026-10-25: changed. The windows are joined with `concat` **before** one frame
+      chain (`[0:v][1:v][2:v]concat=n=3[cat]` → chain → `split` → `palettegen`/`paletteuse`).
+      Per-input chains would need unique pad labels in every chain. With smart framing (US4),
+      one sendcmd file on the joined timeline does the same job: window `k` starts at `k` s,
+      so each window's commands are shifted by `k − window start`.
   - One ffmpeg run, counted as one encode.
   - A range of 4 s or less is encoded whole: the sample is the real output, and the result is
     reused if it is chosen.
@@ -123,6 +128,8 @@ Tags:
     `--no-sample`; `--sample` turns it on.
   - The job's own search runs its own samples. Repeating them is cheap, and keeps the executor
     independent of a previous process.
+- [V] T036, 2026-10-25: the model's error against the real GIF (built-in engine, no gifsicle):
+  Land6 +1.2%, FlatUi −1.0%, Static6 +0.0%, Busy10 −6.0%.
 - **[U] calibration:** SC-004 asks for 90% within 25%. The US2 tests measure it on the fixture set
   (busy, flat, static, moving marker, testsrc). The model constants live in `estimate.rs` only.
 - **Alternatives:**

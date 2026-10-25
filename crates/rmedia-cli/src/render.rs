@@ -127,11 +127,16 @@ impl Output {
                     up.estimate.secs.max(1.0)
                 );
             }
+            if let JobSpec::Gif(g) = &j.spec {
+                gif_lines(&g.gif);
+            }
             for w in &j.warnings {
                 println!("     warning: {w}");
             }
             if self.verbose > 0 {
-                println!("     ffmpeg {}", shell_words(&display_args(&j.args())));
+                for c in j.commands() {
+                    println!("     {} {}", program_name(c.program), shell_words(&display_args(&c.args)));
+                }
             }
         }
         for i in plan.issues.iter().filter(|i| i.severity == Severity::Warning) {
@@ -196,6 +201,56 @@ impl Output {
             "{} succeeded, {} skipped, {} failed, {} cancelled",
             s.succeeded, s.skipped, s.failed, s.cancelled
         );
+    }
+}
+
+/// The GIF part of a dry-run job (contracts/cli.md › Human dry run).
+fn gif_lines(g: &rmedia_core::gif::GifPlan) {
+    use rmedia_core::gif::plan::EstimateFrom;
+    use rmedia_core::upscale::estimate::human_bytes;
+    let t = &g.target;
+    let unverified = if t.verified { "" } else { ", limits unverified" };
+    println!(
+        "     target {} ({}{unverified}), {}, engine {} ({})",
+        t.id,
+        clean(&t.name),
+        g.format.ext(),
+        format!("{:?}", g.engine).to_lowercase(),
+        g.engine_reason
+    );
+    let s = &g.start;
+    let timing = s.timing();
+    let fps = rmedia_core::gif::timing::fps_text(s.rate);
+    let fps = if timing.exact {
+        format!("{fps} fps")
+    } else {
+        format!("{fps} fps (≈ {:.2} cs, approximate)", timing.avg_cs)
+    };
+    let palette = if s.gifski.is_some() {
+        String::new()
+    } else {
+        format!(", {} colours, dither {}", s.colours, s.dither.label())
+    };
+    println!("     {}x{}, {fps}{palette}", s.width, s.height);
+    if let Some(b) = g.budget {
+        println!("     budget {} soft / {} hard", human_bytes(b.soft), human_bytes(b.hard));
+    }
+    match (g.estimate.bytes, g.estimate.from) {
+        (Some(bytes), from) => {
+            let how = if from == EstimateFrom::Search { "after the budget search" } else { "from a sample" };
+            println!("     estimate ~{} ({how})", human_bytes(bytes));
+        }
+        (None, _) => println!("     estimate pending (not sampled)"),
+    }
+}
+
+fn program_name(p: rmedia_core::plan::Program) -> &'static str {
+    use rmedia_core::plan::Program;
+    match p {
+        Program::Ffmpeg => "ffmpeg",
+        Program::AiWorker => "rmedia-sr",
+        Program::Gifsicle => "gifsicle",
+        Program::Gifski => "gifski",
     }
 }
 
@@ -282,6 +337,12 @@ fn job_doc(j: &PlannedJob) -> Value {
             m.insert("cwd".into(), json!(lossy(cwd)));
         }
     }
+    if let JobSpec::Gif(g) = &j.spec {
+        m.insert("kind".into(), json!("gif"));
+        m.insert("gif".into(), g.gif.to_json());
+        let pipeline: Vec<Value> = j.commands().iter().map(|c| json!(display_args(&c.args))).collect();
+        m.insert("pipeline".into(), json!(pipeline));
+    }
     v
 }
 
@@ -322,6 +383,10 @@ fn plan_doc(plan: &Plan) -> Value {
             m.insert("code".into(), json!(i.code));
             origin_fields(&i.origin, &mut m);
             m.insert("message".into(), json!(i.message));
+            if i.code == rmedia_core::error::IssueCode::BudgetUnreachable {
+                // At plan time only the static floor is checked (contracts/json-output.md).
+                m.insert("detail".into(), json!({"min_bytes": rmedia_core::gif::plan::MIN_BUDGET}));
+            }
             Value::Object(m)
         })
         .collect();

@@ -4,7 +4,6 @@ use rmedia_core::doctor;
 use rmedia_core::input::{manifest_csv, manifest_json};
 use rmedia_core::plan;
 use rmedia_core::request::Options;
-use rmedia_core::tools::LocateOptions;
 use tokio_util::sync::CancellationToken;
 
 use super::clip::{absolute, execute};
@@ -90,11 +89,7 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
         req.defaults.name_template = rmedia_core::request::MULTI_SOURCE_NAME_TEMPLATE.to_owned();
     }
 
-    let opts = LocateOptions {
-        ffmpeg: cli.ffmpeg.clone(),
-        ffprobe: cli.ffprobe.clone(),
-        ..LocateOptions::default()
-    };
+    let opts = cli.locate();
     let (mut report, mut engine) = doctor::run(&opts);
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));

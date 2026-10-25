@@ -722,11 +722,13 @@ impl Fixture {
                 "-f",
                 "mp4",
             ],
+            // Tagged and converted as BT.709, like HD camera footage: the GIF quality test
+            // (SC-005) must not depend on which matrix an untagged source is assumed to use.
             Fixture::Land6 => vec![
                 "-f",
                 "lavfi",
                 "-i",
-                "testsrc2=size=1280x720:rate=30:duration=6",
+                "testsrc2=size=1280x720:rate=30:duration=6,scale=out_color_matrix=bt709:out_range=tv",
                 "-f",
                 "lavfi",
                 "-i",
@@ -739,6 +741,14 @@ impl Fixture {
                 "18",
                 "-pix_fmt",
                 "yuv420p",
+                "-colorspace",
+                "bt709",
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
+                "-color_range",
+                "tv",
                 "-c:a",
                 "aac",
                 "-shortest",
@@ -1039,6 +1049,48 @@ pub fn first_frame_psnr(a: &Path, b: &Path, b_time: f64) -> f64 {
         .and_then(|rest| rest.split_whitespace().next())
         .unwrap_or_else(|| panic!("no PSNR in output: {stderr}"));
     if avg == "inf" { f64::INFINITY } else { avg.parse().expect("psnr value") }
+}
+
+/// VMAF (0–100) of the GIF `gif` against `source`'s frames at `fps` (feature 003). Both sides
+/// are renumbered to `fps` so frame `n` of the GIF is compared with frame `n` of the source
+/// after the same frame-rate conversion; the source is scaled to the GIF's size with bicubic.
+/// Both go through RGB (the source with its own tagged matrix) and then the same RGB → YUV
+/// conversion, so only the picture is compared, not a matrix convention.
+pub fn vmaf_gif(gif: &Path, source: &Path, fps: u32) -> f64 {
+    let (w, h) = display_size(gif);
+    let work = tempfile_dir("vmaf-gif");
+    let graph = format!(
+        "[0:v]setpts=N/({fps}*TB),format=rgb24,format=yuv420p[d];\
+         [1:v]fps={fps},scale={w}:{h}:flags=bicubic,format=rgb24,setpts=N/({fps}*TB),format=yuv420p[r];\
+         [d][r]libvmaf=log_fmt=json:log_path=vmaf.json:n_threads=4:shortest=1"
+    );
+    let out = Command::new(ffmpeg())
+        .current_dir(&work)
+        .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-i"])
+        .arg(gif)
+        .arg("-i")
+        .arg(source)
+        .args(["-lavfi", &graph, "-f", "null", "-"])
+        .output()
+        .expect("run libvmaf");
+    assert!(out.status.success(), "libvmaf failed: {}", String::from_utf8_lossy(&out.stderr));
+    let log: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(work.join("vmaf.json")).expect("vmaf log")).expect("vmaf json");
+    let _ = std::fs::remove_dir_all(&work);
+    log["pooled_metrics"]["vmaf"]["mean"].as_f64().expect("pooled vmaf mean")
+}
+
+/// A plain one-pass GIF (`-vf fps,scale`, ffmpeg's default palette handling): the SC-005
+/// baseline.
+pub fn plain_gif(source: &Path, width: u32, fps: u32, out: &Path) {
+    let st = Command::new(ffmpeg())
+        .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i"])
+        .arg(source)
+        .args(["-vf", &format!("fps={fps},scale={width}:-2:flags=bicubic"), "-f", "gif"])
+        .arg(out)
+        .status()
+        .expect("run ffmpeg");
+    assert!(st.success(), "plain GIF encode failed");
 }
 
 /// Displayed size of the first video stream: coded size with SAR and display rotation applied.

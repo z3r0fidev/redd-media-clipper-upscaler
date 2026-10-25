@@ -268,3 +268,22 @@ async fn a_collision_follows_on_exists() {
     );
     assert!(partials(out.path()).is_empty());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_folder_without_room_for_the_gifs_gets_one_warning() {
+    // C1: GIF jobs count towards the free-space check, per output folder.
+    require_engine!("palettegen", "paletteuse");
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let src = fixture(Fixture::Land6);
+    let mut jobs = plan_of(&src, 0.0, EndSpec::EndOfMedia, gif_opts(a.path(), |_| {})).await.jobs;
+    jobs.extend(plan_of(&src, 0.0, EndSpec::EndOfMedia, gif_opts(b.path(), |_| {})).await.jobs);
+    let needs = rmedia_core::plan::space_needs(&jobs);
+    assert_eq!(needs.len(), 2, "{needs:?}");
+    assert!(needs.values().all(|n| *n == 20_000_000), "the hard budget before any sample: {needs:?}");
+    let short = a.path().to_path_buf();
+    let w = rmedia_core::upscale::estimate::check_space(&needs, |d| {
+        Some(if d == short { 1_000_000 } else { 1 << 40 })
+    });
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(w[0].starts_with(&*short.to_string_lossy()), "{w:?}");
+}

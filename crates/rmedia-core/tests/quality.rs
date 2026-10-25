@@ -58,3 +58,32 @@ async fn cpu_tier_beats_bicubic_at_360p() {
     let (ours, bicubic) = margin(Fixture::DegradedPortrait360).await;
     assert!(ours >= bicubic + MARGIN, "SC-002: {ours:.2} vs bicubic {bicubic:.2}");
 }
+
+/// T037 (003 US1, SC-005): the default `reddit-post` GIF of `Land6` scores at least as well as a
+/// plain one-pass `ffmpeg -vf fps,scale` GIF of the same width and frame rate, on VMAF against
+/// the source frames. The sizes are recorded: comparing at the same size needs the budget
+/// search (US2), which then sets the budget to the plain GIF's size.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_default_gif_beats_a_plain_one_pass_gif() {
+    require_engine!("palettegen", "paletteuse", "libvmaf");
+    let d = tempfile::tempdir().unwrap();
+    let src = fixture(Fixture::Land6);
+    let opts = Options {
+        gif: Some(rmedia_core::gif::GifOptions::default()),
+        output_dir: Some(d.path().to_path_buf()),
+        ..Options::default()
+    };
+    let (tools, caps) = engine();
+    let p = make_plan(&request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], opts), &tools, &caps).await;
+    let (summary, _) = run_plan(p, tools, d.path()).await;
+    let ours = match &summary.jobs[0].outcome {
+        JobOutcome::Succeeded { output, .. } => output.clone(),
+        other => panic!("GIF failed: {other:?}"),
+    };
+    let plain = d.path().join("plain.gif");
+    rmedia_testkit::plain_gif(&src, 720, 15, &plain);
+    let (a, b) = (rmedia_testkit::vmaf_gif(&ours, &src, 15), rmedia_testkit::vmaf_gif(&plain, &src, 15));
+    let (sa, sb) = (std::fs::metadata(&ours).unwrap().len(), std::fs::metadata(&plain).unwrap().len());
+    eprintln!("SC-005: reddit-post VMAF {a:.2} ({sa} bytes), plain one-pass {b:.2} ({sb} bytes)");
+    assert!(a >= b, "the default GIF ({a:.2}) scores below a plain one-pass GIF ({b:.2})");
+}

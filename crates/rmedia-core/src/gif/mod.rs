@@ -170,6 +170,31 @@ impl BudgetSpec {
     }
 }
 
+/// Parses a size such as `3MB`, `2.5MiB`, `800k` or `65536`: decimal units (`k`, `MB`, `G`)
+/// unless binary (`KiB`, `MiB`, `GiB`). It must be positive and at most 1 GiB.
+pub fn parse_size(text: &str) -> Result<u64, String> {
+    let t = text.trim();
+    let split = t.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(t.len());
+    let (number, unit) = t.split_at(split);
+    let bad = || format!("invalid size {text:?} (examples: 3MB, 2.5MiB, 800k)");
+    let n: f64 = number.parse().map_err(|_| bad())?;
+    let scale = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1.0,
+        "k" | "kb" => 1e3,
+        "m" | "mb" => 1e6,
+        "g" | "gb" => 1e9,
+        "kib" => 1024.0,
+        "mib" => 1024.0 * 1024.0,
+        "gib" => 1024.0 * 1024.0 * 1024.0,
+        _ => return Err(bad()),
+    };
+    let bytes = (n * scale).round();
+    if !(1.0..=target::MAX_BUDGET as f64).contains(&bytes) {
+        return Err(format!("size {text:?} must be more than 0 and at most 1 GiB"));
+    }
+    Ok(bytes as u64)
+}
+
 /// Fully resolved GIF options for one job (data-model.md › GifOptions).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -356,5 +381,34 @@ impl PartialGif {
             budget: changed(&o.budget, &b.budget),
             allow_trim: changed(&o.allow_trim, &b.allow_trim),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sizes_are_decimal_unless_binary() {
+        assert_eq!(parse_size("3MB"), Ok(3_000_000));
+        assert_eq!(parse_size("2.5MiB"), Ok(2_621_440));
+        assert_eq!(parse_size("800k"), Ok(800_000));
+        assert_eq!(parse_size("10k"), Ok(10_000));
+        assert_eq!(parse_size("65536"), Ok(65_536));
+        assert_eq!(parse_size(" 1 GiB "), Ok(1 << 30));
+        for bad in ["", "0", "MB", "3XB", "-1MB", "2GiB", "1.5.2M"] {
+            assert!(parse_size(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn dither_labels_parse_back() {
+        for d in
+            [Dither::None, Dither::FloydSteinberg, Dither::Sierra2_4a, Dither::Bayer(0), Dither::Bayer(5)]
+        {
+            assert_eq!(Dither::parse(&d.label()), Ok(d));
+        }
+        assert_eq!(Dither::parse("bayer"), Ok(Dither::Bayer(2)));
+        assert!(Dither::parse("bayer:6").is_err() && Dither::parse("ordered").is_err());
     }
 }

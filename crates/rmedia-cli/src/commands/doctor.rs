@@ -1,17 +1,12 @@
 //! `rmedia doctor` (FR-026).
 
 use rmedia_core::doctor;
-use rmedia_core::tools::LocateOptions;
 use rmedia_core::upscale::capability::CheckMode;
 
 use crate::{Cli, DoctorArgs, exit};
 
 pub async fn run(cli: &Cli, args: &DoctorArgs) -> u8 {
-    let opts = LocateOptions {
-        ffmpeg: cli.ffmpeg.clone(),
-        ffprobe: cli.ffprobe.clone(),
-        ..LocateOptions::default()
-    };
+    let opts = cli.locate();
     let (mut report, mut engine) = doctor::run(&opts);
     let mode = if args.recheck { CheckMode::Recheck } else { CheckMode::Ensure };
     let ctrl_c = super::ctrl_c_token();
@@ -79,10 +74,41 @@ pub async fn run(cli: &Cli, args: &DoctorArgs) -> u8 {
         if !report.accurate_containers.is_empty() {
             println!("accurate mode can write: {}", report.accurate_containers.join(", "));
         }
+        gif_lines(&report.gif);
         for p in &report.problems {
             eprintln!("problem:  {p}");
         }
         println!("status:   {}", if report.ok { "ready" } else { "NOT READY" });
     }
     if report.ok { exit::OK } else { exit::ENGINE }
+}
+
+/// GIF export: the built-in engine, the Reddit MP4 and the optional engines (contracts/cli.md
+/// › doctor). None of these change the status.
+fn gif_lines(g: &doctor::GifReport) {
+    let mp4_needs = |m: &String| m == "libx264" || m == "mp4 muxer";
+    let state = |ok: bool, have: &str, missing: Vec<&str>| {
+        if ok { format!("yes ({have})") } else { format!("no (missing {})", missing.join(", ")) }
+    };
+    let gif_missing = g.missing.iter().filter(|m| !mp4_needs(m)).map(String::as_str).collect();
+    let mp4_missing = g.missing.iter().filter(|m| mp4_needs(m)).map(String::as_str).collect();
+    println!("gif:      {}", state(g.gif, "palettegen, paletteuse, gif muxer", gif_missing));
+    println!("reddit mp4: {}", state(g.mp4, "libx264", mp4_missing));
+    for e in &g.engines {
+        let name = e.name.name();
+        match (&e.version, &e.path) {
+            (Some(v), Some(p)) if e.ok => {
+                let source = e.source.map(|s| format!("{s:?} ").to_lowercase()).unwrap_or_default();
+                println!("{name}: {v} ({source}{})", p.display());
+            }
+            _ => println!(
+                "{name}: no ({}; set {name}_path or {})",
+                crate::render::clean(e.reason.as_deref().unwrap_or("not found")),
+                e.name.env_var()
+            ),
+        }
+    }
+    for p in &g.target_problems {
+        eprintln!("problem:  GIF target file {}", crate::render::clean(p));
+    }
 }

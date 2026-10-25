@@ -60,6 +60,22 @@ pub enum Dither {
 }
 
 impl Dither {
+    /// Parses a CLI value, the inverse of [`Dither::label`]: `none`, `bayer` (ffmpeg's default
+    /// scale, 2), `bayer:S` (S 0..=5), `floyd-steinberg` or `sierra`.
+    pub fn parse(text: &str) -> Result<Dither, String> {
+        let bad = || format!("unknown dither {text:?} (none, bayer, bayer:0..5, floyd-steinberg, sierra)");
+        match text.trim().to_ascii_lowercase().as_str() {
+            "none" => Ok(Dither::None),
+            "floyd-steinberg" | "floyd_steinberg" => Ok(Dither::FloydSteinberg),
+            "sierra" | "sierra2_4a" => Ok(Dither::Sierra2_4a),
+            "bayer" => Ok(Dither::Bayer(2)),
+            t => match t.strip_prefix("bayer:").map(str::parse::<u8>) {
+                Some(Ok(scale @ 0..=5)) => Ok(Dither::Bayer(scale)),
+                _ => Err(bad()),
+            },
+        }
+    }
+
     /// `paletteuse` options.
     pub fn paletteuse(self) -> String {
         match self {

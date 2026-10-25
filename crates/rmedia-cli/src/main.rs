@@ -33,6 +33,14 @@ pub struct Cli {
     /// Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH).
     #[arg(long, global = true, value_name = "PATH")]
     pub ffprobe: Option<PathBuf>,
+    /// Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting,
+    /// $RMEDIA_GIFSICLE, then bundled, then PATH).
+    #[arg(long, global = true, value_name = "PATH")]
+    pub gifsicle: Option<PathBuf>,
+    /// Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting,
+    /// $RMEDIA_GIFSKI, then bundled, then PATH).
+    #[arg(long, global = true, value_name = "PATH")]
+    pub gifski: Option<PathBuf>,
     /// More detail (show ffmpeg commands with -v).
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
@@ -41,6 +49,19 @@ pub struct Cli {
     pub quiet: bool,
     #[command(subcommand)]
     pub command: Command,
+}
+
+impl Cli {
+    /// Where to find the engines: the paths given on the command line, then the usual lookup.
+    pub fn locate(&self) -> rmedia_core::tools::LocateOptions {
+        rmedia_core::tools::LocateOptions {
+            ffmpeg: self.ffmpeg.clone(),
+            ffprobe: self.ffprobe.clone(),
+            gifsicle: self.gifsicle.clone(),
+            gifski: self.gifski.clone(),
+            ..rmedia_core::tools::LocateOptions::default()
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -55,8 +76,7 @@ pub enum Command {
     Scan(ScanArgs),
     /// Show the video engine in use and its capabilities.
     Doctor(DoctorArgs),
-    /// Make GIFs (or silent Reddit MP4 loops) that fit a size target (feature 003).
-    #[command(hide = true)]
+    /// Make GIFs for Reddit that fit a size target (default: a Reddit post, 720 px, 15 fps).
     Gif(Box<GifArgs>),
 }
 
@@ -296,8 +316,223 @@ pub struct CommonArgs {
 #[derive(Debug, Args)]
 pub struct GifArgs {
     /// Input video files and/or folders (folders are scanned for videos).
-    #[arg(value_name = "INPUT")]
+    #[arg(value_name = "INPUT", required_unless_present_any = ["inputs_from", "list_targets"])]
     pub inputs: Vec<PathBuf>,
+    /// Read more inputs from a file (one path per line), or "-" for stdin.
+    #[arg(long, value_name = "FILE")]
+    pub inputs_from: Option<String>,
+    /// List the GIF targets and exit.
+    #[arg(long)]
+    pub list_targets: bool,
+    #[command(flatten)]
+    pub scan: ScanFlags,
+    /// Range start, for every input: 90, 1:30, 00:01:30.500 … [default: the start]
+    #[arg(short = 's', long, value_name = "TIME", allow_hyphen_values = true)]
+    pub start: Option<String>,
+    /// Range end (a time, or "end") [default: the end of the video].
+    #[arg(short = 'e', long, value_name = "TIME", conflicts_with = "duration", allow_hyphen_values = true)]
+    pub end: Option<String>,
+    /// Range length instead of an end time: 15, +15, 1:00 …
+    #[arg(short = 'd', long, value_name = "DURATION", allow_hyphen_values = true)]
+    pub duration: Option<String>,
+    #[command(flatten)]
+    pub gif: GifFlags,
+    #[command(flatten)]
+    pub common: CommonArgs,
+}
+
+/// GIF options (`rmedia gif`). Unset flags come from the target.
+#[derive(Debug, Args, Clone, Default)]
+pub struct GifFlags {
+    /// GIF target (see `gif --list-targets`) [default: reddit-post].
+    #[arg(long, value_name = "ID")]
+    pub target: Option<String>,
+    /// Output format [default: gif].
+    #[arg(long, value_enum)]
+    pub format: Option<FormatArg>,
+    /// Output width in pixels; never above the source's [default: the target's].
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(64..=1920))]
+    pub width: Option<u32>,
+    /// Frames per second, at most 50 for a GIF [default: the target's].
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..=60))]
+    pub fps: Option<u32>,
+    /// Palette size, 2 to 256 (built-in engine) [default: the target's].
+    #[arg(long, alias = "colours", value_name = "N", value_parser = clap::value_parser!(u16).range(2..=256))]
+    pub colors: Option<u16>,
+    /// Dithering: none, bayer, bayer:0..5, floyd-steinberg or sierra [default: the target's].
+    #[arg(long, value_name = "MODE", value_parser = parse_dither)]
+    pub dither: Option<rmedia_core::gif::target::Dither>,
+    /// gifsicle lossy compression, 0 to 200 (needs gifsicle) [default: the target's].
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u16).range(0..=200))]
+    pub lossy: Option<u16>,
+    /// How many times it plays: forever, or 1 to 65535 [default: forever].
+    #[arg(long = "loop", value_name = "N", value_parser = parse_loop)]
+    pub loop_count: Option<rmedia_core::gif::LoopCount>,
+    /// The size to aim for (3MB, 2.5MiB, 800k), or none [default: the target's].
+    #[arg(long, value_name = "SIZE", value_parser = parse_budget)]
+    pub budget: Option<BudgetArg>,
+    /// Never write above this size [default: the budget, else the target's hard limit].
+    #[arg(long, value_name = "SIZE", value_parser = parse_size)]
+    pub hard_limit: Option<u64>,
+    /// Allow shortening the range when no setting fits the budget.
+    #[arg(long)]
+    pub allow_trim: bool,
+    /// GIF engine: the target's (auto), the built-in one or gifski [default: auto].
+    #[arg(long, value_enum)]
+    pub engine: Option<EngineArg>,
+    /// Fail instead of falling back when the chosen engine is missing.
+    #[arg(long)]
+    pub strict_engine: bool,
+    /// Never run the gifsicle optimiser.
+    #[arg(long)]
+    pub no_optimise: bool,
+    /// Output shape [default: source].
+    #[arg(long, value_enum)]
+    pub shape: Option<ShapeArg>,
+    /// How to reach another shape [default: smart].
+    #[arg(long, value_enum)]
+    pub framing: Option<ReframeArg>,
+    /// With --dry-run, skip the sample encodes (the size estimate is shown as pending).
+    /// Without it, a dry run encodes short samples of each input in a temporary folder.
+    #[arg(long)]
+    pub no_sample: bool,
+}
+
+impl GifFlags {
+    /// The flags given, as one layer of overrides.
+    pub fn partial(&self) -> rmedia_core::gif::PartialGif {
+        use rmedia_core::gif::BudgetSpec;
+        let budget = match (self.budget, self.hard_limit) {
+            (Some(BudgetArg::Off), _) => Some(None),
+            (Some(BudgetArg::Size(soft)), hard) => Some(Some(BudgetSpec { soft: Some(soft), hard })),
+            (None, Some(hard)) => Some(Some(BudgetSpec { soft: None, hard: Some(hard) })),
+            (None, None) => None,
+        };
+        rmedia_core::gif::PartialGif {
+            enabled: None,
+            target: self.target.clone(),
+            format: self.format.map(Into::into),
+            engine: self.engine.map(Into::into),
+            strict_engine: self.strict_engine.then_some(true),
+            optimise: self.no_optimise.then_some(false),
+            loop_count: self.loop_count,
+            shape: self.shape.map(Into::into),
+            framing: self.framing.map(Into::into),
+            width: self.width.map(Some),
+            fps: self.fps.map(Some),
+            colours: self.colors.map(Some),
+            dither: self.dither.map(Some),
+            lossy: self.lossy.map(Some),
+            budget,
+            allow_trim: self.allow_trim.then_some(true),
+        }
+    }
+
+    /// The flags over the built-in defaults.
+    pub fn options(&self) -> rmedia_core::gif::GifOptions {
+        self.partial().apply(None).expect("a layer without `enabled: false` turns GIF export on")
+    }
+
+    /// A combination clap cannot check.
+    pub fn usage_error(&self) -> Option<String> {
+        if self.format != Some(FormatArg::Mp4)
+            && let Some(fps) = self.fps.filter(|f| *f > 50)
+        {
+            return Some(format!("--fps {fps}: a GIF plays at most 50 fps (2 cs per frame)"));
+        }
+        if self.budget == Some(BudgetArg::Off) && self.hard_limit.is_some() {
+            return Some("--hard-limit cannot be combined with --budget none".into());
+        }
+        None
+    }
+}
+
+/// `--budget`: a size, or `none` (no budget search).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BudgetArg {
+    Off,
+    Size(u64),
+}
+
+fn parse_size(s: &str) -> Result<u64, String> {
+    rmedia_core::gif::parse_size(s)
+}
+
+fn parse_budget(s: &str) -> Result<BudgetArg, String> {
+    if s.trim().eq_ignore_ascii_case("none") {
+        Ok(BudgetArg::Off)
+    } else {
+        parse_size(s).map(BudgetArg::Size)
+    }
+}
+
+fn parse_dither(s: &str) -> Result<rmedia_core::gif::target::Dither, String> {
+    rmedia_core::gif::target::Dither::parse(s)
+}
+
+fn parse_loop(s: &str) -> Result<rmedia_core::gif::LoopCount, String> {
+    use rmedia_core::gif::LoopCount;
+    if s.trim().eq_ignore_ascii_case("forever") {
+        return Ok(LoopCount::Forever);
+    }
+    match s.trim().parse::<u16>() {
+        Ok(n @ 1..) => Ok(LoopCount::Plays(n)),
+        _ => Err(format!("{s:?}: use forever, or a number of plays from 1 to 65535")),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum FormatArg {
+    Gif,
+    Mp4,
+}
+
+impl From<FormatArg> for rmedia_core::gif::Format {
+    fn from(f: FormatArg) -> Self {
+        match f {
+            FormatArg::Gif => Self::Gif,
+            FormatArg::Mp4 => Self::Mp4,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum EngineArg {
+    Auto,
+    Builtin,
+    Gifski,
+}
+
+impl From<EngineArg> for rmedia_core::gif::EngineChoice {
+    fn from(e: EngineArg) -> Self {
+        match e {
+            EngineArg::Auto => Self::Auto,
+            EngineArg::Builtin => Self::Builtin,
+            EngineArg::Gifski => Self::Gifski,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ShapeArg {
+    Source,
+    #[value(name = "9:16")]
+    Tall,
+    #[value(name = "4:5")]
+    Feed,
+    #[value(name = "1:1")]
+    Square,
+}
+
+impl From<ShapeArg> for rmedia_core::gif::Shape {
+    fn from(s: ShapeArg) -> Self {
+        match s {
+            ShapeArg::Source => Self::Source,
+            ShapeArg::Tall => Self::Tall,
+            ShapeArg::Feed => Self::Feed,
+            ShapeArg::Square => Self::Square,
+        }
+    }
 }
 
 #[derive(Debug, Args)]

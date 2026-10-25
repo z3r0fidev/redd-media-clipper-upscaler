@@ -2,7 +2,6 @@
 
 use rmedia_core::preset::{PresetRegistry, PresetSource, VideoCodec};
 use rmedia_core::request::{BatchRequest, ClipRequest, Mode, Origin, PartialOptions, SourceRequest};
-use rmedia_core::tools::LocateOptions;
 use rmedia_core::upscale::prepare_plan;
 use rmedia_core::{EndSpec, Ts, doctor, plan, settings};
 use serde_json::json;
@@ -17,11 +16,7 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
     if args.list_presets {
         return list_presets(&out);
     }
-    let opts = LocateOptions {
-        ffmpeg: cli.ffmpeg.clone(),
-        ffprobe: cli.ffprobe.clone(),
-        ..LocateOptions::default()
-    };
+    let opts = cli.locate();
     let (mut report, mut engine) = doctor::run(&opts);
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));

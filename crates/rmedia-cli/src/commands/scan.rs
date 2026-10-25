@@ -8,7 +8,7 @@ use rmedia_core::discover::{self, ScanEvent, ScanResult};
 use rmedia_core::input::pathlist;
 use rmedia_core::pathser::lossy;
 use rmedia_core::probe::{MediaInfo, StreamKind};
-use rmedia_core::tools::{LocateOptions, Tools};
+use rmedia_core::tools::Tools;
 use rmedia_core::{Error, doctor};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -23,11 +23,7 @@ pub async fn run(cli: &Cli, args: &ScanArgs) -> u8 {
             return out.input_error(&format!("{} does not exist", r.display()));
         }
     }
-    let opts = LocateOptions {
-        ffmpeg: cli.ffmpeg.clone(),
-        ffprobe: cli.ffprobe.clone(),
-        ..LocateOptions::default()
-    };
+    let opts = cli.locate();
     let (report, engine) = doctor::run(&opts);
     let Some((tools, _)) = engine else {
         return out.engine_error(&report.problems.join("; "));

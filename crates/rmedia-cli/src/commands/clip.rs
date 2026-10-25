@@ -9,7 +9,6 @@ use rmedia_core::request::{
     AudioSel, BatchRequest, ClipRequest, MULTI_SOURCE_NAME_TEMPLATE, Options, Origin, PartialOptions,
     SourceRequest, StreamSelection, SubSel,
 };
-use rmedia_core::tools::LocateOptions;
 use rmedia_core::{EndSpec, Ts, doctor};
 use tokio_util::sync::CancellationToken;
 
@@ -36,11 +35,7 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
         eprintln!("error: {} {verb} --upscale", given.join(", "));
         return exit::USAGE;
     }
-    let opts = LocateOptions {
-        ffmpeg: cli.ffmpeg.clone(),
-        ffprobe: cli.ffprobe.clone(),
-        ..LocateOptions::default()
-    };
+    let opts = cli.locate();
     let (mut report, mut engine) = doctor::run(&opts);
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));

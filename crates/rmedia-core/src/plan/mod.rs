@@ -277,6 +277,25 @@ impl Plan {
     }
 }
 
+/// The bytes each output folder needs for the upscale and GIF jobs that would run (clips are
+/// not estimated).
+pub fn space_needs(jobs: &[PlannedJob]) -> std::collections::BTreeMap<PathBuf, u64> {
+    let mut needs = std::collections::BTreeMap::new();
+    for job in jobs {
+        let bytes = match &job.spec {
+            JobSpec::Upscale(u) => u.up.estimate.bytes,
+            JobSpec::Gif(g) => crate::gif::plan::rough_bytes(&g.gif),
+            JobSpec::Clip(_) => continue,
+        };
+        if let Some(dir) = job.output.parent()
+            && job.disposition == Disposition::Run
+        {
+            *needs.entry(dir.to_path_buf()).or_default() += bytes;
+        }
+    }
+    needs
+}
+
 /// Validates every request and resolves outputs. Reports all problems at once (FR-003).
 /// Upscale presets come from the built-ins plus the user's preset folder.
 pub async fn plan(req: &BatchRequest, tools: &Tools, caps: &Caps, cancel: &CancellationToken) -> Plan {
@@ -1013,21 +1032,10 @@ impl Planner<'_> {
         }
     }
 
-    /// Warns when an output folder lacks room for the upscale outputs planned into it (FR-021).
+    /// Warns when an output folder lacks room for the upscale or GIF outputs planned into it
+    /// (FR-021).
     fn check_free_space(&mut self) {
-        let mut needs: std::collections::BTreeMap<PathBuf, u64> = std::collections::BTreeMap::new();
-        for job in &self.jobs {
-            let bytes = match &job.spec {
-                JobSpec::Upscale(u) => u.up.estimate.bytes,
-                JobSpec::Gif(g) => crate::gif::plan::rough_bytes(&g.gif),
-                JobSpec::Clip(_) => continue,
-            };
-            if let Some(dir) = job.output.parent()
-                && job.disposition == Disposition::Run
-            {
-                *needs.entry(dir.to_path_buf()).or_default() += bytes;
-            }
-        }
+        let needs = space_needs(&self.jobs);
         for message in estimate::check_space(&needs, estimate::free_space) {
             self.issues.push(Issue {
                 severity: Severity::Warning,
