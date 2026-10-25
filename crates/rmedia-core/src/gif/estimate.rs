@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use tokio_util::sync::CancellationToken;
 
 use super::budget;
-use super::graph::{gifsicle_args, palette_settings, pipe_head, y4m_graph, y4m_tail};
+use super::graph::{gifsicle_args, mp4_codec_args, palette_settings, pipe_head, y4m_graph, y4m_tail};
 use super::plan::{EngineUsed, Estimate, EstimateFrom, GifSpec, Settings};
 use crate::error::{Error, Result};
 use crate::exec::process;
@@ -35,6 +35,7 @@ const CENTRES: [f64; 3] = [0.1, 0.5, 0.9];
 
 const SAMPLE: &str = "sample.gif";
 const SAMPLE_OPT: &str = "sample-opt.gif";
+const SAMPLE_MP4: &str = "sample.mp4";
 
 /// The source times the sample windows start at, for a range of `len` seconds from `start`;
 /// `None` when the range is short enough to encode whole.
@@ -99,12 +100,14 @@ pub enum SampleOut<'a> {
     Gif(&'a str),
     /// y4m frames on stdout, for gifski.
     Y4m,
+    /// The Reddit MP4, at this relative name.
+    Mp4(&'a str),
 }
 
 impl SampleOut<'_> {
     fn head(self) -> Vec<OsString> {
         match self {
-            SampleOut::Gif(_) => common_args(),
+            SampleOut::Gif(_) | SampleOut::Mp4(_) => common_args(),
             SampleOut::Y4m => pipe_head(None),
         }
     }
@@ -114,6 +117,11 @@ impl SampleOut<'_> {
         match self {
             SampleOut::Gif(output) => (one_pass(chain, s), gif_tail(spec, output)),
             SampleOut::Y4m => (y4m_graph(chain), y4m_tail()),
+            SampleOut::Mp4(output) => {
+                let mut tail = os(&["-map", "[g]"]);
+                tail.extend(mp4_codec_args(s.crf.unwrap_or(spec.gif.target.mp4.crf), output));
+                (format!("{chain}[g]"), tail)
+            }
         }
     }
 }
@@ -286,12 +294,17 @@ pub async fn sample_estimate(
     dir: &Path,
     cancel: &CancellationToken,
 ) -> Result<budget::Estimate> {
-    for f in [SAMPLE, SAMPLE_OPT] {
+    for f in [SAMPLE, SAMPLE_OPT, SAMPLE_MP4] {
         let _ = std::fs::remove_file(dir.join(f));
     }
     let starts = windows(spec.cut.requested.start, spec.gif.len);
-    let gifski = spec.gif.gifski.as_deref().filter(|_| spec.gif.engine == EngineUsed::Gifski);
-    let out = if gifski.is_some() { SampleOut::Y4m } else { SampleOut::Gif(SAMPLE) };
+    let gifski =
+        spec.gif.gifski.as_deref().filter(|_| spec.gif.engine == EngineUsed::Gifski && s.crf.is_none());
+    let out = match (gifski, s.crf) {
+        (_, Some(_)) => SampleOut::Mp4(SAMPLE_MP4),
+        (Some(_), None) => SampleOut::Y4m,
+        (None, None) => SampleOut::Gif(SAMPLE),
+    };
     let args = match &starts {
         Some(w) => sample_args(spec, s, w, out),
         None => whole_args(spec, s, out),
@@ -307,7 +320,8 @@ pub async fn sample_estimate(
         let job_output = dir.join(SAMPLE);
         pipe.run(tools, args, s, spec.gif.loop_count, None, &job_output, cancel, |_| {}).await?;
     } else {
-        let out = bounded(dir.join(SAMPLE), cancel, |stop| async move {
+        let written = if s.crf.is_some() { SAMPLE_MP4 } else { SAMPLE };
+        let out = bounded(dir.join(written), cancel, |stop| async move {
             process::run_lines_in(&tools.ffmpeg.path, &args, Some(dir), &stop, |_| {}).await
         })
         .await?;
@@ -315,10 +329,38 @@ pub async fn sample_estimate(
             return Err(Error::engine_failed("the sample encode failed", out.stderr_tail));
         }
     }
+    if s.crf.is_some() {
+        return mp4_measure(spec, dir);
+    }
     if spec.gif.optimiser.is_some() && s.gifski.is_none() {
         return post_estimate(tools, spec, s, dir, cancel).await;
     }
     measure(tools, spec, s, dir, SAMPLE, cancel).await
+}
+
+/// An MP4 sample's prediction: its bytes per second of video, over the job's length (no
+/// GIF-style key frame; the container's few hundred bytes are in the rate).
+fn mp4_measure(spec: &GifSpec, dir: &Path) -> Result<budget::Estimate> {
+    let bytes = std::fs::metadata(dir.join(SAMPLE_MP4))
+        .map_err(|e| Error::engine_failed(format!("the MP4 sample was not written: {e}"), String::new()))?
+        .len();
+    let sampled = match windows(spec.cut.requested.start, spec.gif.len) {
+        Some(w) => w.len() as f64 * WINDOW,
+        None => spec.gif.len,
+    };
+    let predicted = (bytes as f64 * spec.gif.len / sampled.max(f64::EPSILON)).round() as u64;
+    Ok(budget::Estimate { sample_bytes: bytes, bytes: predicted, fixed: 0 })
+}
+
+/// The "MP4 would be smaller" hint of a GIF job (US3 scenario 2, R6): one MP4 sample of the same
+/// windows at the GIF's start size and frame rate.
+pub async fn mp4_hint(tools: &Tools, spec: &GifSpec, dir: &Path, cancel: &CancellationToken) -> Result<u64> {
+    let mut s = spec.gif.start.clone();
+    s.crf = Some(spec.gif.target.mp4.crf);
+    s.width &= !1;
+    s.height = (s.height / 2 * 2).max(2);
+    s.gifski = None;
+    Ok(sample_estimate(tools, spec, &s, dir, cancel).await?.bytes)
 }
 
 /// Re-runs gifsicle on the last sample at `s.lossy` and measures it: a budget search's
@@ -422,26 +464,35 @@ pub async fn predict(
     dir: &Path,
     cancel: &CancellationToken,
 ) -> Result<Estimate> {
-    if let Some(b) = spec.gif.budget {
+    let mut est = if let Some(b) = spec.gif.budget {
         let mut sampler = Predicting { tools, spec, dir, cancel, seen: Vec::new() };
         let found = budget::search(&search_input(spec, b), &mut sampler).await?;
-        return Ok(Estimate {
+        Estimate {
             bytes: Some(found.bytes),
             from: EstimateFrom::Search,
             settings: found.chosen,
             lowered: found.record.lowered,
             mp4_bytes: None,
-        });
+        }
+    } else {
+        let s = spec.gif.start.clone();
+        let bytes = sample(tools, spec, &s, dir, cancel).await?;
+        Estimate {
+            bytes: Some(bytes),
+            from: EstimateFrom::Sample,
+            settings: s,
+            lowered: Vec::new(),
+            mp4_bytes: None,
+        }
+    };
+    if spec.gif.format == super::Format::Gif && spec.gif.target.mp4.hint {
+        match mp4_hint(tools, spec, dir, cancel).await {
+            Ok(b) => est.mp4_bytes = Some(b),
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(_) => {} // the hint is optional: a failed MP4 sample leaves it out
+        }
     }
-    let s = spec.gif.start.clone();
-    let bytes = sample(tools, spec, &s, dir, cancel).await?;
-    Ok(Estimate {
-        bytes: Some(bytes),
-        from: EstimateFrom::Sample,
-        settings: s,
-        lowered: Vec::new(),
-        mp4_bytes: None,
-    })
+    Ok(est)
 }
 
 /// A private temporary folder, removed with everything in it when dropped.

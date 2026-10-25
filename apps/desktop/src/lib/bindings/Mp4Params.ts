@@ -3,4 +3,8 @@
 /**
  * Reddit MP4 (silent loop) defaults of a target.
  */
-export type Mp4Params = { crf: number, max_fps: number, };
+export type Mp4Params = { crf: number, max_fps: number, 
+/**
+ * GIF jobs of this target estimate the MP4's size too ("the MP4 would be smaller", US3).
+ */
+hint: boolean, };

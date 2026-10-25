@@ -171,7 +171,8 @@ async fn cancel_gif_during(stage: &str, engine_choice: EngineChoice, budget: Opt
     let cfg = RunConfig { jobs: 1, state_dir: Some(out.path().join("state")) };
     let handle = exec::start(plan, tools, cfg, Arc::new(Notify(tx)));
     loop {
-        match tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
+        // Generous: under a loaded test run the palette pass alone can take half a minute.
+        match tokio::time::timeout(Duration::from_secs(90), rx.recv()).await {
             Ok(Some(Event::JobStage { stage: s, .. })) if s == stage => break,
             Ok(Some(_)) => continue,
             other => panic!("no {stage} stage: {other:?}"),

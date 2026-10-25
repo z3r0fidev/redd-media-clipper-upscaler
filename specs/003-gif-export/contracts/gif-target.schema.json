@@ -175,6 +175,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 60
+        },
+        "hint": {
+          "type": "boolean",
+          "description": "GIF jobs of this target also estimate the MP4's size (US3); default false"
         }
       }
     },

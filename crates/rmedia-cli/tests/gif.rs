@@ -283,3 +283,23 @@ fn a_budgeted_run_reports_its_search() {
     assert_eq!(m["search"]["fit"], "soft", "{m}");
     assert!(m["trimmed"].is_null(), "{m}");
 }
+
+/// T056: `--format mp4` writes the Reddit MP4, and a Reddit-post GIF run mentions the MP4 once.
+#[test]
+fn the_mp4_format_and_the_mp4_note_once_per_run() {
+    require_engine!("palettegen", "paletteuse", "libx264");
+    let d = tempfile::tempdir().unwrap();
+    let a = copy(Fixture::Land6, d.path(), "a.mp4");
+    let b = copy(Fixture::Land6, d.path(), "b.mp4");
+    let o = rmedia(d.path()).args(["gif", "--dry-run"]).arg(&a).arg(&b).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let text = String::from_utf8_lossy(&o.stdout);
+    assert_eq!(text.matches("note: as a Reddit MP4").count(), 1, "{text}");
+
+    let o = rmedia(d.path()).args(["gif", "--format", "mp4"]).arg(&a).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let out = d.path().join("gifs/a_reddit-post.mp4");
+    assert!(rmedia_core::gif::verify::mp4_faststart(&out).unwrap());
+    let text = String::from_utf8_lossy(&o.stdout);
+    assert!(text.contains("libx264") && !text.contains("note: as a Reddit MP4"), "{text}");
+}

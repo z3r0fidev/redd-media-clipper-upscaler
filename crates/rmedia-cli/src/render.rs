@@ -142,6 +142,14 @@ impl Output {
         for i in plan.issues.iter().filter(|i| i.severity == Severity::Warning) {
             println!("warning: {}", i.message);
         }
+        // "The MP4 would be smaller", once per run (US3 scenario 2).
+        let hint = plan.jobs.iter().find_map(|j| match &j.spec {
+            JobSpec::Gif(g) => g.gif.estimate.mp4_bytes.map(|m| (g.gif.estimate.bytes, m)),
+            _ => None,
+        });
+        if let Some((gif, mp4)) = hint {
+            mp4_note(gif, mp4);
+        }
         let skipped = plan.jobs.iter().filter(|j| j.disposition != Disposition::Run).count();
         let noun = if plan.jobs.iter().all(|j| j.kind() == "clip") { "clip(s)" } else { "job(s)" };
         println!(
@@ -216,9 +224,29 @@ impl Output {
                 JobOutcome::Cancelled => println!("✗ {} cancelled", j.output.display()),
             }
         }
+        let hint = s.jobs.iter().find_map(|j| match &j.outcome {
+            JobOutcome::Succeeded {
+                measure: JobMeasure::Gif { bytes, mp4_estimate: Some(m), .. }, ..
+            } => Some((Some(*bytes), *m)),
+            _ => None,
+        });
+        if let Some((gif, mp4)) = hint {
+            mp4_note(gif, mp4);
+        }
         println!(
             "{} succeeded, {} skipped, {} failed, {} cancelled",
             s.succeeded, s.skipped, s.failed, s.cancelled
+        );
+    }
+}
+
+/// "As a Reddit MP4 this would be about …": printed once per run when it is smaller.
+fn mp4_note(gif: Option<u64>, mp4: u64) {
+    use rmedia_core::upscale::estimate::human_bytes;
+    if gif.is_none_or(|g| mp4 < g) {
+        println!(
+            "note: as a Reddit MP4 (--format mp4, silent loop) this would be about {}; Reddit converts GIFs to video anyway",
+            human_bytes(mp4)
         );
     }
 }

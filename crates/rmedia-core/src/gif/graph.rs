@@ -13,6 +13,8 @@ use crate::plan::ffargs::{common_args, input_parts};
 
 /// The encode output (the built-in engine's or gifski's), in the scratch folder.
 pub const ENCODED: &str = "enc.gif";
+/// The Reddit MP4's encode, in the scratch folder.
+pub const ENCODED_MP4: &str = "enc.mp4";
 /// gifsicle's output, in the scratch folder.
 pub const OPTIMISED: &str = "opt.gif";
 /// The gifski pipe's ffmpeg progress, in the scratch folder (its stdout carries the frames).
@@ -193,6 +195,51 @@ pub fn strip_loop_block(path: &Path) -> std::io::Result<bool> {
         let _ = std::fs::remove_file(&tmp);
     }
     r.map(|()| true)
+}
+
+/// The Reddit MP4's encoder options (research R6): x264 at `crf`, High profile, 4:2:0, `avc1`,
+/// fast start, no audio, subtitles, data or metadata.
+pub fn mp4_codec_args(crf: u8, output: &str) -> Vec<OsString> {
+    let crf = crf.to_string();
+    os(&[
+        "-an",
+        "-sn",
+        "-dn",
+        "-map_metadata",
+        "-1",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "slow",
+        "-crf",
+        &crf,
+        "-profile:v",
+        "high",
+        "-pix_fmt",
+        "yuv420p",
+        "-tag:v",
+        "avc1",
+        "-movflags",
+        "+faststart",
+        "-fflags",
+        "+bitexact",
+        "-flags:v",
+        "+bitexact",
+        "-f",
+        "mp4",
+        output,
+    ])
+}
+
+/// The Reddit MP4's full encode of `spec` at `s` into `output` (relative).
+pub fn mp4_args(spec: &GifSpec, s: &Settings, output: &str) -> Vec<OsString> {
+    let (source, range) = input_parts(&spec.cut);
+    let mut a = common_args();
+    a.extend(source);
+    a.extend(range);
+    a.extend(os(&["-filter_complex", &format!("{}[v]", spec.frame.chain(s)), "-map", "[v]"]));
+    a.extend(mp4_codec_args(s.crf.unwrap_or(23), output));
+    a
 }
 
 /// The gifsicle post-pass: `-O2`, optionally lossy, from `input` to `output` (both relative;

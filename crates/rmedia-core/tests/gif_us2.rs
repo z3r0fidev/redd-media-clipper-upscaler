@@ -20,7 +20,7 @@ use rmedia_testkit::{Fixture, fixture, require_engine, require_tool};
 use tokio_util::sync::CancellationToken;
 
 /// The ladder's order (FR-009): `lowered` lists a subsequence of it.
-const LADDER: [&str; 6] = ["lossy", "dither", "colours", "fps", "width", "lossy_quality"];
+const LADDER: [&str; 7] = ["lossy", "dither", "colours", "lossy_quality", "crf", "fps", "width"];
 
 fn budgeted(out: &Path, soft: u64, hard: Option<u64>, allow_trim: bool) -> Options {
     let gif = GifOptions {

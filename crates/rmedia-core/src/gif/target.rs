@@ -137,6 +137,9 @@ pub struct GifskiParams {
 pub struct Mp4Params {
     pub crf: u8,
     pub max_fps: u32,
+    /// GIF jobs of this target estimate the MP4's size too ("the MP4 would be smaller", US3).
+    #[serde(default)]
+    pub hint: bool,
 }
 
 /// A GIF target (data-model.md › GifTarget).

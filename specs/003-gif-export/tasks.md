@@ -505,7 +505,7 @@ handling and consented trimming.
 **Independent Test**: `Land6 --format mp4` is silent, faststart, playable, and smaller than its
 GIF.
 
-- [ ] T054 [P] [US3] Write `core-tests/gif_us3.rs`:
+- [X] T054 [P] [US3] Write `core-tests/gif_us3.rs`:
   - video stream only, faststart, `avc1`, even dimensions, duration within one frame;
   - the source rate is kept up to `mp4.max_fps`;
   - budget: the CRF ladder runs before any width drop;
@@ -514,11 +514,18 @@ GIF.
   - without libx264, MP4 is `ENGINE_MISSING` while GIF still works (simulated through caps);
   - the reverse: without `palettegen`/`paletteuse`, GIF is `ENGINE_MISSING` while MP4 still
     works (simulated through caps).
-- [ ] T055 [US3] Implement the MP4 path in `core/gif/graph.rs` (encode argv), `core/gif/budget.rs`
+- [X] T055 [US3] Implement the MP4 path in `core/gif/graph.rs` (encode argv), `core/gif/budget.rs`
   (the CRF rung list) and `core/exec/gif.rs` (stages), plus the MP4 hint sample in
   `core/gif/estimate.rs`.
-- [ ] T056 [US3] Update the CLI `--format mp4` rendering and the "MP4 would be smaller" line
+- [X] T056 [US3] Update the CLI `--format mp4` rendering and the "MP4 would be smaller" line
   (snapshots).
+
+  Done 2026-10-25. The MP4 runs through the same job: `GifChain.mp4` ends the frame chain in
+  BT.709 limited `yuv420p`, `Settings.crf`, the search's CRF rung (+3 ×3, rate kept), one
+  `encode` stage and `check_mp4` + fast start. The hint is target data (`mp4.hint`, on for
+  `reddit-post`): one MP4 sample at the GIF's start size and rate, in the dry run and the
+  outcome; the CLI prints it once per run. SC-006: 6.1× (Land6), 18.2× (Busy10) at 640 px,
+  15 fps.
 
 **Checkpoint**: run `quickstart.md` › US3. Then fmt, clippy, tests and senior-code-reviewer.
 

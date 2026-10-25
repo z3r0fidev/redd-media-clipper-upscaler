@@ -24,7 +24,8 @@
   "max_duration": 15,
   "mp4": {
     "crf": 23,
-    "max_fps": 60
+    "max_fps": 60,
+    "hint": true
   },
   "floor_fps": 10,
   "lossy": 30

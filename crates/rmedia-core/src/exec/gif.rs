@@ -19,13 +19,14 @@ use super::process;
 use super::progress::{ProgressBlock, ProgressParser};
 use crate::error::{Error, IssueCode, Result};
 use crate::event::{JobMeasure, Span};
+use crate::gif::Format;
 use crate::gif::LoopCount;
 use crate::gif::graph::{
-    ENCODED, OPTIMISED, PROGRESS, encode_args, gifsicle_args, gifski_args, palette_args, palette_name,
-    strip_loop_block, y4m_args,
+    ENCODED, ENCODED_MP4, OPTIMISED, PROGRESS, encode_args, gifsicle_args, gifski_args, mp4_args,
+    palette_args, palette_name, strip_loop_block, y4m_args,
 };
 use crate::gif::plan::{EngineUsed, GifSpec, Settings};
-use crate::gif::verify::{GifExpect, check_gif, gif_facts};
+use crate::gif::verify::{GifExpect, Mp4Expect, check_gif, check_mp4, gif_facts, mp4_faststart};
 use crate::gif::{budget, estimate};
 use crate::time::Ts;
 use crate::tools::Tools;
@@ -45,11 +46,13 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
         .ok_or_else(|| Error::InvalidInput("a GIF job needs its scratch folder".into()))?
         .to_path_buf();
     let gifski = spec.gif.gifski.as_deref().filter(|_| spec.gif.engine == EngineUsed::Gifski);
-    let optimise = spec.gif.optimiser.is_some() && gifski.is_none();
+    let mp4 = spec.gif.format == Format::Mp4;
+    let optimise = spec.gif.optimiser.is_some() && gifski.is_none() && !mp4;
     let budget = spec.gif.budget;
     let limit = budget.map_or(MAX_OUTPUT, |b| b.hard.saturating_mul(2));
-    let stages = Stages::new(gifski.is_some(), optimise, budget.is_some());
-    let mut enc = Encoder { scratch: &scratch, gifski, optimise, limit, stages: &stages, fulls: 0 };
+    // The MP4 and the gifski pipe are one encode stage each.
+    let stages = Stages::new(gifski.is_some() || mp4, optimise, budget.is_some());
+    let mut enc = Encoder { scratch: &scratch, gifski, mp4, optimise, limit, stages: &stages, fulls: 0 };
 
     let (s, len, result, search, over) = match budget {
         Some(b) => {
@@ -70,20 +73,38 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
     move_into(&scratch.join(result), ctx.temp)?;
 
     stages.enter(ctx, "verify");
-    let facts = gif_facts(ctx.tools, ctx.temp, ctx.cancel).await?;
-    let frames = crate::upscale::reframe::frame_count(len, s.fps()) as u64;
-    let expect = GifExpect {
-        width: s.width,
-        height: s.height,
-        frames,
-        // gifsicle merges identical frames, and gifski rounds its own delays: both are checked
-        // by their total display time.
-        length_cs: (result == OPTIMISED || gifski.is_some())
-            .then(|| crate::gif::timing::delays(s.rate, frames as usize).into_iter().map(u64::from).sum()),
-        loop_count: spec.gif.loop_count,
-        max_bytes: budget.map(|b| b.hard),
+    let bytes = if mp4 {
+        let info = crate::probe::probe(ctx.tools, ctx.temp, ctx.cancel)
+            .await
+            .map_err(|e| Error::VerifyFailed(e.to_string()))?;
+        let faststart = mp4_faststart(ctx.temp).map_err(|e| Error::VerifyFailed(e.to_string()))?;
+        let expect = Mp4Expect {
+            width: s.width,
+            height: s.height,
+            duration: Ts::from_secs_f64(len),
+            frame: Ts::from_secs_f64(1.0 / s.fps()),
+            max_bytes: budget.map(|b| b.hard),
+        };
+        check_mp4(&info, faststart, &expect).map_err(Error::VerifyFailed)?;
+        info.size
+    } else {
+        let facts = gif_facts(ctx.tools, ctx.temp, ctx.cancel).await?;
+        let frames = crate::upscale::reframe::frame_count(len, s.fps()) as u64;
+        let expect = GifExpect {
+            width: s.width,
+            height: s.height,
+            frames,
+            // gifsicle merges identical frames, and gifski rounds its own delays: both are
+            // checked by their total display time.
+            length_cs: (result == OPTIMISED || gifski.is_some()).then(|| {
+                crate::gif::timing::delays(s.rate, frames as usize).into_iter().map(u64::from).sum()
+            }),
+            loop_count: spec.gif.loop_count,
+            max_bytes: budget.map(|b| b.hard),
+        };
+        check_gif(&facts, &expect).map_err(Error::VerifyFailed)?;
+        facts.bytes
     };
-    check_gif(&facts, &expect).map_err(Error::VerifyFailed)?;
     if let (Some(bytes), Some(b)) = (over, budget) {
         ctx.warn_code(
             IssueCode::OverRecommended,
@@ -99,7 +120,16 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
     ctx.stage_fraction(1.0, total);
     let start = spec.cut.requested.start;
     let trimmed = (len < spec.gif.len - 1e-6).then(|| Span { start, end: start + Ts::from_secs_f64(len) });
-    Ok(measure(spec, &s, facts.bytes, optimise, search, trimmed))
+    // "The MP4 would be smaller" (US3): one MP4 sample, unless the dry run already made it.
+    let mut mp4_estimate = spec.gif.estimate.mp4_bytes;
+    if !mp4 && spec.gif.target.mp4.hint && mp4_estimate.is_none() {
+        match estimate::mp4_hint(ctx.tools, spec, &scratch, ctx.cancel).await {
+            Ok(b) => mp4_estimate = Some(b),
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(_) => {} // optional
+        }
+    }
+    Ok(measure(spec, &s, bytes, optimise, search, trimmed, mp4_estimate))
 }
 
 /// The stages of a GIF job and their weights (data-model.md › Stages and weights), renormalised
@@ -156,6 +186,8 @@ impl Stages {
 struct Encoder<'a> {
     scratch: &'a Path,
     gifski: Option<&'a Path>,
+    /// The Reddit MP4: one x264 encode.
+    mp4: bool,
     optimise: bool,
     limit: u64,
     stages: &'a Stages,
@@ -170,7 +202,7 @@ impl Encoder<'_> {
         let retry = self.fulls > 0;
         self.fulls += 1;
         // Every tool runs with `-n` (or its own no-clobber rule): clear the last attempt.
-        for f in [ENCODED, OPTIMISED] {
+        for f in [ENCODED, OPTIMISED, ENCODED_MP4] {
             let _ = std::fs::remove_file(self.scratch.join(f));
         }
         let span = spec.cut.requested;
@@ -182,6 +214,12 @@ impl Encoder<'_> {
         };
         if retry {
             self.stages.restart(ctx, "encode");
+        }
+        if self.mp4 {
+            enter(ctx, "encode");
+            let args = mp4_args(spec, s, ENCODED_MP4);
+            encode_watched(ctx, self.scratch, &args, total, self.limit, ENCODED_MP4).await?;
+            return Ok(ENCODED_MP4);
         }
         if let Some(gifski) = self.gifski {
             enter(ctx, "encode");
@@ -209,8 +247,8 @@ impl Encoder<'_> {
                 }
             }
             enter(ctx, "encode");
-            encode_watched(ctx, self.scratch, &encode_args(spec, s, &palette, ENCODED), total, self.limit)
-                .await?;
+            let args = encode_args(spec, s, &palette, ENCODED);
+            encode_watched(ctx, self.scratch, &args, total, self.limit, ENCODED).await?;
         }
         if let (true, Some(gifsicle)) = (self.optimise, spec.gif.optimiser.as_deref()) {
             enter(ctx, "optimise");
@@ -257,6 +295,7 @@ fn measure(
     optimised: bool,
     search: Option<budget::SearchRecord>,
     trimmed: Option<Span>,
+    mp4_estimate: Option<u64>,
 ) -> JobMeasure {
     let builtin = spec.gif.engine == EngineUsed::Builtin;
     JobMeasure::Gif {
@@ -276,11 +315,11 @@ fn measure(
         deterministic: spec.gif.deterministic,
         trimmed,
         search,
-        mp4_estimate: spec.gif.estimate.mp4_bytes,
+        mp4_estimate,
     }
 }
 
-/// Runs the encode in `scratch`, reporting progress, and stops it when `enc.gif` passes
+/// Runs the encode in `scratch`, reporting progress, and stops it when its `output` passes
 /// `limit` bytes (research R7's size watchdog).
 async fn encode_watched(
     ctx: &mut JobCtx<'_>,
@@ -288,9 +327,10 @@ async fn encode_watched(
     args: &[std::ffi::OsString],
     total: Ts,
     limit: u64,
+    output: &str,
 ) -> Result<()> {
     let stop = ctx.cancel.child_token();
-    let watch = SizeWatch::start(scratch.join(ENCODED), limit, &stop);
+    let watch = SizeWatch::start(scratch.join(output), limit, &stop);
     let mut parser = ProgressParser::default();
     let ffmpeg = ctx.tools.ffmpeg.path.clone();
     let r = process::run_lines_in(&ffmpeg, args, Some(scratch), &stop, |line| {
