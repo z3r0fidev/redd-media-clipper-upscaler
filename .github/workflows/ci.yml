@@ -115,7 +115,10 @@ jobs:
       # tract-linalg's build script compiles C for the target.
       - run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
       # rmedia-sr links the MSVC build of ncnn; it is checked by the Windows test job instead.
+      # Warnings fail here, minutes before the Windows clippy step would.
       - run: cargo check --workspace --all-targets --target x86_64-pc-windows-gnu --exclude rmedia-sr
+        env:
+          RUSTFLAGS: -D warnings
 
   desktop:
     name: desktop app (${{ matrix.os }})

@@ -254,10 +254,7 @@ impl TempDir {
         let nanos =
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
         let path = parent.join(format!("rmedia-sample-{}-{nanos}", std::process::id()));
-        let mut b = std::fs::DirBuilder::new();
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
-        b.create(&path)?;
+        crate::exec::commit::create_scratch(&path)?;
         Ok(TempDir(path))
     }
 }
