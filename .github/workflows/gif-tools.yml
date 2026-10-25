@@ -236,7 +236,7 @@ jobs:
           gk="./gifski-$GIFSKI_VERSION-x86_64-pc-windows-msvc.exe"
           # Captured first: under pipefail, `head` closing the pipe early fails the writer.
           v=$("$gs" --version | tr -d '\r'); echo "${v%%$'\n'*}"
-          [ "${v%%$'\n'*}" = "LCDF Gifsicle $GIFSICLE_VERSION" ]
+          [ "${v%%$'\n'*}" = "LCDF Gifsicle $GIFSICLE_VERSION (Windows)" ]
           v=$("$gk" --version | tr -d '\r'); echo "${v%%$'\n'*}"
           [ "${v%%$'\n'*}" = "gifski $GIFSKI_VERSION" ]
           python -I "$GITHUB_WORKSPACE/.github/scripts/y4m.py" 420 t420.y4m

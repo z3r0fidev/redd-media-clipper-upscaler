@@ -302,6 +302,11 @@ mod tests {
             g.parse_banner("LCDF Gifsicle 1.98\nCopyright (C) 1997-2025 Eddie Kohler\n").as_deref(),
             Some("1.98")
         );
+        assert_eq!(
+            g.parse_banner("LCDF Gifsicle 1.98 (Windows)").as_deref(),
+            Some("1.98"),
+            "the Windows build"
+        );
         assert_eq!(g.parse_banner("LCDF Gifsicle 2.0"), None, "only major version 1");
         assert_eq!(g.parse_banner("gifsicle 1.98"), None);
         let s = EngineKind::Gifski;
