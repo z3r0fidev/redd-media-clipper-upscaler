@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use tokio_util::sync::CancellationToken;
 
+use super::budget;
 use super::graph::{gifsicle_args, palette_settings, pipe_head, y4m_graph, y4m_tail};
 use super::plan::{EngineUsed, Estimate, EstimateFrom, GifSpec, Settings};
 use crate::error::{Error, Result};
@@ -249,20 +250,43 @@ where
     r
 }
 
-/// Encodes the sample of `s` in `dir` and measures it (optimised by gifsicle when the job is;
-/// through gifski when that is the engine). Returns the predicted size of the job's GIF.
-pub async fn sample(
+/// The frame count of a GIF of `spec`'s range at `s`'s frame rate.
+pub fn frames_at(spec: &GifSpec, s: &Settings) -> u64 {
+    crate::upscale::reframe::frame_count(spec.gif.len, s.fps()) as u64
+}
+
+/// Measures the sample file `name` in `dir` and predicts the job's GIF at `s` from it.
+async fn measure(
+    tools: &Tools,
+    spec: &GifSpec,
+    s: &Settings,
+    dir: &Path,
+    name: &str,
+    cancel: &CancellationToken,
+) -> Result<budget::Estimate> {
+    let size = frame_sizes(tools, &dir.join(name), cancel).await?;
+    let in_frames: u64 = size.frames.iter().map(|f| f.1).sum();
+    let fixed = size.bytes.saturating_sub(in_frames) + size.frames.first().map_or(0, |f| f.1);
+    let bytes = match windows(spec.cut.requested.start, spec.gif.len) {
+        Some(w) => model(&size, w.len(), frames_at(spec, s)),
+        None => size.bytes,
+    };
+    Ok(budget::Estimate { sample_bytes: size.bytes, bytes, fixed })
+}
+
+/// Encodes the sample of `s` in `dir` and measures it (optimised by gifsicle at `s.lossy` when
+/// the job is; through gifski when that is the engine): a budget search's sample step.
+pub async fn sample_estimate(
     tools: &Tools,
     spec: &GifSpec,
     s: &Settings,
     dir: &Path,
     cancel: &CancellationToken,
-) -> Result<u64> {
+) -> Result<budget::Estimate> {
     for f in [SAMPLE, SAMPLE_OPT] {
         let _ = std::fs::remove_file(dir.join(f));
     }
-    let span = spec.cut.requested;
-    let starts = windows(span.start, spec.gif.len);
+    let starts = windows(spec.cut.requested.start, spec.gif.len);
     let gifski = spec.gif.gifski.as_deref().filter(|_| spec.gif.engine == EngineUsed::Gifski);
     let out = if gifski.is_some() { SampleOut::Y4m } else { SampleOut::Gif(SAMPLE) };
     let args = match &starts {
@@ -288,37 +312,124 @@ pub async fn sample(
             return Err(Error::engine_failed("the sample encode failed", out.stderr_tail));
         }
     }
-    let mut measured = SAMPLE;
-    if let Some(gifsicle) = spec.gif.optimiser.as_deref() {
-        let env = super::engines::engine_env();
-        let a = gifsicle_args(s.lossy, SAMPLE, SAMPLE_OPT);
-        let out = bounded(dir.join(SAMPLE_OPT), cancel, |stop| async move {
-            process::run_lines_env(gifsicle, &a, Some(dir), Some(&env), &stop, |_| {}).await
-        })
-        .await?;
-        if !out.status.success() {
-            return Err(Error::EngineFailed {
-                tool: "gifsicle".into(),
-                message: "the sample optimisation failed".into(),
-                stderr_tail: out.stderr_tail,
-            });
-        }
-        measured = SAMPLE_OPT;
+    if spec.gif.optimiser.is_some() && s.gifski.is_none() {
+        return post_estimate(tools, spec, s, dir, cancel).await;
     }
-    let size = frame_sizes(tools, &dir.join(measured), cancel).await?;
-    Ok(match starts {
-        Some(w) => model(&size, w.len(), spec.gif.frames),
-        None => size.bytes,
-    })
+    measure(tools, spec, s, dir, SAMPLE, cancel).await
 }
 
-/// The estimate with no budget search: one sample at the starting settings.
+/// Re-runs gifsicle on the last sample at `s.lossy` and measures it: a budget search's
+/// post-pass (not an encode).
+pub async fn post_estimate(
+    tools: &Tools,
+    spec: &GifSpec,
+    s: &Settings,
+    dir: &Path,
+    cancel: &CancellationToken,
+) -> Result<budget::Estimate> {
+    let Some(gifsicle) = spec.gif.optimiser.as_deref() else {
+        return measure(tools, spec, s, dir, SAMPLE, cancel).await;
+    };
+    let _ = std::fs::remove_file(dir.join(SAMPLE_OPT));
+    let env = super::engines::engine_env();
+    let a = gifsicle_args(s.lossy, SAMPLE, SAMPLE_OPT);
+    let out = bounded(dir.join(SAMPLE_OPT), cancel, |stop| async move {
+        process::run_lines_env(gifsicle, &a, Some(dir), Some(&env), &stop, |_| {}).await
+    })
+    .await?;
+    if !out.status.success() {
+        return Err(Error::EngineFailed {
+            tool: "gifsicle".into(),
+            message: "the sample optimisation failed".into(),
+            stderr_tail: out.stderr_tail,
+        });
+    }
+    measure(tools, spec, s, dir, SAMPLE_OPT, cancel).await
+}
+
+/// [`sample_estimate`]'s predicted size of the job's GIF.
+pub async fn sample(
+    tools: &Tools,
+    spec: &GifSpec,
+    s: &Settings,
+    dir: &Path,
+    cancel: &CancellationToken,
+) -> Result<u64> {
+    Ok(sample_estimate(tools, spec, s, dir, cancel).await?.bytes)
+}
+
+/// The dry run's [`budget::Sampler`]: real samples and post-passes, and a "full encode" that is
+/// the prediction made for those settings (scaled to a trimmed length).
+struct Predicting<'a> {
+    tools: &'a Tools,
+    spec: &'a GifSpec,
+    dir: &'a Path,
+    cancel: &'a CancellationToken,
+    seen: Vec<(Settings, budget::Estimate)>,
+}
+
+impl budget::Sampler for Predicting<'_> {
+    async fn sample(&mut self, s: &Settings) -> Result<budget::Estimate> {
+        let e = sample_estimate(self.tools, self.spec, s, self.dir, self.cancel).await?;
+        self.seen.push((s.clone(), e));
+        Ok(e)
+    }
+
+    async fn post(&mut self, s: &Settings) -> Result<budget::Estimate> {
+        let e = post_estimate(self.tools, self.spec, s, self.dir, self.cancel).await?;
+        self.seen.push((s.clone(), e));
+        Ok(e)
+    }
+
+    async fn full(&mut self, s: &Settings, len: f64) -> Result<u64> {
+        // The search's retry encodes settings it never sampled: the nearest prediction is the
+        // last one (the retry is a step below it).
+        let e = self
+            .seen
+            .iter()
+            .rev()
+            .find(|(seen, _)| seen == s)
+            .or(self.seen.last())
+            .map(|(_, e)| *e)
+            .ok_or_else(|| Error::InvalidInput("a full encode before any sample".into()))?;
+        let share = (len / self.spec.gif.len.max(f64::EPSILON)).min(1.0);
+        Ok(e.fixed + (e.bytes.saturating_sub(e.fixed) as f64 * share).round() as u64)
+    }
+}
+
+/// The search's input for `spec`: the target's floors (or the start, when it has none).
+pub fn search_input(spec: &GifSpec, budget: super::target::Budget) -> budget::SearchInput {
+    let start = spec.gif.start.clone();
+    budget::SearchInput {
+        floor_width: spec.gif.floor_width.unwrap_or(start.width).min(start.width),
+        floor_fps: spec.gif.floor_fps.unwrap_or_else(|| start.fps().ceil() as u32),
+        budget,
+        optimiser: spec.gif.optimiser.is_some(),
+        allow_trim: spec.gif.allow_trim,
+        len: spec.gif.len,
+        start,
+    }
+}
+
+/// The estimate shown before encoding: with a budget, the predicted result of the search
+/// (samples only, nothing encoded in full); otherwise one sample at the starting settings.
 pub async fn predict(
     tools: &Tools,
     spec: &GifSpec,
     dir: &Path,
     cancel: &CancellationToken,
 ) -> Result<Estimate> {
+    if let Some(b) = spec.gif.budget {
+        let mut sampler = Predicting { tools, spec, dir, cancel, seen: Vec::new() };
+        let found = budget::search(&search_input(spec, b), &mut sampler).await?;
+        return Ok(Estimate {
+            bytes: Some(found.bytes),
+            from: EstimateFrom::Search,
+            settings: found.chosen,
+            lowered: found.record.lowered,
+            mp4_bytes: None,
+        });
+    }
     let s = spec.gif.start.clone();
     let bytes = sample(tools, spec, &s, dir, cancel).await?;
     Ok(Estimate {

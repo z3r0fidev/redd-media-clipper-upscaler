@@ -172,7 +172,19 @@ impl Output {
                 }
                 JobOutcome::Succeeded {
                     output,
-                    measure: JobMeasure::Gif { bytes, width, height, fps, colours, dither, engine, .. },
+                    measure:
+                        JobMeasure::Gif {
+                            bytes,
+                            width,
+                            height,
+                            fps,
+                            colours,
+                            dither,
+                            engine,
+                            search,
+                            trimmed,
+                            ..
+                        },
                 } => {
                     let palette = match (colours, dither) {
                         (Some(c), Some(d)) => format!(", {c} colours, dither {}", d.label()),
@@ -184,6 +196,13 @@ impl Output {
                         rmedia_core::upscale::estimate::human_bytes(*bytes),
                         format!("{engine:?}").to_lowercase()
                     );
+                    if let Some(r) = search {
+                        let lowered = lowered_text(&r.lowered);
+                        println!("  budget search: {} encodes{lowered}", r.encodes);
+                    }
+                    if let Some(t) = trimmed {
+                        println!("  trimmed to {} → {} to fit the budget", t.start, t.end);
+                    }
                 }
                 JobOutcome::Skipped { reason } => println!("- {} skipped: {reason}", j.output.display()),
                 JobOutcome::Failed { error } => {
@@ -238,10 +257,33 @@ fn gif_lines(g: &rmedia_core::gif::GifPlan) {
     match (g.estimate.bytes, g.estimate.from) {
         (Some(bytes), from) => {
             let how = if from == EstimateFrom::Search { "after the budget search" } else { "from a sample" };
-            println!("     estimate ~{} ({how})", human_bytes(bytes));
+            println!("     estimate ~{} ({how}){}", human_bytes(bytes), lowered_text(&g.estimate.lowered));
         }
         (None, _) => println!("     estimate pending (not sampled)"),
     }
+}
+
+/// `; lowered lossy 30 → 90, width 720 → 584` (FR-012), or nothing.
+fn lowered_text(lowered: &[rmedia_core::gif::plan::Lowered]) -> String {
+    let show = |v: &serde_json::Value| match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Object(o) => o
+            .iter()
+            .map(
+                |(k, v)| {
+                    if k == "type" { v.as_str().unwrap_or_default().to_owned() } else { format!("{k} {v}") }
+                },
+            )
+            .collect::<Vec<_>>()
+            .join(" "),
+        other => other.to_string(),
+    };
+    if lowered.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<String> =
+        lowered.iter().map(|l| format!("{} {} → {}", l.setting, show(&l.from), show(&l.to))).collect();
+    format!("; lowered {}", parts.join(", "))
 }
 
 fn program_name(p: rmedia_core::plan::Program) -> &'static str {

@@ -170,6 +170,10 @@ A pure function `search(target, opts, &mut dyn Sampler) -> SearchRecord`.
 5. **s7, interpolation:** if the floors fit, the best width lies between the floors and the last
    rung. Sample once at `W = floor + (W_last − floor) × sqrt((soft − e_floor)/(e_last − e_floor))`,
    rounded to even, and keep whichever of s6/s7 fits with the larger width.
+   - [V] 2026-10-25 (T050): as built, width² is interpolated instead,
+     `W = sqrt(Wf² + (W_last² − Wf²) × (soft − e_floor)/(e_last − e_floor))`, because the size
+     grows with the area. On Busy10 → 3 MB the formula above picked 432 px (3.35 MB, over soft:
+     a wasted sample); the area form picks about 380 px.
 6. **Full encode.** If the real size is over **soft** (not only over hard) and the spare budget
    allows, take one more step down (the next rung, or the floor for width) and re-encode once.
    - Over soft but under hard after that: keep it, with `OVER_RECOMMENDED`.

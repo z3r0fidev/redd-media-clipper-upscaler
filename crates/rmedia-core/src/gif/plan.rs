@@ -16,6 +16,7 @@ use crate::error::IssueCode;
 use crate::plan::ffargs::ClipSpec;
 use crate::plan::{Caps, Notice};
 use crate::probe::MediaInfo;
+use crate::time::Ts;
 use crate::upscale::Reframe;
 use crate::upscale::encode::ColourTags;
 use crate::upscale::geometry::{self, Overflow};
@@ -31,6 +32,28 @@ pub struct GifSpec {
     pub cut: ClipSpec,
     pub frame: FramePlan,
     pub gif: GifPlan,
+}
+
+impl GifSpec {
+    /// This job over the first `len` seconds of its range (the budget search's trim, FR-011).
+    pub fn trimmed(&self, len: f64) -> GifSpec {
+        let mut t = self.clone();
+        let d = Ts::from_secs_f64(len);
+        t.cut.requested.end = t.cut.requested.start + d;
+        match &mut t.cut.trim {
+            Some(trim) => trim.end = Some(trim.start + d),
+            None => t.cut.duration = Some(d),
+        }
+        if let Some((start, end)) = &mut t.frame.graph.trim {
+            *end = Some(*start + d);
+        }
+        if let Some((_, tolerance)) = t.cut.verify_video {
+            t.cut.verify_video = Some((d, tolerance));
+        }
+        t.gif.len = len;
+        t.gif.frames = crate::upscale::reframe::frame_count(len, t.gif.start.fps()) as u64;
+        t
+    }
 }
 
 /// How the source's frames become GIF frames (002's pre-processing and framing, refactor B1).
@@ -106,10 +129,10 @@ impl Settings {
         timing::timing(self.rate)
     }
 
-    /// The `settings` object of the JSON contract.
+    /// The `settings` object of the JSON contract (`gifski` only for gifski jobs: additive).
     pub fn to_json(&self) -> Value {
         let t = self.timing();
-        json!({
+        let mut v = json!({
             "width": self.width,
             "height": self.height,
             "fps": (self.fps() * 1000.0).round() / 1000.0,
@@ -117,7 +140,11 @@ impl Settings {
             "colours": self.colours,
             "dither": self.dither,
             "lossy": self.lossy,
-        })
+        });
+        if let Some(p) = self.gifski {
+            v["gifski"] = json!(p);
+        }
+        v
     }
 }
 

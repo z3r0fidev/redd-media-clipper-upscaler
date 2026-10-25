@@ -17,8 +17,8 @@ use super::clip::classify_failure;
 use super::pipeline::{ProgressFrom, Report, Role, StageSpec, blame_pair, run_stages};
 use super::process;
 use super::progress::{ProgressBlock, ProgressParser};
-use crate::error::{Error, Result};
-use crate::event::JobMeasure;
+use crate::error::{Error, IssueCode, Result};
+use crate::event::{JobMeasure, Span};
 use crate::gif::LoopCount;
 use crate::gif::graph::{
     ENCODED, OPTIMISED, PROGRESS, encode_args, gifsicle_args, gifski_args, palette_args, palette_name,
@@ -26,8 +26,10 @@ use crate::gif::graph::{
 };
 use crate::gif::plan::{EngineUsed, GifSpec, Settings};
 use crate::gif::verify::{GifExpect, check_gif, gif_facts};
+use crate::gif::{budget, estimate};
 use crate::time::Ts;
 use crate::tools::Tools;
+use crate::upscale::estimate::human_bytes;
 
 /// Without a budget, an encode that passes this size is stopped (a runaway output).
 pub(crate) const MAX_OUTPUT: u64 = 4 << 30;
@@ -38,83 +40,224 @@ const PIPE_STALL: Duration = Duration::from_secs(300);
 const GIFSICLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobMeasure> {
-    let span = spec.cut.requested;
-    let total = span.end.saturating_sub(span.start);
     let scratch = ctx
         .scratch_dir()
         .ok_or_else(|| Error::InvalidInput("a GIF job needs its scratch folder".into()))?
         .to_path_buf();
-    let s = spec.gif.start.clone();
-    let optimise = spec.gif.optimiser.is_some();
     let gifski = spec.gif.gifski.as_deref().filter(|_| spec.gif.engine == EngineUsed::Gifski);
-    let stages: Vec<(&str, f64)> = if gifski.is_some() {
-        vec![("encode", 0.9), ("verify", 0.1)]
-    } else if optimise {
-        vec![("palette", 0.25), ("encode", 0.6), ("optimise", 0.1), ("verify", 0.05)]
-    } else {
-        vec![("palette", 0.25), ("encode", 0.65), ("verify", 0.1)]
-    };
-    let of = stages.len() as u32;
-    let mut index = 0u32;
-    let mut next = |ctx: &mut JobCtx<'_>| {
-        let (name, weight) = stages[index as usize];
-        index += 1;
-        ctx.stage(name, index, of, weight);
-    };
+    let optimise = spec.gif.optimiser.is_some() && gifski.is_none();
+    let budget = spec.gif.budget;
+    let limit = budget.map_or(MAX_OUTPUT, |b| b.hard.saturating_mul(2));
+    let stages = Stages::new(gifski.is_some(), optimise, budget.is_some());
+    let mut enc = Encoder { scratch: &scratch, gifski, optimise, limit, stages: &stages, fulls: 0 };
 
-    let limit = spec.gif.budget.map_or(MAX_OUTPUT, |b| b.hard.saturating_mul(2));
-    if let Some(gifski) = gifski {
-        next(ctx);
-        let (tools, cancel, output) = (ctx.tools, ctx.cancel.clone(), ctx.output.to_path_buf());
-        let pipe = Gifski { program: gifski, dir: &scratch, output: ENCODED, limit, timeout: None };
-        let producer = y4m_args(spec, &s, PROGRESS);
-        pipe.run(tools, producer, &s, spec.gif.loop_count, Some(PROGRESS), &output, &cancel, |b| {
-            ctx.progress(b, total)
-        })
-        .await?;
-    } else {
-        next(ctx);
-        let palette = palette_name(spec, &s);
-        if !scratch.join(&palette).is_file() {
-            let out = ctx.run_ffmpeg_in(Some(&scratch), &palette_args(spec, &s, &palette), total).await?;
-            if !out.status.success() {
-                return Err(classify_failure(&out.stderr_tail, ctx.output));
-            }
+    let (s, len, result, search, over) = match budget {
+        Some(b) => {
+            stages.enter(ctx, "search");
+            let mut sampler = JobSampler { ctx: &mut *ctx, spec, enc: &mut enc, result: None };
+            let found = budget::search(&estimate::search_input(spec, b), &mut sampler).await?;
+            let result =
+                sampler.result.ok_or_else(|| Error::InvalidInput("the search encoded nothing".into()))?;
+            debug_assert!(found.record.encodes <= 10, "{:?}", found.record);
+            let len = found.trimmed_to.unwrap_or(spec.gif.len);
+            (found.chosen, len, result, Some(found.record), found.over_recommended.then_some(found.bytes))
         }
-
-        next(ctx);
-        encode_watched(ctx, &scratch, &encode_args(spec, &s, &palette, ENCODED), total, limit).await?;
-    }
-
-    let mut result = ENCODED;
-    if let (true, Some(gifsicle)) = (optimise, spec.gif.optimiser.as_deref()) {
-        next(ctx);
-        run_gifsicle(ctx, gifsicle, &scratch, s.lossy, limit).await?;
-        result = OPTIMISED;
-    }
+        None => {
+            let result = enc.full(ctx, spec, &spec.gif.start).await?;
+            (spec.gif.start.clone(), spec.gif.len, result, None, None)
+        }
+    };
     move_into(&scratch.join(result), ctx.temp)?;
 
-    next(ctx);
+    stages.enter(ctx, "verify");
     let facts = gif_facts(ctx.tools, ctx.temp, ctx.cancel).await?;
+    let frames = crate::upscale::reframe::frame_count(len, s.fps()) as u64;
     let expect = GifExpect {
         width: s.width,
         height: s.height,
-        frames: spec.gif.frames,
+        frames,
         // gifsicle merges identical frames, and gifski rounds its own delays: both are checked
         // by their total display time.
-        length_cs: (result == OPTIMISED || gifski.is_some()).then(|| {
-            crate::gif::timing::delays(s.rate, spec.gif.frames as usize).into_iter().map(u64::from).sum()
-        }),
+        length_cs: (result == OPTIMISED || gifski.is_some())
+            .then(|| crate::gif::timing::delays(s.rate, frames as usize).into_iter().map(u64::from).sum()),
         loop_count: spec.gif.loop_count,
-        max_bytes: spec.gif.budget.map(|b| b.hard),
+        max_bytes: budget.map(|b| b.hard),
     };
-    // Over the hard limit fails here until US2's budget search lowers the settings.
     check_gif(&facts, &expect).map_err(Error::VerifyFailed)?;
+    if let (Some(bytes), Some(b)) = (over, budget) {
+        ctx.warn_code(
+            IssueCode::OverRecommended,
+            format!(
+                "{} is over the recommended {} (within the {} limit)",
+                human_bytes(bytes),
+                human_bytes(b.soft),
+                human_bytes(b.hard)
+            ),
+        );
+    }
+    let total = spec.cut.requested.end.saturating_sub(spec.cut.requested.start);
     ctx.stage_fraction(1.0, total);
-    Ok(measure(spec, &s, facts.bytes, optimise))
+    let start = spec.cut.requested.start;
+    let trimmed = (len < spec.gif.len - 1e-6).then(|| Span { start, end: start + Ts::from_secs_f64(len) });
+    Ok(measure(spec, &s, facts.bytes, optimise, search, trimmed))
 }
 
-fn measure(spec: &GifSpec, s: &Settings, bytes: u64, optimised: bool) -> JobMeasure {
+/// The stages of a GIF job and their weights (data-model.md › Stages and weights), renormalised
+/// when some are absent.
+struct Stages {
+    list: Vec<(&'static str, f64)>,
+}
+
+impl Stages {
+    fn new(gifski: bool, optimise: bool, search: bool) -> Stages {
+        let list: Vec<(&'static str, f64)> = match (gifski, search, optimise) {
+            (true, false, _) => vec![("encode", 0.9), ("verify", 0.1)],
+            (true, true, _) => vec![("search", 0.3), ("encode", 0.6), ("verify", 0.1)],
+            (false, false, true) => {
+                vec![("palette", 0.25), ("encode", 0.6), ("optimise", 0.1), ("verify", 0.05)]
+            }
+            (false, false, false) => vec![("palette", 0.25), ("encode", 0.65), ("verify", 0.1)],
+            (false, true, true) => {
+                vec![
+                    ("search", 0.3),
+                    ("palette", 0.1),
+                    ("encode", 0.35),
+                    ("optimise", 0.05),
+                    ("verify", 0.05),
+                ]
+            }
+            (false, true, false) => {
+                vec![("search", 0.3), ("palette", 0.1), ("encode", 0.35), ("verify", 0.05)]
+            }
+        };
+        let sum: f64 = list.iter().map(|s| s.1).sum();
+        Stages { list: list.into_iter().map(|(n, w)| (n, w / sum)).collect() }
+    }
+
+    fn position(&self, name: &str) -> Option<(u32, f64)> {
+        self.list.iter().position(|s| s.0 == name).map(|i| (i as u32 + 1, self.list[i].1))
+    }
+
+    fn enter(&self, ctx: &mut JobCtx<'_>, name: &str) {
+        if let Some((index, weight)) = self.position(name) {
+            ctx.stage(name, index, self.list.len() as u32, weight);
+        }
+    }
+
+    /// A retried full encode: the bar continues inside the current stage.
+    fn restart(&self, ctx: &mut JobCtx<'_>, name: &str) {
+        if let Some((index, _)) = self.position(name) {
+            ctx.restart_stage(name, index, self.list.len() as u32);
+        }
+    }
+}
+
+/// Full encodes of a GIF job in its scratch folder.
+struct Encoder<'a> {
+    scratch: &'a Path,
+    gifski: Option<&'a Path>,
+    optimise: bool,
+    limit: u64,
+    stages: &'a Stages,
+    fulls: u32,
+}
+
+impl Encoder<'_> {
+    /// One full encode of `spec` at `s`: palette → encode → optimise, or the gifski pipe. Returns
+    /// the result's name in the scratch folder. A second call (the search's retry) restarts the
+    /// encode stage instead of moving on.
+    async fn full(&mut self, ctx: &mut JobCtx<'_>, spec: &GifSpec, s: &Settings) -> Result<&'static str> {
+        let retry = self.fulls > 0;
+        self.fulls += 1;
+        // Every tool runs with `-n` (or its own no-clobber rule): clear the last attempt.
+        for f in [ENCODED, OPTIMISED] {
+            let _ = std::fs::remove_file(self.scratch.join(f));
+        }
+        let span = spec.cut.requested;
+        let total = span.end.saturating_sub(span.start);
+        let enter = |ctx: &mut JobCtx<'_>, name: &str| {
+            if !retry {
+                self.stages.enter(ctx, name);
+            }
+        };
+        if retry {
+            self.stages.restart(ctx, "encode");
+        }
+        if let Some(gifski) = self.gifski {
+            enter(ctx, "encode");
+            let (tools, cancel, output) = (ctx.tools, ctx.cancel.clone(), ctx.output.to_path_buf());
+            let pipe = Gifski {
+                program: gifski,
+                dir: self.scratch,
+                output: ENCODED,
+                limit: self.limit,
+                timeout: None,
+            };
+            let producer = y4m_args(spec, s, PROGRESS);
+            pipe.run(tools, producer, s, spec.gif.loop_count, Some(PROGRESS), &output, &cancel, |b| {
+                ctx.progress(b, total)
+            })
+            .await?;
+        } else {
+            enter(ctx, "palette");
+            let palette = palette_name(spec, s);
+            if !self.scratch.join(&palette).is_file() {
+                let out =
+                    ctx.run_ffmpeg_in(Some(self.scratch), &palette_args(spec, s, &palette), total).await?;
+                if !out.status.success() {
+                    return Err(classify_failure(&out.stderr_tail, ctx.output));
+                }
+            }
+            enter(ctx, "encode");
+            encode_watched(ctx, self.scratch, &encode_args(spec, s, &palette, ENCODED), total, self.limit)
+                .await?;
+        }
+        if let (true, Some(gifsicle)) = (self.optimise, spec.gif.optimiser.as_deref()) {
+            enter(ctx, "optimise");
+            run_gifsicle(ctx, gifsicle, self.scratch, s.lossy, self.limit).await?;
+            return Ok(OPTIMISED);
+        }
+        Ok(ENCODED)
+    }
+}
+
+/// The job's [`budget::Sampler`]: samples and post-passes in the scratch folder (their own file
+/// names), full encodes through [`Encoder`] (on the trimmed range when the search trims).
+struct JobSampler<'a, 'c, 'e> {
+    ctx: &'a mut JobCtx<'c>,
+    spec: &'a GifSpec,
+    enc: &'a mut Encoder<'e>,
+    /// The last full encode's result name.
+    result: Option<&'static str>,
+}
+
+impl budget::Sampler for JobSampler<'_, '_, '_> {
+    async fn sample(&mut self, s: &Settings) -> Result<budget::Estimate> {
+        estimate::sample_estimate(self.ctx.tools, self.spec, s, self.enc.scratch, self.ctx.cancel).await
+    }
+
+    async fn post(&mut self, s: &Settings) -> Result<budget::Estimate> {
+        estimate::post_estimate(self.ctx.tools, self.spec, s, self.enc.scratch, self.ctx.cancel).await
+    }
+
+    async fn full(&mut self, s: &Settings, len: f64) -> Result<u64> {
+        let spec = if len < self.spec.gif.len - 1e-6 { self.spec.trimmed(len) } else { self.spec.clone() };
+        let name = self.enc.full(self.ctx, &spec, s).await?;
+        self.result = Some(name);
+        std::fs::metadata(self.enc.scratch.join(name))
+            .map(|m| m.len())
+            .map_err(|e| Error::engine_failed(format!("the GIF was not written: {e}"), String::new()))
+    }
+}
+
+fn measure(
+    spec: &GifSpec,
+    s: &Settings,
+    bytes: u64,
+    optimised: bool,
+    search: Option<budget::SearchRecord>,
+    trimmed: Option<Span>,
+) -> JobMeasure {
     let builtin = spec.gif.engine == EngineUsed::Builtin;
     JobMeasure::Gif {
         span: spec.cut.requested,
@@ -131,8 +274,8 @@ fn measure(spec: &GifSpec, s: &Settings, bytes: u64, optimised: bool) -> JobMeas
         optimiser: optimised,
         loop_count: spec.gif.loop_count,
         deterministic: spec.gif.deterministic,
-        trimmed: None,
-        search: None,
+        trimmed,
+        search,
         mp4_estimate: spec.gif.estimate.mp4_bytes,
     }
 }

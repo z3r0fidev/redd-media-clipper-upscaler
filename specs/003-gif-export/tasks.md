@@ -426,14 +426,14 @@ handling and consented trimming.
   - `OVER_RECOMMENDED`;
   - skipped rungs at their floors;
   - determinism (the same script gives the same record).
-- [ ] T046 [P] [US2] Write gifsicle tests in `core-tests/gif_gifsicle.rs`, behind
+- [X] T046 [P] [US2] Write gifsicle tests in `core-tests/gif_gifsicle.rs`, behind
   `require_tool!(gifsicle)`:
   - `-O3` and `--lossy` shrink the output;
   - the loop block is kept;
   - only generated names reach the argv;
   - a missing gifsicle skips the post-pass with `optimiser:false`, and `ENGINE_FALLBACK` only
     when a lossy rung was wanted.
-- [ ] T047 [P] [US2] Write `core-tests/gif_us2.rs`:
+- [X] T047 [P] [US2] Write `core-tests/gif_us2.rs`:
   - `Busy10 --budget 3MB` gives ≤ 3 MB, the `lowered` list in ladder order, ≤ 10 encodes;
   - two runs are byte-identical, with identical `search.steps`;
   - an unreachable budget writes nothing, fails the job (exit 1) and gives `fits_secs`;
@@ -450,9 +450,9 @@ handling and consented trimming.
   `sample`, `post`, `full`). Reading of R5 where it is open: each rung lowers one step; s7 runs
   only when the floors fit soft; the retry takes the first rung after the last one used, else
   width to its floor. The property test runs 2000 seeded random models.
-- [ ] T049 [US2] Implement the gifsicle post-pass in `core/exec/gif.rs` (`run_lines_in`, cwd =
+- [X] T049 [US2] Implement the gifsicle post-pass in `core/exec/gif.rs` (`run_lines_in`, cwd =
   scratch, `--` before the input, cleared environment, bounded stderr), making T046 pass.
-- [ ] T050 [US2] Wire the search into `core/exec/gif.rs`:
+- [X] T050 [US2] Wire the search into `core/exec/gif.rs`:
   - a `search` stage, plus `optimise`;
   - samples through the real `Sampler` (`core/gif/estimate.rs`), with palette reuse by key;
   - `BUDGET_UNREACHABLE` through `Error::BudgetUnreachable`;
@@ -460,7 +460,14 @@ handling and consented trimming.
   - `predict()` with a budget for dry runs.
 
   Makes T047 pass.
-- [ ] T051 [US2] Update the CLI summary and JSON for `search`/`lowered`/`trimmed` in
+
+  Done 2026-10-25. The executor's `JobSampler` runs samples and post-passes in the scratch
+  folder and full encodes through `Encoder` (on `GifSpec::trimmed` when the search trims); a
+  retry restarts the encode stage. The dry run runs the same search with a predicting sampler
+  (its "full encode" is the prediction made for those settings). gifski jobs take R14's
+  `lossy_quality` rungs instead of dither and colours. Verify counts frames at the chosen rate.
+  Land6 → 1 MB: 8 encodes, predicted 810 900 B, real 812 795 B; Busy10 → 3 MB: 2.74 MB.
+- [X] T051 [US2] Update the CLI summary and JSON for `search`/`lowered`/`trimmed` in
   `crates/rmedia-cli/src/render.rs`, with snapshot updates in `cli-tests/gif.rs`.
 - [ ] T052 [US2] Add the SC-003 bench to `core-tests/bench.rs` (`#[ignore]`, asserted only when
   `available_parallelism() >= 12`): `Busy10` to the post budget in ≤ 3× the clip duration.

@@ -69,7 +69,9 @@ fn a_sampled_json_dry_run_has_the_gif_block_and_writes_nothing() {
     assert_eq!((g["settings"]["width"].as_u64(), g["settings"]["height"].as_u64()), (Some(720), Some(405)));
     assert_eq!(g["settings"]["timing"]["exact"], false);
     assert_eq!(g["budget"]["hard"], 20_000_000);
-    assert_eq!(g["estimate"]["from"], "sample");
+    // reddit-post has a budget: the estimate is the search's prediction (it fits at once).
+    assert_eq!(g["estimate"]["from"], "search");
+    assert_eq!(g["estimate"]["lowered"], serde_json::json!([]), "{g}");
     assert!(g["estimate"]["bytes"].as_u64().is_some_and(|b| b > 0), "{g}");
     assert_eq!(job["notices"][0]["code"], "TIMING_APPROXIMATE");
     assert!(job["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("6–7 cs")));
@@ -246,4 +248,38 @@ fn doctor_shows_a_found_gifsicle_with_its_version() {
     let o = rmedia(d.path()).arg("doctor").env("RMEDIA_GIFSICLE", &path).output().unwrap();
     let text = String::from_utf8_lossy(&o.stdout);
     assert!(text.lines().any(|l| l.starts_with("gifsicle: 1.")), "{text}");
+}
+
+/// T051: a budgeted run lists the search and what it lowered, in the summary and in JSON.
+#[test]
+fn a_budgeted_run_reports_its_search() {
+    require_engine!("palettegen", "paletteuse");
+    let d = tempfile::tempdir().unwrap();
+    let src = copy(Fixture::Land6, d.path(), "land.mp4");
+    let o = rmedia(d.path()).args(["gif", "--budget", "1MB"]).arg(&src).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let text = String::from_utf8_lossy(&o.stdout);
+    let line = text.lines().find(|l| l.starts_with("  budget search: ")).unwrap_or_else(|| panic!("{text}"));
+    assert!(line.contains("; lowered "), "{line}");
+    let out = d.path().join("gifs/land_reddit-post.gif");
+    assert!(std::fs::metadata(&out).unwrap().len() <= 1_000_000);
+
+    let o = rmedia(d.path())
+        .args(["gif", "--budget", "1MB", "--json", "--on-exists", "overwrite"])
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let doc: Value = String::from_utf8_lossy(&o.stdout)
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .find(|v| v["type"] == "summary")
+        .unwrap_or_else(|| panic!("{}", String::from_utf8_lossy(&o.stdout)));
+    // The measure is flattened into the job (`"measure":"gif"`, contracts/json-output.md).
+    let m = &doc["jobs"][0];
+    assert_eq!(m["measure"], "gif", "{m}");
+    assert!(m["search"]["encodes"].as_u64().is_some_and(|n| n <= 10), "{m}");
+    assert!(m["search"]["lowered"].as_array().is_some_and(|l| !l.is_empty()), "{m}");
+    assert_eq!(m["search"]["fit"], "soft", "{m}");
+    assert!(m["trimmed"].is_null(), "{m}");
 }

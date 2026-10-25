@@ -149,7 +149,7 @@ async fn cancelling_an_upscale_is_fast_and_clean() {
 
 /// T034, T038 (003 US1): cancelling a GIF job during `stage` stops within 2 s and leaves no
 /// `.part`, no scratch folder and no engine process (with `engine`, the gifski pipe's two).
-async fn cancel_gif_during(stage: &str, engine_choice: EngineChoice) {
+async fn cancel_gif_during(stage: &str, engine_choice: EngineChoice, budget: Option<u64>) {
     let _serial = SERIAL.lock().await;
     rmedia_testkit::require_engine!("palettegen", "paletteuse");
     let src = fixture(Fixture::Busy10);
@@ -157,7 +157,7 @@ async fn cancel_gif_during(stage: &str, engine_choice: EngineChoice) {
     let out = tempfile::tempdir().unwrap();
     let mut o = opts(out.path(), Mode::Accurate);
     o.gif = Some(rmedia_core::gif::GifOptions {
-        budget: None,
+        budget: budget.map(|b| rmedia_core::gif::BudgetSpec { soft: Some(b), hard: None }),
         width: Some(1280),
         fps: Some(25),
         engine: engine_choice,
@@ -194,16 +194,22 @@ async fn cancel_gif_during(stage: &str, engine_choice: EngineChoice) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_a_gif_in_the_palette_stage_is_fast_and_clean() {
-    cancel_gif_during("palette", EngineChoice::Builtin).await;
+    cancel_gif_during("palette", EngineChoice::Builtin, None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_a_gif_in_the_encode_stage_is_fast_and_clean() {
-    cancel_gif_during("encode", EngineChoice::Builtin).await;
+    cancel_gif_during("encode", EngineChoice::Builtin, None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_the_gifski_pipe_is_fast_and_clean() {
     rmedia_testkit::require_tool!(gifski);
-    cancel_gif_during("encode", EngineChoice::Gifski).await;
+    cancel_gif_during("encode", EngineChoice::Gifski, None).await;
+}
+
+/// T047: cancelling during the budget search's samples (US2).
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_the_budget_search_is_fast_and_clean() {
+    cancel_gif_during("search", EngineChoice::Builtin, Some(1_000_000)).await;
 }

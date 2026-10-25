@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::plan::{Lowered, Settings};
-use super::target::{Budget, Dither};
+use super::target::{Budget, Dither, GifskiParams};
 use crate::error::{Error, Result};
 
 /// The highest gifsicle `--lossy` level the search uses.
@@ -17,6 +17,8 @@ const LOSSY_STEPS: [u16; 2] = [30, 60];
 const FPS_RUNGS: [u32; 4] = [20, 15, 12, 10];
 /// The colours rung stops here.
 const MIN_COLOURS: u16 = 128;
+/// gifski's `lossy_quality` steps (R14): unset (100) → 80 → 60.
+const GIFSKI_LOSSY: [u8; 2] = [80, 60];
 /// 7 samples + 1 full + 1 retry (R5); the executor asserts ≤ 10.
 pub const MAX_ENCODES: u8 = 9;
 
@@ -71,16 +73,20 @@ pub struct Found {
     pub over_recommended: bool,
 }
 
-/// The ladder's rungs, in order (FR-009).
+/// The ladder's rungs, in order (FR-009). The built-in engine takes dither and colours; gifski
+/// ignores those and takes its `lossy_quality` twice instead (R14). Each sees `None` for the
+/// other engine's rungs, so either ladder is at most four samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Rung {
     Dither,
     Colours,
+    GifskiLossy,
     Fps,
     Width,
 }
 
-const RUNGS: [Rung; 4] = [Rung::Dither, Rung::Colours, Rung::Fps, Rung::Width];
+const RUNGS: [Rung; 6] =
+    [Rung::Dither, Rung::Colours, Rung::GifskiLossy, Rung::GifskiLossy, Rung::Fps, Rung::Width];
 
 fn lower_dither(d: Dither) -> Option<Dither> {
     match d {
@@ -103,10 +109,18 @@ fn at_width(s: &Settings, w: u32) -> Settings {
 
 /// One step down on `rung`, or `None` when `s` is at its floor there.
 fn lower(rung: Rung, s: &Settings, input: &SearchInput) -> Option<Settings> {
+    let builtin = s.gifski.is_none();
     match rung {
-        Rung::Dither => lower_dither(s.dither).map(|dither| Settings { dither, ..s.clone() }),
-        Rung::Colours => (s.colours > MIN_COLOURS)
+        Rung::Dither if builtin => lower_dither(s.dither).map(|dither| Settings { dither, ..s.clone() }),
+        Rung::Colours if builtin => (s.colours > MIN_COLOURS)
             .then(|| Settings { colours: (s.colours * 3 / 4).max(MIN_COLOURS), ..s.clone() }),
+        Rung::Dither | Rung::Colours => None,
+        Rung::GifskiLossy => {
+            let p = s.gifski?;
+            let now = p.lossy_quality.unwrap_or(100);
+            let next = GIFSKI_LOSSY.into_iter().find(|&q| q < now)?;
+            Some(Settings { gifski: Some(GifskiParams { lossy_quality: Some(next), ..p }), ..s.clone() })
+        }
         Rung::Fps => {
             let fps = fps_of(s.rate);
             FPS_RUNGS
@@ -129,7 +143,7 @@ fn floors(s: &Settings, input: &SearchInput) -> Settings {
             f = next;
         }
     }
-    if input.optimiser {
+    if input.optimiser && f.gifski.is_none() {
         f.lossy = f.lossy.max(max_lossy(input));
     }
     f
@@ -163,6 +177,8 @@ fn lowered(start: &Settings, chosen: &Settings) -> Vec<Lowered> {
         json!((fps_of(chosen.rate) * 1000.0).round() / 1000.0),
     );
     push("width", json!(start.width), json!(chosen.width));
+    let lossy_quality = |s: &Settings| s.gifski.map(|p| p.lossy_quality.unwrap_or(100));
+    push("lossy_quality", json!(lossy_quality(start)), json!(lossy_quality(chosen)));
     out
 }
 
@@ -192,7 +208,7 @@ pub async fn search(input: &SearchInput, sampler: &mut impl Sampler) -> Result<F
     // s1, then the free lossy rungs on it.
     let mut est = sampler.sample(&cur).await?;
     log.push(StepKind::Sample, &cur, est.sample_bytes, est.bytes);
-    if est.bytes > soft && input.optimiser {
+    if est.bytes > soft && input.optimiser && cur.gifski.is_none() {
         for add in LOSSY_STEPS {
             let l = (input.start.lossy + add).min(MAX_LOSSY);
             if l <= cur.lossy {
@@ -246,9 +262,11 @@ pub async fn search(input: &SearchInput, sampler: &mut impl Sampler) -> Result<F
             len = fits;
             trimmed_to = Some(fits);
         } else if est.bytes <= soft && last.width > cur.width && last_est.bytes > est.bytes {
-            let span = f64::from(last.width - cur.width);
-            let share = ((soft - est.bytes) as f64 / (last_est.bytes - est.bytes) as f64).sqrt();
-            let w = (cur.width + (span * share) as u32) & !1;
+            // The size grows with the area: interpolate width² between the floors and the last
+            // rung (R5's linear-in-width form overshoots soft; see research R5).
+            let share = (soft - est.bytes) as f64 / (last_est.bytes - est.bytes) as f64;
+            let (wf, wl) = (f64::from(cur.width), f64::from(last.width));
+            let w = (wf * wf + (wl * wl - wf * wf) * share).sqrt() as u32 & !1;
             if w > cur.width && w < last.width {
                 let wider = at_width(&cur, w);
                 let e = sampler.sample(&wider).await?;
@@ -576,6 +594,30 @@ mod tests {
     }
 
     #[test]
+    fn gifski_lowers_its_lossy_quality_instead_of_dither_and_colours() {
+        let mut f = Fake::new(1_200_000.0);
+        let mut i = input(4_000_000, 8_000_000);
+        i.start.gifski = Some(GifskiParams { quality: 90, motion_quality: None, lossy_quality: None });
+        let found = run(&i, &mut f).unwrap();
+        assert!(
+            !f.calls.iter().any(|c| c.starts_with("post")),
+            "no gifsicle on gifski output: {:?}",
+            f.calls
+        );
+        let lq: Vec<Option<u8>> = found
+            .record
+            .steps
+            .iter()
+            .filter(|s| s.kind == StepKind::Sample)
+            .map(|s| s.settings["gifski"]["lossy_quality"].as_u64().map(|v| v as u8))
+            .collect();
+        assert_eq!(lq[..3], [None, Some(80), Some(60)], "{:?}", found.record.steps);
+        let samples: Vec<&String> = f.calls.iter().filter(|c| c.starts_with("sample")).collect();
+        assert!(samples[1].contains("c256 Sierra2_4a"), "dither and colours untouched: {samples:?}");
+        assert!(found.record.lowered.iter().any(|l| l.setting == "lossy_quality"));
+    }
+
+    #[test]
     fn no_scenario_takes_more_than_nine_encodes() {
         // Random monotone models: per-second size, full-encode bias, budgets and floors.
         let mut seed = 0x2545_f491_4f6c_dd1du64;
@@ -594,6 +636,10 @@ mod tests {
             i.allow_trim = next() % 2 == 0;
             i.start.colours = [256, 192, 128][(next() % 3) as usize];
             i.start.rate = [(25, 1), (20, 1), (15, 1), (10, 1)][(next() % 4) as usize];
+            if next() % 3 == 0 {
+                i.start.gifski =
+                    Some(GifskiParams { quality: 90, motion_quality: None, lossy_quality: None });
+            }
             if let Ok(found) = run(&i, &mut f) {
                 assert!(found.record.encodes <= MAX_ENCODES, "{:?}", found.record);
                 assert!(found.bytes <= i.budget.hard);
