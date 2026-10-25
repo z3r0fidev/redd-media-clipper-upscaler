@@ -414,7 +414,7 @@ handling and consented trimming.
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T045 [P] [US2] Write unit tests in `core/gif/budget.rs` against a fake `Sampler` with
+- [X] T045 [P] [US2] Write unit tests in `core/gif/budget.rs` against a fake `Sampler` with
   scripted sizes:
   - the ladder order (lossy → dither → colours → fps → width);
   - lossy rungs counted as `post`, not encodes;
@@ -445,7 +445,11 @@ handling and consented trimming.
 
 ### Implementation for User Story 2
 
-- [ ] T048 [US2] Implement `core/gif/budget.rs` (research R5), making T045 pass.
+- [X] T048 [US2] Implement `core/gif/budget.rs` (research R5), making T045 pass.
+  Done 2026-10-25: `search(&SearchInput, &mut impl Sampler) -> Found` (async; the trait has
+  `sample`, `post`, `full`). Reading of R5 where it is open: each rung lowers one step; s7 runs
+  only when the floors fit soft; the retry takes the first rung after the last one used, else
+  width to its floor. The property test runs 2000 seeded random models.
 - [ ] T049 [US2] Implement the gifsicle post-pass in `core/exec/gif.rs` (`run_lines_in`, cwd =
   scratch, `--` before the input, cleared environment, bounded stderr), making T046 pass.
 - [ ] T050 [US2] Wire the search into `core/exec/gif.rs`:
