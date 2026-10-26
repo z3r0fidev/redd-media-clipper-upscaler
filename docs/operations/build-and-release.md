@@ -18,14 +18,14 @@ what the packages install, see [Installation](../administration/installation.md)
 `cargo xtask` is an alias for `cargo run --package xtask --` (`.cargo/config.toml`). Usage:
 
 ```text
-cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> | check-release-gate [--tree DIR] | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>
+cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> [--without-debian] | check-release-gate [--tree DIR] | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>
 ```
 
 | Task | What it does | Writes |
 |---|---|---|
 | `fetch-tools [--target T]` | Downloads the pinned FFmpeg archive for target `T` (default: host), verifies its SHA-256, extracts `ffmpeg` and `ffprobe`, and installs them with Tauri sidecar names | `binaries/rmedia-ffmpeg-<T>[.exe]`, `binaries/rmedia-ffprobe-<T>[.exe]`, `binaries/FFMPEG-LICENSE.txt`, `binaries/.<T>.sha256` |
 | `fetch-tools` (GIF engines, 0.3.0) | Also downloads the pinned gifsicle and gifski binaries from `xtask/gif-tools.lock.json`, verifies their SHA-256s and installs them with sidecar names; `--no-gifski` leaves gifski (and its licence files) out | `binaries/rmedia-gifsicle-<T>[.exe]`, `binaries/rmedia-gifski-<T>[.exe]` |
-| `pin-gif-tools <run-id>` | Pins a `gif-tools.yml` run: checks the build attestations and every hash, the gifski lock updates, and writes the lock | `xtask/gif-tools.lock.json` |
+| `pin-gif-tools <run-id> [--without-debian]` | Pins a `gif-tools.yml` run: checks the build attestations and every hash, the gifski lock updates, and writes the lock. `--without-debian` pins even when Debian has no copy of this gifsicle version to compare the source with | `xtask/gif-tools.lock.json` |
 | `check-release-gate [--tree DIR]` | Fails when gifski is staged (`binaries/rmedia-gifski*`) and the root `Cargo.toml` records no app licence decision (a root `LICENSE` plus `[workspace.metadata.rmedia] app_licence`). FR-025 | nothing |
 | `pin-tools` | Moves the pin to the newest BtbN autobuild of the **current release line** and records GitHub's asset SHA-256 digests and the BtbN commit of the tag (`scripts_commit`); the lock is written only after both new archives are downloaded and verified | `xtask/tools.lock.json` |
 | `gen-bindings` | Regenerates the desktop app's TypeScript types from `rmedia-core` (ts-rs) | `apps/desktop/src/lib/bindings/` (deleted and recreated) |

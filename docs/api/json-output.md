@@ -25,8 +25,9 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
 |---|---|
 | `doctor --json` | One pretty-printed document, `type: "doctor"` |
 | `scan --json` | One document, `type: "scan"` |
-| `clip`/`batch --dry-run --json` | One document, `type: "plan"` |
-| `clip`/`batch --json` (run) | NDJSON: one event per line, ending with `type: "summary"` |
+| `clip`/`upscale`/`gif`/`batch --dry-run --json` | One document, `type: "plan"` |
+| `clip`/`upscale`/`gif`/`batch --json` (run) | NDJSON: one event per line, ending with `type: "summary"` |
+| `gif --list-targets --json` | One document, `type: "targets"` (0.3.0) |
 | `clip`, `batch` or `scan` failing before planning (engine missing, bad scan root, unreadable input) | One document, `type: "error"` (or `type: "plan"` with `issues` for clip list / manifest parse errors) |
 
 ## `doctor`
@@ -73,6 +74,7 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
 | `models` | object | Model file name → `ok` or `missing` |
 | `capability` | object, absent without the check | `checked_at` (RFC 3339 UTC), `fingerprint`, `demoted[]` (`{tier, error, at}`: tiers that failed after an automatic choice) |
 | `preset_problems` | string[] | User preset files that could not be used (`file: message`) |
+| `gif` | object | Added in 0.3.0: `gif` and `mp4` (booleans: the built-in GIF engine and the Reddit MP4 can run), `missing` (filters, muxers or encoders either lacks), `engines` (`[{name, path, source, version, ok, reason}]` for gifsicle and gifski) and `target_problems` (user GIF target files that could not be used). None of it changes `ok`. |
 
 ## `scan`
 
@@ -260,8 +262,8 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 | `run_started` | `run_id`, `total_jobs`, `total_media` | `total_media`: seconds of media to produce (jobs that will run) |
 | `job_started` | `job_id` | |
 | `job_progress` | `job_id`, `fraction` (0–1), `out_time`, `speed`?, `eta_ms`? | At most about 10 per second per job; the final block is always sent |
-| `job_warning` | `job_id`, `message` | One per plan warning, at job start |
-| `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs only (0.2.0). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). `job_progress.fraction` covers the whole job, weighted across stages. Clip jobs emit none. |
+| `job_warning` | `job_id`, `message`, `code`? | One per plan warning, at job start. `code` only for coded warnings (0.3.0: `OVER_RECOMMENDED`, `ENGINE_FALLBACK`, `TIMING_APPROXIMATE`, `LONG_RANGE`) |
+| `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs (0.2.0) and GIF jobs (0.3.0). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). GIF stages, in order and only those that apply: `analyze` (smart framing), `search` (with a budget), `palette`, `encode`, `optimise` (gifsicle), `verify`. `job_progress.fraction` covers the whole job, weighted across stages. Clip jobs emit none. |
 | `job_finished` | `job_id`, `outcome` | See below. Skipped jobs emit only this event. |
 | `run_progress` | `done`, `total`, `fraction`, `eta_ms`? | Weighted by media length. Throttled to about 4 per second, plus one after each finished job. `eta_ms` only when 2% < fraction < 100%. |
 | `summary` | `succeeded`, `skipped`, `failed`, `cancelled`, `exit_code`, `jobs[]` | **Always the last line**, also on cancel. This is the core's `run_finished` event, renamed by the CLI. |
@@ -270,9 +272,9 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 
 | `status` | Extra fields |
 |---|---|
-| `succeeded` | `output` (path actually written; may differ under `rename`) and `measure` (`clip` or `upscale`, added in 0.2.0), plus the fields for that measure below |
+| `succeeded` | `output` (path actually written; may differ under `rename`) and `measure` (`clip` or `upscale`, added in 0.2.0; `gif`, added in 0.3.0), plus the fields for that measure below |
 | `skipped` | `reason`: `output already exists`, or `output appeared while the clip was being made` |
-| `failed` | `error` `{code, message, stderr_tail?}` |
+| `failed` | `error` `{code, message, stderr_tail?, detail?}` (`detail` only for `BUDGET_UNREACHABLE`, 0.3.0) |
 | `cancelled` | — |
 
 `summary.jobs[]` items have `id`, `source`, `output`, `requested`, plus the outcome fields.
@@ -281,7 +283,7 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 from the request by more than 50 ms). These two keys are unchanged from 0.1.0.
 
 **`measure: "gif"`** (0.3.0) adds `span`, `format`, `bytes`, `width`, `height`, `fps`, `timing`,
-`colours`, `dither` and `lossy` (built-in engine; otherwise `null`), `engine`, `optimiser` (bool),
+`colours`, `dither` and `lossy` (built-in engine only; otherwise the keys are absent), `engine`, `optimiser` (bool),
 `loop`, `deterministic`, `trimmed` (`{start,end}` when `--allow-trim` shortened the range, else
 `null`), `mp4_estimate`, and `search` (`null` without a budget):
 

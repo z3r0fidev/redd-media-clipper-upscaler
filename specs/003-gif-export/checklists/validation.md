@@ -182,3 +182,42 @@ Range `e02b26a..HEAD`. Neither review found a High.
 | L4 | Engine stderr kept bidi/format characters | Fixed: `target::unsafe_char` in `tool_failed` and the pipe's stderr tail |
 | L2 | `budget=none` jobs can use about 8 GiB of scratch each (4 GiB cap × 2 files), no free-space preflight | Open (accepted: user-chosen) |
 | L3 | The release gate checks staged file names, not the built bundles | Open (maintainer-error risk; a post-build scan is a follow-up) |
+
+## Docs audit (docs-agent, 2026-10-26)
+
+Report: `~/.claude/docs-agent/reports/documentation-audit.md`. Stale pre-003 pages, help output,
+GIF names, the MP4 frame-rate cap per target and contract details were fixed in the docs. Two
+gaps between `contracts/tauri-commands.md` and the code:
+- **Settings had no GIF engine lines or gifsicle/gifski pickers** (the backend `pick_engine(kind)`
+  existed). Built: **Settings › GIF export** (availability, each engine's version/path/source,
+  **Choose …** and **Use automatic**, target-file problems, the "limits unverified" note).
+- **The `partial` refining estimate** was never built; the contract now says the estimate is
+  returned once, with progress on the channel.
+
+## T078 release run and T079 Windows results (2026-10-26)
+
+**T078.** `cargo xtask notices` gave no diff, `check-pins --online` passed, and
+`check-release-gate` fails as expected while gifski is bundled and there is no root `LICENSE`.
+`release.yml` was dispatched with `gifski=false` (owner approval 2026-10-26): run 40345344064 on
+`723bbbe`, both `package` jobs succeeded and each printed `release gate: ok`. gifsicle 1.98 was
+staged from the pinned `gif-tools-2026-10-25.40211502841` release and fetched with `--no-gifski`.
+
+| Artifact | Size | Digest |
+|---|---|---|
+| `rmedia-x86_64-unknown-linux-gnu` | 636,294,351 B | `sha256:7224e520680eafc816e9aea14fb9866f03d8d3213b93516fc3b58cf654555d84` |
+| `rmedia-x86_64-pc-windows-msvc` | 411,422,934 B | `sha256:f1fa7fdf7abcce0504dc5ed25d6b4cc0eedfe4c42870a72d59f820055e81bc36` |
+
+The artifacts were not downloaded or installed here. Installing them on Windows hardware is an
+owner check.
+
+**T079 (Windows).** CI run 40345454414 on `83af317`, `test (windows-latest, bundled engine)`
+with `RMEDIA_REQUIRE_GIF_TOOLS=1`: 482 passed, 0 failed, 15 ignored (benchmarks and GPU tests).
+This covers:
+- US1–US5;
+- gifsicle, and the gifski pipe including its cancel test (`cancelling_the_gifski_pipe_is_fast_and_clean`);
+- the gifski fallback;
+- the release-gate test.
+
+The release-mode benchmark step also ran the SC-009 bench. `desktop app (windows-latest)`
+passed. The earlier note that a dead gifski on Windows might be blamed on ffmpeg is still
+untested; no test kills gifski on its own.

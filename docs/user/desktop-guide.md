@@ -387,7 +387,11 @@ you change a setting. If the GIF would not fit, it shows the settings rmedia wil
 
 **More settings** opens width, frames per second, colours, dither, lossy compression, how many
 times it plays, the size to aim for and the most it may be, **No size limit**, **Allow trimming to
-fit**, and the engine. Empty fields use the target's value. Your choices are remembered.
+fit**, the engine, **Fail if the engine is missing** and **Optimise with gifsicle**. Empty fields
+use the target's value. Your choices are remembered.
+
+If the GIF cannot fit, the result card shows why; when part of the range fits, it offers
+**Trim to N s**.
 
 **Add to queue** keeps the GIF for later; **Run** in the queue makes it with your clips, and an
 exported queue makes the same files with `rmedia batch`.
@@ -395,8 +399,13 @@ exported queue makes the same files with `rmedia batch`.
 ### Optional engines
 
 gifsicle (smaller files) and gifski (best quality) are separate programs. The installers include
-them where the licence allows. To use your own copy, open **Settings** and choose the program
-under the engine pickers. Without them, the built-in engine is used and the result card says so.
+them where the licence allows. Without them, the built-in engine is used, and the run results show
+a warning.
+
+**Settings › GIF export** shows whether each engine was found, its version and where it came
+from. To use your own copy, select **Choose gifsicle…** or **Choose gifski…** and pick the
+program; rmedia checks that it really is that program. **Use automatic** goes back to the
+bundled copy. You can also set `RMEDIA_GIFSICLE` or `RMEDIA_GIFSKI` before you start the app.
 
 ## Change Settings
 

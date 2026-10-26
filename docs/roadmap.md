@@ -4,7 +4,7 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-10-25.
+Last updated: 2026-10-26.
 
 ## Status at a Glance
 
@@ -87,7 +87,8 @@ size-budget search (P2), a silent "Reddit MP4" alternative (P3), portrait and sq
 002's reframe (P4), batch and `clip` integration (P5), and a desktop GIF view (P6). It reuses the
 job model that feature 002 introduced. Owner decision: gifsicle (GPL-2.0) and gifski (AGPL-3.0)
 are optional engines, and (2026-10-23) both are bundled, pinned and built from source; a release
-that bundles gifski fails until the application licence (a root `LICENSE`) exists. Owner check
+that bundles gifski fails until the application licence is decided (a root `LICENSE` and an
+allowed `app_licence` in the root `Cargo.toml`). Owner check
 before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Progress (2026-10-25)
@@ -119,8 +120,9 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - US6 (T065–T072) done: desktop GIF commands, the GIF view, GIF parity with the CLI; SC-007 two
   interactions, the estimate matched the output.
 - Polish (T073–T080): docs, notices and pin checks, the Linux quickstart and the final reviews
-  are done (78/80, [progress](../specs/003-gif-export/progress.md)). Open: the `release.yml`
-  dispatch with gifski off (owner approval) and the Windows results. Stopped for owner review.
+  are done; T078 `release.yml` run 40345344064 (gifski off) packaged Linux and Windows, and T079
+  Windows CI passed 482/482 (80/80, [progress](../specs/003-gif-export/progress.md)). Stopped
+  for the owner checks below.
 
 ### Open owner decisions
 

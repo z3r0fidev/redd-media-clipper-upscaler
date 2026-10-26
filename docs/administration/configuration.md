@@ -18,15 +18,19 @@ crate 6.0.0 path rules.
 
 | Setting source | CLI (`rmedia`) | Desktop app (`rmedia-desktop`) |
 |---|---|---|
-| `settings.json` | **Not read** | Read at startup, written from **Settings** |
+| `settings.json` | Read only for `gifsicle_path`, `gifski_path` and `models_dir` (through the core's `doctor::run`); every other field is ignored | Read at startup, written from **Settings** |
 | `--ffmpeg` / `--ffprobe` flags | Yes | Not applicable |
+| `--gifsicle` / `--gifski` flags | Yes | Not applicable |
+| `RMEDIA_GIFSICLE` / `RMEDIA_GIFSKI` | Yes | Yes (when no engine path is set in settings) |
 | `RMEDIA_FFMPEG` / `RMEDIA_FFPROBE` | Yes | Yes (when no engine path is set in settings) |
 | `RMEDIA_STATE_DIR` | Yes | Yes |
-| `RMEDIA_CONFIG_DIR` | Only for `rmedia upscale` device presets (`presets/` folder); the CLI does not read `settings.json` | Yes |
+| `RMEDIA_CONFIG_DIR` | Yes: device presets (`presets/`), GIF targets (`gif-targets/`) and the three `settings.json` fields above | Yes |
 | `RMEDIA_CACHE_DIR` | Yes (cache root; used by upscale and models lookup) | Yes |
 
-The CLI takes its options from flags and manifests only. Only the desktop app calls
-`Settings::load()` (`apps/desktop/src-tauri/src/lib.rs`).
+The CLI takes its clip, upscale and GIF options from flags and manifests only; it never reads
+`defaults`, `jobs`, `ffmpeg_path` or `ffprobe_path` from `settings.json`. The core's engine check
+(`crates/rmedia-core/src/doctor.rs`), which every CLI command runs, calls `Settings::load()` for the
+GIF engine paths and the models folder only.
 
 ## Desktop Settings File (`settings.json`)
 
@@ -60,7 +64,7 @@ All fields are optional. A file containing `{}` is equivalent to the defaults.
 | `jobs` | integer (0 to 65535) | not set | Clips processed at once. Not set means half the CPU cores, between 1 and 4. The **Clips at once** field in the UI accepts 1 to 64. |
 | `proxy_cache_max_mb` | integer | `5120` | Size cap of the preview cache in MB (multiplied by 1024 × 1024). The UI field has a minimum of 100. |
 | `models_dir` | path string | not set | Folder searched first for model files (face detector, AI upscaler weights). Set in the desktop app with Settings › **Models folder** (a folder picker; the page cannot type a path). The AI tier uses a folder only when it holds all six Real-ESRGAN files (`realesr-animevideov3-x2/x3/x4` `.param` and `.bin`). |
-| `gifsicle_path`, `gifski_path` | path string | not set | The optional GIF engines (feature 003). Set in the desktop app with Settings › engine pickers (a native file dialog that checks the program's `--version`); the page cannot type a path. |
+| `gifsicle_path`, `gifski_path` | path string | not set | The optional GIF engines (feature 003). Read by the desktop app **and by the CLI** (after `--gifsicle`/`--gifski`, before `RMEDIA_GIFSICLE`/`RMEDIA_GIFSKI`). Set them in the desktop app with **Settings › GIF export › Choose gifsicle…/Choose gifski…** (a native file dialog that checks the program's `--version`); the page cannot type a path. |
 | `gif_defaults` | object | `{}` | Last-used GIF choices (the JSON manifest `gif` keys). The desktop GIF view starts from these and saves each change here. |
 | `upscale_defaults` | object | `{}` | Last-used upscale choices (`enabled`, `preset`, `reframe`, `tier`, `hdr`, …). The desktop upscale view starts from these and saves each change here; kept apart from `defaults` so clip runs never turn upscaling on. |
 
@@ -156,6 +160,12 @@ source, the version, the availability of the key encoders (`libx264`, `aac`, `li
 available, doctor reports `no encoders for accurate mode (fast mode still works)` and still returns
 ready. The CLI `rmedia doctor` (since 0.2.0) also lists `libx265` and the upscaling filters;
 the desktop **Video engine** section was not changed.
+
+The optional GIF engines gifsicle and gifski (0.3.0) are found the same way, with their own
+names: `--gifsicle`/`--gifski` or `gifsicle_path`/`gifski_path`, then `RMEDIA_GIFSICLE`/
+`RMEDIA_GIFSKI`, then the bundled `rmedia-gifsicle`/`rmedia-gifski`, then `PATH` (only when no
+bundled copy exists). Each must report version 1.x to `--version`. A missing or failing engine is
+not an error; see [CLI Reference › GIF Engine Lookup Order](../api/cli-reference.md#gif-engine-lookup-order).
 
 CI tests the minimum supported version against the distribution FFmpeg 6.1 on `ubuntu-24.04`
 (`minimum-engine` job in `.github/workflows/ci.yml`).
@@ -254,6 +264,8 @@ Linux the folder name is the lowercased application name (`rmedia`); on Windows 
 | Crash journal (`inflight/`) | `~/.local/state/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\data\` |
 | Preview cache (`preview/`) | `~/.cache/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\cache\` |
 | User device presets (`presets/*.json`) | `~/.config/rmedia/presets/` | `%APPDATA%\OpenLogic\rmedia\config\presets\` |
+| User GIF targets (`gif-targets/*.json`, 0.3.0) | `~/.config/rmedia/gif-targets/` | `%APPDATA%\OpenLogic\rmedia\config\gif-targets\` |
+| GIF output (default, 0.3.0) | `gifs/` next to each source video | `gifs\` next to each source video |
 | Model files (searched in order) | `models_dir` setting, `models/` beside the executable, `/usr/lib/rmedia/models/` (deb; `usr/lib/rmedia/models/` inside the AppImage), `~/.cache/rmedia/models/` | same pattern; cache under `%LOCALAPPDATA%\OpenLogic\rmedia\cache\models\` |
 | Upscaled output (default) | `upscaled/` next to each source video | `upscaled\` next to each source video |
 | Program files (deb) | `/usr/bin/`, `/usr/lib/rmedia/licenses/` | See [Installation](installation.md) |

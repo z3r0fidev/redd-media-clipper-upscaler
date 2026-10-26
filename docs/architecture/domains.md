@@ -130,7 +130,7 @@ FR-016–FR-019).
 | Item | Location |
 |---|---|
 | `plan::plan` → `Plan { run_id, jobs, issues, cancelled }`; `Planner::plan_clip` | `plan/mod.rs` |
-| `PlannedJob`; `Disposition` = `run` / `skip{reason}`; `JobSpec::Clip(ClipSpec)` or `JobSpec::Upscale(UpscaleSpec)`. Since the 002 refactor A1, clip-only fields (`mode`, `requested`, `predicted`) live in `ClipSpec`. | `plan/mod.rs` |
+| `PlannedJob`; `Disposition` = `run` / `skip{reason}`; `JobSpec::Clip(ClipSpec)`, `JobSpec::Upscale(UpscaleSpec)` or `JobSpec::Gif(GifSpec)` (0.3.0). Since the 002 refactor A1, clip-only fields (`mode`, `requested`, `predicted`) live in `ClipSpec`. | `plan/mod.rs` |
 | `Issue { severity, code, origin, message }`; `Plan::has_errors`, `engine_errors_only` | `plan/mod.rs` |
 | Name templates and file name sanitizing | `plan/naming.rs` |
 | `Container`, `EncodeProfile` (`X264_AAC`, `VP9_OPUS`), `SubtitlePolicy`, `select_streams` | `plan/streams.rs` |
@@ -330,7 +330,7 @@ desktop GIF view. Code is in `crates/rmedia-core/src/gif/` and `exec/gif.rs`. Ad
 | Verify: every delay ≥ 2 cs, frame count, width, loop block (NETSCAPE), size under the limit; the MP4's codec, tags and fast start | `gif/verify.rs` |
 | Executor: analyze (smart), search, palette, encode, optimise, verify; the gifski pipe runs through `exec/pipeline.rs` (ffmpeg → gifski) | `exec/gif.rs` |
 | Manifests: JSON `gif` block, `gif_*` CSV columns; `clip --gif` / `batch --gif` | `input/manifest_json.rs`, `input/manifest_csv.rs`, `crates/rmedia-cli/src/commands/` |
-| Desktop: `list_gif_targets`, `gif_estimate` / `cancel_estimate`, `open_output`, engine pickers | `apps/desktop/src-tauri/src/ops.rs` |
+| Desktop: `list_gif_targets`, `gif_estimate` / `cancel_estimate`, `open_output`, `pick_engine` with `kind` `gifsicle`/`gifski` (**Settings › GIF export**) | `apps/desktop/src-tauri/src/ops.rs` |
 
 **Invariants**
 
@@ -361,7 +361,7 @@ desktop GIF view. Code is in `crates/rmedia-core/src/gif/` and `exec/gif.rs`. Ad
 | `cargo xtask notices` | Writes `THIRD_PARTY_NOTICES.md` from cargo and npm metadata, including license texts |
 | `cargo xtask fetch-tools` (GIF engines) | Also stages `binaries/rmedia-gifsicle-<triple>` and `rmedia-gifski-<triple>` from `xtask/gif-tools.lock.json`, verifying SHA-256s (`--no-gifski` leaves gifski out) |
 | `cargo xtask pin-gif-tools <run-id>` | Pins the binaries and sources of a `gif-tools.yml` run into `xtask/gif-tools.lock.json` |
-| `cargo xtask check-release-gate [--tree DIR]` | Fails when a release would bundle gifski (AGPL-3.0) and the repository has no root `LICENSE` (FR-025) |
+| `cargo xtask check-release-gate [--tree DIR]` | Fails when a release would bundle gifski (AGPL-3.0, `binaries/rmedia-gifski*` staged) unless the repository has a root `LICENSE` and an allowed `app_licence` in `[workspace.metadata.rmedia]` of the root `Cargo.toml` (an AGPL-3.0 or GPL-3.0 id, or `commercial-gifski-imagequant`; FR-025) |
 | `cargo xtask fetch-models` | Downloads the models pinned in `xtask/models.lock.json` into `models/`, verifying SHA-256; verified files are kept. Models are never committed. |
 
 ## Testing

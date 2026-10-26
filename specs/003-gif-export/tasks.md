@@ -679,11 +679,11 @@ tests, senior-code-reviewer, and security-auditor (new IPC, media server, settin
 - [X] T077 Write the release notes `docs/releases/0.3.0-dev.md`, update the `README.md` feature
   list, `docs/README.md` and `docs/roadmap.md`, and mark the Reddit limits "unverified" in the
   user docs (FR-007).
-- [ ] T078 Run `cargo xtask notices` (no diff), `check-pins --online` and `check-release-gate`
+- [X] T078 Run `cargo xtask notices` (no diff), `check-pins --online` and `check-release-gate`
   (expected to fail until the owner decides the licence; document it). Then run a
   `release.yml` `workflow_dispatch` with `--no-gifski` staging and record the artifacts for
   Linux and Windows.
-- [ ] T079 Run all of `quickstart.md` on Linux, record the results, and the Windows results from
+- [X] T079 Run all of `quickstart.md` on Linux, record the results, and the Windows results from
   CI and release artifacts, in `checklists/validation.md`. Owner checks stay open: Reddit's
   limits, a real Reddit upload, the licence decision.
 - [X] T080 Final senior-code-reviewer and security-auditor passes over all 003 changes, fixing

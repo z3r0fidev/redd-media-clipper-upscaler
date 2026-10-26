@@ -130,6 +130,12 @@ The package installs these files (from `dpkg-deb -c rmedia_0.1.0_amd64.deb`):
 
 The package section is `video` (`bundle.linux.deb.section`).
 
+> **Unverified:** the list above is the 0.1.0 package. Later packages also bundle the AI worker
+> `rmedia-sr` and the model files (0.2.0), and `rmedia-gifsicle`, `rmedia-gifski` (when the
+> release bundles it) and their licence files (0.3.0); see
+> [Build and Release › Packaging Details](../operations/build-and-release.md#packaging-details).
+> Their installed paths were not read from a built 0.2.0 or 0.3.0 package.
+
 ### Other Linux distributions (AppImage)
 
 1. Download `rmedia_<version>_amd64.AppImage`.
@@ -181,18 +187,26 @@ The archive is named `rmedia-cli-<ref>-<triple>`, where `<ref>` is the Git tag (
 
 2. Optional: add the unpacked folder to PATH.
 
-Archive contents (from `release.yml`):
+Archive contents (from the current `release.yml`; the version notes say which release added
+each file):
 
 ```text
 rmedia-cli-<ref>-<triple>/
 ├── rmedia[.exe]
+├── rmedia-sr[.exe]           (AI upscaling worker, 0.2.0)
 ├── rmedia-ffmpeg[.exe]
 ├── rmedia-ffprobe[.exe]
+├── rmedia-gifsicle[.exe]     (0.3.0)
+├── rmedia-gifski[.exe]       (0.3.0; only when the release bundles gifski)
 ├── README.md
+├── models/                   (YuNet face detector, Real-ESRGAN x2/x3/x4; 0.2.0)
 └── licenses/
     ├── THIRD_PARTY_NOTICES.md
     ├── FFMPEG-NOTICE.md
-    └── FFMPEG-LICENSE.txt
+    ├── FFMPEG-LICENSE.txt
+    ├── NCNN-NOTICE.md, NCNN-LICENSE.txt, GLSLANG-LICENSE.txt
+    ├── GIFSICLE-NOTICE.md, GIFSICLE-COPYING.txt
+    └── GIFSKI-NOTICE.md, GIFSKI-LICENSE.txt, GIFSKI-DEPS.md   (with gifski only)
 ```
 
 Keep `rmedia-ffmpeg` and `rmedia-ffprobe` in the same folder as `rmedia`. rmedia finds the bundled

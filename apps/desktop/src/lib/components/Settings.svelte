@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Settings } from "../bindings/Settings";
   import type { TierInfo } from "../bindings/TierInfo";
-  import { api, errorText } from "../api";
+  import { api, errorText, type EngineKind } from "../api";
   import { app, toast } from "../stores/app.svelte";
 
   let draft = $state<Settings | null>(app.settings ? structuredClone($state.snapshot(app.settings)) : null);
@@ -15,9 +15,9 @@
     }
   }
 
-  async function chooseEngine(reset: boolean) {
+  async function chooseEngine(reset: boolean, kind: EngineKind = "ffmpeg") {
     try {
-      app.engine = await api.pickEngine(reset);
+      app.engine = await api.pickEngine(reset, kind);
     } catch (e) {
       toast(errorText(e), "error");
     }
@@ -121,6 +121,25 @@
         </span>
         <p class="small">Version {app.engine.version ?? "?"} · accurate mode writes {app.engine.accurate_containers.join(", ") || "nothing"}</p>
         {#each app.engine.problems as p, i (i)}<p class="small bad">{p}</p>{/each}
+      {/if}
+    </fieldset>
+    <fieldset>
+      <legend class="section-title">GIF export</legend>
+      {#if app.engine?.gif}
+        {@const g = app.engine.gif}
+        <p class="small">GIF: {g.gif ? "yes" : "no"} · Reddit MP4: {g.mp4 ? "yes" : "no"}{#if g.missing.length} · missing {g.missing.join(", ")}{/if}</p>
+        {#each g.engines as e (e.name)}
+          <p class="small">
+            {e.name === "gifsicle" ? "gifsicle (smaller files)" : "gifski (best quality)"}:
+            {#if e.ok}{e.version} <span class="mono">{e.path}</span> <span class="pill">{e.source ?? "—"}</span>{:else}not available ({e.reason ?? "not found"}){/if}
+          </p>
+          <span class="row">
+            <button class="small" onclick={() => chooseEngine(false, e.name)}>Choose {e.name}…</button>
+            {#if e.source === "config"}<button class="ghost small" onclick={() => chooseEngine(true, e.name)}>Use automatic</button>{/if}
+          </span>
+        {/each}
+        {#each g.target_problems as p, i (i)}<p class="small bad">{p}</p>{/each}
+        <p class="small">Reddit's size limits in the targets are estimates (unverified); check Reddit's Help Center.</p>
       {/if}
     </fieldset>
     <fieldset>

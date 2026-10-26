@@ -32,6 +32,7 @@ documents:
 | `rmedia batch` | Run a batch manifest (`.json` or `.csv`) that lists many videos and their clips. |
 | `rmedia scan` | Find the videos in folders (recursively) and list them. |
 | `rmedia doctor` | Show the video engine in use and its capabilities. |
+| `rmedia gif` | Make GIFs (or silent looping MP4s) that fit a Reddit size target. In development (0.3.0). |
 
 Run `rmedia --help` or `rmedia <command> --help` for the built-in help.
 
@@ -546,8 +547,10 @@ rmedia gif --shape 9:16 video.mp4                 # upright, following faces
 rmedia gif --dry-run video.mp4                    # predict the size, write nothing
 ```
 
-Each GIF is saved in a `gifs` folder next to the video, named `{source}_{target}.gif`. The
-source is never changed.
+Each GIF is saved in a `gifs` folder next to the video, named `{source}_{target}.gif` (for
+example `video_reddit-post.gif`). When `-s`, `-e` or `-d` select part of the video, the name also
+has the clip number and range, for example `video_001_00-01-05.000_00-01-12.000_reddit-comment.gif`.
+The source is never changed.
 
 ### Choose a Target
 

@@ -5,8 +5,10 @@ built. Feature 002 (user stories 1 to 6: `rmedia upscale` with the CPU, GPU and 
 reframe, the machine capability record, batch and `clip --upscale`, and the desktop upscale view;
 unreleased, 0.2.0) is implemented and described under
 [Feature 002 foundations](#feature-002-foundations-implemented) and in the
-[Domain Breakdown](domains.md#upscaling-feature-002). Sections labelled **Planned** describe work
-that is not implemented: feature 003. See the [Roadmap](../roadmap.md).
+[Domain Breakdown](domains.md#upscaling-feature-002). Feature 003 (GIF export: `rmedia gif`,
+`clip --gif`, `batch --gif` and the desktop GIF view; 0.3.0 in development) is implemented and
+described under [Feature 003 GIF Export](#feature-003-gif-export-implemented-unreleased) and in the
+[Domain Breakdown](domains.md#gif-export-feature-003). See the [Roadmap](../roadmap.md).
 
 ## Overview
 

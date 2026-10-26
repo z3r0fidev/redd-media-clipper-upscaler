@@ -25,7 +25,7 @@ held upright, using a device preset (default 1080x2340):
 post or comment, or a silent looping "Reddit MP4" that is usually five or more times smaller:
 
 - A bounded size-budget search lowers the least visible settings first and reports what it
-  changed; the size is predicted before anything is encoded.
+  changed; a dry run predicts the size from short sample encodes before the GIF is made.
 - GIF targets as data (`reddit-post`, `reddit-comment`, `max-quality`, `flat-ui`, or your own);
   Reddit's limits are estimates, labelled unverified.
 - Optional gifsicle and gifski engines for smaller and better-looking GIFs, bundled where the
@@ -164,7 +164,7 @@ Requirements: Rust 1.94 (see `rust-toolchain.toml`), Node 24, and on Linux
 `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev patchelf`.
 
 ```bash
-cargo xtask fetch-tools                 # pinned, SHA-256 verified FFmpeg into binaries/
+cargo xtask fetch-tools                 # pinned, SHA-256 verified FFmpeg, gifsicle and gifski into binaries/ (--no-gifski: without gifski)
 cargo xtask fetch-ncnn                  # pinned ncnn for the AI worker (crates/rmedia-sr)
 cargo xtask fetch-models                # face detector and AI models into models/
 cargo build --workspace                 # CLI: target/debug/rmedia; AI worker: target/debug/rmedia-sr
@@ -194,12 +194,16 @@ them as workflow artifacts. Publishing a GitHub release and code signing are man
 Before tagging: bump `version` in `Cargo.toml`, `apps/desktop/package.json`,
 `apps/desktop/src-tauri/Cargo.toml` and `apps/desktop/src-tauri/tauri.conf.json`; run
 `cargo xtask notices`; and check `cargo xtask check-pins` (every pinned archive mirrored, the
-FFmpeg corresponding source published). Details: `docs/operations/build-and-release.md`.
+FFmpeg corresponding source published). The release workflow also runs
+`cargo xtask check-release-gate`, which fails while gifski is bundled and the app licence is
+undecided; a manual run with the `gifski` input off builds without it. Details:
+`docs/operations/build-and-release.md`.
 
 Other tasks: `cargo xtask gen-bindings` (TypeScript types from the core), `cargo xtask notices`
 (third-party notices), `cargo xtask pin-tools` (move to a newer FFmpeg build),
 `cargo xtask archive` / `mirror <tag>` / `check-pins` (keep, mirror and check the pinned
-third-party archives).
+third-party archives), `cargo xtask pin-gif-tools <run-id>` (pin a `gif-tools.yml` build of
+gifsicle and gifski), `cargo xtask check-release-gate` (the gifski licence gate).
 
 ## Project layout
 
@@ -221,4 +225,7 @@ specs/  research/      Spec Kit specifications, plans, contracts and research no
   `licenses/FFMPEG-NOTICE.md` for the build and the corresponding-source offer.
 - Bundled models and libraries: the YuNet face detector (MIT), Real-ESRGAN models (BSD-3-Clause)
   and ncnn (BSD-3-Clause) — texts in `licenses/`.
+- Bundled GIF engines (0.3.0), separate programs: gifsicle 1.98 (GPL v2,
+  `licenses/GIFSICLE-NOTICE.md`) and gifski 1.34.0 (AGPL v3 or later,
+  `licenses/GIFSKI-NOTICE.md`; shipped only once the app licence allows it).
 - Third-party Rust and JavaScript components: `THIRD_PARTY_NOTICES.md`.

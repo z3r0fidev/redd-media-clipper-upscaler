@@ -7,16 +7,17 @@ bridge tests are unchanged. Every command is a thin adapter over a core function
 | Command | Args | Returns | Core function |
 |---|---|---|---|
 | `list_gif_targets` | — | `{ default, targets: GifTarget[], problems }` | `gif::target::GifTargetRegistry::load` |
-| `gif_estimate` | `estimateId, path, span?: {start, end\|null}, options: GifOptions, onEvent: Channel<EstimateEvent>` | `{ estimate: Estimate, notes, notices }`: the predicted result of the budget search, with the settings it expects to lower (research R4) | `gif::estimate::predict`: the job's search without the full encode (research R4) in an app-cache scratch folder, removed afterwards. With smart framing it uses the cached 002 analysis, or a centred crop flagged `approximate` when no analysis exists. A new estimate cancels the previous one. |
+| `gif_estimate` | `estimateId, path, span?: {start, end\|null}, options: GifOptions, onEvent: Channel<AnalysisEvent>` | `{ estimate: Estimate, notes, notices }`: the predicted result of the budget search, with the settings it expects to lower (research R4) | `gif::estimate::prepare_in` (via a one-job plan): the job's search without the full encode (research R4) in an app-cache scratch folder, removed afterwards. With smart framing it uses the cached 002 analysis, or a centred crop flagged `approximate` when no analysis exists. A new estimate cancels the previous one. |
 | `cancel_estimate` | `estimateId` | — | cancel token |
 | `open_output` | `runId, jobId` | `{ url, kind: "image" \| "video", bytes, width, height }` | registers a finished output of **this app's** run with the media server; refused for any other path |
 
-**`EstimateEvent`:** `{ type: "progress", fraction }` or `{ type: "done" }`.
+**`AnalysisEvent`** (shared with `analyze_reframe`): `{ type: "progress", fraction }` or `{ type: "done" }`.
 
 **Estimate timing:** it must return within 5 s for a typical 1080p source and a ≤ 15 s range
-(US6 scenario 1). A search needing more samples than fit in 5 s returns the best estimate so far,
-marked `partial`, and keeps refining in the background through `EstimateEvent`. [U] The 5 s
-figure is measured in US6. The store debounces setting changes by 400 ms, and each new request cancels
+(US6 scenario 1). The estimate is returned once, when the search's samples are done; the channel
+carries progress only (`AnalysisEvent`). *Changed 2026-10-26 (T080 docs audit):* the earlier
+"`partial` result that keeps refining" was not built and is dropped from the contract; the view
+shows **Estimating the size…** until the result arrives. [U] The 5 s figure is not yet measured. The store debounces setting changes by 400 ms, and each new request cancels
 the one in flight.
 
 ## Existing commands extended

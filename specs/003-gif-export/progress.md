@@ -20,14 +20,14 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 | 6 US4 Shapes and smart framing | T057–T058 | 2/2 | done | both (US4/US5 review) |
 | 7 US5 Manifests, `clip --gif`, `batch --gif` | T059–T064 | 6/6 | done | with US4 |
 | 8 US6 Desktop GIF view, SC-007 | T065–T072 | 8/8 | done | security review of the desktop commands |
-| 9 Polish | T073–T080 | 6/8 | checkpoint | T080 final: no High; mediums fixed |
-| **Total** | | **78/80** | | |
+| 9 Polish | T073–T080 | 8/8 | done | T080 final: no High; mediums fixed |
+| **Total** | | **80/80** | | |
 
 ## Open
 
-- **T078:** record the Linux and Windows artifacts of `release.yml` run 40345344064 (gifski off,
-  approved 2026-10-26).
-- **T079:** the Windows results from CI and release artifacts (Linux quickstart is recorded).
+All 80 tasks are done. T078: `release.yml` run 40345344064 (gifski off) packaged Linux and
+Windows. T079: Windows CI 482 passed, 0 failed (run 40345454414). Both are recorded in `checklists/validation.md`.
+
 - Owner decision: the app licence (gates bundling gifski). Decided 2026-10-26: SC-009's automated
   bar is 5% (15% on real footage is an owner check); the stale release `gif-tools-2026-10-25` was
   deleted; `release.yml` dispatched with gifski off (run 40345344064).

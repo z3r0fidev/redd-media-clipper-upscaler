@@ -98,7 +98,7 @@ rmedia clip land.mp4 -s 0:01 -e 0:05 --gif --upscale --preset reddit-feed-45   #
 ## US6: desktop
 
 Run `npm --prefix apps/desktop run tauri dev`, then:
-1. Open `land6.mp4`, set In/Out, and choose the **GIF** tab. The estimate should appear within
+1. Open `land6.mp4`, set In/Out, and choose the **GIF for Reddit** tab. The estimate should appear within
    5 s and change when you pick "Reddit comment".
 2. Click **Export now**. The GIF should play in the result card, showing its size, width, fps
    and the lowered settings. The real size should be within 25% of the estimate.

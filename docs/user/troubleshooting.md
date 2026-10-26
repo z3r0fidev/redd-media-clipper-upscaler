@@ -887,7 +887,8 @@ was made with the built-in engine.
 #### Resolution
 
 Run `rmedia doctor` to see where rmedia looked. Install the program, or point rmedia at it with
-`--gifski`/`--gifsicle`, `RMEDIA_GIFSKI`/`RMEDIA_GIFSICLE`, or the desktop engine pickers. Add
+`--gifski`/`--gifsicle`, `RMEDIA_GIFSKI`/`RMEDIA_GIFSICLE`, or `gifski_path`/`gifsicle_path` in
+`settings.json` (desktop: **Settings › GIF export › Choose gifski…**). Add
 `--strict-engine` to make a missing engine an error (exit 4) instead.
 
 ### "15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)" (TIMING_APPROXIMATE)

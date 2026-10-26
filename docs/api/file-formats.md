@@ -311,10 +311,15 @@ the template creates sub-folders.
 | `{start}`, `{end}` | Requested start / resolved end as `HH-MM-SS.mmm` |
 | `{range}` | `{start}_{end}` |
 | `{ext}` | Output extension |
+| `{preset}` | Device preset id; upscale jobs only (0.2.0) |
+| `{target}`, `{format}` | GIF target id and `gif`/`mp4`; GIF jobs only (0.3.0) |
 
 - Default: `{source}_{index:03}_{name-or-range}.{ext}`, for example
   `a_001_00-00-10.500_00-00-15.500.mp4` or `a_001_goal.mp4`.
 - Multi-source default (more than one source with `-o`): `{source}/{source}_{index:03}_{name-or-range}.{ext}`.
+- Upscale defaults (0.2.0): `{source}_{preset}.{ext}` for a whole video, `{source}_{index:03}_{name-or-range}_{preset}.{ext}` for a clip.
+- GIF defaults (0.3.0): `{source}_{target}.{ext}` for a whole video, `{source}_{index:03}_{name-or-range}_{target}.{ext}` for a clip, and `{source}/{source}_{index:03}_{name-or-range}_{target}.{ext}` for clips of several sources into one `-o` folder.
+- Using `{preset}`, `{target}` or `{format}` in a job of another kind is an error.
 - Errors: an unknown placeholder, an unclosed `{`, `{index:0}`, `{index:010}`, and templates that
   yield absolute paths or empty, `.` or `..` parts.
 - Sanitizing:

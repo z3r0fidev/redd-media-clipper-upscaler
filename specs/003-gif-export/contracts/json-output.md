@@ -35,7 +35,7 @@ present too.
 - `estimate.from`:
   - `"search"`: the predicted result of the budget search, with the settings it expects to lower;
   - `"sample"`: no budget, so one sample;
-  - `"pending"` (`bytes: null`): `--no-sample`, or `batch --dry-run` without `--sample`.
+  - `"pending"` (`bytes: null`): `--no-sample`, or any `batch --dry-run` (batch never samples).
 - Planning errors use the existing `issues` shape. New codes:
   - `TARGET_UNKNOWN`;
   - `BUDGET_UNREACHABLE` with `"detail":{"min_bytes":65536}`, for the static floor only.
@@ -51,7 +51,7 @@ present too.
 ## Outcome (`JobFinished` and the run summary)
 
 ```json
-{"type":"job_finished","id":1,"outcome":{"status":"succeeded",
+{"type":"job_finished","job_id":1,"outcome":{"status":"succeeded",
   "output":"/v/gifs/game_reddit-post.gif","measure":"gif",
   "span":{"start":62.0,"end":69.0},"format":"gif","bytes":2911034,
   "width":612,"height":344,"fps":12,"timing":{"exact":false,"avg_cs":8.33},

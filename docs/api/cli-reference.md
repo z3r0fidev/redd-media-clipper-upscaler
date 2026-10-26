@@ -1,12 +1,12 @@
 # `rmedia` CLI Reference
 
 This page documents every command and flag of the `rmedia` command-line tool, version 0.1.0, plus
-the upscaling of feature 002 (`rmedia upscale`, `clip --upscale`, `doctor --recheck`), which is
-unreleased (0.2.0).
+the upscaling of feature 002 (`rmedia upscale`, `clip --upscale`, `doctor --recheck`; 0.2.0
+release candidate) and the GIF export of feature 003 (`rmedia gif`, `clip --gif`, `batch --gif`;
+0.3.0 in development).
 Flags come from the clap definitions in `crates/rmedia-cli/src/main.rs`. Behaviour comes from
-`crates/rmedia-cli/src/commands/*.rs`. The help text below was captured from
-`target/debug/rmedia` built from the working tree after commit `bd1eef8`; the `upscale` additions
-were captured on 2026-10-15 from commit `2bfe3f0`.
+`crates/rmedia-cli/src/commands/*.rs`. The `--help` text below was re-captured on 2026-10-26 from
+`target/debug/rmedia` built from `main` (`main.rs` last changed in `f4729ec`).
 
 Related: [File Formats](file-formats.md) · [JSON Output](json-output.md) ·
 [Architecture Overview](../architecture/overview.md).
@@ -35,24 +35,27 @@ Commands:
   batch    Run a batch manifest (.json or .csv) listing many videos and their clips
   scan     Find the videos in folders (recursively) and list them
   doctor   Show the video engine in use and its capabilities
+  gif      Make GIFs for Reddit that fit a size target (default: a Reddit post, 720 px, 15 fps)
   help     Print this message or the help of the given subcommand(s)
 
 Options:
-      --ffmpeg <PATH>   Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
-      --ffprobe <PATH>  Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
-      --recheck         Run the GPU self-tests again now (normally they run only when the hardware, driver or app version changes)
-  -v, --verbose...      More detail (show ffmpeg commands with -v)
-  -q, --quiet           Only print errors and the final summary
-  -h, --help            Print help
-  -V, --version         Print version
+      --ffmpeg <PATH>    Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
+      --ffprobe <PATH>   Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
+      --gifsicle <PATH>  Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
+      --gifski <PATH>    Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
+  -v, --verbose...       More detail (show ffmpeg commands with -v)
+  -q, --quiet            Only print errors and the final summary
+  -h, --help             Print help
+  -V, --version          Print version
 ```
 
 | Flag | Effect |
 |---|---|
 | `--ffmpeg PATH`, `--ffprobe PATH` | Use this engine. The path must exist. Reported with source `config`. |
+| `--gifsicle PATH`, `--gifski PATH` | Use this optional GIF engine (0.3.0). See [GIF Engine Lookup Order](#gif-engine-lookup-order). |
 | `-v`, `--verbose` (repeatable) | Dry runs print the exact ffmpeg command per job. `scan` lists rejected files. Failed jobs print ffmpeg's stderr tail. |
 | `-q`, `--quiet` | Hides progress bars and plan warnings; errors and the final summary still print |
-| `-V`, `--version` | Prints `rmedia 0.1.0` |
+| `-V`, `--version` | Prints `rmedia <version>`, the workspace version (`rmedia 0.2.0` on `main` today; `rmedia 0.1.0` in the 0.1.0 build) |
 
 ### Engine Lookup Order
 
@@ -86,19 +89,47 @@ Options:
       --inputs-from <FILE>     Read more inputs from a file (one path per line), or "-" for stdin
       --ffprobe <PATH>         Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
       --no-recursive           Only look at the top level of each folder
+      --gifsicle <PATH>        Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
       --max-depth <N>          Maximum folder depth (1 = top level only)
-  -v, --verbose...             More detail (show ffmpeg commands with -v)
+      --gifski <PATH>          Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
       --include <GLOB>         Only include matching paths (glob, relative to the folder; repeatable), e.g. "*.mp4"
-  -q, --quiet                  Only print errors and the final summary
       --exclude <GLOB>         Exclude matching paths (glob; repeatable), e.g. "**/drafts/**"
+  -v, --verbose...             More detail (show ffmpeg commands with -v)
       --hidden                 Include hidden files and folders
+  -q, --quiet                  Only print errors and the final summary
       --follow-symlinks        Follow symbolic links (loops are detected)
   -s, --start <TIME>           Clip start: 90, 1:30, 00:01:30.500, 1m30s …
   -l, --list <FILE>            Clip list file: one clip per line, "START END|+DURATION [NAME]" (applied to every input)
   -e, --end <TIME>             Clip end (a time, or "end"). Defaults to the end of the video
   -d, --duration <DURATION>    Clip length instead of an end time: 15, +15, 1:00 …
       --mode <MODE>            fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode [default: fast] [possible values: fast, accurate]
-  -o, --output-dir <DIR>       Output folder (default: a "clips" folder next to each source)
+      --upscale                Also upscale every clip for phones, in the same pass (feature 002; see `rmedia upscale`)
+      --preset <ID>            Device preset (see `upscale --list-presets`) [default: phone-fill]
+      --reframe <REFRAME>      How to fill a screen of a different shape: follow the subject, crop the centre, or show the whole frame over a blurred background [default: smart] [possible values: smart, center, blur]
+      --tier <TIER>            Quality tier: chosen for this machine (auto) or forced [default: auto] [possible values: auto, cpu, gpu, ai]
+      --hdr <HDR>              HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only) [default: sdr] [possible values: sdr, keep]
+      --motion <MOTION>        Smart-reframe camera speed [default: normal] [possible values: calm, normal, fast]
+      --crf <N>                Override the preset's quality (CRF, lower = better and bigger)
+      --gif                    Make every clip a GIF (or Reddit MP4) instead (feature 003; see `rmedia gif`)
+      --target <ID>            GIF target (see `gif --list-targets`) [default: reddit-post]
+      --format <FORMAT>        Output format [default: gif] [possible values: gif, mp4]
+      --width <N>              Output width in pixels; never above the source's [default: the target's]
+      --fps <N>                Frames per second, at most 50 for a GIF [default: the target's]
+      --colors <N>             Palette size, 2 to 256 (built-in engine) [default: the target's]
+      --dither <MODE>          Dithering: none, bayer, bayer:0..5, floyd-steinberg or sierra [default: the target's]
+      --lossy <N>              gifsicle lossy compression, 0 to 200 (needs gifsicle) [default: the target's]
+      --loop <N>               How many times it plays: forever, or 1 to 65535 [default: forever]
+      --budget <SIZE>          The size to aim for (3MB, 2.5MiB, 800k), or none [default: the target's]
+      --hard-limit <SIZE>      Never write above this size [default: the budget, else the target's hard limit]
+      --allow-trim             Allow shortening the range when no setting fits the budget
+      --engine <ENGINE>        GIF engine: the target's (auto), the built-in one or gifski [default: auto] [possible values: auto, builtin, gifski]
+      --strict-engine          Fail instead of falling back when the chosen engine is missing
+      --no-optimise            Never run the gifsicle optimiser
+      --shape <SHAPE>          Output shape [default: source] [possible values: source, 9:16, 4:5, 1:1]
+      --framing <FRAMING>      How to reach another shape [default: smart] [possible values: smart, center, blur]
+      --no-sample              With --dry-run, skip the sample encodes (the size estimate is shown as pending). Without it, a dry run encodes short samples of each input in a temporary folder
+      --crop-path <FILE>       With smart framing, write the full crop path as JSON to FILE
+  -o, --output-dir <DIR>       Output folder (default: a "clips" folder next to each source; "upscaled" for upscale)
       --name <TEMPLATE>        Output name template: {source} {index} {index:03} {name} {name-or-range} {name-or-start} {start} {end} {range} {ext}
       --container <EXT>        Output container/extension (default: same as the source)
       --on-exists <ON_EXISTS>  What to do when an output file already exists [default: skip] [possible values: skip, overwrite, rename]
@@ -134,8 +165,10 @@ rmedia clip land.mp4 -s 0 -e 4 --upscale --preset reddit-feed-45
 ### Clip and GIF in One Pass
 
 `--gif` makes each clip a GIF (or `--format mp4` loop) with all `rmedia gif` options, written to
-`gifs/` next to the source, with no intermediate video. GIF flags without `--gif` are a usage
-error (exit 2, `--target needs --gif`). With `--upscale` too, the upscale is skipped (a note:
+`gifs/` next to the source, with no intermediate video. Clips are named
+`{source}_{index:03}_{name-or-range}_{target}.{ext}`. GIF flags without `--gif` are a usage
+error (exit 2, `--target needs --gif`). `--crop-path` is refused for `clip` (exit 2; use
+`rmedia gif` or `rmedia upscale`). With `--upscale` too, the upscale is skipped (a note:
 `upscale skipped: a GIF is never larger than its source`). A `clip --gif --dry-run` samples like
 `rmedia gif` (`--no-sample` skips it).
 
@@ -241,13 +274,41 @@ Options:
       --ffmpeg <PATH>          Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
       --ffprobe <PATH>         Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
       --mode <MODE>            Default mode for clips the manifest does not specify [possible values: fast, accurate]
+      --gifsicle <PATH>        Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
   -o, --output-dir <DIR>       Default output folder for clips the manifest does not specify
-  -v, --verbose...             More detail (show ffmpeg commands with -v)
+      --gifski <PATH>          Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
       --name <TEMPLATE>        Default name template
-  -q, --quiet                  Only print errors and the final summary
       --container <EXT>        Default output container/extension
+  -v, --verbose...             More detail (show ffmpeg commands with -v)
       --on-exists <ON_EXISTS>  What to do when an output file already exists (default: skip) [possible values: skip, overwrite, rename]
+  -q, --quiet                  Only print errors and the final summary
   -j, --jobs <N>               How many clips to process at once
+      --upscale                Upscale every video the manifest does not turn upscaling off for (feature 002)
+      --preset <ID>            Device preset (see `upscale --list-presets`) [default: phone-fill]
+      --reframe <REFRAME>      How to fill a screen of a different shape: follow the subject, crop the centre, or show the whole frame over a blurred background [default: smart] [possible values: smart, center, blur]
+      --tier <TIER>            Quality tier: chosen for this machine (auto) or forced [default: auto] [possible values: auto, cpu, gpu, ai]
+      --hdr <HDR>              HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only) [default: sdr] [possible values: sdr, keep]
+      --motion <MOTION>        Smart-reframe camera speed [default: normal] [possible values: calm, normal, fast]
+      --crf <N>                Override the preset's quality (CRF, lower = better and bigger)
+      --gif                    Make a GIF of every clip the manifest does not turn GIF export off for (feature 003)
+      --target <ID>            GIF target (see `gif --list-targets`) [default: reddit-post]
+      --format <FORMAT>        Output format [default: gif] [possible values: gif, mp4]
+      --width <N>              Output width in pixels; never above the source's [default: the target's]
+      --fps <N>                Frames per second, at most 50 for a GIF [default: the target's]
+      --colors <N>             Palette size, 2 to 256 (built-in engine) [default: the target's]
+      --dither <MODE>          Dithering: none, bayer, bayer:0..5, floyd-steinberg or sierra [default: the target's]
+      --lossy <N>              gifsicle lossy compression, 0 to 200 (needs gifsicle) [default: the target's]
+      --loop <N>               How many times it plays: forever, or 1 to 65535 [default: forever]
+      --budget <SIZE>          The size to aim for (3MB, 2.5MiB, 800k), or none [default: the target's]
+      --hard-limit <SIZE>      Never write above this size [default: the budget, else the target's hard limit]
+      --allow-trim             Allow shortening the range when no setting fits the budget
+      --engine <ENGINE>        GIF engine: the target's (auto), the built-in one or gifski [default: auto] [possible values: auto, builtin, gifski]
+      --strict-engine          Fail instead of falling back when the chosen engine is missing
+      --no-optimise            Never run the gifsicle optimiser
+      --shape <SHAPE>          Output shape [default: source] [possible values: source, 9:16, 4:5, 1:1]
+      --framing <FRAMING>      How to reach another shape [default: smart] [possible values: smart, center, blur]
+      --no-sample              With --dry-run, skip the sample encodes (the size estimate is shown as pending). Without it, a dry run encodes short samples of each input in a temporary folder
+      --crop-path <FILE>       With smart framing, write the full crop path as JSON to FILE
       --dry-run                Show what would be done without writing anything
       --json                   Machine-readable output on stdout
   -h, --help                   Print help
@@ -283,7 +344,8 @@ rmedia batch jobs.csv --json > run.ndjson
 
 `batch --gif` makes a GIF of every clip the manifest does not turn GIF export off for; GIF flags
 without `--gif` only fill the manifest's own `gif` layers (a warning when it has none). A batch
-dry run never samples (the estimates are `pending`).
+dry run never samples (the estimates are `pending`), so `--no-sample` and `--crop-path` are usage
+errors for `batch` (exit 2).
 
 ## `rmedia scan`
 
@@ -304,12 +366,14 @@ Options:
       --no-recursive     Only look at the top level of each folder
       --ffprobe <PATH>   Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
       --max-depth <N>    Maximum folder depth (1 = top level only)
+      --gifsicle <PATH>  Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
       --include <GLOB>   Only include matching paths (glob, relative to the folder; repeatable), e.g. "*.mp4"
-  -v, --verbose...       More detail (show ffmpeg commands with -v)
       --exclude <GLOB>   Exclude matching paths (glob; repeatable), e.g. "**/drafts/**"
-  -q, --quiet            Only print errors and the final summary
+      --gifski <PATH>    Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
       --hidden           Include hidden files and folders
+  -v, --verbose...       More detail (show ffmpeg commands with -v)
       --follow-symlinks  Follow symbolic links (loops are detected)
+  -q, --quiet            Only print errors and the final summary
       --paths            Print only the paths of found videos, one per line (pipe into `clip --inputs-from -`)
       --json             Print the result as one JSON document
   -h, --help             Print help
@@ -445,14 +509,16 @@ rmedia gif --list-targets [--json]
 
 One job per input, over the range `-s/-e/-d` (default: the whole video). Inputs are files,
 folders (scanned with the `scan` options) or `--inputs-from FILE|-`. Outputs go to `gifs/` next
-to each source (`-o` replaces it), named `{source}_{target}.gif` (or `.mp4`) by default.
+to each source (`-o` replaces it). Default names: `{source}_{target}.{ext}` for the whole video,
+and `{source}_{index:03}_{name-or-range}_{target}.{ext}` when `-s/-e/-d` select a part of it
+(`{ext}` is `gif` or `mp4`).
 
 ### GIF Options
 
 | Flag | Values | Default | Notes |
 |---|---|---|---|
 | `--target ID` | an id from `--list-targets` | `reddit-post` | Built in: `reddit-post` (8 MB aim, 20 MB limit), `reddit-comment` (3 MB / 8 MB), `max-quality` (gifski when found), `flat-ui`. Reddit's limits are **unverified** estimates; check Reddit's Help Center. Unknown id: exit 3 (`TARGET_UNKNOWN`) |
-| `--format` | `gif`, `mp4` | `gif` | `mp4` is a silent, fast-start H.264 loop at the source's rate (up to 60 fps), usually 5× or more smaller |
+| `--format` | `gif`, `mp4` | `gif` | `mp4` is a silent, fast-start H.264 loop at the source's rate, by default at most the target's `mp4.max_fps` (60 for `reddit-post` and `max-quality`, 30 for `reddit-comment` and `flat-ui`), usually 5× or more smaller |
 | `--width N` | 64 to 1920 | the target's | Never above the source's (a GIF is never enlarged; a note says so) |
 | `--fps N` | 1 to 50 (GIF), 1 to 60 (MP4) | the target's | GIF delays are whole centiseconds: 10, 20, 25 and 50 fps are exact, others average out (a `TIMING_APPROXIMATE` note) |
 | `--colors N` | 2 to 256 | the target's | Built-in engine only |
@@ -472,8 +538,9 @@ to each source (`-o` replaces it), named `{source}_{target}.gif` (or `.mp4`) by 
 | `--gifsicle PATH`, `--gifski PATH` | path | lookup order | Override the engine lookup (below) |
 | `--list-targets` | flag | off | Lists targets (built-in and `<config>/gif-targets/*.json`) and exits |
 
-`--mode` does not apply (GIF export always re-encodes); `--container` is replaced by
-`--format`.
+`--mode` does not exist for `gif` (GIF export always re-encodes). `--container` (use `--format`),
+`--audio`, `--no-audio` and `--no-subs` are usage errors (exit 2): the output is always silent and
+has no subtitles.
 
 ### Size Budget
 
@@ -515,12 +582,15 @@ Show the video engine in use and its capabilities
 Usage: rmedia doctor [OPTIONS]
 
 Options:
-      --ffmpeg <PATH>   Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
-      --json            Print the report as JSON
-      --ffprobe <PATH>  Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
-  -v, --verbose...      More detail (show ffmpeg commands with -v)
-  -q, --quiet           Only print errors and the final summary
-  -h, --help            Print help
+      --ffmpeg <PATH>    Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
+      --json             Print the report as JSON
+      --ffprobe <PATH>   Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
+      --recheck          Run the GPU self-tests again now (normally they run only when the hardware, driver or app version changes)
+      --gifsicle <PATH>  Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
+      --gifski <PATH>    Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
+  -v, --verbose...       More detail (show ffmpeg commands with -v)
+  -q, --quiet            Only print errors and the final summary
+  -h, --help             Print help
 ```
 
 Real output with the engine selected through `RMEDIA_FFMPEG` / `RMEDIA_FFPROBE` (hence `config`;
@@ -565,6 +635,22 @@ ones about 0.1 s. `--recheck` runs it again. `rmedia upscale` runs the same chec
 failed after being chosen automatically is listed as `demoted:` and is not chosen again until
 the next check. A missing GPU never changes `status` or the exit code.
 
+From 0.3.0, four lines after `accurate mode can write:` report GIF export
+(`crates/rmedia-cli/src/commands/doctor.rs` › `gif_lines`):
+
+```text
+gif:      yes (palettegen, paletteuse, gif muxer)
+reddit mp4: yes (libx264)
+gifsicle: 1.98 (bundled /path/to/rmedia-gifsicle)
+gifski: 1.34.0 (bundled /path/to/rmedia-gifski)
+```
+
+`gif:` and `reddit mp4:` read `no (missing <names>)` when a filter, muxer or `libx264` is
+absent. A missing optional engine reads `gifsicle: no (<reason>; set gifsicle_path or
+RMEDIA_GIFSICLE)`. User GIF target files that cannot be used print `problem:  GIF target file
+<file: message>`. None of these change `status` or the exit code. `--json` adds them as the `gif`
+block ([JSON Output › doctor](json-output.md#doctor)).
+
 Problems print to stderr as `problem:  <text>`. The exit code is 0 when the engine was found and
 its encoder list read; otherwise 4. "No encoders for accurate mode" is reported as a problem, but
 the status stays `ready`, because fast mode still works.
@@ -577,8 +663,8 @@ running the binary (see [JSON Output](json-output.md)).
 | Code | Meaning | Typical causes |
 |---|---|---|
 | `0` | Every job succeeded or was skipped; a dry run that planned without errors; `scan`/`doctor` succeeded; `--help`/`--version` | — |
-| `1` | At least one job failed, or a single job was cancelled while the run continued | `ENGINE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_UNWRITABLE`, `INTERNAL` |
-| `2` | Usage error (clap) | Unknown flag, `-e` together with `-d`, missing required argument |
-| `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing; for `upscale`: unknown preset, `--hdr keep` with a preset that cannot keep HDR, a forced `--tier gpu` or `ai` |
-| `4` | Engine missing, too old, or a required encoder or filter absent | `ENGINE_MISSING` (plans whose only errors are engine errors also return 4); for `upscale` also a missing `libx265`/`libx264` or upscaling filter |
+| `1` | At least one job failed, or a single job was cancelled while the run continued | `ENGINE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_UNWRITABLE`, `INTERNAL`; for GIF jobs, `BUDGET_UNREACHABLE` at run time |
+| `2` | Usage error (clap, or a flag combination the command refuses) | Unknown flag, `-e` together with `-d`, missing required argument; a GIF flag without `--gif` on `clip`, `--fps` above 50 for a GIF, `--hard-limit` with `--budget none` |
+| `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing; for `upscale`: unknown preset, `--hdr keep` with a preset that cannot keep HDR, a forced `--tier gpu` or `ai`; for GIF export: unknown target (`TARGET_UNKNOWN`), a size limit under 64 KiB without `--allow-trim` |
+| `4` | Engine missing, too old, or a required encoder or filter absent | `ENGINE_MISSING` (plans whose only errors are engine errors also return 4); for `upscale` also a missing `libx265`/`libx264` or upscaling filter; for GIF export, with `--strict-engine`, a missing gifski (or a missing gifsicle when a lossy level is set) |
 | `130` | Cancelled (Ctrl-C) | First Ctrl-C after the summary, or immediately on the second |

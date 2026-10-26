@@ -15,13 +15,13 @@ for that layer and below. Unknown keys are rejected with the line number.
   "version": 1,
   "defaults": { "gif": { "target": "reddit-post", "shape": "4:5", "framing": "smart" } },
   "videos": [
-    { "path": "game.mkv",
+    { "input": "game.mkv",
       "clips": [
         { "start": "1:02", "end": "1:09" },
         { "start": "2:10", "end": "2:14", "options": { "gif": { "target": "reddit-comment", "allow_trim": true } } },
         { "start": "3:00", "end": "3:20", "options": { "gif": { "format": "mp4" } } }
       ] },
-    { "path": "clip.mp4", "options": { "gif": { "budget": { "soft": 5000000 }, "loop": 3 } } }
+    { "input": "clip.mp4", "options": { "gif": { "budget": { "soft": 5000000 }, "loop": 3 } } }
   ]
 }
 ```

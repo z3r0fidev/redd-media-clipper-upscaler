@@ -112,6 +112,8 @@ config folder):
 | `proxy_cache_max_mb` | number | `5120` |
 | `models_dir` | string (optional) | unset (`models/` next to rmedia, then `<cache>/models`); set only by `pick_models_dir` |
 | `upscale_defaults` | `PartialUpscale` | `{}` (the upscale view's last choices; never turns upscaling on for clips) |
+| `gifsicle_path`, `gifski_path` | string (optional) | unset (`RMEDIA_GIFSICLE`/`RMEDIA_GIFSKI`, then bundled, then `PATH`); set only by `pick_engine` with `kind` `gifsicle`/`gifski` (0.3.0) |
+| `gif_defaults` | `PartialGif` | `{}` (the GIF view's last choices, 0.3.0) |
 
 Unknown fields are rejected.
 
@@ -122,9 +124,10 @@ Streaming uses `tauri::ipc::Channel<T>`:
 | Channel | Payload type | Variants (`type` tag) |
 |---|---|---|
 | `scan` → `onEvent` | `ScanEvent` | `progress {visited, candidates, probed}`, `found {video: MediaInfo}`, `rejected {rejected: {path, reason, detail}}` |
-| `run` → `onEvent` | `Event` | `run_started`, `job_started`, `job_progress`, `job_warning`, `job_finished`, `run_progress`, `run_finished {summary}`. Field shapes match the [CLI NDJSON events](json-output.md#run-events-ndjson), but without `schema`, and the last event is `run_finished` (the CLI renames it `summary`). |
+| `run` → `onEvent` | `Event` | `run_started`, `job_started`, `job_progress`, `job_warning`, `job_stage`, `job_finished`, `run_progress`, `run_finished {summary}`. Field shapes match the [CLI NDJSON events](json-output.md#run-events-ndjson), but without `schema`, and the last event is `run_finished` (the CLI renames it `summary`). |
 | `ensure_proxy` → `onProgress` | `number` | 0–1 |
 | `analyze_reframe` → `onEvent` | `AnalysisEvent` | `progress {fraction}` (at most one per percent), then `done` |
+| `gif_estimate` → `onEvent` | `AnalysisEvent` | `progress {fraction}`, then `done` (0.3.0) |
 
 App event (Tauri event system, which is why the `listen` capability is granted):
 
