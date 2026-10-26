@@ -25,11 +25,12 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 
 ## Open
 
-- **T078:** the `release.yml` `workflow_dispatch` with `gifski` off (outward-facing: waits for
-  the owner's approval), then record the Linux and Windows artifacts.
+- **T078:** record the Linux and Windows artifacts of `release.yml` run 40345344064 (gifski off,
+  approved 2026-10-26).
 - **T079:** the Windows results from CI and release artifacts (Linux quickstart is recorded).
-- Owner decisions: SC-009 (gifsicle saves 6.4%/12.3% on the synthetic set against 15%), the app
-  licence (gates bundling gifski), the stale public release `gif-tools-2026-10-25`.
+- Owner decision: the app licence (gates bundling gifski). Decided 2026-10-26: SC-009's automated
+  bar is 5% (15% on real footage is an owner check); the stale release `gif-tools-2026-10-25` was
+  deleted; `release.yml` dispatched with gifski off (run 40345344064).
 - Owner checks: Reddit's GIF limits in its Help Center, a real Reddit upload of a post and a
   comment GIF, Windows hardware.
 - Follow-ups from T080 (low): an integration test of the executor's retry path, the free-space
@@ -40,4 +41,4 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 
 SC-002 20/20 · SC-003 23.8 s (bar 30 s) · SC-004 9/10 within 25% · SC-005 98.32 vs 66.23 VMAF ·
 SC-006 6.1× / 18.2× · SC-007 2 interactions, estimate matched · SC-008 cancel clean ·
-SC-009 **not met** · SC-010 99.98 vs 98.80, 84.63 vs 83.50 VMAF.
+SC-009 6.4% (bar 5%; 15% real-footage owner check) · SC-010 99.98 vs 98.80, 84.63 vs 83.50 VMAF.

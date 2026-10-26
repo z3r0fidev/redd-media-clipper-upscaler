@@ -124,17 +124,15 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Open owner decisions
 
-- SC-009: keep the provisional 5% floor for the synthetic set and make 15% an owner check on
-  real footage, or change the default lossy level.
+- SC-009 (decided 2026-10-26): the automated bar is 5% on the synthetic set; owner check: at
+  least 15% smaller with gifsicle on real footage.
 - Application licence (gates any release that bundles gifski: `cargo xtask check-release-gate`).
   gifski's quantiser imagequant is GPL-3.0-or-later (allowed, 2026-10-25), so a commercial route
   needs licences for both (`commercial-gifski-imagequant`).
-- The unpinned release `gif-tools-2026-10-25` (gifski with crossbeam-epoch 0.9.18) is still
-  public; delete it or keep it.
 - Visual C++ runtime for the 002 Windows installers.
 - Tag `v0.1.0` and `v0.2.0`; Dependabot notices automation.
 - Owner checks: two-phone gallery test, a Reddit upload, +3 VMAF on real footage, Reddit's GIF
-  limits. The Windows installers and desktop app are untested on real hardware.
+  limits, gifsicle's 15% saving on real footage (SC-009). The Windows installers and desktop app are untested on real hardware.
 
 ## Release and Project Housekeeping
 

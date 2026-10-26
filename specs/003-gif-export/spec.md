@@ -325,7 +325,8 @@ is within the stated margin of the estimate.
   processes, on Linux and Windows.
 - **SC-009**: With the optimiser available, the default "Reddit post" GIF is at least 15% smaller
   than without it on the test set, with no drop on the perceptual-quality metric larger than
-  1 point.
+  1 point. *Owner decision 2026-10-26:* the automated synthetic set must be at least 5% smaller
+  (measured 6.4%); the 15% bar is an owner check on real footage.
 - **SC-010**: With the best-quality engine, "Max quality" scores higher on the perceptual-quality
   metric than the built-in engine at the same width and frame rate on the test set.
 

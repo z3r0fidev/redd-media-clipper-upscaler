@@ -2,7 +2,8 @@
 //! set (fixtures × ranges). Slow, so they are benches: `cargo test --release -- --ignored bench`.
 //! - SC-004: the dry-run estimate is within 25% of the real size for ≥ 90% of the set.
 //! - SC-002: every result is ≤ hard, and ≥ 90% are ≤ soft where the search could reach soft.
-//! - SC-009: the default `reddit-post` with gifsicle is ≥ 15% smaller and loses ≤ 1 VMAF point.
+//! - SC-009: the default `reddit-post` with gifsicle is ≥ 5% smaller on this synthetic set and loses
+//!   ≤ 1 VMAF point (owner decision 2026-10-26: the spec's 15% is an owner check on real footage).
 //! - SC-005 at the same size: ours scores ≥ a plain one-pass GIF of the same bytes.
 
 mod common;
@@ -19,7 +20,8 @@ use rmedia_core::request::Options;
 use rmedia_testkit::{Fixture, fixture, require_engine, require_tool};
 use tokio_util::sync::CancellationToken;
 
-/// SC-009's provisional automated floor (the spec says 15%; see the test).
+/// SC-009's automated floor for the synthetic set (owner decision 2026-10-26; 15% on real footage
+/// is an owner check).
 const SC009_FLOOR: f64 = 0.05;
 
 /// The calibration set: (fixture, start, end or None for the whole source).
