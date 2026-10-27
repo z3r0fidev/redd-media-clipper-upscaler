@@ -262,7 +262,7 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 | `run_started` | `run_id`, `total_jobs`, `total_media` | `total_media`: seconds of media to produce (jobs that will run) |
 | `job_started` | `job_id` | |
 | `job_progress` | `job_id`, `fraction` (0–1), `out_time`, `speed`?, `eta_ms`? | At most about 10 per second per job; the final block is always sent |
-| `job_warning` | `job_id`, `message`, `code`? | One per plan warning, at job start. `code` only for coded warnings (0.3.0: `OVER_RECOMMENDED`, `ENGINE_FALLBACK`, `TIMING_APPROXIMATE`, `LONG_RANGE`) |
+| `job_warning` | `job_id`, `message`, `code`? | One per plan warning, at job start, and for warnings found while the job runs. `code` only for coded warnings (0.3.0: `OVER_RECOMMENDED`, `ENGINE_FALLBACK`, `TIMING_APPROXIMATE`, `LONG_RANGE`, `DISK_FULL`) |
 | `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs (0.2.0) and GIF jobs (0.3.0). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). GIF stages, in order and only those that apply: `analyze` (smart framing), `search` (with a budget), `palette`, `encode`, `optimise` (gifsicle), `verify`. `job_progress.fraction` covers the whole job, weighted across stages. Clip jobs emit none. |
 | `job_finished` | `job_id`, `outcome` | See below. Skipped jobs emit only this event. |
 | `run_progress` | `done`, `total`, `fraction`, `eta_ms`? | Weighted by media length. Throttled to about 4 per second, plus one after each finished job. `eta_ms` only when 2% < fraction < 100%. |
@@ -349,7 +349,7 @@ Stable codes from `Error::code()` (`crates/rmedia-core/src/error.rs`) plus `INTE
 | `PROBE_FAILED` | Issues | ffprobe could not read the source, or it has no video stream |
 | `OUTPUT_EXISTS` | Internal | Surfaced as a `skipped` outcome, not as a failure |
 | `OUTPUT_UNWRITABLE` | `failed` outcome | Output folder cannot be created, permission denied, read-only file system, fsync/commit failure |
-| `DISK_FULL` | `failed` outcome | ffmpeg reported no space left |
+| `DISK_FULL` | `failed` outcome; plan and `job_warning` warnings | ffmpeg reported no space left. As a warning: an output folder looks too small for the estimated outputs (at plan time; for a GIF also after sampling, from the sampled size) |
 | `ENGINE_FAILED` | `failed` outcome | ffmpeg exited with an error. The message is the most specific stderr line; `stderr_tail` holds up to 50 lines. |
 | `ENGINE_MISSING` | Issues, `error` documents | Engine not found, too old, or encoder missing for accurate mode |
 | `VERIFY_FAILED` | `failed` outcome | Output unreadable, wrong stream count, no duration, or accurate video length outside tolerance |

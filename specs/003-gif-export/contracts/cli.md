@@ -118,7 +118,8 @@ Unchanged:
 
 ## `rmedia gif --list-targets`
 
-Human output is one line per target: id, name, budget (soft/hard), widths, fps, and `verified`.
+Human output is one line per target: id, name, budget (soft/hard), widths, fps, and `verified`,
+then `[user]` or `[user override]` for a target from a user file.
 `--json` gives
 `{"schema":1,"type":"targets","targets":[GifTarget…],"problems":[…]}`.
 

@@ -361,7 +361,7 @@ desktop GIF view. Code is in `crates/rmedia-core/src/gif/` and `exec/gif.rs`. Ad
 | `cargo xtask notices` | Writes `THIRD_PARTY_NOTICES.md` from cargo and npm metadata, including license texts |
 | `cargo xtask fetch-tools` (GIF engines) | Also stages `binaries/rmedia-gifsicle-<triple>` and `rmedia-gifski-<triple>` from `xtask/gif-tools.lock.json`, verifying SHA-256s (`--no-gifski` leaves gifski out) |
 | `cargo xtask pin-gif-tools <run-id>` | Pins the binaries and sources of a `gif-tools.yml` run into `xtask/gif-tools.lock.json` |
-| `cargo xtask check-release-gate [--tree DIR]` | Fails when a release would bundle gifski (AGPL-3.0, `binaries/rmedia-gifski*` staged) unless the repository has a root `LICENSE` and an allowed `app_licence` in `[workspace.metadata.rmedia]` of the root `Cargo.toml` (an AGPL-3.0 or GPL-3.0 id, or `commercial-gifski-imagequant`; FR-025) |
+| `cargo xtask check-release-gate [--tree DIR] [--scan DIR]...` | Fails when a release would bundle gifski (AGPL-3.0: `binaries/rmedia-gifski*` staged, or with `--scan` a gifski file or installer-script entry in the built output) unless the repository has a root `LICENSE` and an allowed `app_licence` in `[workspace.metadata.rmedia]` of the root `Cargo.toml` (an AGPL-3.0 or GPL-3.0 id, or `commercial-gifski-imagequant`; FR-025) |
 | `cargo xtask fetch-models` | Downloads the models pinned in `xtask/models.lock.json` into `models/`, verifying SHA-256; verified files are kept. Models are never committed. |
 
 ## Testing

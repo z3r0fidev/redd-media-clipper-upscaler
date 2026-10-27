@@ -33,9 +33,10 @@ Windows. T079: Windows CI 482 passed, 0 failed (run 40345454414). Both are recor
   deleted; `release.yml` dispatched with gifski off (run 40345344064).
 - Owner checks: Reddit's GIF limits in its Help Center, a real Reddit upload of a post and a
   comment GIF, Windows hardware.
-- Follow-ups from T080 (low): an integration test of the executor's retry path, the free-space
-  check after sampling, two test-only target helpers, one shared fps-limit function, a post-build
-  bundle scan for the release gate.
+- Follow-ups from T080 (low), done 2026-10-26: the executor's retry path has an integration test,
+  a free-space warning after sampling, the two target helpers are used, one fps-limit function,
+  and a release-gate scan of the built bundles. Still accepted: about 8 GiB scratch per
+  `budget=none` job (L2); untested: a dead gifski on Windows blamed on ffmpeg.
 
 ## Measured
 

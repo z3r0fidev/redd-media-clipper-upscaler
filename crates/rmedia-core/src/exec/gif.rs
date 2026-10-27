@@ -78,8 +78,14 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
     let (s, len, result, search, over) = match budget {
         Some(b) => {
             stages.enter(ctx, "search");
-            let mut sampler =
-                JobSampler { ctx: &mut *ctx, spec, enc: &mut enc, results: Vec::new(), samples: 0 };
+            let mut sampler = JobSampler {
+                ctx: &mut *ctx,
+                spec,
+                enc: &mut enc,
+                results: Vec::new(),
+                samples: 0,
+                estimate: None,
+            };
             let found = budget::search(&estimate::search_input(spec, b), &mut sampler).await?;
             let result = *sampler
                 .results
@@ -291,6 +297,23 @@ impl Encoder<'_> {
     }
 }
 
+/// A warning when `dir`'s folder lacks room for `copies` files of about `bytes` (× the plan's
+/// 1.2 margin).
+fn space_warning(dir: &Path, bytes: u64, copies: u64) -> Option<String> {
+    space_warning_with(dir, bytes, copies, crate::upscale::estimate::free_space)
+}
+
+fn space_warning_with(
+    dir: &Path,
+    bytes: u64,
+    copies: u64,
+    free: impl Fn(&Path) -> Option<u64>,
+) -> Option<String> {
+    let folder = dir.parent().unwrap_or(dir).to_path_buf();
+    let needs = std::collections::BTreeMap::from([(folder, bytes.saturating_mul(copies))]);
+    crate::upscale::estimate::check_space(&needs, free).pop().map(|m| format!("{m} (from the samples)"))
+}
+
 /// The scratch file names of full encode `n` (0: the first, 1: the search's retry): encoded,
 /// optimised, MP4.
 fn attempt_names(n: u32) -> (&'static str, &'static str, &'static str) {
@@ -306,6 +329,8 @@ struct JobSampler<'a, 'c, 'e> {
     /// Each full encode's result name, by attempt.
     results: Vec<&'static str>,
     samples: u32,
+    /// The latest predicted size, for the free-space check before the first full encode.
+    estimate: Option<u64>,
 }
 
 impl budget::Sampler for JobSampler<'_, '_, '_> {
@@ -316,14 +341,27 @@ impl budget::Sampler for JobSampler<'_, '_, '_> {
         self.samples += 1;
         let total = self.spec.cut.requested.end.saturating_sub(self.spec.cut.requested.start);
         self.ctx.stage_fraction(f64::from(self.samples) / 7.0, total);
+        self.estimate = e.as_ref().ok().map(|e| e.bytes).or(self.estimate);
         e
     }
 
     async fn post(&mut self, s: &Settings) -> Result<budget::Estimate> {
-        estimate::post_estimate(self.ctx.tools, self.spec, s, self.enc.scratch, self.ctx.cancel).await
+        let e =
+            estimate::post_estimate(self.ctx.tools, self.spec, s, self.enc.scratch, self.ctx.cancel).await;
+        self.estimate = e.as_ref().ok().map(|e| e.bytes).or(self.estimate);
+        e
     }
 
     async fn full(&mut self, s: &Settings, len: f64) -> Result<u64> {
+        // The plan checked the folder against the hard limit; the samples now give a closer
+        // size. Scratch is in the output folder: the encode and gifsicle's copy both stay there.
+        if self.enc.fulls == 0
+            && let Some(bytes) = self.estimate
+            && let Some(message) =
+                space_warning(self.enc.scratch, bytes, if self.enc.optimise { 2 } else { 1 })
+        {
+            self.ctx.warn_code(IssueCode::DiskFull, message);
+        }
         let spec = if len < self.spec.gif.len - 1e-6 { self.spec.trimmed(len) } else { self.spec.clone() };
         let name = self.enc.full(self.ctx, &spec, s).await?;
         self.results.push(name);
@@ -627,4 +665,20 @@ fn move_into(from: &Path, temp: &Path) -> Result<()> {
         let _ = std::fs::remove_file(from);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T080 L6: the sampled size, not the hard limit, decides the run-time warning.
+    #[test]
+    fn the_samples_decide_the_free_space_warning() {
+        let scratch = Path::new("/out/gifs/.rmedia-run-1");
+        let free = |d: &Path| (d == Path::new("/out/gifs")).then_some(5_000_000);
+        assert_eq!(space_warning_with(scratch, 2_000_000, 2, free), None, "4.8 MB of 5.0 MB");
+        let m = space_warning_with(scratch, 2_200_000, 2, free).unwrap();
+        assert!(m.starts_with("/out/gifs has 5.0 MB free") && m.ends_with("(from the samples)"), "{m}");
+        assert_eq!(space_warning_with(scratch, u64::MAX, 2, |_| None), None, "unknown free space");
+    }
 }

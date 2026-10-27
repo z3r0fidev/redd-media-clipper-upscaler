@@ -159,9 +159,14 @@ The lock change is a normal reviewed commit.
 
 - **Who calls it:** the first step of **every** `release.yml` job, for both triggers (tag push
   and `workflow_dispatch`, since downloadable artifacts are distribution too). It runs again
-  after staging.
+  after staging, and once more after packaging with `--scan apps/desktop/src-tauri/target/release
+  --scan dist`.
 - **What it checks:** whether `binaries/rmedia-gifski*` is staged. It checks the staged file,
-  not the lock, so removing the engine from the lock also removes the need for the gate.
+  not the lock, so removing the engine from the lock also removes the need for the gate. With
+  `--scan DIR`, it also checks the built output: any file under DIR named after gifski (build
+  intermediates such as `deps/` are skipped), or an NSIS/WiX script (`*.nsi`, `*.wxs`, UTF-8 or
+  UTF-16) that names it. Such a find needs the same decision ("gifski (AGPL-3.0) is in the
+  build (<file>) but …").
 - **When it fails:** gifski is staged and either of these is missing:
   - a root `LICENSE` file;
   - `[workspace.metadata.rmedia] app_licence = "<SPDX>"` in the root `Cargo.toml`, naming an id

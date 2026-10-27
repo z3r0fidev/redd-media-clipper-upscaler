@@ -168,10 +168,10 @@ Range `e02b26a..HEAD`. Neither review found a High.
 | M3 | The GIF view showed the target's hard limit when only "Aim for" was set | Fixed: `resolveBudget` mirrors `BudgetSpec::resolve` (vitest) |
 | L4 | `--allow-trim` could keep a one-frame GIF | Fixed: fewer than two frames is `BUDGET_UNREACHABLE` (unit test) |
 | L7 | "Export now" ignored skipped and cancelled jobs | Fixed: the view says "Not exported: …" or "Export cancelled" |
-| L5 | No integration test reaches the executor's retry path | Open (test gap; the pure search's retry is unit-tested) |
-| L6 | The plan-time free-space check uses `rough_bytes` (hard limit) and is not re-run after sampling | Open |
-| L8 | `GifTarget::width_for`, `GifTargetRegistry::label` used only by tests | Open (dead code) |
-| L9 | The 50/60 fps rule lives in four places | Partly: core has `validate_for`; CLI and CSV keep their own checks |
+| L5 | No integration test reaches the executor's retry path | Fixed 2026-10-26: `gif_us2::a_full_encode_that_misses_soft_is_retried_once` on the new `HiddenBusy10` fixture (flat inside the sample windows) |
+| L6 | The plan-time free-space check uses `rough_bytes` (hard limit) and is not re-run after sampling | Fixed 2026-10-26: before the first full encode the job warns `DISK_FULL` from the sampled size (× 1.2, × 2 with gifsicle) |
+| L8 | `GifTarget::width_for`, `GifTargetRegistry::label` used only by tests | Fixed 2026-10-26: the planner uses `width_for`; `--list-targets` uses `label` (`[user override]`) |
+| L9 | The 50/60 fps rule lives in four places | Fixed 2026-10-26: the CLI and CSV call `timing::validate_for`, and their ranges use `MP4_MAX_FPS` |
 
 **security-auditor**
 
@@ -181,7 +181,7 @@ Range `e02b26a..HEAD`. Neither review found a High.
 | L1 | The gifski progress tailer re-read the whole file every 250 ms | Fixed: one handle, only new bytes are read |
 | L4 | Engine stderr kept bidi/format characters | Fixed: `target::unsafe_char` in `tool_failed` and the pipe's stderr tail |
 | L2 | `budget=none` jobs can use about 8 GiB of scratch each (4 GiB cap × 2 files), no free-space preflight | Open (accepted: user-chosen) |
-| L3 | The release gate checks staged file names, not the built bundles | Open (maintainer-error risk; a post-build scan is a follow-up) |
+| L3 | The release gate checks staged file names, not the built bundles | Fixed 2026-10-26: `check-release-gate --scan DIR` checks built files and NSIS/WiX scripts; `release.yml` scans `target/release` and `dist` after packaging |
 
 ## Docs audit (docs-agent, 2026-10-26)
 

@@ -79,6 +79,10 @@ pub enum Fixture {
     Alpha,
     /// 640x360 @ 30 fps, 4 s (narrower than the 720 px GIF target).
     Narrow,
+    /// 1280x720 @ 30 fps, 10 s: one flat colour inside the GIF sample windows (0.5–1.5, 4.5–5.5
+    /// and 8.5–9.5 s) and zooming mandelbrot between them, so the samples underestimate the
+    /// full encode (the search's retry, research R5).
+    HiddenBusy10,
 }
 
 impl Fixture {
@@ -115,6 +119,7 @@ impl Fixture {
             Fixture::Static6 => "static6.mp4",
             Fixture::Alpha => "alpha.mkv",
             Fixture::Narrow => "narrow.mp4",
+            Fixture::HiddenBusy10 => "hidden-busy10.mp4",
         }
     }
 
@@ -825,6 +830,28 @@ impl Fixture {
                 "-f",
                 "mp4",
             ],
+            Fixture::HiddenBusy10 => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "color=0x406080:size=1280x720:rate=30:duration=10",
+                "-f",
+                "lavfi",
+                "-i",
+                "mandelbrot=size=1280x720:rate=30,trim=duration=10",
+                "-filter_complex",
+                "[0:v][1:v]overlay=enable='between(t,1.6,4.4)+between(t,5.6,8.4)'[v]",
+                "-map",
+                "[v]",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mp4",
+            ],
         }
     }
 }
@@ -1420,6 +1447,7 @@ mod tests {
             (Fixture::Narrow, (640, 360), 4.0),
             (Fixture::Static6, (1280, 720), 6.0),
             (Fixture::FlatUi, (1280, 720), 6.0),
+            (Fixture::HiddenBusy10, (1280, 720), 10.0),
         ] {
             let p = fixture(kind);
             assert_eq!(display_size(&p), size, "{kind:?}");

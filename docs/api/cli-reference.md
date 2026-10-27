@@ -536,7 +536,7 @@ and `{source}_{index:03}_{name-or-range}_{target}.{ext}` when `-s/-e/-d` select 
 | `--no-sample` | flag | off | With `--dry-run`, skip the sample encodes (the estimate is `pending`) |
 | `--crop-path FILE` | path | none | As for `upscale`: the one smart-framed video's crop path as JSON |
 | `--gifsicle PATH`, `--gifski PATH` | path | lookup order | Override the engine lookup (below) |
-| `--list-targets` | flag | off | Lists targets (built-in and `<config>/gif-targets/*.json`) and exits |
+| `--list-targets` | flag | off | Lists targets (built-in and `<config>/gif-targets/*.json`) and exits. User targets end in `[user]`, or `[user override]` when they replace a built-in id |
 
 `--mode` does not exist for `gif` (GIF export always re-encodes). `--container` (use `--format`),
 `--audio`, `--no-audio` and `--no-subs` are usage errors (exit 2): the output is always silent and

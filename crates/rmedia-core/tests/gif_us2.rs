@@ -182,3 +182,28 @@ async fn the_dry_run_estimate_is_the_searchs_prediction() {
     let (_, _, record, _) = succeeded(&summary);
     assert_eq!(est.lowered, record.lowered, "the dry run predicts the real search");
 }
+
+/// T080 L5: the samples see only the flat windows, so the first full encode misses soft; the
+/// executor's retry encodes once more under its own scratch names, keeps the smaller result
+/// and leaves nothing behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_full_encode_that_misses_soft_is_retried_once() {
+    require_engine!("palettegen", "paletteuse");
+    let d = tempfile::tempdir().unwrap();
+    let mut opts = budgeted(d.path(), 200_000, Some(50_000_000), false);
+    let gif = opts.gif.as_mut().unwrap();
+    (gif.width, gif.fps, gif.optimise) = (Some(320), Some(10), false);
+    let p = planned(&fixture(Fixture::HiddenBusy10), opts).await;
+    let (summary, _) = run(p, d.path()).await;
+    let (output, bytes, record, _) = succeeded(&summary);
+    let fulls: Vec<_> = record.steps.iter().filter(|s| s.kind == StepKind::Full).collect();
+    assert!(
+        fulls[0].bytes > 200_000 && fulls[0].estimate <= 200_000,
+        "the samples underestimated: {record:?}"
+    );
+    assert_ne!(fulls[0].settings, fulls[1].settings, "the retry is one step lower");
+    assert_eq!(bytes, fulls[0].bytes.min(fulls[1].bytes), "the smaller full encode is kept");
+    assert_eq!(std::fs::metadata(&output).unwrap().len(), bytes);
+    assert!(record.encodes <= 10);
+    assert!(partials(d.path()).is_empty(), "no scratch or .part left: {:?}", walk(d.path()));
+}

@@ -480,8 +480,7 @@ pub fn plan_gif(
     // --- size (never larger than the picture it comes from, FR-004) ----------------------------
     let (dw, dh) = (f64::from(display.0), f64::from(display.1));
     let (ratio_w, ratio_h) = o.shape.ratio().map_or((dw, dh), |(a, b)| (f64::from(a), f64::from(b)));
-    let portrait = ratio_h > ratio_w;
-    let wanted = o.width.unwrap_or(if portrait { target.width.portrait } else { target.width.landscape });
+    let wanted = o.width.unwrap_or_else(|| target.width_for(o.shape.ratio().unwrap_or(display)));
     let framing = if o.shape == Shape::Source { Reframe::Center } else { o.framing };
     // The widest output that needs no enlarging: the crop window for centre/smart, the whole
     // frame for blur (it is the foreground).

@@ -150,7 +150,10 @@ fn list_targets(out: &Output) -> u8 {
                 |b| format!("{} / {}", human_bytes(b.soft), human_bytes(b.hard)),
             );
             let verified = if t.verified { "verified" } else { "unverified" };
-            let user = if matches!(src, PresetSource::User(_)) { " [user]" } else { "" };
+            let user = match (src, reg.label(&t.id)) {
+                (PresetSource::User(_), Some(label)) => format!(" [{label}]"),
+                _ => String::new(),
+            };
             println!(
                 "{:<16} {:<22} {budget:<20} {}/{} px  {} fps  {verified}{user}",
                 t.id,

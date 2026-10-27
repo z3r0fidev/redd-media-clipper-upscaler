@@ -282,21 +282,70 @@ pub fn release_gate(tree: &Path) -> Result<Option<String>> {
     if !staged {
         return Ok(None);
     }
+    licence_gate(tree, "is staged")
+}
+
+/// The gate over built output (security review L3): any file under `dirs` named after gifski,
+/// or an NSIS/WiX installer script that mentions it, needs the same licence decision as a staged
+/// gifski. Catches a bundle that has gifski although the staging step did not.
+pub fn bundle_gate(tree: &Path, dirs: &[PathBuf]) -> Result<Option<String>> {
+    let mut found = Vec::new();
+    for dir in dirs {
+        if !dir.is_dir() {
+            bail!("{} is not a folder", dir.display());
+        }
+        gifski_files(dir, &mut found)?;
+    }
+    match found.first() {
+        None => Ok(None),
+        Some(f) => licence_gate(tree, &format!("is in the build ({})", f.display())),
+    }
+}
+
+/// Build folders that hold intermediate artifacts, not bundle contents.
+const NOT_BUNDLED: [&str; 5] = ["build", "deps", "incremental", ".fingerprint", "examples"];
+
+fn gifski_files(dir: &Path, found: &mut Vec<PathBuf>) -> Result<()> {
+    for e in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+        let e = e?;
+        let (path, name) = (e.path(), e.file_name().to_string_lossy().to_ascii_lowercase());
+        // Symbolic links are not followed: they cannot add files to a bundle tree by themselves.
+        let kind = e.file_type()?;
+        if kind.is_dir() {
+            if !NOT_BUNDLED.contains(&name.as_str()) {
+                gifski_files(&path, found)?;
+            }
+        } else if name.contains("gifski")
+            || ((name.ends_with(".nsi") || name.ends_with(".wxs")) && mentions_gifski(&std::fs::read(&path)?))
+        {
+            found.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Whether an installer script names gifski, in UTF-8 or UTF-16 (zero bytes are skipped).
+fn mentions_gifski(bytes: &[u8]) -> bool {
+    let text: Vec<u8> = bytes.iter().filter(|b| **b != 0).map(u8::to_ascii_lowercase).collect();
+    text.windows(6).any(|w| w == b"gifski")
+}
+
+/// Why gifski, which `what` (e.g. "is staged"), may not ship from `tree` (`None`: it may).
+fn licence_gate(tree: &Path, what: &str) -> Result<Option<String>> {
     let manifest = std::fs::read_to_string(tree.join("Cargo.toml")).context("read the root Cargo.toml")?;
     let licence = app_licence(&manifest);
     let has_license_file = tree.join("LICENSE").is_file();
     match (licence, has_license_file) {
         (Some(l), true) if GATE_ALLOWLIST.contains(&l.as_str()) => Ok(None),
         (Some(l), true) => Ok(Some(format!(
-            "gifski (AGPL-3.0) is staged but app_licence {l:?} is not one it may ship under ({})",
+            "gifski (AGPL-3.0) {what} but app_licence {l:?} is not one it may ship under ({})",
             GATE_ALLOWLIST.join(", ")
         ))),
-        _ => Ok(Some(
-            "gifski (AGPL-3.0) is staged but the application licence is undecided (docs/roadmap.md): \
+        _ => Ok(Some(format!(
+            "gifski (AGPL-3.0) {what} but the application licence is undecided (docs/roadmap.md): \
              add a root LICENSE and [workspace.metadata.rmedia] app_licence, or stage without gifski \
              (cargo xtask fetch-tools --no-gifski)"
-                .into(),
-        )),
+        ))),
     }
 }
 
@@ -320,9 +369,15 @@ fn app_licence(manifest: &str) -> Option<String> {
     None
 }
 
-pub fn check_release_gate(tree: Option<&Path>) -> Result<()> {
+/// `check-release-gate [--tree DIR] [--scan DIR]…`: the staged programs, and with `--scan` the
+/// built bundles and archives too.
+pub fn check_release_gate(tree: Option<&Path>, scan: &[PathBuf]) -> Result<()> {
     let tree = tree.map(Path::to_path_buf).unwrap_or_else(root);
-    match release_gate(&tree)? {
+    let reason = match release_gate(&tree)? {
+        None if !scan.is_empty() => bundle_gate(&tree, scan)?,
+        other => other,
+    };
+    match reason {
         None => {
             println!("release gate: ok");
             Ok(())
@@ -1181,6 +1236,47 @@ mod tests {
             release_gate(&tree(true, Some("commercial-gifski"), true)).unwrap().is_some(),
             "imagequant too"
         );
+    }
+
+    #[test]
+    fn the_bundle_scan_finds_gifski_by_name_and_in_installer_scripts() {
+        // A tree with no licence decision; `built` stands for target/release or dist.
+        let build = |tag: &str, files: &[(&str, &str)]| {
+            let tree = tempfile_dir(&format!("bundle-{tag}"));
+            std::fs::write(tree.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+            for (f, text) in files {
+                let path = tree.join("built").join(f);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, text).unwrap();
+            }
+            tree
+        };
+        let clean = build(
+            "clean",
+            &[
+                ("bundle/deb/data/usr/bin/rmedia-gifsicle", ""),
+                ("nsis/x64/installer.nsi", "File rmedia-ffmpeg.exe"),
+                ("deps/gifski-cache.rlib", "intermediate"),
+            ],
+        );
+        assert_eq!(bundle_gate(&clean, &[clean.join("built")]).unwrap(), None);
+        let _ = std::fs::remove_dir_all(&clean);
+
+        for (n, (file, text)) in [
+            ("bundle/appimage/rmedia.AppDir/usr/bin/rmedia-gifski", ""),
+            ("licenses/GIFSKI-NOTICE.md", ""),
+            ("wix/x64/main.wxs", "<File Source=\"rmedia-gifski.exe\"/>"),
+            ("nsis/x64/installer.nsi", "\0F\0i\0l\0e\0 \0G\0I\0F\0S\0K\0I"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let tree = build(&n.to_string(), &[(file, text)]);
+            let why = bundle_gate(&tree, &[tree.join("built")]).unwrap().unwrap();
+            assert!(why.contains("is in the build") && why.contains("undecided"), "{file}: {why}");
+            let _ = std::fs::remove_dir_all(&tree);
+        }
+        assert!(bundle_gate(Path::new("."), &[PathBuf::from("/nonexistent-rmedia")]).is_err());
     }
 
     #[test]

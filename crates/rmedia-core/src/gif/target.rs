@@ -297,7 +297,8 @@ impl GifTarget {
         }
     }
 
-    /// The output width for a source of this displayed size (portrait sources are taller).
+    /// The output width for a picture of this shape (portrait pictures are taller; square counts
+    /// as landscape).
     pub fn width_for(&self, display: (u32, u32)) -> u32 {
         if display.1 > display.0 { self.width.portrait } else { self.width.landscape }
     }

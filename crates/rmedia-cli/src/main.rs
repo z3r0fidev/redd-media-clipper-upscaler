@@ -359,7 +359,7 @@ pub struct GifFlags {
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(64..=1920))]
     pub width: Option<u32>,
     /// Frames per second, at most 50 for a GIF [default: the target's].
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..=60))]
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..=i64::from(rmedia_core::gif::timing::MP4_MAX_FPS)))]
     pub fps: Option<u32>,
     /// Palette size, 2 to 256 (built-in engine) [default: the target's].
     #[arg(long, alias = "colours", value_name = "N", value_parser = clap::value_parser!(u16).range(2..=256))]
@@ -477,10 +477,10 @@ impl GifFlags {
 
     /// A combination clap cannot check.
     pub fn usage_error(&self) -> Option<String> {
-        if self.format != Some(FormatArg::Mp4)
-            && let Some(fps) = self.fps.filter(|f| *f > 50)
+        if let Some(fps) = self.fps
+            && let Err(e) = rmedia_core::gif::timing::validate_for(fps, self.format == Some(FormatArg::Mp4))
         {
-            return Some(format!("--fps {fps}: a GIF plays at most 50 fps (2 cs per frame)"));
+            return Some(format!("--fps: {e}"));
         }
         if self.budget == Some(BudgetArg::Off) && self.hard_limit.is_some() {
             return Some("--hard-limit cannot be combined with --budget none".into());

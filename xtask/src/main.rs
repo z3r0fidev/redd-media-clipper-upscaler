@@ -1,7 +1,7 @@
 //! Developer tasks: `cargo xtask fetch-tools [--target TRIPLE] [--no-gifski]`, `cargo xtask
 //! pin-tools`, `cargo xtask pin-gif-tools <run-id>`, `cargo xtask fetch-models`, `cargo xtask
 //! fetch-ncnn [--target TRIPLE]`, `cargo xtask archive`, `cargo xtask mirror <tag>`, `cargo xtask
-//! check-pins`, `cargo xtask check-release-gate [--tree DIR]`.
+//! check-pins`, `cargo xtask check-release-gate [--tree DIR] [--scan DIR]...`.
 //!
 //! Engine binaries are downloaded at build time from a pinned, SHA-256-verified URL and placed in
 //! `binaries/` using Tauri's sidecar naming (`rmedia-ffmpeg-<triple>[.exe]`). They are never
@@ -115,7 +115,13 @@ fn main() -> Result<()> {
                 .iter()
                 .position(|a| a == "--tree")
                 .map(|i| args.get(i + 1).context("--tree needs a value"));
-            gif_tools::check_release_gate(tree.transpose()?.map(Path::new))
+            let scan: Vec<PathBuf> = args
+                .iter()
+                .enumerate()
+                .filter(|(_, a)| *a == "--scan")
+                .map(|(i, _)| args.get(i + 1).map(PathBuf::from).context("--scan needs a value"))
+                .collect::<Result<_>>()?;
+            gif_tools::check_release_gate(tree.transpose()?.map(Path::new), &scan)
         }
         Some("gen-bindings") => gen_bindings(),
         Some("stage-cli") => {
@@ -144,7 +150,7 @@ fn main() -> Result<()> {
         }
         _ => {
             eprintln!(
-                "usage: cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> [--without-debian] | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online] | check-release-gate [--tree DIR]>"
+                "usage: cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> [--without-debian] | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online] | check-release-gate [--tree DIR] [--scan DIR]...>"
             );
             std::process::exit(2);
         }

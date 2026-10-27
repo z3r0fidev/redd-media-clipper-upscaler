@@ -18,7 +18,7 @@ what the packages install, see [Installation](../administration/installation.md)
 `cargo xtask` is an alias for `cargo run --package xtask --` (`.cargo/config.toml`). Usage:
 
 ```text
-cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> [--without-debian] | check-release-gate [--tree DIR] | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>
+cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-tools <run-id> [--without-debian] | check-release-gate [--tree DIR] [--scan DIR]... | gen-bindings | stage-cli [--target TRIPLE] | notices | fetch-models | fetch-ncnn [--target TRIPLE] | archive | mirror <tag> | check-pins [--online]>
 ```
 
 | Task | What it does | Writes |
@@ -26,7 +26,7 @@ cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-t
 | `fetch-tools [--target T]` | Downloads the pinned FFmpeg archive for target `T` (default: host), verifies its SHA-256, extracts `ffmpeg` and `ffprobe`, and installs them with Tauri sidecar names | `binaries/rmedia-ffmpeg-<T>[.exe]`, `binaries/rmedia-ffprobe-<T>[.exe]`, `binaries/FFMPEG-LICENSE.txt`, `binaries/.<T>.sha256` |
 | `fetch-tools` (GIF engines, 0.3.0) | Also downloads the pinned gifsicle and gifski binaries from `xtask/gif-tools.lock.json`, verifies their SHA-256s and installs them with sidecar names; `--no-gifski` leaves gifski (and its licence files) out | `binaries/rmedia-gifsicle-<T>[.exe]`, `binaries/rmedia-gifski-<T>[.exe]` |
 | `pin-gif-tools <run-id> [--without-debian]` | Pins a `gif-tools.yml` run: checks the build attestations and every hash, the gifski lock updates, and writes the lock. `--without-debian` pins even when Debian has no copy of this gifsicle version to compare the source with | `xtask/gif-tools.lock.json` |
-| `check-release-gate [--tree DIR]` | Fails when gifski is staged (`binaries/rmedia-gifski*`) and the root `Cargo.toml` records no app licence decision (a root `LICENSE` plus `[workspace.metadata.rmedia] app_licence`). FR-025 | nothing |
+| `check-release-gate [--tree DIR] [--scan DIR]...` | Fails when gifski is staged (`binaries/rmedia-gifski*`), or with `--scan` when a file under DIR is named after gifski or an NSIS/WiX script names it, and the root `Cargo.toml` records no app licence decision (a root `LICENSE` plus `[workspace.metadata.rmedia] app_licence`). FR-025 | nothing |
 | `pin-tools` | Moves the pin to the newest BtbN autobuild of the **current release line** and records GitHub's asset SHA-256 digests and the BtbN commit of the tag (`scripts_commit`); the lock is written only after both new archives are downloaded and verified | `xtask/tools.lock.json` |
 | `gen-bindings` | Regenerates the desktop app's TypeScript types from `rmedia-core` (ts-rs) | `apps/desktop/src/lib/bindings/` (deleted and recreated) |
 | `stage-cli [--target T]` | Builds `rmedia-cli` and the AI worker `rmedia-sr` in release mode and copies them with sidecar naming (needs `fetch-ncnn` first) | `binaries/rmedia-<T>[.exe]`, `binaries/rmedia-sr-<T>[.exe]` |
@@ -281,9 +281,11 @@ Steps per platform:
 2. Linux: install `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev patchelf
    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base
    gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav`.
-3. Release gate: `cargo xtask check-release-gate` runs before and after staging. A tree with
-   gifski staged fails until the application licence is decided (FR-025, docs/roadmap.md), so
-   today only a manual run with `gifski` off can pass.
+3. Release gate: `cargo xtask check-release-gate` runs before and after staging, and after
+   packaging with `--scan apps/desktop/src-tauri/target/release --scan dist` (the built
+   installers' trees and scripts, and the CLI archives). A build with gifski fails until the
+   application licence is decided (FR-025, docs/roadmap.md), so today only a manual run with
+   `gifski` off can pass.
 4. Stage the bundled programs and models: `cargo xtask fetch-tools --target <T>` (with
    `--no-gifski` when the input is off; gifsicle is always staged),
    `cargo xtask fetch-ncnn --target <T>`, `cargo xtask fetch-models` and

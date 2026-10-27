@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::gif::timing;
 use crate::input::manifest_json::time_value;
 use crate::plan::{Issue, Severity};
 use crate::request::{BatchRequest, ClipRequest, Mode, Options, Origin, PartialOptions, SourceRequest};
@@ -357,10 +358,11 @@ fn gif_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<crate::
             .ok()
     });
     let format: Option<crate::gif::Format> = choice("gif_format", *format, "gif, mp4", issues);
-    if format != Some(crate::gif::Format::Mp4)
-        && let Some(f) = fps.and_then(|f| f.parse::<u32>().ok()).filter(|f| *f > 50)
+    // Out-of-range numbers are reported by `number` below; this adds the GIF-only limit.
+    if let Some(f) = fps.and_then(|f| f.parse::<u32>().ok()).filter(|f| (1..=timing::MP4_MAX_FPS).contains(f))
+        && let Err(e) = timing::validate_for(f, format == Some(crate::gif::Format::Mp4))
     {
-        issues.push(format!("gif_fps {f}: a GIF plays at most 50 fps (2 cs per frame)"));
+        issues.push(format!("gif_fps: {e}"));
     }
     Some(PartialGif {
         enabled: None,
@@ -369,7 +371,7 @@ fn gif_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<crate::
         shape: choice("gif_shape", *shape, "source, 9:16, 4:5, 1:1", issues),
         framing: choice("gif_framing", *framing, "smart, center, blur", issues),
         width: number("gif_width", *width, (64u32, 1920), issues),
-        fps: number("gif_fps", *fps, (1u32, 60), issues),
+        fps: number("gif_fps", *fps, (1u32, timing::MP4_MAX_FPS), issues),
         colours: number("gif_colours", *colours, (2u16, 256), issues),
         dither,
         lossy: number("gif_lossy", *lossy, (0u16, 200), issues),
@@ -754,6 +756,22 @@ mod tests {
                 .any(|(l, m)| *l == 3 && m.starts_with("gif_width must be a whole number from 64 to 1920")),
             "{at:?}"
         );
+    }
+
+    /// The core frame-rate rule: a GIF stops at 50 fps, a Reddit MP4 at 60; one message per row.
+    #[test]
+    fn gif_fps_follows_the_format() {
+        let ok = "input,start,end,gif_format,gif_fps\na.mp4,1,2,mp4,60\n";
+        assert_eq!(
+            gif_of(&parse(Path::new("j.csv"), ok, &Options::default()).unwrap(), 0, 0).unwrap().fps,
+            Some(60)
+        );
+        let bad = "input,start,end,gif_format,gif_fps\na.mp4,1,2,,51\na.mp4,1,2,mp4,61\n";
+        let err = parse(Path::new("j.csv"), bad, &Options::default()).unwrap_err();
+        let msgs: Vec<&str> = err.iter().map(|i| i.message.as_str()).collect();
+        assert_eq!(msgs.len(), 2, "{msgs:?}");
+        assert!(msgs[0].contains("50 fps or less"), "{msgs:?}");
+        assert!(msgs[1].starts_with("gif_fps must be a whole number from 1 to 60"), "{msgs:?}");
     }
 
     #[test]

@@ -126,6 +126,10 @@ jobs:
           fi
           cp README.md "dist/$name/"
           cd dist && if [ "${{ runner.os }}" = "Windows" ]; then 7z a "$name.zip" "$name" >/dev/null; else tar -czf "$name.tar.gz" "$name"; fi
+      # The built installers and archives, not just the staged names: any gifski file (or an
+      # NSIS/WiX script naming it) needs the same licence decision.
+      - name: Release gate (built bundles and archives)
+        run: cargo xtask check-release-gate --scan apps/desktop/src-tauri/target/release --scan dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rmedia-${{ matrix.triple }}
