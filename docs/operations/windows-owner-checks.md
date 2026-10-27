@@ -22,7 +22,7 @@ Use the Windows artifact `rmedia-x86_64-pc-windows-msvc` from a `release.yml` ru
 | Run | Commit | Notes |
 |---|---|---|
 | 40345344064 | `723bbbe` | Existing run (gifski off), digest `sha256:f1fa7fdf7abcce0504dc5ed25d6b4cc0eedfe4c42870a72d59f820055e81bc36`. Predates the Settings › GIF export engine pickers (`813cdeb`) and the fixes in `475ccf4` and `a69089a` |
-| *new run* | `a69089a` or later | Recommended: has everything above, and exercises the new `check-release-gate --scan` step. Needs the owner's approval to dispatch (`gifski=false`) |
+| **40452999345** | `789d7e9` | **Use this one.** Same code as `a69089a` plus the runbook docs (gifski off, dispatched 2026-10-27 with the owner's approval). Both packages built, and `release gate: ok` before staging, after staging and on the built bundles (`--scan`). Windows artifact 411,470,509 B, digest `sha256:68075b99d243932f7ce4ed35b47ec39095c5024e90b3945fa4fa117427cd7e27` |
 
 The artifact contains the NSIS setup (`…_x64-setup.exe`), the MSI and the CLI archive
 (`rmedia-cli-<ref>-x86_64-pc-windows-msvc.zip`). The installer file names still carry `0.2.0`,
