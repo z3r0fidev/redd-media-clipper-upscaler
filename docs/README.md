@@ -41,6 +41,7 @@ that fit Reddit; see the [Roadmap](roadmap.md). Start with the page for your rol
 | [Development guide](developer/development-guide.md) | Setup, build, workflow, conventions |
 | [Testing](developer/testing.md) | Test suites, fixtures, benchmarks |
 | [Build and release](operations/build-and-release.md) | CI, packaging, pinned FFmpeg, releasing |
+| [Windows owner checks](operations/windows-owner-checks.md) | Runbook: Windows hardware QA and SC-009 (gifsicle saving) on real footage |
 | [Roadmap](roadmap.md) | What is done, next and planned; owner validation items |
 | [Release notes 0.1.0](releases/0.1.0.md) | What feature 001 delivers; known issues |
 | [Release notes 0.2.0](releases/0.2.0.md) | Release candidate: phone upscaling (CPU, GPU and AI tiers), smart reframe, `clip --upscale`, manifests and the desktop upscale view |

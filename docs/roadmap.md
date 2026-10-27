@@ -127,7 +127,7 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 ### Open owner decisions
 
 - SC-009 (decided 2026-10-26): the automated bar is 5% on the synthetic set; owner check: at
-  least 15% smaller with gifsicle on real footage.
+  least 15% smaller with gifsicle on real footage ([runbook](operations/windows-owner-checks.md#5-sc-009-gifsicle-on-real-footage)).
 - Application licence (gates any release that bundles gifski: `cargo xtask check-release-gate`).
   gifski's quantiser imagequant is GPL-3.0-or-later (allowed, 2026-10-25), so a commercial route
   needs licences for both (`commercial-gifski-imagequant`).
@@ -147,7 +147,8 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - [x] Add a git remote: public `origin` on GitHub, work on `main`, CI green.
 - [ ] Decide how the Windows installers provide the Visual C++ runtime the AI worker needs
   (`vcruntime140`, `msvcp140`, `vcomp140`).
-- [ ] Manual desktop QA on Windows hardware (Windows paths and Job Object handling are unverified).
+- [ ] Manual desktop QA on Windows hardware (Windows paths and Job Object handling are unverified;
+  runbook: [Windows owner checks](operations/windows-owner-checks.md)).
 
 ## Related
 
