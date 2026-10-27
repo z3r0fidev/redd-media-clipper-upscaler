@@ -415,7 +415,8 @@ cancelling… (press Ctrl-C again to quit immediately)
 ```
 
 It then stops the clips in progress, removes their temporary files, prints the summary and exits
-with code `130`. Finished clips are kept.
+with code `130`. Finished clips are kept. This also works before anything has started, for
+example while rmedia is still reading a large folder or planning.
 
 Press `Ctrl-C` a second time to quit immediately. rmedia tries to remove temporary files first. Any it
 cannot remove (for example, files that are still locked on Windows) are cleaned up the next time

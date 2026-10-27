@@ -266,7 +266,7 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 | `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs (0.2.0) and GIF jobs (0.3.0). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). GIF stages, in order and only those that apply: `analyze` (smart framing), `search` (with a budget), `palette`, `encode`, `optimise` (gifsicle), `verify`. `job_progress.fraction` covers the whole job, weighted across stages. Clip jobs emit none. |
 | `job_finished` | `job_id`, `outcome` | See below. Skipped jobs emit only this event. |
 | `run_progress` | `done`, `total`, `fraction`, `eta_ms`? | Weighted by media length. Throttled to about 4 per second, plus one after each finished job. `eta_ms` only when 2% < fraction < 100%. |
-| `summary` | `succeeded`, `skipped`, `failed`, `cancelled`, `exit_code`, `jobs[]` | **Always the last line**, also on cancel. This is the core's `run_finished` event, renamed by the CLI. |
+| `summary` | `succeeded`, `skipped`, `failed`, `cancelled`, `exit_code`, `jobs[]` | **Always the last line**, also on cancel; a cancel before the run starts gives one with no jobs and `exit_code` 130 (0.3.0). This is the core's `run_finished` event, renamed by the CLI. |
 
 ### `outcome` (in `job_finished`, flattened into `summary.jobs[]`)
 

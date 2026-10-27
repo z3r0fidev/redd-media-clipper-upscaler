@@ -725,14 +725,30 @@ fn main() -> ExitCode {
     };
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
     let code = runtime.block_on(async {
-        match &cli.command {
+        // Commands that run jobs catch Ctrl-C from their start; with `--json` (not a dry run)
+        // their NDJSON ends with a summary line even when cancelled before the run.
+        let streams = match &cli.command {
+            Command::Clip(a) => Some(a.common.json && !a.common.dry_run),
+            Command::Upscale(a) => Some(a.common.json && !a.common.dry_run),
+            Command::Gif(a) => Some(a.common.json && !a.common.dry_run),
+            Command::Batch(a) => Some(a.json && !a.dry_run),
+            Command::Scan(_) | Command::Doctor(_) => None,
+        };
+        if streams.is_some() {
+            commands::catch_ctrl_c();
+        }
+        let code = match &cli.command {
             Command::Clip(args) => commands::clip::run(&cli, args).await,
             Command::Upscale(args) => commands::upscale::run(&cli, args).await,
             Command::Batch(args) => commands::batch::run(&cli, args).await,
             Command::Scan(args) => commands::scan::run(&cli, args).await,
             Command::Doctor(args) => commands::doctor::run(&cli, args).await,
             Command::Gif(args) => commands::gif::run(&cli, args).await,
+        };
+        if code == exit::CANCELLED && streams == Some(true) {
+            render::cancelled_summary();
         }
+        code
     });
     ExitCode::from(code)
 }

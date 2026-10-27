@@ -353,6 +353,21 @@ fn shell_words(args: &[String]) -> String {
         .join(" ")
 }
 
+/// Set once the run's `summary` line is streamed.
+static SUMMARY_SENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The `summary` line of a run cancelled before it started (Ctrl-C while scanning, checking the
+/// GPU or planning): no jobs, exit 130. Nothing when the run already streamed its own.
+pub fn cancelled_summary() {
+    if !SUMMARY_SENT.load(std::sync::atomic::Ordering::Relaxed) {
+        let s = RunSummary { exit_code: i32::from(crate::exit::CANCELLED), ..Default::default() };
+        let mut v = serde_json::to_value(&s).expect("summary json");
+        v["type"] = json!("summary");
+        v["schema"] = json!(1);
+        print_json(&v);
+    }
+}
+
 pub fn print_json(v: &Value) {
     let mut out = std::io::stdout().lock();
     let _ = serde_json::to_writer(&mut out, v);
@@ -518,6 +533,7 @@ impl EventSink for RenderSink {
             RenderSink::Json => {
                 let mut v = match &event {
                     Event::RunFinished { summary } => {
+                        SUMMARY_SENT.store(true, std::sync::atomic::Ordering::Relaxed);
                         let mut v = serde_json::to_value(summary).expect("summary json");
                         v["type"] = json!("summary");
                         v

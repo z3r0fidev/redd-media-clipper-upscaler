@@ -5,7 +5,6 @@ use rmedia_core::request::{BatchRequest, ClipRequest, Mode, Origin, PartialOptio
 use rmedia_core::upscale::prepare_plan;
 use rmedia_core::{EndSpec, Ts, doctor, plan, settings};
 use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 use super::clip::{absolute, execute, options};
 use crate::render::{Output, print_json};
@@ -63,7 +62,7 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
         return code;
     }
     let (tools, caps) = engine.expect("checked above");
-    let mut plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
+    let mut plan = plan::plan(&req, &tools, &caps, &super::interrupted()).await;
     let crop_path = args.crop_path.as_deref();
     if crop_path.is_some() && args.no_analyze {
         eprintln!("error: --crop-path needs the analysis; it cannot be combined with --no-analyze");
@@ -73,15 +72,8 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
     if analyse && !plan.has_errors() {
         // The crop path is shown (and written) before anything renders; the render reuses the
         // cached analysis (FR-016).
-        let cancel = CancellationToken::new();
-        let on_ctrl_c = cancel.clone();
-        let watcher = tokio::spawn(async move {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                on_ctrl_c.cancel();
-            }
-        });
-        let prepared = prepare_plan(&mut plan, &tools, &cancel).await;
-        watcher.abort();
+        let ctrl_c = super::ctrl_c_token();
+        let prepared = prepare_plan(&mut plan, &tools, &ctrl_c.token).await;
         if prepared.is_err() {
             return exit::CANCELLED;
         }

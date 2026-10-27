@@ -10,7 +10,6 @@ use rmedia_core::request::{
     SourceRequest, StreamSelection, SubSel,
 };
 use rmedia_core::{EndSpec, Ts, doctor};
-use tokio_util::sync::CancellationToken;
 
 use crate::render::{self, Output};
 use crate::{Cli, ClipArgs, CommonArgs, exit};
@@ -93,8 +92,7 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     }
     let (tools, caps) = engine.expect("checked above");
 
-    let cancel = CancellationToken::new();
-    let mut plan = plan::plan(&req, &tools, &caps, &cancel).await;
+    let mut plan = plan::plan(&req, &tools, &caps, &super::interrupted()).await;
     if args.gif && args.common.dry_run && !args.gifo.no_sample && !plan.has_errors() {
         // As `rmedia gif`: the estimate runs short samples in a temporary folder (research R4).
         let ctrl_c = super::ctrl_c_token();
@@ -130,25 +128,16 @@ pub async fn execute(
         plan.jobs.iter().flat_map(|j| std::iter::once(j.temp.clone()).chain(j.scratch.clone())).collect();
     let sink = render::sink(out, &plan);
     let cfg = RunConfig { jobs: jobs.map_or_else(exec::default_jobs, usize::from), ..RunConfig::default() };
+    super::set_partials(temps);
     let handle = exec::start(plan, tools, cfg, sink.clone());
     let cancel = handle.cancel_token();
+    let interrupt = super::interrupted();
+    if interrupt.is_cancelled() {
+        cancel.cancel(); // pressed after planning: every job is cancelled, and the summary says so
+    }
     let ctrl_c = tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            eprintln!("\ncancelling… (press Ctrl-C again to quit immediately)");
-            cancel.cancel();
-            if tokio::signal::ctrl_c().await.is_ok() {
-                // Children die with us: process group + PDEATHSIG (Linux) / Job Object (Windows).
-                // Best-effort removal of partial outputs first; anything still locked (Windows)
-                // is purged by the next run via the crash journal.
-                for t in &temps {
-                    // Only our own temp outputs (`.<stem>.rmedia-<run>-<job>.part|.d`).
-                    if t.file_name().is_some_and(|n| n.to_string_lossy().contains(".rmedia-")) {
-                        let _ = rmedia_core::exec::commit::remove_now(t);
-                    }
-                }
-                std::process::exit(i32::from(exit::CANCELLED));
-            }
-        }
+        interrupt.cancelled().await;
+        cancel.cancel();
     });
     let summary = handle.wait().await;
     ctrl_c.abort();

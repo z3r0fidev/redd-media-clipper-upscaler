@@ -4,7 +4,6 @@ use rmedia_core::doctor;
 use rmedia_core::input::{manifest_csv, manifest_json};
 use rmedia_core::plan;
 use rmedia_core::request::Options;
-use tokio_util::sync::CancellationToken;
 
 use super::clip::{absolute, execute};
 use crate::render::Output;
@@ -121,6 +120,6 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
         return code;
     }
     let (tools, caps) = engine.expect("checked above");
-    let plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
+    let plan = plan::plan(&req, &tools, &caps, &super::interrupted()).await;
     execute(plan, tools, args.dry_run, args.jobs, &out).await
 }

@@ -32,12 +32,16 @@ Windows. T079: Windows CI 482 passed, 0 failed (run 40345454414). Both are recor
   bar is 5% (15% on real footage is an owner check); the stale release `gif-tools-2026-10-25` was
   deleted; `release.yml` dispatched with gifski off (run 40345344064).
 - Owner checks: Reddit's GIF limits in its Help Center, a real Reddit upload of a post and a
-  comment GIF, Windows hardware.
+  comment GIF, Windows hardware and SC-009's 15% on real footage (both in the runbook).
 - Follow-ups from T080 (low), done 2026-10-26: the executor's retry path has an integration test,
   a free-space warning after sampling, the two target helpers are used, one fps-limit function,
   and a release-gate scan of the built bundles. Also closed: the watchdog never lets a job's files
   outgrow the folder's free space (L2, `DISK_FULL`), and a dead gifski is blamed on gifski on
-  Windows too (test on both OSes). No engineering follow-ups remain open.
+  Windows too (test on both OSes, passed on `windows-latest` 2026-10-27). Also fixed 2026-10-27:
+  Ctrl-C before the run (while locating the engine, scanning or planning) now exits 130 with a
+  `summary` line. Release run 40452999345 (gifski off) is the build for the Windows hardware
+  checks ([runbook](../../docs/operations/windows-owner-checks.md)). No engineering follow-ups
+  remain open; `tauri.conf.json` is bumped to 0.3.0 at release.
 
 ## Measured
 

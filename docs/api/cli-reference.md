@@ -249,8 +249,11 @@ when the produced span differs by more than 50 ms; `- <output> skipped: <reason>
 
 ### Cancellation
 
-The first Ctrl-C prints `cancelling… (press Ctrl-C again to quit immediately)`, cancels the run,
-and still prints the summary (exit 130). A second Ctrl-C makes a best-effort deletion of the temp
+`clip`, `upscale`, `gif` and `batch` catch Ctrl-C from the moment they start. The first Ctrl-C
+prints `cancelling… (press Ctrl-C again to quit immediately)`, cancels the run, and still prints
+the summary (exit 130). Pressed before the run starts (while the engine is located, folders are
+scanned, the GPU is checked or the jobs are planned), nothing is written; with `--json` (not a
+dry run) the output still ends with a `summary` line, without jobs. A second Ctrl-C makes a best-effort deletion of the temp
 files and exits 130 at once. Children die with their process group / PDEATHSIG (Linux) or Job
 Object (Windows). Anything left behind is purged by the next run's journal check
 (`commands/clip.rs` › `execute`).
@@ -667,4 +670,4 @@ running the binary (see [JSON Output](json-output.md)).
 | `2` | Usage error (clap, or a flag combination the command refuses) | Unknown flag, `-e` together with `-d`, missing required argument; a GIF flag without `--gif` on `clip`, `--fps` above 50 for a GIF, `--hard-limit` with `--budget none` |
 | `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing; for `upscale`: unknown preset, `--hdr keep` with a preset that cannot keep HDR, a forced `--tier gpu` or `ai`; for GIF export: unknown target (`TARGET_UNKNOWN`), a size limit under 64 KiB without `--allow-trim` |
 | `4` | Engine missing, too old, or a required encoder or filter absent | `ENGINE_MISSING` (plans whose only errors are engine errors also return 4); for `upscale` also a missing `libx265`/`libx264` or upscaling filter; for GIF export, with `--strict-engine`, a missing gifski (or a missing gifsicle when a lossy level is set) |
-| `130` | Cancelled (Ctrl-C) | First Ctrl-C after the summary, or immediately on the second |
+| `130` | Cancelled (Ctrl-C) | First Ctrl-C after the summary (also before the run starts), or immediately on the second |

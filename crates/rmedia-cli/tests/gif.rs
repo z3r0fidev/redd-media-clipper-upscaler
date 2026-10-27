@@ -200,6 +200,42 @@ fn a_run_writes_the_gif_and_exits_0() {
     assert!(text.contains("1 succeeded"), "{text}");
 }
 
+/// Ctrl-C before the run (here while ffprobe, slowed by a wrapper, is still answering): exit
+/// 130, nothing written, and the NDJSON still ends with a summary line.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_before_the_run_still_ends_with_a_summary() {
+    use std::os::unix::fs::PermissionsExt;
+    require_engine!("palettegen", "paletteuse");
+    let d = tempfile::tempdir().unwrap();
+    let src = copy(Fixture::Land6, d.path(), "land.mp4");
+    let slow = d.path().join("slow-ffprobe");
+    std::fs::write(
+        &slow,
+        format!("#!/bin/sh\nsleep 2\nexec '{}' \"$@\"\n", rmedia_testkit::ffprobe().display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&slow, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let child = rmedia(d.path())
+        .env("RMEDIA_FFPROBE", &slow)
+        .args(["gif", "--json", "--width", "320"])
+        .arg(&src)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    Command::new("kill").args(["-INT", &child.id().to_string()]).status().unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(130), "{}", stderr(&out));
+    let text = String::from_utf8_lossy(&out.stdout);
+    let last: Value = serde_json::from_str(text.lines().last().expect("a summary line")).unwrap();
+    assert_eq!(last["type"], "summary", "{text}");
+    assert_eq!(last["exit_code"], 130, "{text}");
+    assert_eq!(text.matches(r#""type":"summary""#).count(), 1, "{text}");
+    assert_eq!(entries(d.path()), ["land.mp4", "slow-ffprobe"]);
+}
+
 #[cfg(unix)]
 #[test]
 fn ctrl_c_cancels_with_exit_130_and_no_partial_files() {

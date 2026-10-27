@@ -75,7 +75,8 @@ Accepted / deferred:
 - On Windows, a dead gifski may surface as an ffmpeg write error that is not "Broken pipe" and so
   blame ffmpeg. Closed 2026-10-26: on Windows, ffmpeg's write/mux lines ending in "Invalid
   argument" or "End of file" also count as a lost reader, and
-  `gif_gifski::a_gifski_that_dies_is_blamed_not_ffmpeg` runs on both OSes in CI.
+  `gif_gifski::a_gifski_that_dies_is_blamed_not_ffmpeg` runs on both OSes in CI. Confirmed
+  2026-10-27: it passed on `windows-latest` (CI run 40445970256 on `a69089a`).
 - The 300 s pipe stall counts from spawn, before ffmpeg's first progress block.
 - Over the hard limit, a GIF fails verification until US2's budget search lowers the settings.
 - `GIFSKI_LOCK_UPDATES` is listed in both gif-tools.yml and xtask; the pin's lock comparison
@@ -221,5 +222,38 @@ This covers:
 - the release-gate test.
 
 The release-mode benchmark step also ran the SC-009 bench. `desktop app (windows-latest)`
-passed. The earlier note that a dead gifski on Windows might be blamed on ffmpeg is still
-untested; no test kills gifski on its own.
+passed. The earlier note that a dead gifski on Windows might be blamed on ffmpeg was closed on
+2026-10-27 (see below).
+
+## Windows blame, release gate scan and Ctrl-C before the run (2026-10-27)
+
+- **Dead gifski on Windows.** CI run 40445970256 on `a69089a`: `test (windows-latest, bundled
+  engine)` passed, including `gif_gifski::a_gifski_that_dies_is_blamed_not_ffmpeg` and the unit
+  test `windows_closed_pipe_lines_are_recognised_only_on_write_errors`. CI run 40443486456 on
+  `475ccf4` (the T080 follow-ups) passed all 8 jobs.
+- **Release run 40452999345** on `789d7e9` (`a69089a` + docs), gifski off, owner approval
+  2026-10-27: both `package` jobs succeeded and printed `release gate: ok` before staging,
+  after staging and on the built bundles (`check-release-gate --scan
+  apps/desktop/src-tauri/target/release --scan dist`), the first real run of the scan. This is
+  the build for the Windows hardware checks ([runbook](../../../docs/operations/windows-owner-checks.md)).
+
+| Artifact | Size | Digest |
+|---|---|---|
+| `rmedia-x86_64-unknown-linux-gnu` | 636,305,532 B | `sha256:56cef6c5421c3e0a5bea9cddf20e91e58e68dbbd506d405d2dc8d7f8923b9823` |
+| `rmedia-x86_64-pc-windows-msvc` | 411,470,509 B | `sha256:68075b99d243932f7ce4ed35b47ec39095c5024e90b3945fa4fa117427cd7e27` |
+
+- **Flaky cancel test.** On the minimum-engine job of run 40445970256,
+  `ctrl_c_cancels_with_exit_130_and_no_partial_files` signalled after a fixed 1.5 s, while the
+  CLI was still planning and did not catch Ctrl-C yet: the process died by the signal (exit
+  status none). The test now signals after the first `job_stage` event (`fae5d47`).
+- **Ctrl-C before the run (found from that failure).** `clip`, `upscale`, `gif` and `batch`
+  caught Ctrl-C only around single steps, so a press while locating the engine or planning
+  killed the process without the `summary` line the NDJSON contract promises; and once tokio had
+  listened for Ctrl-C (the scan of a folder input, the GPU check), a press between those steps
+  was ignored. Fixed: these commands catch Ctrl-C from their start with one listener
+  (`commands::catch_ctrl_c`); scanning, the GPU check, planning, samples and the run all watch
+  it; a cancel before the run exits 130 with a `summary` line without jobs; a press after
+  planning cancels every job. Test: `gif::ctrl_c_before_the_run_still_ends_with_a_summary`
+  (a 2 s ffprobe wrapper; fails without the fix with exit status none).
+- **Housekeeping found:** `tauri.conf.json` still says `0.2.0`, so the 0.3.0 installers are named
+  `…0.2.0…`; bump it when 0.3.0 is released.

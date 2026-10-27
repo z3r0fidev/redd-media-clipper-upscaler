@@ -6,7 +6,6 @@ use rmedia_core::request::{BatchRequest, ClipRequest, Mode, Origin, PartialOptio
 use rmedia_core::upscale::estimate::human_bytes;
 use rmedia_core::{EndSpec, Ts, doctor, plan, settings};
 use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 use super::clip::{absolute, execute, options};
 use crate::render::{Output, clean, print_json};
@@ -62,7 +61,7 @@ pub async fn run(cli: &Cli, args: &GifArgs) -> u8 {
         return code;
     }
     let (tools, caps) = engine.expect("checked above");
-    let mut plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
+    let mut plan = plan::plan(&req, &tools, &caps, &super::interrupted()).await;
     if let Some(file) = args.gif.crop_path.as_deref()
         && !plan.has_errors()
     {

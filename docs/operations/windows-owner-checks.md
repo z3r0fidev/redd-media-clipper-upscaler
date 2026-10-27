@@ -189,6 +189,15 @@ Start-Sleep 5; Stop-Process -Name rmedia -Force
 Start-Sleep 2; Show-Left      # expect no rmedia-ffmpeg / rmedia-gifsicle left
 ```
 
+d) Ctrl+C before the run (needs a build from `fae5d47` or later; run 40452999345 predates it):
+   point `gif` at a large folder with `--json` and press Ctrl+C while it is still scanning,
+   before any `job_started` line. Expected: exit 130 (`$LASTEXITCODE`), nothing written, and
+   the last line a `summary` with `"exit_code":130`.
+
+   ```powershell
+   & $cli gif C:\Users --json -o C:\rmedia-qa\out\cancel5 ; $LASTEXITCODE
+   ```
+
 Repeat case (a) with an upscale job for 002: `& $cli upscale C:\rmedia-qa\footage\a.mp4 --tier cpu -o C:\rmedia-qa\out\cancel4`.
 
 Pass: case (a) returns within 2 s. In every case, no `rmedia-ffmpeg`, `rmedia-ffprobe`,

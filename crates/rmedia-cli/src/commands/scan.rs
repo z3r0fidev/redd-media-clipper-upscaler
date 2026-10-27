@@ -11,7 +11,6 @@ use rmedia_core::probe::{MediaInfo, StreamKind};
 use rmedia_core::tools::Tools;
 use rmedia_core::{Error, doctor};
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
 use crate::render::{Output, clean};
 use crate::{Cli, ScanArgs, ScanFlags, exit};
@@ -102,20 +101,14 @@ async fn scan_with_options(
     };
     pb.enable_steady_tick(std::time::Duration::from_millis(120));
     pb.set_message("scanning…");
-    let cancel = CancellationToken::new();
-    let c = cancel.clone();
-    let ctrl_c = tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            c.cancel();
-        }
-    });
+    let ctrl_c = super::ctrl_c_token();
     let progress = |e: ScanEvent| {
         if let ScanEvent::Progress { visited, candidates, probed } = e {
             pb.set_message(format!("{visited} entries, checking {probed}/{candidates} candidate videos"));
         }
     };
-    let result = discover::scan(tools, roots, opts, &progress, &cancel).await;
-    ctrl_c.abort();
+    let result = discover::scan(tools, roots, opts, &progress, &ctrl_c.token).await;
+    drop(ctrl_c);
     pb.finish_and_clear();
     match result {
         Ok(r) => Ok(r),
