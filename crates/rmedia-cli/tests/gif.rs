@@ -206,17 +206,36 @@ fn ctrl_c_cancels_with_exit_130_and_no_partial_files() {
     require_engine!("palettegen", "paletteuse");
     let d = tempfile::tempdir().unwrap();
     let src = copy(Fixture::Busy10, d.path(), "busy.mp4");
-    let child = rmedia(d.path())
-        .args(["gif", "--budget", "none", "--width", "1280"])
+    let mut child = rmedia(d.path())
+        .args(["gif", "--json", "--budget", "none", "--width", "1280"])
         .arg(&src)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    // Signal once the job runs (its first stage), not after a fixed wait: planning can outlast
+    // one on a slow runner, and before the run the CLI does not catch Ctrl-C yet.
+    let stdout = child.stdout.take().unwrap();
+    let (started, on_start) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        use std::io::BufRead;
+        let mut lines = Vec::new();
+        for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+            if line.contains(r#""type":"job_stage""#) {
+                let _ = started.send(());
+            }
+            lines.push(line);
+        }
+        lines
+    });
+    on_start.recv_timeout(std::time::Duration::from_secs(60)).expect("the job never started");
+    std::thread::sleep(std::time::Duration::from_millis(200));
     Command::new("kill").args(["-INT", &child.id().to_string()]).status().unwrap();
     let out = child.wait_with_output().unwrap();
+    let lines = reader.join().unwrap();
     assert_eq!(out.status.code(), Some(130), "{}", stderr(&out));
+    let last: Value = serde_json::from_str(lines.last().expect("a summary line")).unwrap();
+    assert_eq!((last["type"].as_str(), last["cancelled"].as_u64()), (Some("summary"), Some(1)), "{last}");
     let gifs = d.path().join("gifs");
     let left: Vec<_> =
         std::fs::read_dir(&gifs).map(|r| r.flatten().map(|e| e.file_name()).collect()).unwrap_or_default();
