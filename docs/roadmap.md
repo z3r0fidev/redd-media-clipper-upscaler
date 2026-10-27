@@ -4,7 +4,7 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-10-26.
+Last updated: 2026-10-27.
 
 ## Status at a Glance
 
@@ -12,7 +12,7 @@ Last updated: 2026-10-26.
 |---|---|---|
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, not yet tagged | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0 release candidate, not yet tagged | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
-| 003 GIF export for Reddit | ▶ Polish (2026-10-25): US1–US6 done (T001–T072), docs and release checks (T073–T080) under way; 0.3.0 in development | On `main`, unreleased: `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0-dev.md)) |
+| 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); 0.3.0 in development, waiting on owner checks | On `main`, unreleased: `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0-dev.md)) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -123,6 +123,17 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   are done; T078 `release.yml` run 40345344064 (gifski off) packaged Linux and Windows, and T079
   Windows CI passed 482/482 (80/80, [progress](../specs/003-gif-export/progress.md)). Stopped
   for the owner checks below.
+
+### Update (2026-10-27)
+
+- Windows owner-check runbook ([runbook](operations/windows-owner-checks.md)) and the SC-009
+  script `operations/windows-qa/Measure-Sc009.ps1` (not yet run) are on `main`.
+- `release.yml` run 40452999345 (main 789d7e9, gifski off) succeeded; the release gate said ok
+  before and after staging and with `--scan` on the built bundles. Windows artifact
+  411,470,509 B, Linux 636,305,532 B. Use this build for the Windows checks.
+- `clip`, `upscale`, `gif` and `batch` now catch Ctrl-C from the moment they start (3ea7571;
+  exit 130, nothing written before planning ends). Runbook case (d) needs a release build from
+  fae5d47 or later; build 40452999345 predates it. CI green on 3ea7571 (run 40467352168).
 
 ### Open owner decisions
 
