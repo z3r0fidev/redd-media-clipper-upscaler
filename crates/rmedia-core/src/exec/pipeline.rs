@@ -391,7 +391,24 @@ fn lost_reader(end: &StageEnd) -> bool {
         }
     }
     let last = end.tail.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or_default();
-    last.contains("Broken pipe") || last.contains("broken pipe")
+    last.contains("Broken pipe")
+        || last.contains("broken pipe")
+        || (cfg!(windows) && closed_pipe_on_windows(last))
+}
+
+/// Windows has no SIGPIPE, and a write to a pipe whose reader has gone may surface in ffmpeg as
+/// EINVAL or EOF rather than EPIPE. Only ffmpeg's own write/mux failure lines count, so an input
+/// error that mentions the same words still blames the producer.
+fn closed_pipe_on_windows(last: &str) -> bool {
+    let writing = [
+        "av_interleaved_write_frame",
+        "Error writing trailer",
+        "Error muxing",
+        "Error submitting a packet to the muxer",
+    ]
+    .iter()
+    .any(|w| last.contains(w));
+    writing && (last.contains("Invalid argument") || last.contains("End of file"))
 }
 
 /// The cause of a producer → consumer pipe's failure (research R7): a producer that failed on
@@ -707,5 +724,14 @@ mod tests {
             !lost_reader(&end("Input #0 from 'Broken pipe.mp4':\nInvalid data found when processing input")),
             "an echoed file name is not a lost reader"
         );
+    }
+
+    #[test]
+    fn windows_closed_pipe_lines_are_recognised_only_on_write_errors() {
+        assert!(closed_pipe_on_windows("av_interleaved_write_frame(): Invalid argument"));
+        assert!(closed_pipe_on_windows("[out#0/yuv4mpegpipe] Error writing trailer: End of file"));
+        assert!(closed_pipe_on_windows("Error submitting a packet to the muxer: Invalid argument"));
+        assert!(!closed_pipe_on_windows("Error opening input file in.mp4: Invalid argument"));
+        assert!(!closed_pipe_on_windows("[vist#0:0/h264] Decoding error: End of file"));
     }
 }

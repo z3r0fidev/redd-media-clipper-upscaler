@@ -318,7 +318,7 @@ where
 {
     use crate::exec::gif::{Deadline, SizeWatch};
     let stop = cancel.child_token();
-    let watch = SizeWatch::start(file, SAMPLE_LIMIT, &stop);
+    let watch = SizeWatch::start(file, crate::exec::gif::Cap::size(SAMPLE_LIMIT), &stop);
     let deadline = Deadline::start(SAMPLE_TIMEOUT, &stop);
     let r = run(stop.clone()).await;
     watch.stop()?;
@@ -385,7 +385,7 @@ pub async fn sample_estimate(
             program,
             dir,
             output: SAMPLE,
-            limit: SAMPLE_LIMIT,
+            limit: crate::exec::gif::Cap::size(SAMPLE_LIMIT),
             timeout: Some(SAMPLE_TIMEOUT),
         };
         let job_output = dir.join(SAMPLE);

@@ -349,7 +349,7 @@ Stable codes from `Error::code()` (`crates/rmedia-core/src/error.rs`) plus `INTE
 | `PROBE_FAILED` | Issues | ffprobe could not read the source, or it has no video stream |
 | `OUTPUT_EXISTS` | Internal | Surfaced as a `skipped` outcome, not as a failure |
 | `OUTPUT_UNWRITABLE` | `failed` outcome | Output folder cannot be created, permission denied, read-only file system, fsync/commit failure |
-| `DISK_FULL` | `failed` outcome; plan and `job_warning` warnings | ffmpeg reported no space left. As a warning: an output folder looks too small for the estimated outputs (at plan time; for a GIF also after sampling, from the sampled size) |
+| `DISK_FULL` | `failed` outcome; plan and `job_warning` warnings | ffmpeg reported no space left, or a GIF or Reddit MP4 reached the output folder's free space (it is stopped first, less a 64 MiB reserve). As a warning: an output folder looks too small for the estimated outputs (at plan time; for a GIF also after sampling, from the sampled size) |
 | `ENGINE_FAILED` | `failed` outcome | ffmpeg exited with an error. The message is the most specific stderr line; `stderr_tail` holds up to 50 lines. |
 | `ENGINE_MISSING` | Issues, `error` documents | Engine not found, too old, or encoder missing for accurate mode |
 | `VERIFY_FAILED` | `failed` outcome | Output unreadable, wrong stream count, no duration, or accurate video length outside tolerance |

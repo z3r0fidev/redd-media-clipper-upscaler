@@ -190,7 +190,8 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
   `--strict-engine`).
 - **Bounded output.** Tool stderr is read with a length bound and stripped of control
   characters; a watchdog aborts an encode whose temp file passes 2× the hard limit (4 GiB
-  without a budget), and the verify stage refuses a committed file above the limit.
+  without a budget), or the output folder's free space less 64 MiB split across the job's copies
+  (then `DISK_FULL`), and the verify stage refuses a committed file above the limit.
 - **User targets** (`<config>/gif-targets/*.json`) are read like presets: regular files only,
   at most 64 KiB each and 64 files, names without control characters, `soft ≤ hard ≤ 1 GiB`;
   only the `id` (`^[a-z0-9-]+$`) reaches a file name. `--budget`/`--hard-limit` use checked

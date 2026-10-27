@@ -142,3 +142,27 @@ async fn gifski_beats_the_built_in_engine_on_vmaf() {
         assert!(va > vb, "{f:?}: gifski {va:.2} is not above the built-in engine's {vb:.2}");
     }
 }
+
+/// T080 follow-up (US1 checkpoint note): when gifski dies on its own, the job blames gifski, not
+/// the ffmpeg that lost its reader. The stand-in "gifski" is ffprobe, which rejects gifski's
+/// options and exits without reading a frame; ffmpeg then fails writing to the closed pipe
+/// ("Broken pipe" on Linux, a different message on Windows).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_gifski_that_dies_is_blamed_not_ffmpeg() {
+    require_engine!("palettegen");
+    require_tool!(gifski);
+    let d = tempfile::tempdir().unwrap();
+    let o = GifOptions { width: Some(320), ..max_quality() };
+    let mut p = planned(&fixture(Fixture::Land6), o, d.path(), false).await;
+    let (tools, _) = engine();
+    let JobSpec::Gif(g) = &mut p.jobs[0].spec else { panic!("not a GIF job") };
+    assert_eq!(g.gif.engine, EngineUsed::Gifski);
+    g.gif.gifski = Some(tools.ffprobe.path.clone());
+    let (summary, _) = run_plan(p, tools, d.path()).await;
+    let JobOutcome::Failed { error } = &summary.jobs[0].outcome else {
+        panic!("{:?}", summary.jobs[0].outcome)
+    };
+    assert_eq!(error.code, "ENGINE_FAILED", "{error:?}");
+    assert!(error.message.starts_with("gifski "), "{error:?}");
+    assert!(partials(d.path()).is_empty(), "nothing left behind");
+}

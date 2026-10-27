@@ -35,8 +35,9 @@ Windows. T079: Windows CI 482 passed, 0 failed (run 40345454414). Both are recor
   comment GIF, Windows hardware.
 - Follow-ups from T080 (low), done 2026-10-26: the executor's retry path has an integration test,
   a free-space warning after sampling, the two target helpers are used, one fps-limit function,
-  and a release-gate scan of the built bundles. Still accepted: about 8 GiB scratch per
-  `budget=none` job (L2); untested: a dead gifski on Windows blamed on ffmpeg.
+  and a release-gate scan of the built bundles. Also closed: the watchdog never lets a job's files
+  outgrow the folder's free space (L2, `DISK_FULL`), and a dead gifski is blamed on gifski on
+  Windows too (test on both OSes). No engineering follow-ups remain open.
 
 ## Measured
 

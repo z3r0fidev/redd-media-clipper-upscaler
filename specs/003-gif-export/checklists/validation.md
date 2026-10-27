@@ -73,7 +73,9 @@ Accepted / deferred:
 - An engine found through settings, `RMEDIA_GIFSICLE`/`RMEDIA_GIFSKI` or PATH is checked by its
   banner once and spawned later (not content-pinned); only the bundled sidecar is pinned.
 - On Windows, a dead gifski may surface as an ffmpeg write error that is not "Broken pipe" and so
-  blame ffmpeg (unverified without a Windows run).
+  blame ffmpeg. Closed 2026-10-26: on Windows, ffmpeg's write/mux lines ending in "Invalid
+  argument" or "End of file" also count as a lost reader, and
+  `gif_gifski::a_gifski_that_dies_is_blamed_not_ffmpeg` runs on both OSes in CI.
 - The 300 s pipe stall counts from spawn, before ffmpeg's first progress block.
 - Over the hard limit, a GIF fails verification until US2's budget search lowers the settings.
 - `GIFSKI_LOCK_UPDATES` is listed in both gif-tools.yml and xtask; the pin's lock comparison
@@ -180,7 +182,7 @@ Range `e02b26a..HEAD`. Neither review found a High.
 | M1 | `pin-gif-tools` used a predictable folder in the shared temp dir (pre-created by another user → writes through planted links) | Fixed: `tempfile` random 0700 folder, removed on drop |
 | L1 | The gifski progress tailer re-read the whole file every 250 ms | Fixed: one handle, only new bytes are read |
 | L4 | Engine stderr kept bidi/format characters | Fixed: `target::unsafe_char` in `tool_failed` and the pipe's stderr tail |
-| L2 | `budget=none` jobs can use about 8 GiB of scratch each (4 GiB cap × 2 files), no free-space preflight | Open (accepted: user-chosen) |
+| L2 | `budget=none` jobs can use about 8 GiB of scratch each (4 GiB cap × 2 files), no free-space preflight | Fixed 2026-10-26: the size watchdog's limit is capped at the output folder's free space (less 64 MiB, split across the copies); passing it stops the job with `DISK_FULL` |
 | L3 | The release gate checks staged file names, not the built bundles | Fixed 2026-10-26: `check-release-gate --scan DIR` checks built files and NSIS/WiX scripts; `release.yml` scans `target/release` and `dist` after packaging |
 
 ## Docs audit (docs-agent, 2026-10-26)

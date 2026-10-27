@@ -336,7 +336,8 @@ desktop GIF view. Code is in `crates/rmedia-core/src/gif/` and `exec/gif.rs`. Ad
 
 - A GIF is never enlarged and never plays faster than 50 fps (no delay under 2 cs).
 - Nothing is written above the hard limit: the verify stage checks the committed size, and a
-  watchdog aborts an encode whose temp file passes 2× the limit.
+  watchdog aborts an encode whose temp file passes 2× the limit, or the folder's free space
+  (`DISK_FULL`).
 - gifsicle and gifski are separate processes, never linked, found only outside input and scratch
   folders, and given only generated names inside scratch (never a source name).
 - Without either engine every requirement still holds: gifski falls back to the built-in engine

@@ -34,6 +34,35 @@ use crate::upscale::estimate::human_bytes;
 
 /// Without a budget, an encode that passes this size is stopped (a runaway output).
 pub(crate) const MAX_OUTPUT: u64 = 4 << 30;
+/// Free space the watchdog leaves in the output folder (other writers, the file system).
+const SPACE_RESERVE: u64 = 64 << 20;
+
+/// The size an output is stopped at, and whether the folder's free space set it (then passing
+/// it is `DISK_FULL`, not a runaway encode).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Cap {
+    pub bytes: u64,
+    pub from_space: bool,
+}
+
+impl Cap {
+    pub(crate) const fn size(bytes: u64) -> Cap {
+        Cap { bytes, from_space: false }
+    }
+
+    /// `base`, or less when `dir`'s folder cannot hold `copies` files of that size (security
+    /// review L2: without a budget, two 4 GiB files could fill the disk).
+    fn within_free_space(base: u64, dir: &Path, copies: u64) -> Cap {
+        Cap::within(base, copies, crate::upscale::estimate::free_space(dir))
+    }
+
+    fn within(base: u64, copies: u64, free: Option<u64>) -> Cap {
+        match free.map(|f| f.saturating_sub(SPACE_RESERVE) / copies.max(1)) {
+            Some(room) if room < base => Cap { bytes: room, from_space: true },
+            _ => Cap::size(base),
+        }
+    }
+}
 /// The gifski pipe is stopped when ffmpeg reports no progress for this long. gifski holds only
 /// a few frames, so it finishes soon after ffmpeg does.
 const PIPE_STALL: Duration = Duration::from_secs(300);
@@ -51,7 +80,12 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
     let mp4 = spec.gif.format == Format::Mp4;
     let optimise = spec.gif.optimiser.is_some() && !uses_gifski && !mp4;
     let budget = spec.gif.budget;
-    let limit = budget.map_or(MAX_OUTPUT, |b| b.hard.saturating_mul(2));
+    // The encode and gifsicle's copy both stay in the scratch folder until the move.
+    let limit = Cap::within_free_space(
+        budget.map_or(MAX_OUTPUT, |b| b.hard.saturating_mul(2)),
+        &scratch,
+        if optimise { 2 } else { 1 },
+    );
     // The MP4 and the gifski pipe are one encode stage each.
     let stages = Stages::new(uses_gifski || mp4, optimise, budget.is_some(), analyse);
     if analyse {
@@ -224,7 +258,7 @@ struct Encoder<'a> {
     /// The Reddit MP4: one x264 encode.
     mp4: bool,
     optimise: bool,
-    limit: u64,
+    limit: Cap,
     stages: &'a Stages,
     fulls: u32,
 }
@@ -409,7 +443,7 @@ async fn encode_watched(
     scratch: &Path,
     args: &[std::ffi::OsString],
     total: Ts,
-    limit: u64,
+    limit: Cap,
     output: &str,
 ) -> Result<()> {
     let stop = ctx.cancel.child_token();
@@ -432,32 +466,39 @@ async fn encode_watched(
 pub(crate) struct SizeWatch {
     task: tokio::task::JoinHandle<()>,
     over: Arc<AtomicBool>,
-    limit: u64,
+    limit: Cap,
+    /// The output folder (the scratch folder's parent), named in `DISK_FULL`.
+    folder: PathBuf,
 }
 
 impl SizeWatch {
-    pub(crate) fn start(file: PathBuf, limit: u64, stop: &CancellationToken) -> SizeWatch {
+    pub(crate) fn start(file: PathBuf, limit: Cap, stop: &CancellationToken) -> SizeWatch {
         let over = Arc::new(AtomicBool::new(false));
+        let folder = file.parent().and_then(Path::parent).unwrap_or(&file).to_path_buf();
         let (flag, stop) = (over.clone(), stop.clone());
         let task = tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(250)).await;
-                if std::fs::metadata(&file).is_ok_and(|m| m.len() > limit) {
+                if std::fs::metadata(&file).is_ok_and(|m| m.len() > limit.bytes) {
                     flag.store(true, Ordering::SeqCst);
                     stop.cancel();
                     return;
                 }
             }
         });
-        SizeWatch { task, over, limit }
+        SizeWatch { task, over, limit, folder }
     }
 
-    /// Stops watching; an error when the file grew past the limit (the run was cancelled for it).
+    /// Stops watching; an error when the file grew past the limit (the run was cancelled for it):
+    /// `DISK_FULL` when the folder's free space set the limit.
     pub(crate) fn stop(self) -> Result<()> {
         self.task.abort();
         if self.over.load(Ordering::SeqCst) {
+            if self.limit.from_space {
+                return Err(Error::DiskFull(self.folder.clone()));
+            }
             return Err(Error::engine_failed(
-                format!("the GIF grew past {} bytes and was stopped", self.limit),
+                format!("the GIF grew past {} bytes and was stopped", self.limit.bytes),
                 String::new(),
             ));
         }
@@ -506,7 +547,7 @@ pub(crate) struct Gifski<'a> {
     pub dir: &'a Path,
     pub output: &'a str,
     /// The size watchdog's limit.
-    pub limit: u64,
+    pub limit: Cap,
     /// A wall-clock limit, for runs without a progress file (no stall can be seen there).
     pub timeout: Option<Duration>,
 }
@@ -619,7 +660,7 @@ async fn run_gifsicle(
     gifsicle: &Path,
     scratch: &Path,
     lossy: u16,
-    limit: u64,
+    limit: Cap,
     (input, output): (&str, &str),
 ) -> Result<()> {
     let env = crate::gif::engines::engine_env();
@@ -680,5 +721,38 @@ mod tests {
         let m = space_warning_with(scratch, 2_200_000, 2, free).unwrap();
         assert!(m.starts_with("/out/gifs has 5.0 MB free") && m.ends_with("(from the samples)"), "{m}");
         assert_eq!(space_warning_with(scratch, u64::MAX, 2, |_| None), None, "unknown free space");
+    }
+
+    /// Security review L2: the watchdog never lets the job's files outgrow the free space.
+    #[test]
+    fn the_cap_is_the_free_space_left_for_each_copy() {
+        const MB: u64 = 1 << 20;
+        assert_eq!(Cap::within(MAX_OUTPUT, 2, Some(100 << 30)), Cap::size(MAX_OUTPUT), "plenty of room");
+        assert_eq!(Cap::within(MAX_OUTPUT, 2, None), Cap::size(MAX_OUTPUT), "unknown free space");
+        assert_eq!(
+            Cap::within(MAX_OUTPUT, 2, Some(1064 * MB)),
+            Cap { bytes: 500 * MB, from_space: true },
+            "(1 GiB + 40 MiB − the 64 MiB reserve) / 2"
+        );
+        assert_eq!(Cap::within(40_000_000, 1, Some(1 << 30)), Cap::size(40_000_000), "a budget's cap fits");
+        assert_eq!(Cap::within(MAX_OUTPUT, 1, Some(10 * MB)), Cap { bytes: 0, from_space: true });
+    }
+
+    #[tokio::test]
+    async fn passing_a_free_space_cap_is_disk_full_for_the_output_folder() {
+        let out = tempfile::tempdir().unwrap();
+        let scratch = out.path().join(".rmedia-run-1");
+        std::fs::create_dir(&scratch).unwrap();
+        std::fs::write(scratch.join("enc.gif"), vec![0u8; 2048]).unwrap();
+        for (from_space, want) in [(true, "DISK_FULL"), (false, "ENGINE_FAILED")] {
+            let stop = CancellationToken::new();
+            let watch = SizeWatch::start(scratch.join("enc.gif"), Cap { bytes: 1024, from_space }, &stop);
+            tokio::time::timeout(Duration::from_secs(5), stop.cancelled()).await.expect("the watchdog fires");
+            let e = watch.stop().unwrap_err();
+            assert_eq!(e.code(), want);
+            if from_space {
+                assert!(matches!(&e, Error::DiskFull(p) if p == out.path()), "{e:?}");
+            }
+        }
     }
 }
