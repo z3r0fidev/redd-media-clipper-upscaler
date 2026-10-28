@@ -32,7 +32,7 @@ env:
   NCNN_VERSION: "20260526"
   NCNN_SOURCE_URL: https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-full-source.zip
   NCNN_SOURCE_SHA256: 754659d6fe65545cf2ef4483ffb84526fea631f8764c44b150f1601d0fb4004b
-  PACKAGE: ncnn-20260526-windows-vs2022-static
+  PACKAGE: ncnn-20260526-windows-msvc-static
 
 jobs:
   build:
@@ -55,22 +55,21 @@ jobs:
           echo "$NCNN_SOURCE_SHA256  sources/ncnn-$NCNN_VERSION-full-source.zip" | sha256sum -c -
           mkdir ncnn-src && unzip -q "sources/ncnn-$NCNN_VERSION-full-source.zip" -d ncnn-src
       - name: Build ncnn (MSVC, static runtime, Vulkan, no OpenMP)
-        shell: pwsh
-        env:
-          UseMultiToolTask: true
+        # Ninja inside the MSVC developer environment: works with whichever Visual Studio the
+        # runner image carries (the generator name changes between releases).
+        shell: cmd
         run: |
-          $prefix = "$env:GITHUB_WORKSPACE/pkg/$env:PACKAGE/x64"
-          cmake -S ncnn-src -B ncnn-build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_INSTALL_PREFIX="$prefix" `
-            -DNCNN_VERSION_STRING="$env:NCNN_VERSION" `
-            -DNCNN_BUILD_EXAMPLES=OFF -DNCNN_BUILD_TOOLS=OFF -DNCNN_BUILD_BENCHMARK=OFF -DNCNN_BUILD_TESTS=OFF `
-            -DNCNN_VULKAN=ON -DNCNN_SHARED_LIB=OFF `
-            -DNCNN_OPENMP=OFF -DNCNN_BUILD_WITH_STATIC_CRT=ON
-          if ($LASTEXITCODE) { exit 1 }
-          cmake --build ncnn-build --config Release --parallel 4
-          if ($LASTEXITCODE) { exit 1 }
-          cmake --install ncnn-build --config Release
-          if ($LASTEXITCODE) { exit 1 }
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          cl 2>&1 | findstr /C:"Version"
+          cmake -S ncnn-src -B ncnn-build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_INSTALL_PREFIX="%GITHUB_WORKSPACE%\pkg\%PACKAGE%\x64" ^
+            -DNCNN_VERSION_STRING=%NCNN_VERSION% ^
+            -DNCNN_BUILD_EXAMPLES=OFF -DNCNN_BUILD_TOOLS=OFF -DNCNN_BUILD_BENCHMARK=OFF -DNCNN_BUILD_TESTS=OFF ^
+            -DNCNN_VULKAN=ON -DNCNN_SHARED_LIB=OFF ^
+            -DNCNN_OPENMP=OFF -DNCNN_BUILD_WITH_STATIC_CRT=ON || exit /b 1
+          cmake --build ncnn-build || exit /b 1
+          cmake --install ncnn-build || exit /b 1
       - name: Every library uses the static runtime and no OpenMP
         shell: cmd
         run: |
