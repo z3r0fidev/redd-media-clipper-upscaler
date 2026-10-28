@@ -79,6 +79,20 @@ jobs:
         run: |
           cargo test --workspace --no-fail-fast
           cargo test --workspace --release -- --ignored bench
+      # The Windows binaries link the C runtime statically (.cargo/config.toml, ncnn-static.yml):
+      # none may need a Visual C++ runtime DLL (msvcp_win.dll is part of Windows).
+      - name: No Visual C++ runtime DLL needed
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cargo build -p rmedia-cli -p rmedia-sr || exit /b 1
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat" > nul || exit /b 1
+          for %%f in (target\debug\rmedia.exe target\debug\rmedia-sr.exe) do (
+            dumpbin /dependents %%f || exit /b 1
+            dumpbin /dependents %%f | findstr /R /I "vcruntime[0-9] msvcp[0-9] vcomp[0-9]" && exit /b 1
+          )
+          exit /b 0
 
   minimum-engine:
     name: test (ubuntu-24.04, distro ffmpeg 6.1 = minimum supported)
@@ -183,6 +197,16 @@ jobs:
       - name: Desktop backend builds on Windows
         if: runner.os == 'Windows'
         run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: The desktop app needs no Visual C++ runtime DLL
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat" > nul || exit /b 1
+          set EXE=apps\desktop\src-tauri\target\debug\rmedia-desktop.exe
+          dumpbin /dependents %EXE% || exit /b 1
+          dumpbin /dependents %EXE% | findstr /R /I "vcruntime[0-9] msvcp[0-9] vcomp[0-9]" && exit /b 1
+          exit /b 0
 
   deny:
     name: cargo-deny (${{ matrix.manifest }})

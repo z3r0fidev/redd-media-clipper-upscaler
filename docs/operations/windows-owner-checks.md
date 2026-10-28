@@ -158,10 +158,12 @@ For each command, record:
 
 Record the `tier:` lines.
 
-On a machine **without** the VC++ runtime (step 1), the AI tier is expected to fail to start
-`rmedia-sr.exe`, with a missing `vcruntime140.dll`, `msvcp140.dll` or `vcomp140.dll`. Record
-the exact error. It decides the open "Visual C++ runtime" item. With the runtime installed,
-record whether the AI tier is listed as usable and how fast it is.
+From builds after 2026-10-28, the Windows binaries link the C runtime statically and ncnn has no
+OpenMP, so on a machine **without** the VC++ runtime (step 1) the AI tier should start: no
+missing `vcruntime140.dll`, `msvcp140.dll` or `vcomp140.dll`. Record whether the AI tier is
+listed as usable and the time of the `--tier ai` clip. If a build from before that date is at
+hand, time the same clip with it (the VC++ runtime installed) and record both: if the static
+build is noticeably slower, the fallback is shipping the three DLLs next to `rmedia-sr.exe`.
 
 ### 3.5 Cancel and Cleanup (001 SC-007, 003 SC-008)
 

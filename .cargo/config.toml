@@ -1,2 +1,7 @@
 [alias]
 xtask = "run --package xtask --"
+
+# Windows binaries carry the C runtime (no vcruntime140/msvcp140 DLL on the user's machine); the
+# AI worker's ncnn is built to match (.github/workflows/ncnn-static.yml).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

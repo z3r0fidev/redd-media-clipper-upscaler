@@ -234,4 +234,6 @@ scripted parts of `quickstart.md` were run end to end.
   without it the AI worker will not start (the CPU and GPU tiers do not need it). Options:
   bundle the three DLLs next to the worker, run the VC++ redistributable from the installer, or
   link the worker's runtime statically. Not run on Windows hardware: the installers themselves
-  and the desktop app.
+  and the desktop app. **Resolved 2026-10-28:** linked statically (ncnn built with `/MT` and no
+  OpenMP by `ncnn-static.yml`, `crt-static` for every Windows binary); CI checks no binary
+  imports the runtime DLLs. AI speed on hardware is still an owner check.

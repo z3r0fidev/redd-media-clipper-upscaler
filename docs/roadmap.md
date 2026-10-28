@@ -165,9 +165,11 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   (`mirror-2026-10-22`, `ffmpeg-source-n9.0.2-31-gc89d6ee1ca`; see
   [Build and Release](operations/build-and-release.md)).
 - [x] Add a git remote: public `origin` on GitHub, work on `main`, CI green.
-- [ ] Remove the Windows AI worker's need for the Visual C++ runtime (`vcruntime140`,
-  `msvcp140`, `vcomp140`): decided 2026-10-27 to link it statically (`ncnn-static.yml`), with
-  shipping the DLLs as the fallback. In progress.
+- [x] Remove the Windows AI worker's need for the Visual C++ runtime (`vcruntime140`,
+  `msvcp140`, `vcomp140`): ncnn built with `/MT` and no OpenMP (`ncnn-static.yml`, release
+  `ncnn-static-2026-10-28`), every Windows binary built with `crt-static`, checked in CI (2026-10-28).
+  Owner check left: AI speed on Windows hardware (runbook §3.4); if it is noticeably slower,
+  ship the three DLLs next to `rmedia-sr.exe` instead.
 - [ ] Windows code signing with Azure Artifact Signing (US organisation, decided 2026-10-27):
   account and identity validation by the owner, then a signing step in `release.yml`.
 - [ ] Manual desktop QA on Windows hardware (Windows paths and Job Object handling are unverified;

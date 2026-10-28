@@ -30,7 +30,7 @@ cargo xtask <fetch-tools [--target TRIPLE] [--no-gifski] | pin-tools | pin-gif-t
 | `pin-tools` | Moves the pin to the newest BtbN autobuild of the **current release line** and records GitHub's asset SHA-256 digests and the BtbN commit of the tag (`scripts_commit`); the lock is written only after both new archives are downloaded and verified | `xtask/tools.lock.json` |
 | `gen-bindings` | Regenerates the desktop app's TypeScript types from `rmedia-core` (ts-rs) | `apps/desktop/src/lib/bindings/` (deleted and recreated) |
 | `stage-cli [--target T]` | Builds `rmedia-cli` and the AI worker `rmedia-sr` in release mode and copies them with sidecar naming (needs `fetch-ncnn` first) | `binaries/rmedia-<T>[.exe]`, `binaries/rmedia-sr-<T>[.exe]` |
-| `fetch-ncnn [--target T]` | Downloads the pinned prebuilt ncnn 20260526 (static, Vulkan; `ubuntu-2204` or `windows-vs2022`) for target `T`, verifies its SHA-256 and installs it for `crates/rmedia-sr/build.rs`, which stops with "run `cargo xtask fetch-ncnn`" without it. `RMEDIA_NCNN_DIR` (build time) points the build at another ncnn package instead. Added in 0.2.0 (US6) | `third_party/ncnn/<T>/` (git-ignored) |
+| `fetch-ncnn [--target T]` | Downloads the pinned prebuilt ncnn 20260526 (static, Vulkan; Tencent's `ubuntu-2204` on Linux, our static-runtime build from `ncnn-static.yml` on Windows) for target `T`, verifies its SHA-256 and installs it for `crates/rmedia-sr/build.rs`, which stops with "run `cargo xtask fetch-ncnn`" without it. `RMEDIA_NCNN_DIR` (build time) points the build at another ncnn package instead. Added in 0.2.0 (US6) | `third_party/ncnn/<T>/` (git-ignored) |
 | `notices` | Generates the third-party notices for every Rust crate and bundled npm package | `THIRD_PARTY_NOTICES.md` |
 | `fetch-models` | Downloads each model in `xtask/models.lock.json` (the YuNet face detector, the Real-ESRGAN animevideov3 x2/x3/x4 files taken from a pinned release archive, and a test-only portrait) with `curl` over HTTPS only, verifies the SHA-256 of each archive and file, and replaces it through a temp file and rename. Files that already match are kept. Added in 0.2.0. | `models/` (git-ignored; never committed) |
 | `archive` | Downloads every pinned archive (FFmpeg and ncnn for both targets, model release archives) and checks it against its pin; lists SHA-256, size and path | `archives/<sha256>/` (git-ignored) |
@@ -215,6 +215,23 @@ input defaults to off; turning it on also needs a root `LICENSE` and an AGPL-3.0
 `app_licence` ([Roadmap](../roadmap.md)). Commits before 003 have no `gif-tools.lock.json`, so
 tagging `v0.1.0`/`v0.2.0` is unaffected.
 
+## Static ncnn for the Windows AI Worker
+
+Tencent's Windows ncnn package uses the DLL C runtime and OpenMP (`vcomp`), so a worker linked
+against it needs `vcruntime140`, `msvcp140` and `vcomp140` on the user's machine.
+`.github/workflows/ncnn-static.yml` (manual dispatch on `main`) instead builds ncnn 20260526 from
+Tencent's pinned source zip with MSVC, `/MT` (`NCNN_BUILD_WITH_STATIC_CRT`), Vulkan and no
+OpenMP. It checks every library for the static runtime, builds `rmedia-sr` against the package
+with `crt-static`, fails if the exe imports any of those DLLs, and smoke-tests it. With
+`publish`, it attests the package and the source zip and publishes them as
+`ncnn-static-<date>[.<run-id>]`; the package is then pinned as
+`ncnn.x86_64-pc-windows-msvc` in `xtask/models.lock.json` (the release is its own mirror). The
+current pin is `ncnn-static-2026-10-28`.
+
+Every Windows build links the C runtime statically (`.cargo/config.toml`), and CI fails if
+`rmedia.exe`, `rmedia-sr.exe` or `rmedia-desktop.exe` imports a Visual C++ runtime DLL.
+Without OpenMP, ncnn's CPU-side steps run on one thread; the GPU work is unchanged.
+
 ## Continuous Integration (`ci.yml`)
 
 Triggers: push to `main`, every pull request, and weekly on Monday at 06:17 UTC (to catch new
@@ -227,10 +244,10 @@ jobs use the runner's preinstalled Node.
 
 | Job | Runners | Steps |
 |---|---|---|
-| `test` (bundled engine) | `ubuntu-22.04`, `windows-latest` | `cargo fmt --all -- --check`; `cargo xtask check-pins`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo xtask fetch-tools`; `cargo test --workspace`; `cargo test --workspace --release -- --ignored bench` (with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to the bundled engine) |
+| `test` (bundled engine) | `ubuntu-22.04`, `windows-latest` | `cargo fmt --all -- --check`; `cargo xtask check-pins`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo xtask fetch-tools`; `cargo test --workspace`; `cargo test --workspace --release -- --ignored bench` (with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to the bundled engine); Windows: `dumpbin` fails the job if `rmedia.exe` or `rmedia-sr.exe` imports a Visual C++ runtime DLL |
 | `minimum-engine` | `ubuntu-24.04` | Installs distro `ffmpeg` (6.1, the minimum supported); `cargo xtask fetch-models` and `fetch-ncnn`; `cargo test --workspace` with `RMEDIA_ALLOW_MISSING_FEATURES=1` (tests needing a feature 6.1 lacks, such as libvmaf, skip) |
 | `windows-check-gnu` | `ubuntu-22.04` | Installs mingw-w64 (tract-linalg compiles C); `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu --exclude rmedia-sr` (type-checks Windows code paths from Linux; the AI worker links MSVC ncnn and is built by the Windows test job) |
-| `desktop` | `ubuntu-22.04`, `windows-latest` | Linux webview dependencies; `fetch-tools`, `fetch-ncnn`, `fetch-models` + `stage-cli` (tauri-build requires the sidecars and bundled models to exist); `gen-bindings` then `git diff --exit-code` on the bindings; `npm ci`, `npm run check`, `npm test`, `npm run build`; Linux only: desktop backend tests (against the staged pinned engine; no distro FFmpeg is installed) and the notices check; Windows only: `cargo build` of the desktop backend |
+| `desktop` | `ubuntu-22.04`, `windows-latest` | Linux webview dependencies; `fetch-tools`, `fetch-ncnn`, `fetch-models` + `stage-cli` (tauri-build requires the sidecars and bundled models to exist); `gen-bindings` then `git diff --exit-code` on the bindings; `npm ci`, `npm run check`, `npm test`, `npm run build`; Linux only: desktop backend tests (against the staged pinned engine; no distro FFmpeg is installed) and the notices check; Windows only: `cargo build` of the desktop backend, then `dumpbin` fails the job if it imports a Visual C++ runtime DLL |
 | `deny` | `ubuntu-22.04` | `cargo-deny` for `Cargo.toml` and for `apps/desktop/src-tauri/Cargo.toml`; `deny.toml` ignores one advisory, RUSTSEC-2024-0370 (unmaintained build-time proc-macro of gtk-rs 0.18, via Tauri's Linux backend), with its reason |
 
 Generated-file gates: CI fails if `apps/desktop/src/lib/bindings` or `THIRD_PARTY_NOTICES.md`
