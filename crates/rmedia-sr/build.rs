@@ -1,7 +1,10 @@
 //! Links the prebuilt ncnn (static, Vulkan) fetched by `cargo xtask fetch-ncnn` into
 //! `third_party/ncnn/<target>/`, and compiles the small C++ shim for what ncnn's C API lacks
 //! (GPU listing, device type, heap budget). The C/C++ runtimes are linked statically on Linux so
-//! the shipped worker needs only glibc; Vulkan itself is loaded at run time by ncnn.
+//! the shipped worker needs only glibc; Vulkan itself is loaded at run time by ncnn. On Windows
+//! the C runtime follows the target's `crt-static`: with it (`.cargo/config.toml`), ncnn must be
+//! the /MT build without OpenMP from `.github/workflows/ncnn-static.yml`, and the worker needs no
+//! Visual C++ runtime DLL; without it, Tencent's /MD package and the DLL runtime plus `vcomp`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,20 +30,22 @@ fn main() {
         );
     }
 
+    let crt_static =
+        std::env::var("CARGO_CFG_TARGET_FEATURE").is_ok_and(|f| f.split(',').any(|f| f == "crt-static"));
     let mut shim = cc::Build::new();
     shim.cpp(true).file("src/shim.cpp").include(&include).warnings(false);
     if target.contains("msvc") {
-        // The prebuilt ncnn.lib uses the DLL C runtime (/MD), like Rust's own default; mixing in
-        // the static one fails to link (LNK2038 RuntimeLibrary mismatch).
-        shim.flag("/std:c++17").static_crt(false);
+        // The shim, ncnn.lib and Rust must agree on the C runtime; a mix fails to link
+        // (LNK2038 RuntimeLibrary mismatch).
+        shim.flag("/std:c++17").static_crt(crt_static);
     } else {
         shim.flag("-std=c++17").cpp_link_stdlib(None);
     }
     shim.compile("rmedia_sr_shim");
 
     if target.contains("msvc") {
-        // Every static library of the package (ncnn and glslang's parts); OpenMP from the MSVC
-        // runtime (vcomp).
+        // Every static library of the package (ncnn and glslang's parts); with the DLL runtime,
+        // OpenMP from the MSVC runtime (vcomp). The static build has no OpenMP.
         println!("cargo:rustc-link-search=native={}", lib.display());
         let mut libs: Vec<String> = std::fs::read_dir(&lib)
             .expect("ncnn lib dir")
@@ -51,7 +56,9 @@ fn main() {
         for l in libs {
             println!("cargo:rustc-link-lib=static={l}");
         }
-        println!("cargo:rustc-link-lib=dylib=vcomp");
+        if !crt_static {
+            println!("cargo:rustc-link-lib=dylib=vcomp");
+        }
     } else {
         // ncnn first, then glslang's parts, in one group (they refer to each other), then the
         // static C++ and OpenMP runtimes.

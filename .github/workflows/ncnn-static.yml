@@ -1,0 +1,186 @@
+name: ncnn static
+
+# Builds ncnn for the Windows AI worker (`rmedia-sr`) from Tencent's pinned source with the static
+# C runtime (/MT) and without OpenMP, so the worker needs no Visual C++ runtime DLL (vcruntime140,
+# msvcp140, vcomp140). Tencent's own Windows package uses the DLL runtime and vcomp. The worker
+# runs ncnn on the GPU; without OpenMP only ncnn's CPU-side steps are single-threaded.
+#
+# The job builds rmedia-sr against the package and fails if the exe imports any of those DLLs.
+# Run it by hand on `main`. With `publish` it attests the package and publishes it, with its
+# source, as the release `ncnn-static-<date>` (`.<run-id>` added for a second build that day);
+# then pin the package in xtask/models.lock.json (`ncnn.x86_64-pc-windows-msvc`).
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the package as a release (otherwise only a workflow artifact)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ncnn-static
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NCNN_VERSION: "20260526"
+  NCNN_SOURCE_URL: https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-full-source.zip
+  NCNN_SOURCE_SHA256: 754659d6fe65545cf2ef4483ffb84526fea631f8764c44b150f1601d0fb4004b
+  PACKAGE: ncnn-20260526-windows-vs2022-static
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      package: ${{ steps.hash.outputs.package }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch and verify the source
+        run: |
+          set -euo pipefail
+          mkdir sources out
+          curl -sSfL --retry 3 -o "sources/ncnn-$NCNN_VERSION-full-source.zip" "$NCNN_SOURCE_URL"
+          echo "$NCNN_SOURCE_SHA256  sources/ncnn-$NCNN_VERSION-full-source.zip" | sha256sum -c -
+          mkdir ncnn-src && unzip -q "sources/ncnn-$NCNN_VERSION-full-source.zip" -d ncnn-src
+      - name: Build ncnn (MSVC, static runtime, Vulkan, no OpenMP)
+        shell: pwsh
+        env:
+          UseMultiToolTask: true
+        run: |
+          $prefix = "$env:GITHUB_WORKSPACE/pkg/$env:PACKAGE/x64"
+          cmake -S ncnn-src -B ncnn-build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_INSTALL_PREFIX="$prefix" `
+            -DNCNN_VERSION_STRING="$env:NCNN_VERSION" `
+            -DNCNN_BUILD_EXAMPLES=OFF -DNCNN_BUILD_TOOLS=OFF -DNCNN_BUILD_BENCHMARK=OFF -DNCNN_BUILD_TESTS=OFF `
+            -DNCNN_VULKAN=ON -DNCNN_SHARED_LIB=OFF `
+            -DNCNN_OPENMP=OFF -DNCNN_BUILD_WITH_STATIC_CRT=ON
+          if ($LASTEXITCODE) { exit 1 }
+          cmake --build ncnn-build --config Release --parallel 4
+          if ($LASTEXITCODE) { exit 1 }
+          cmake --install ncnn-build --config Release
+          if ($LASTEXITCODE) { exit 1 }
+      - name: Every library uses the static runtime and no OpenMP
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          cd pkg\%PACKAGE%\x64\lib || exit /b 1
+          dumpbin /directives ncnn.lib | findstr /I "LIBCMT" > nul || exit /b 1
+          for %%f in (*.lib) do (
+            echo %%f
+            dumpbin /directives "%%f" | findstr /I "MSVCRT msvcprt vcomp" && exit /b 1
+          )
+          exit /b 0
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: Build rmedia-sr against it (static runtime)
+        env:
+          RMEDIA_NCNN_DIR: ${{ github.workspace }}/pkg/${{ env.PACKAGE }}
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build -p rmedia-sr --release --locked
+      - name: The worker needs no Visual C++ runtime DLL
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          dumpbin /dependents target\release\rmedia-sr.exe || exit /b 1
+          dumpbin /dependents target\release\rmedia-sr.exe | findstr /I "vcruntime msvcp vcomp" && exit /b 1
+          dumpbin /headers target\release\rmedia-sr.exe | findstr /C:"Dynamic base" || exit /b 1
+          dumpbin /headers target\release\rmedia-sr.exe | findstr /C:"NX compatible" || exit /b 1
+          exit /b 0
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          target/release/rmedia-sr.exe --version
+          # No Vulkan device on the runner: the list may be empty, but the call must not crash.
+          target/release/rmedia-sr.exe --list-gpus || echo "--list-gpus exited $?"
+      - name: Package and hash (job output, not the artifact)
+        id: hash
+        run: |
+          set -euo pipefail
+          (cd pkg && 7z a -tzip -bd "../out/$PACKAGE.zip" "$PACKAGE" > /dev/null)
+          cp "sources/ncnn-$NCNN_VERSION-full-source.zip" out/
+          echo "package=$(sha256sum "out/$PACKAGE.zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          sha256sum out/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ncnn-static
+          path: out/
+          if-no-files-found: error
+
+  attest:
+    needs: build
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ncnn-static
+          path: out
+      - name: The artifact holds the files the build hashed
+        env:
+          PACKAGE_SHA256: ${{ needs.build.outputs.package }}
+        run: |
+          set -euo pipefail
+          echo "$PACKAGE_SHA256  out/$PACKAGE.zip" | sha256sum -c -
+          echo "$NCNN_SOURCE_SHA256  out/ncnn-$NCNN_VERSION-full-source.zip" | sha256sum -c -
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/*
+
+  publish:
+    needs: [build, attest]
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ncnn-static
+          path: release
+      - name: Re-check every file against the build's hashes
+        env:
+          PACKAGE_SHA256: ${{ needs.build.outputs.package }}
+        run: |
+          set -euo pipefail
+          cd release
+          {
+            echo "$PACKAGE_SHA256  $PACKAGE.zip"
+            echo "$NCNN_SOURCE_SHA256  ncnn-$NCNN_VERSION-full-source.zip"
+          } > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="ncnn-static-$(date -u +%Y-%m-%d)"
+          # A second build on the same day gets its own release: the date plus this run's id.
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then tag="$tag.$GITHUB_RUN_ID"; fi
+          notes=$(printf '%s\n' \
+            "ncnn $NCNN_VERSION for the Windows AI worker, built from Tencent's source by .github/workflows/ncnn-static.yml:" \
+            "MSVC, static C runtime (/MT), Vulkan, no OpenMP. Not an rmedia release. Licence: licenses/NCNN-NOTICE.md." \
+            "" \
+            "build_run: $GITHUB_RUN_ID" \
+            "build_commit: $GITHUB_SHA" \
+            "source: $NCNN_SOURCE_URL ($NCNN_SOURCE_SHA256)")
+          gh release create "$tag" -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "ncnn static $tag" --notes "$notes" release/*
