@@ -38,6 +38,7 @@ tract-onnx = "0.23"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util", "fs", "signal"] }
 tokio-util = "0.7"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 walkdir = "2.5"
 which = "8"
 

@@ -1,6 +1,7 @@
 //! `rmedia` command-line interface (contracts/cli.md). All media logic lives in rmedia-core.
 
 mod commands;
+mod logging;
 mod render;
 
 use std::path::PathBuf;
@@ -723,6 +724,7 @@ fn main() -> ExitCode {
         Ok(cli) => cli,
         Err(e) => e.exit(), // 2 for usage errors, 0 for --help/--version
     };
+    logging::init(cli.verbose, cli.quiet);
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
     let code = runtime.block_on(async {
         // Commands that run jobs catch Ctrl-C from their start; with `--json` (not a dry run)

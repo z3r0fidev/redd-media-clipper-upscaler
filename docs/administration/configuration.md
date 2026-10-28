@@ -193,8 +193,8 @@ How it works:
   absolute, the name exactly matches the `.part` pattern for that run, and the path is a regular
   file (not a symlink). Unlocked, empty journals younger than 60 seconds are left alone.
 - If the journal cannot be opened, the run continues without crash protection. The
-  `crash journal unavailable: …` warning is emitted through `tracing` only, so it is not visible
-  (see [Logging](#logging)).
+  CLI prints `warning: crash journal unavailable: …` on standard error; the desktop app writes it
+  to its log file (see [Logging](#logging)).
 
 The same state folder holds `capability.json`, the machine capability record (GPU devices,
 tier self-test speeds, tiers that failed since; see [`rmedia doctor`](../api/cli-reference.md#rmedia-doctor)),
@@ -247,6 +247,7 @@ The cache is safe to delete while the app is closed.
 | `RMEDIA_STATE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the state directory (crash journal parent). Used by the CLI tests. | per-user state directory |
 | `RMEDIA_CONFIG_DIR` | `rmedia`, `rmedia-desktop` | Folder that holds `settings.json`, the user device presets (`presets/*.json`, read by `rmedia upscale`) and GIF targets (`gif-targets/*.json`). Used by tests. | per-user config directory |
 | `RMEDIA_CACHE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the cache root, which holds `preview/`, `reframe/` (smart-reframe analyses) and `models/`. Used by tests. Added in 0.2.0. | per-user cache directory |
+| `RMEDIA_LOG` | `rmedia`, `rmedia-desktop` | Which log messages are shown: a level (`error`, `warn`, `info`, `debug`, `trace`) or targets such as `rmedia_core=debug,warn`. Replaces `-v`/`-q` for log messages in the CLI and the default filter in the desktop app. The CLI warns and ignores a value it cannot parse. Added in 0.3.0. | not set |
 | `RMEDIA_REQUIRE_FFMPEG` | test kit only | When `1`, media tests fail instead of being skipped if FFmpeg is missing. Set in CI. | not set |
 | `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | Linux | Standard XDG base directories, honoured when they are absolute paths. | `~/.config`, `~/.local/state`, `~/.cache` |
 
@@ -262,6 +263,7 @@ Linux the folder name is the lowercased application name (`rmedia`); on Windows 
 |---|---|---|
 | Settings (`settings.json`) | `~/.config/rmedia/` | `%APPDATA%\OpenLogic\rmedia\config\` |
 | Crash journal (`inflight/`) | `~/.local/state/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\data\` |
+| Desktop log (`logs/desktop.log`, 0.3.0) | `~/.local/state/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\data\` |
 | Preview cache (`preview/`) | `~/.cache/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\cache\` |
 | User device presets (`presets/*.json`) | `~/.config/rmedia/presets/` | `%APPDATA%\OpenLogic\rmedia\config\presets\` |
 | User GIF targets (`gif-targets/*.json`, 0.3.0) | `~/.config/rmedia/gif-targets/` | `%APPDATA%\OpenLogic\rmedia\config\gif-targets\` |
@@ -281,13 +283,35 @@ The `com.openlogic.rmedia` Tauri identifier (`tauri.conf.json`) is not used for 
 
 ## Logging
 
-rmedia writes no log files. The CLI prints human-readable output to standard output and diagnostics
-to standard error. `-v` shows the FFmpeg commands. `--json` produces machine-readable NDJSON events
-(or one document for `--dry-run`). The core emits `tracing` events (for example, the
-`crash journal unavailable` warning), but no crate in the repository installs a `tracing`
-subscriber, so these events are currently discarded and never shown.
+The core reports problems that do not stop a run (for example `crash journal unavailable`, a
+reframe analysis that could not be cached, or a GPU preview that fell back to the CPU) as `tracing`
+events. Before 0.3.0 these were discarded.
+
+**CLI.** Events go to standard error in the CLI's own style (`warning: …`, `error: …`), never to
+standard output, so `--json` output stays clean. While progress bars are drawn, they are hidden for
+the moment a line is printed. Control characters in messages are shown as `?`.
+
+| Flags | Shown |
+|---|---|
+| (none) | warnings and errors |
+| `-v` | also `info` (for example, which AI worker `RMEDIA_SR` selected) |
+| `-vv` | also `debug` |
+| `-q` | errors only |
+| `RMEDIA_LOG=…` | as given; replaces the flags for log messages |
+
+`-v` also shows the FFmpeg commands, and `--json` produces machine-readable NDJSON events (or one
+document for `--dry-run`); neither is part of the log.
+
+**Desktop app.** Events go to `logs/desktop.log` in the [state directory](#file-locations)
+(`~/.local/state/rmedia/logs/desktop.log` on Linux,
+`%LOCALAPPDATA%\OpenLogic\rmedia\data\logs\desktop.log` on Windows), with a UTC timestamp, the
+level and the source. rmedia's own messages are kept from `info` up, other components' from `warn`;
+`RMEDIA_LOG` replaces that. The file is readable by the user only (mode `0600` on Linux). When it
+passes 1 MiB at startup it is renamed to `desktop.log.1` (replacing the previous one), so at most
+about 2 MiB are kept. The log holds file paths of the videos you opened; delete it if that matters.
+A debug build started from a terminal also prints the events there.
 
 ## Backup
 
-Only `settings.json` holds user configuration worth backing up. The crash journal and preview cache
-are disposable.
+Only `settings.json` holds user configuration worth backing up. The crash journal, the desktop log
+and the preview cache are disposable.

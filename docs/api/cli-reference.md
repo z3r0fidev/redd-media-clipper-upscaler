@@ -53,8 +53,8 @@ Options:
 |---|---|
 | `--ffmpeg PATH`, `--ffprobe PATH` | Use this engine. The path must exist. Reported with source `config`. |
 | `--gifsicle PATH`, `--gifski PATH` | Use this optional GIF engine (0.3.0). See [GIF Engine Lookup Order](#gif-engine-lookup-order). |
-| `-v`, `--verbose` (repeatable) | Dry runs print the exact ffmpeg command per job. `scan` lists rejected files. Failed jobs print ffmpeg's stderr tail. |
-| `-q`, `--quiet` | Hides progress bars and plan warnings; errors and the final summary still print |
+| `-v`, `--verbose` (repeatable) | Dry runs print the exact ffmpeg command per job. `scan` lists rejected files. Failed jobs print ffmpeg's stderr tail. Log messages from the core: `-v` adds `info:` lines, `-vv` `debug:` lines (0.3.0; see [Configuration › Logging](../administration/configuration.md#logging)). |
+| `-q`, `--quiet` | Hides progress bars, plan warnings and core `warning:` lines; errors and the final summary still print |
 | `-V`, `--version` | Prints `rmedia <version>`, the workspace version (`rmedia 0.2.0` on `main` today; `rmedia 0.1.0` in the 0.1.0 build) |
 
 ### Engine Lookup Order

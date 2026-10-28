@@ -932,7 +932,9 @@ When you report a problem, include:
 
 * the output of `rmedia doctor`;
 * the full command and its output, run with `-v` (for example `rmedia -v clip …`);
-* for the desktop app, the exact message text shown.
+* for the desktop app, the exact message text shown and the log file `logs/desktop.log` in the state
+  folder (`~/.local/state/rmedia/` on Linux, `%LOCALAPPDATA%\OpenLogic\rmedia\data\` on Windows).
+  It lists the paths of the videos you opened; remove any you do not want to share.
 
 ## Related Information
 

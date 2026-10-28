@@ -110,6 +110,11 @@ only.
   deletes only entries that are absolute, named exactly `.<stem>.rmedia-<that run_id>-<digits>.part`,
   and regular files; symlinks are never followed or deleted. Unit tests cover lookalike names,
   other runs' files, relative paths and symlinked entries.
+- **Logs** (0.3.0): the CLI writes core log messages to stderr only, with control characters
+  replaced, and never to `--json` stdout. The desktop app appends to `logs/desktop.log` in the
+  per-user state folder, created with mode `0600` on Unix (on Windows it inherits
+  `%LOCALAPPDATA%`'s per-user ACL), renamed to `.1` past 1 MiB. It holds file paths and error messages;
+  rmedia logs no credentials or tokens.
 - Discovery never descends into rmedia's own output folders on `clip` re-runs, and refuses `-o`
   equal to a scanned folder (`commands/scan.rs`).
 

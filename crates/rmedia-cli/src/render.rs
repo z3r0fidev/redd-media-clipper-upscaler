@@ -512,8 +512,10 @@ pub fn sink(out: &Output, plan: &Plan) -> Arc<RenderSink> {
         return Arc::new(RenderSink::Json);
     }
     let target = if out.quiet { ProgressDrawTarget::hidden() } else { ProgressDrawTarget::stderr() };
+    let multi = MultiProgress::with_draw_target(target);
+    crate::logging::set_progress(&multi);
     Arc::new(RenderSink::Human {
-        multi: MultiProgress::with_draw_target(target),
+        multi,
         labels: plan.jobs.iter().map(|j| (j.id, file_name(&j.output))).collect(),
         bars: Mutex::new(HashMap::new()),
     })

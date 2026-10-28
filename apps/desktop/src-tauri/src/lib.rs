@@ -1,12 +1,19 @@
 //! rmedia desktop app. All media logic is in rmedia-core; `ops` adapts it, `commands` exposes it.
 
 pub mod commands;
+pub mod logging;
 pub mod media_server;
 pub mod ops;
 
 use tauri::{Emitter, Manager, WindowEvent};
 
 pub fn run() {
+    match logging::init() {
+        Some(log) => {
+            tracing::info!("rmedia {} started; logging to {}", env!("CARGO_PKG_VERSION"), log.display())
+        }
+        None => tracing::warn!("rmedia {} started; no log file (stderr only)", env!("CARGO_PKG_VERSION")),
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
