@@ -64,7 +64,7 @@ jobs:
           cl 2>&1 | findstr /C:"Version"
           cmake -S ncnn-src -B ncnn-build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
             -DCMAKE_INSTALL_PREFIX="%GITHUB_WORKSPACE%\pkg\%PACKAGE%\x64" ^
-            -DNCNN_VERSION_STRING=%NCNN_VERSION% ^
+            -DNCNN_VERSION=%NCNN_VERSION% ^
             -DNCNN_BUILD_EXAMPLES=OFF -DNCNN_BUILD_TOOLS=OFF -DNCNN_BUILD_BENCHMARK=OFF -DNCNN_BUILD_TESTS=OFF ^
             -DNCNN_VULKAN=ON -DNCNN_SHARED_LIB=OFF ^
             -DNCNN_OPENMP=OFF -DNCNN_BUILD_WITH_STATIC_CRT=ON || exit /b 1
@@ -101,7 +101,8 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
-          target/release/rmedia-sr.exe --version
+          v=$(target/release/rmedia-sr.exe --version | tr -d '\r'); echo "$v"
+          [[ "$v" == *"(ncnn 1.0.$NCNN_VERSION)" ]]
           # No Vulkan device on the runner: the list may be empty, but the call must not crash.
           target/release/rmedia-sr.exe --list-gpus || echo "--list-gpus exited $?"
       - name: Package and hash (job output, not the artifact)
