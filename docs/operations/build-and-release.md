@@ -209,9 +209,10 @@ and `GIFSKI-NOTICE.md` naming the pinned version and source). The current pin is
 `gif-tools-2026-10-25.40211502841`.
 
 **Release gate (FR-025).** Bundling gifski is distribution under the AGPL, so `release.yml`
-runs `cargo xtask check-release-gate` and fails while the app licence is undecided (the
-manifests' `MIT OR Apache-2.0` is a placeholder; [Roadmap](../roadmap.md)). Until then, build
-artifacts with the `gifski` input off. Commits before 003 have no `gif-tools.lock.json`, so
+runs `cargo xtask check-release-gate`, which fails when gifski is bundled and no allowed app
+licence is recorded. Owner decision (2026-10-27): releases ship without gifski, so the `gifski`
+input defaults to off; turning it on also needs a root `LICENSE` and an AGPL-3.0 or GPL-3.0
+`app_licence` ([Roadmap](../roadmap.md)). Commits before 003 have no `gif-tools.lock.json`, so
 tagging `v0.1.0`/`v0.2.0` is unaffected.
 
 ## Continuous Integration (`ci.yml`)

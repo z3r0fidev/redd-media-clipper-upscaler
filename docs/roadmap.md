@@ -139,10 +139,18 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 - SC-009 (decided 2026-10-26): the automated bar is 5% on the synthetic set; owner check: at
   least 15% smaller with gifsicle on real footage ([runbook](operations/windows-owner-checks.md#5-sc-009-gifsicle-on-real-footage)).
-- Application licence (gates any release that bundles gifski: `cargo xtask check-release-gate`).
-  gifski's quantiser imagequant is GPL-3.0-or-later (allowed, 2026-10-25), so a commercial route
-  needs licences for both (`commercial-gifski-imagequant`).
-- Visual C++ runtime for the 002 Windows installers.
+- Application licence (decided 2026-10-27): releases ship **without gifski** (`release.yml`'s
+  `gifski` input now defaults to off); the built-in engine covers every target and `max-quality`
+  falls back with `ENGINE_FALLBACK`. If gifski is wanted later, the fallback is licensing the app
+  AGPL-3.0 or GPL-3.0 (allowed by `cargo xtask check-release-gate`); the commercial
+  gifski + imagequant route was not chosen.
+- Visual C++ runtime (decided 2026-10-27): link it statically. ncnn is built from source with
+  `/MT` and no OpenMP (`.github/workflows/ncnn-static.yml`) and the Windows binaries use
+  `crt-static`; if that fails or the worker is noticeably slower, ship `vcruntime140`,
+  `msvcp140` and `vcomp140` next to `rmedia-sr.exe` instead.
+- Code signing (decided 2026-10-27): Azure Artifact Signing, signed in the US as an
+  organisation. Owner: create the Azure account and pass identity validation; then the release
+  workflow gets a signing step.
 - Tag `v0.1.0` and `v0.2.0`; Dependabot notices automation.
 - Owner checks: two-phone gallery test, a Reddit upload, +3 VMAF on real footage, Reddit's GIF
   limits, gifsicle's 15% saving on real footage (SC-009). The Windows installers and desktop app are untested on real hardware.
@@ -151,13 +159,17 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 - [ ] Tag `v0.1.0` and `v0.2.0` and run the release workflow; publishing and code signing are
   manual.
-- [ ] Decide the application licence (manifests declare `MIT OR Apache-2.0` as a placeholder).
+- [x] Decide the application licence for releases: ship without gifski (2026-10-27); AGPL-3.0 or
+  GPL-3.0 if gifski is wanted later. The manifests' `MIT OR Apache-2.0` is still a placeholder.
 - [x] Mirror the pinned third-party archives and publish the FFmpeg corresponding source
   (`mirror-2026-10-22`, `ffmpeg-source-n9.0.2-31-gc89d6ee1ca`; see
   [Build and Release](operations/build-and-release.md)).
 - [x] Add a git remote: public `origin` on GitHub, work on `main`, CI green.
-- [ ] Decide how the Windows installers provide the Visual C++ runtime the AI worker needs
-  (`vcruntime140`, `msvcp140`, `vcomp140`).
+- [ ] Remove the Windows AI worker's need for the Visual C++ runtime (`vcruntime140`,
+  `msvcp140`, `vcomp140`): decided 2026-10-27 to link it statically (`ncnn-static.yml`), with
+  shipping the DLLs as the fallback. In progress.
+- [ ] Windows code signing with Azure Artifact Signing (US organisation, decided 2026-10-27):
+  account and identity validation by the owner, then a signing step in `release.yml`.
 - [ ] Manual desktop QA on Windows hardware (Windows paths and Job Object handling are unverified;
   runbook: [Windows owner checks](operations/windows-owner-checks.md)).
 

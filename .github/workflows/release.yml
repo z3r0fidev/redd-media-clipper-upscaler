@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       gifski:
-        description: "Bundle gifski (AGPL-3.0). Off builds without it, so the release gate passes before the licence decision."
+        description: "Bundle gifski (AGPL-3.0). Off by default (owner decision 2026-10-27: releases ship without it); on needs an allowed app_licence or the release gate fails."
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read

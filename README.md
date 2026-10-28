@@ -195,8 +195,8 @@ Before tagging: bump `version` in `Cargo.toml`, `apps/desktop/package.json`,
 `apps/desktop/src-tauri/Cargo.toml` and `apps/desktop/src-tauri/tauri.conf.json`; run
 `cargo xtask notices`; and check `cargo xtask check-pins` (every pinned archive mirrored, the
 FFmpeg corresponding source published). The release workflow also runs
-`cargo xtask check-release-gate`, which fails while gifski is bundled and the app licence is
-undecided; a manual run with the `gifski` input off builds without it. Details:
+`cargo xtask check-release-gate`, which fails when gifski is bundled without an allowed app
+licence; releases ship without gifski (the `gifski` input is off by default). Details:
 `docs/operations/build-and-release.md`.
 
 Other tasks: `cargo xtask gen-bindings` (TypeScript types from the core), `cargo xtask notices`
