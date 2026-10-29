@@ -11,7 +11,8 @@ This runbook covers two owner checks that CI cannot run:
    (bar 5%).
 
 Plan on 2–3 hours, plus the time to choose footage. Run every command in PowerShell on the
-Windows machine (for example over RDP). Nothing here uploads anything; the footage is only read.
+Windows machine (for example over RDP). Over SSH, follow [Windows checks over SSH](windows-owner-checks-ssh.md)
+instead: the same commands with the SSH-specific steps, and the checks that need the screen. Nothing here uploads anything; the footage is only read.
 Record results in the [results sheet](#results-sheet) at the end and send it back. The maintainer
 then copies it into `specs/003-gif-export/checklists/validation.md` and ticks the roadmap items.
 
@@ -22,7 +23,8 @@ Use the Windows artifact `rmedia-x86_64-pc-windows-msvc` from a `release.yml` ru
 | Run | Commit | Notes |
 |---|---|---|
 | 40345344064 | `723bbbe` | Existing run (gifski off), digest `sha256:f1fa7fdf7abcce0504dc5ed25d6b4cc0eedfe4c42870a72d59f820055e81bc36`. Predates the Settings › GIF export engine pickers (`813cdeb`) and the fixes in `475ccf4` and `a69089a` |
-| **40452999345** | `789d7e9` | **Use this one.** Same code as `a69089a` plus the runbook docs (gifski off, dispatched 2026-10-27 with the owner's approval). Both packages built, and `release gate: ok` before staging, after staging and on the built bundles (`--scan`). Windows artifact 411,470,509 B, digest `sha256:68075b99d243932f7ce4ed35b47ec39095c5024e90b3945fa4fa117427cd7e27` |
+| 40452999345 | `789d7e9` | Same code as `a69089a` plus the runbook docs (gifski off, dispatched 2026-10-27). Windows artifact 411,470,509 B, digest `sha256:68075b99d243932f7ce4ed35b47ec39095c5024e90b3945fa4fa117427cd7e27`. Needs the VC++ runtime for the AI tier; predates the Ctrl-C fix (`fae5d47`) and the logging (`c5cbb85`). Keep it for the AI speed comparison in step 3.4 |
+| **40740230580** | `5e01399` | **Use this one.** gifski off, dispatched 2026-10-28 with the owner's approval. Adds the static C runtime (no VC++ runtime DLL needed; ncnn without OpenMP), the Ctrl-C fix and the logging. Windows artifact 412,635,658 B (id 12840729892), digest `sha256:b0c6860b0814add19a2b1aa7c2bfda4107ec7f3315a0cdac40d11b4124aa3fbe` |
 
 The artifact contains the NSIS setup (`…_x64-setup.exe`), the MSI and the CLI archive
 (`rmedia-cli-<ref>-x86_64-pc-windows-msvc.zip`). The installer file names still carry `0.2.0`,
@@ -34,8 +36,8 @@ because `tauri.conf.json` has not been bumped. With gifski off, gifski is not bu
 The machine needs:
 - Windows 10 or 11, x64.
 - At least 10 GB free.
-- Ideally a **clean** machine without the Visual C++ Redistributable, so that the 002 runtime gap
-  shows (step 3.4).
+- Ideally a **clean** machine without the Visual C++ Redistributable, to show that the AI worker
+  no longer needs it (step 3.4).
 - A GPU, if available, for the AI tier check.
 
 Record the machine details:
@@ -191,7 +193,7 @@ Start-Sleep 5; Stop-Process -Name rmedia -Force
 Start-Sleep 2; Show-Left      # expect no rmedia-ffmpeg / rmedia-gifsicle left
 ```
 
-d) Ctrl+C before the run (needs a build from `fae5d47` or later; run 40452999345 predates it):
+d) Ctrl+C before the run (needs a build from `fae5d47` or later, such as run 40740230580):
    point `gif` at a large folder with `--json` and press Ctrl+C while it is still scanning,
    before any `job_started` line. Expected: exit 130 (`$LASTEXITCODE`), nothing written, and
    the last line a `summary` with `"exit_code":130`.
