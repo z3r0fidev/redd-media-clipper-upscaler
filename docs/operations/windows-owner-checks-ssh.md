@@ -45,7 +45,10 @@ Unicode folder names print correctly:
 powershell
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $qa = 'C:\rmedia-qa'
-New-Item -ItemType Directory -Force "$qa\artifact", "$qa\cli", "$qa\footage", "$qa\out", "$qa\Clips ünï 日本" | Out-Null
+# "Clips ünï 日本", for step 4's non-ASCII path test. It's built from escape codes because
+# accented and CJK text typed or pasted over SSH can reach PowerShell 5.1 mangled.
+$uniDir = Join-Path $qa ([regex]::Unescape('Clips \u00fcn\u00ef \u65e5\u672c'))
+New-Item -ItemType Directory -Force "$qa\artifact", "$qa\cli", "$qa\footage", "$qa\out", $uniDir | Out-Null
 ```
 
 Record the machine details:
@@ -72,8 +75,8 @@ Expand-Archive $zip.FullName $qa\cli
 $cli = (Get-ChildItem -Recurse $qa\cli -Filter rmedia.exe | Select-Object -First 1).FullName
 ```
 
-If the SSH session drops, reconnect and run `powershell`, the `[Console]` line, the `$qa` line, the
-`$cli` line and step 4's `$src` line again. Step 7's `Show-Left` must be defined again too.
+If the SSH session drops, reconnect and run `powershell`, the `[Console]` line, the `$qa` and
+`$uniDir` lines, the `$cli` line, and step 4's `$src` and `$uni` lines again. Step 7's `Show-Left` must be defined again too.
 
 ## 3. Doctor (Runbook §3.1)
 
@@ -97,14 +100,20 @@ Expected:
 Steps 4–7 use clip 1252564: 1280×720 with audio, 161 s long, so the cancel tests in step 7 have
 time to stop it.
 
+`$uni` is not a file you supply. The `Copy-Item` line makes it: a copy of the clip at
+`C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4`, to check that rmedia handles a non-ASCII path and
+never changes its source. Like `$uniDir`, the name is built from escape codes.
+
 ```powershell
 $src = (Get-ChildItem "$qa\footage\1252564-*.mp4").FullName; $src   # must print one path
-Copy-Item $src "$qa\Clips ünï 日本\vidéo à.mp4"
-$before = Get-FileHash "$qa\Clips ünï 日本\vidéo à.mp4"
-& $cli clip "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8
-& $cli clip "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8 --mode accurate -o $qa\out
-& $cli clip "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8          # again: must say skipped
-(Get-FileHash "$qa\Clips ünï 日本\vidéo à.mp4").Hash -eq $before.Hash   # must be True
+$uni = Join-Path $uniDir ([regex]::Unescape('vid\u00e9o \u00e0.mp4'))
+Copy-Item $src $uni
+Get-Item $uni | Select-Object FullName, Length                        # must show "vidéo à.mp4"
+$before = Get-FileHash $uni
+& $cli clip $uni -s 10 -d 8
+& $cli clip $uni -s 10 -d 8 --mode accurate -o $qa\out
+& $cli clip $uni -s 10 -d 8          # again: must say skipped
+(Get-FileHash $uni).Hash -eq $before.Hash   # must be True
 
 # A path over 260 characters
 $long = 'C:\rmedia-qa\' + ('d' * 60 + '\') * 5
@@ -118,8 +127,8 @@ Check that no path rmedia prints starts with `\\?\`.
 
 ```powershell
 & $cli gif --list-targets
-& $cli gif "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8 --dry-run
-& $cli gif "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8
+& $cli gif $uni -s 10 -d 8 --dry-run
+& $cli gif $uni -s 10 -d 8
 & $cli gif $src -s 10 -d 8 --target reddit-comment -o $qa\out
 & $cli gif $src -s 10 -d 8 --format mp4 -o $qa\out
 & $cli gif $src -s 10 -d 8 --target max-quality -o $qa\out    # expect ENGINE_FALLBACK (no gifski)
