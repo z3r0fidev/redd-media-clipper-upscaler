@@ -25,14 +25,16 @@ sha256sum rmedia-x86_64-pc-windows-msvc.zip
 # expect b0c6860b0814add19a2b1aa7c2bfda4107ec7f3315a0cdac40d11b4124aa3fbe
 ```
 
-After step 1 has created the folders on Windows, copy the zip, a test video of a minute or more
-(so that the cancel tests in step 7 have time to stop it), and the SC-009 script:
+After step 1 has created the folders on Windows, copy the zip and the SC-009 script:
 
 ```bash
 scp rmedia-x86_64-pc-windows-msvc.zip <user>@<host>:C:/rmedia-qa/artifact/
-scp <your video> <user>@<host>:C:/rmedia-qa/footage/a.mp4
 scp <repo>/docs/operations/windows-qa/Measure-Sc009.ps1 <user>@<host>:C:/rmedia-qa/
 ```
+
+The footage is already in `C:\rmedia-qa\footage`. This page names each video by the number at the
+start of its file name (`1252564-….mp4`) and finds the file with a wildcard, so the titles stay
+out of the docs. On another machine, copy the videos with their names unchanged.
 
 ## 1. Start PowerShell and Set Up
 
@@ -70,8 +72,8 @@ Expand-Archive $zip.FullName $qa\cli
 $cli = (Get-ChildItem -Recurse $qa\cli -Filter rmedia.exe | Select-Object -First 1).FullName
 ```
 
-If the SSH session drops, reconnect and run `powershell`, the `[Console]` line, the `$qa` line and
-the `$cli` line again. Step 7's `Show-Left` must be defined again too.
+If the SSH session drops, reconnect and run `powershell`, the `[Console]` line, the `$qa` line, the
+`$cli` line and step 4's `$src` line again. Step 7's `Show-Left` must be defined again too.
 
 ## 3. Doctor (Runbook §3.1)
 
@@ -92,8 +94,12 @@ Expected:
 
 ## 4. Clips and the Untouched Source (Runbook §3.2)
 
+Steps 4–7 use clip 1252564: 1280×720 with audio, 161 s long, so the cancel tests in step 7 have
+time to stop it.
+
 ```powershell
-Copy-Item $qa\footage\a.mp4 "$qa\Clips ünï 日本\vidéo à.mp4"
+$src = (Get-ChildItem "$qa\footage\1252564-*.mp4").FullName; $src   # must print one path
+Copy-Item $src "$qa\Clips ünï 日本\vidéo à.mp4"
 $before = Get-FileHash "$qa\Clips ünï 日本\vidéo à.mp4"
 & $cli clip "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8
 & $cli clip "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8 --mode accurate -o $qa\out
@@ -103,7 +109,7 @@ $before = Get-FileHash "$qa\Clips ünï 日本\vidéo à.mp4"
 # A path over 260 characters
 $long = 'C:\rmedia-qa\' + ('d' * 60 + '\') * 5
 New-Item -ItemType Directory -Force $long | Out-Null
-& $cli clip $qa\footage\a.mp4 -s 10 -d 4 -o $long
+& $cli clip $src -s 10 -d 4 -o $long
 ```
 
 Check that no path rmedia prints starts with `\\?\`.
@@ -114,11 +120,11 @@ Check that no path rmedia prints starts with `\\?\`.
 & $cli gif --list-targets
 & $cli gif "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8 --dry-run
 & $cli gif "$qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8
-& $cli gif $qa\footage\a.mp4 -s 10 -d 8 --target reddit-comment -o $qa\out
-& $cli gif $qa\footage\a.mp4 -s 10 -d 8 --format mp4 -o $qa\out
-& $cli gif $qa\footage\a.mp4 -s 10 -d 8 --target max-quality -o $qa\out    # expect ENGINE_FALLBACK (no gifski)
-& $cli gif $qa\footage\a.mp4 -s 10 -d 6 --shape 9:16 --framing smart -o $qa\out
-& $cli clip $qa\footage\a.mp4 -s 30 -d 6 --gif -o $qa\out
+& $cli gif $src -s 10 -d 8 --target reddit-comment -o $qa\out
+& $cli gif $src -s 10 -d 8 --format mp4 -o $qa\out
+& $cli gif $src -s 10 -d 8 --target max-quality -o $qa\out    # expect ENGINE_FALLBACK (no gifski)
+& $cli gif $src -s 10 -d 6 --shape 9:16 --framing smart -o $qa\out
+& $cli clip $src -s 30 -d 6 --gif -o $qa\out
 ```
 
 For each command, record:
@@ -142,10 +148,10 @@ ncnn has no OpenMP.
 
 ```powershell
 & $cli doctor --recheck
-& $cli clip $qa\footage\a.mp4 -s 10 -d 6 --upscale -o $qa\out
-Measure-Command { & $cli clip $qa\footage\a.mp4 -s 10 -d 6 --upscale --tier ai -o $qa\out\ai | Out-Host } |
+& $cli clip $src -s 10 -d 6 --upscale -o $qa\out
+Measure-Command { & $cli clip $src -s 10 -d 6 --upscale --tier ai -o $qa\out\ai | Out-Host } |
   Select-Object TotalSeconds
-& $cli upscale $qa\footage\a.mp4 --dry-run
+& $cli upscale $src --dry-run
 ```
 
 Record:
@@ -165,15 +171,15 @@ function Show-Left { Get-Process | Where-Object Name -like 'rmedia*' | Select-Ob
                      Get-ChildItem -Recurse $qa\out -Force -Filter *.part -ErrorAction SilentlyContinue }
 
 # a) Ctrl+C during "encode" or "optimise"; it should return within 2 s
-& $cli gif $qa\footage\a.mp4 --budget none -o $qa\out\cancel
+& $cli gif $src --budget none -o $qa\out\cancel
 Show-Left
 
 # a, 002) The same with an upscale job
-& $cli upscale $qa\footage\a.mp4 --tier cpu -o $qa\out\cancel4
+& $cli upscale $src --tier cpu -o $qa\out\cancel4
 Show-Left
 
 # c) Kill only the parent
-Start-Process $cli -ArgumentList 'gif', "$qa\footage\a.mp4", '--budget', 'none', '-o', "$qa\out\cancel3" -NoNewWindow
+Start-Process $cli -ArgumentList 'gif', "`"$src`"", '--budget', 'none', '-o', "$qa\out\cancel3" -NoNewWindow
 Start-Sleep 5; Stop-Process -Name rmedia -Force; Start-Sleep 2; Show-Left
 
 # d) Ctrl+C while it is still scanning, before any job_started line; expect 130
@@ -204,6 +210,44 @@ powershell -ExecutionPolicy Bypass -File $qa\Measure-Sc009.ps1 -Cli $cli -Clips 
 
 It passes at 15% or more smaller over the whole set, with a worst VMAF loss of 1.0 or less.
 Keep `C:\rmedia-qa\sc009\results.csv`.
+
+### The Set Used for the 2026-10 Check
+
+Nine 720p clips (live action only, so note "single content type" on the results sheet). Each
+8 s window was chosen with ffmpeg's scene detector and signal statistics on 160 px frames:
+
+- no scene score of 4 or more in the window or the second either side (a hard cut usually
+  scores 8 or more);
+- average brightness changes by less than 12 (0–255), so there is no fade;
+- mean frame difference (YDIF) above 0.8, so the shot is not nearly still;
+- no black or frozen stretch.
+
+Glance at each window once: a slow dissolve or a flash could still get through.
+
+```powershell
+$set = @(('1250486', '283.0'), ('1249955', '307.5'), ('1252497', '130.5'),
+         ('1235334', '1268.5'), ('1252564', '73.5'), ('1246419', '322.0'),
+         ('1240064', '542.5'), ('1247209', '516.0'), ('1134827', '536.0'))
+$rows = foreach ($c in $set) {
+  $f = @(Get-ChildItem "$qa\footage\$($c[0])-*.mp4")
+  if ($f.Count -ne 1) { throw "clip $($c[0]): $($f.Count) files match" }
+  "$($f[0].FullName),$($c[1]),8"
+}
+@('file,start,duration') + $rows | Set-Content -Encoding UTF8 $qa\footage\clips.csv
+Get-Content $qa\footage\clips.csv          # 10 lines: the header and nine clips
+```
+
+| Clip | Start | Peak scene score | Mean YDIF | Brightness range |
+|---|---|---|---|---|
+| 1250486 | 283.0 | 2.6 | 2.0 | 5 |
+| 1249955 | 307.5 | 0.7 | 1.4 | 3 |
+| 1252497 | 130.5 | 0.9 | 1.5 | 2 |
+| 1235334 | 1268.5 | 2.9 | 1.4 | 8 |
+| 1252564 | 73.5 | 2.9 | 1.8 | 2 |
+| 1246419 | 322.0 | 2.7 | 3.0 | 9 |
+| 1240064 | 542.5 | 2.9 | 1.4 | 2 |
+| 1247209 | 516.0 | 1.4 | 2.0 | 6 |
+| 1134827 | 536.0 | 2.7 | 5.1 | 11 |
 
 ## 9. Needs the Screen or RDP
 
