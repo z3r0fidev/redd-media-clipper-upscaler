@@ -28,5 +28,5 @@
     "hint": true
   },
   "floor_fps": 10,
-  "lossy": 30
+  "lossy": 10
 }

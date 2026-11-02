@@ -2,8 +2,8 @@
 //! set (fixtures × ranges). Slow, so they are benches: `cargo test --release -- --ignored bench`.
 //! - SC-004: the dry-run estimate is within 25% of the real size for ≥ 90% of the set.
 //! - SC-002: every result is ≤ hard, and ≥ 90% are ≤ soft where the search could reach soft.
-//! - SC-009: the default `reddit-post` with gifsicle is ≥ 5% smaller on this synthetic set and loses
-//!   ≤ 1 VMAF point (owner decision 2026-10-26: the spec's 15% is an owner check on real footage).
+//! - SC-009: the default `reddit-post` with gifsicle loses ≤ 1 VMAF point on every clip, and stays
+//!   ≥ 5% smaller over this synthetic set (owner decision 2026-11-02: lossy 10, no 15% bar).
 //! - SC-005 at the same size: ours scores ≥ a plain one-pass GIF of the same bytes.
 
 mod common;
@@ -20,8 +20,8 @@ use rmedia_core::request::Options;
 use rmedia_testkit::{Fixture, fixture, require_engine, require_tool};
 use tokio_util::sync::CancellationToken;
 
-/// SC-009's automated floor for the synthetic set (owner decision 2026-10-26; 15% on real footage
-/// is an owner check).
+/// SC-009's automated floor on the saving over the synthetic set: measured 5.2% at the default
+/// lossy 10 (2026-11-02). The outputs are deterministic, so it catches a regression, not noise.
 const SC009_FLOOR: f64 = 0.05;
 
 /// The calibration set: (fixture, start, end or None for the whole source).
@@ -127,7 +127,7 @@ async fn bench_gif_sc002_results_fit_their_budget() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "benchmark"]
-async fn bench_gif_sc009_gifsicle_saves_15_percent_for_1_vmaf_point() {
+async fn bench_gif_sc009_gifsicle_costs_at_most_1_vmaf_point() {
     require_engine!("palettegen", "paletteuse", "libvmaf");
     require_tool!(gifsicle);
     let (mut without, mut with, mut worst) = (0u64, 0u64, 0f64);
@@ -158,9 +158,8 @@ async fn bench_gif_sc009_gifsicle_saves_15_percent_for_1_vmaf_point() {
         saved * 100.0
     );
     assert!(worst <= 1.0, "SC-009: a VMAF loss of {worst:.2}");
-    // The spec's 15% is not reachable on this synthetic set at any lossy level (2026-10-25:
-    // 6.4% at the default 30, 12.3% at the maximum 200, VMAF loss ≤ 0.76). Like 002's VMAF bar,
-    // the automated floor here is provisional, pending the owner's decision (validation.md).
+    // No lossy level reached the spec's former 15% within 1 point, here or on real footage
+    // (validation.md, 2026-11-02); the saving is reported, with this floor against regressions.
     assert!(saved >= SC009_FLOOR, "SC-009: {:.1}% smaller over the set", saved * 100.0);
 }
 

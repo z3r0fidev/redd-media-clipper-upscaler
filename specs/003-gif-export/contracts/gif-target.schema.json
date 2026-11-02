@@ -244,7 +244,7 @@
         "max_fps": 60
       },
       "floor_fps": 10,
-      "lossy": 30
+      "lossy": 10
     },
     {
       "schema": 1,

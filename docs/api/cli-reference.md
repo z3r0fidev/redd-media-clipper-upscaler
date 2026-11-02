@@ -555,7 +555,7 @@ with one retry a step down when it misses the aim. The summary lists what was lo
 
 ```text
 ✓ …/gifs/busy10_reddit-post.gif  (2.7 MB, 378x212, 10.000 fps, 128 colours, dither bayer:5, builtin)
-  budget search: 8 encodes; lowered lossy 30 → 90, dither bayer 4 → bayer 5, colours 256 → 128, fps 15.0 → 10.0, width 720 → 378
+  budget search: 8 encodes; lowered lossy 10 → 70, dither bayer 4 → bayer 5, colours 256 → 128, fps 15.0 → 10.0, width 720 → 378
 ```
 
 Over the aim but within the limit: kept, with `OVER_RECOMMENDED`. Over the limit even at the

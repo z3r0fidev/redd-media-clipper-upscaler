@@ -346,9 +346,33 @@ lossy 30 the pre-fix Linux rows matched the Windows run byte for byte, so the me
   from the bug: they stay low with the fix.
 - At lossy 0, gifsicle made three GIFs 0.3–1.1% larger. Keeping whichever file is smaller would
   avoid that.
-- **The owner's decision on SC-009 is still open.** The data favours restating it by content
-  type (15% on screen and animated content, reported only for live action) over raising the
-  default lossy, which costs more VMAF than SC-009 allows and still misses 15% at 30.
+- The decision is recorded in the next section.
+
+### SC-009 decided: a quality bar, and reddit-post's lossy at 10 (owner, 2026-11-02)
+
+Restating SC-009 by content type was first proposed. It was withdrawn because nothing supports
+it: on the fixed build the synthetic bench's screen-like clips save 12–14% (`FlatUi` 14.0%,
+`MovingMarker` 12.4%), also under 15%. The lower lossy levels on the same real clips:
+
+| Lossy | Saved over the set | Worst VMAF loss | Clips over 1.0 |
+|---|---|---|---|
+| 10 | 8.1% | 0.67 (1240064) | 0 |
+| 20 | 10.4% | 1.42 (1240064) | 1 |
+| 30 | 11.9% | 2.06 (1240064) | 2 |
+
+**Decision:** SC-009 is that gifsicle costs at most 1 VMAF point on any clip, with the saving
+reported. The 15% bar is dropped. `reddit-post`'s default lossy goes from 30 to 10. The budget
+search's lossy rungs follow from the start: 40 and 70, which used to be 60 and 90.
+
+Re-measured at lossy 10 (Linux, release build):
+- SC-009 synthetic bench: 5.2% smaller, worst loss 0.38. The 5% floor stays (the outputs are
+  deterministic).
+- SC-002: 20/20 under the soft limit. SC-004: 9/10 within 25% (`MovingMarker` +49.2%).
+- SC-005: 98.33 against a plain GIF's 66.23 VMAF at the same size.
+- SC-003: the same 8 encodes for `Busy10` as at lossy 30, ending 2 px narrower. The bench timed
+  25.1 s and 31.7 s on two runs, and lossy 30 timed 30.9 s, all while a desktop browser kept the
+  12-thread machine busy (load average 5–14). The timing needs a quiet machine; CI's 4-core
+  runners skip it.
 - Found and fixed on the way: every job warning printed twice on a terminal (`5a1984b`). The SSH
   runbook got fixes for paths built from escape codes, the audio check, the cancel cases and the
   SC-009 steps (`8df357e`, `2f3d1c4`, `159ec4b`, `9dbedbd`).

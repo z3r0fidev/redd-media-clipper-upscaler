@@ -28,11 +28,11 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 All 80 tasks are done. T078: `release.yml` run 40345344064 (gifski off) packaged Linux and
 Windows. T079: Windows CI 482 passed, 0 failed (run 40345454414). Both are recorded in `checklists/validation.md`.
 
-- Owner decision: the app licence (gates bundling gifski). Decided 2026-10-26: SC-009's automated
-  bar is 5% (15% on real footage is an owner check); the stale release `gif-tools-2026-10-25` was
+- Owner decision: the app licence (gates bundling gifski). Decided 2026-10-26, then 2026-11-02:
+  SC-009 is a quality bar (≤ 1 VMAF), and reddit-post's lossy is 10; the stale release `gif-tools-2026-10-25` was
   deleted; `release.yml` dispatched with gifski off (run 40345344064).
 - Owner checks: Reddit's GIF limits in its Help Center, a real Reddit upload of a post and a
-  comment GIF, Windows hardware and SC-009's 15% on real footage (both in the runbook).
+  comment GIF, Windows hardware (in the runbook; SC-009 on live-action footage done 2026-11-02).
 - Follow-ups from T080 (low), done 2026-10-26: the executor's retry path has an integration test,
   a free-space warning after sampling, the two target helpers are used, one fps-limit function,
   and a release-gate scan of the built bundles. Also closed: the watchdog never lets a job's files
@@ -47,4 +47,4 @@ Windows. T079: Windows CI 482 passed, 0 failed (run 40345454414). Both are recor
 
 SC-002 20/20 · SC-003 23.8 s (bar 30 s) · SC-004 9/10 within 25% · SC-005 98.32 vs 66.23 VMAF ·
 SC-006 6.1× / 18.2× · SC-007 2 interactions, estimate matched · SC-008 cancel clean ·
-SC-009 6.4% (bar 5%; 15% real-footage owner check) · SC-010 99.98 vs 98.80, 84.63 vs 83.50 VMAF.
+SC-009 worst loss 0.38 VMAF, 5.2% saved (lossy 10) · SC-010 99.98 vs 98.80, 84.63 vs 83.50 VMAF.

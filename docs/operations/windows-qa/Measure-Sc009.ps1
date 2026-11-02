@@ -8,7 +8,8 @@
   Then scores both against the source with the bundled ffmpeg's libvmaf (the same filter graph
   as rmedia-testkit's vmaf_gif_at). Writes results.csv and prints the totals.
 
-  Pass: at least 15% smaller over the whole set, and no clip loses more than 1 VMAF point.
+  Pass: no clip loses more than 1 VMAF point (owner decision 2026-11-02). The saving over the
+  set is reported, not judged.
   Nothing leaves the machine; the footage is only read.
 
 .PARAMETER Cli
@@ -101,6 +102,6 @@ $plain = ($rows | Measure-Object plain_bytes -Sum).Sum
 $opt = ($rows | Measure-Object opt_bytes -Sum).Sum
 $saved = (1 - $opt / $plain) * 100
 $worst = ($rows | Measure-Object vmaf_loss -Maximum).Maximum
-$verdict = if ($saved -ge 15 -and $worst -le 1.0) { 'PASS' } else { 'FAIL' }
+$verdict = if ($worst -le 1.0) { 'PASS' } else { 'FAIL' }
 Write-Host ("SC-009: {0} clips, {1:N0} -> {2:N0} bytes ({3:N1}% smaller), worst VMAF loss {4:N2}: {5}" -f
     $rows.Count, $plain, $opt, $saved, $worst, $verdict)

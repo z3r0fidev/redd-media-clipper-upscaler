@@ -67,8 +67,9 @@ Tags:
 
   - Targets with a budget carry `"verified": false` (FR-007).
   - Floors are data (`floor_width`, `floor_fps`). Without them, that setting is not lowered.
-  - The default `lossy` is [U]: it is calibrated in US2 against SC-009 (≥ 15% smaller, ≤ 1 VMAF
-    point lost). The ladder starts from the target's value.
+  - The default `lossy` is calibrated against SC-009. US2 set 30. The owner set 10 on
+    2026-11-02, the level that keeps every real-footage clip within 1 VMAF point
+    (`checklists/validation.md`). The ladder starts from the target's value.
 - **Rationale:** the constitution requires presets as data. A separate registry keeps the
   device-preset schema tight (plan, Complexity Tracking).
 

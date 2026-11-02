@@ -490,6 +490,8 @@ handling and consented trimming.
   - **SC-009 not met on this set:** gifsicle saves 6.4% over the set at the default lossy 30,
     10.4% at 120, 12.3% at the maximum 200, never losing more than 0.76 VMAF. The bench asserts
     the VMAF bound and a provisional 5% floor; the 15% figure waits for the owner (validation.md).
+  - **Owner decision 2026-11-02:** SC-009 is a quality bar (≤ 1 VMAF), and reddit-post's lossy is
+    10. Re-measured: 5.2% saved, worst loss 0.38; SC-002 20/20, SC-004 9/10, SC-005 98.33 vs 66.23.
   - The testkit's `vmaf_gif` now retimes GIF frames by their timestamps (gifsicle's merged
     frames had misaligned the comparison) and compares in 4:4:4; scores moved (T037: 99.63 vs
     98.47; SC-010: 99.98 vs 98.80, 84.63 vs 83.50).

@@ -323,10 +323,13 @@ is within the stated margin of the estimate.
   fewer after opening a video, and the output is byte-identical to the CLI's.
 - **SC-008**: Cancellation stops any GIF or MP4 job within 2 s with no partial files or stray
   processes, on Linux and Windows.
-- **SC-009**: With the optimiser available, the default "Reddit post" GIF is at least 15% smaller
-  than without it on the test set, with no drop on the perceptual-quality metric larger than
-  1 point. *Owner decision 2026-10-26:* the automated synthetic set must be at least 5% smaller
-  (measured 6.4%); the 15% bar is an owner check on real footage.
+- **SC-009**: With the optimiser available, the default "Reddit post" GIF loses no more than
+  1 point on the perceptual-quality metric on any clip of the test set, compared with the same
+  GIF without it, and the size it saves is measured and reported. *Owner decision 2026-11-02
+  (replaces 2026-10-26):* the earlier 15% saving is dropped. No lossy level reached it within
+  1 point, on real live-action footage or on the synthetic set. The target's default lossy
+  level is 10, which keeps every real clip within 1 point (worst 0.67, 8.1% smaller). The
+  synthetic set also keeps an automated floor on the saving (see `checklists/validation.md`).
 - **SC-010**: With the best-quality engine, "Max quality" scores higher on the perceptual-quality
   metric than the built-in engine at the same width and frame rate on the test set.
 

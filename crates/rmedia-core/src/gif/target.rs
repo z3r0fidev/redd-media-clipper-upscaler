@@ -431,7 +431,7 @@ mod tests {
             (post.fps, post.floor_fps, post.colours, post.dither),
             (15, Some(10), 256, Dither::Bayer(4))
         );
-        assert_eq!((post.lossy, post.engine), (Some(30), TargetEngine::Builtin));
+        assert_eq!((post.lossy, post.engine), (Some(10), TargetEngine::Builtin));
         let comment = reg.get("reddit-comment").unwrap();
         assert_eq!(comment.budget, Some(Budget { soft: 3_000_000, hard: 8_000_000 }));
         assert_eq!((comment.width.landscape, comment.fps, comment.colours), (480, 12, 128));

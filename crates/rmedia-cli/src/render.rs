@@ -296,7 +296,7 @@ fn gif_lines(g: &rmedia_core::gif::GifPlan) {
     }
 }
 
-/// `; lowered lossy 30 → 90, width 720 → 584` (FR-012), or nothing.
+/// `; lowered lossy 10 → 70, width 720 → 584` (FR-012), or nothing.
 fn lowered_text(lowered: &[rmedia_core::gif::plan::Lowered]) -> String {
     let show = |v: &serde_json::Value| match v {
         serde_json::Value::String(s) => s.clone(),

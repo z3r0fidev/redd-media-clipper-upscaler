@@ -111,8 +111,8 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   `specs/003-gif-export/checklists/validation.md`.
 - US2 (T045–T053) done: the budget search, the gifsicle post-pass at `-O2`, `BUDGET_UNREACHABLE`
   and `--allow-trim`. SC-002 20/20 under the aim, SC-003 23.8 s (bar 30 s), SC-004 9/10 within
-  25%. SC-009 **not met**: gifsicle saves 6.4% (lossy 30) and 12.3% (lossy 200) on the synthetic
-  set against a 15% aim (owner decision below).
+  25%. SC-009 restated 2026-11-02 (owner decision below): reddit-post's lossy is now 10; gifsicle
+  saves 5.2% on the synthetic set and 8.1% on real footage, losing at most 0.67 VMAF.
 - US3 (T054–T056) done: the Reddit MP4 (SC-006 6.1× and 18.2× smaller).
 - US4 (T057–T058) done: 9:16, 4:5 and 1:1 with 002's reframe; smart framing.
 - US5 (T059–T064) done: JSON and CSV manifests, `clip --gif`, `batch --gif`, `clip --gif --upscale`
@@ -137,8 +137,11 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Open owner decisions
 
-- SC-009 (decided 2026-10-26): the automated bar is 5% on the synthetic set; owner check: at
-  least 15% smaller with gifsicle on real footage ([runbook](operations/windows-owner-checks.md#5-sc-009-gifsicle-on-real-footage)).
+- SC-009 (decided 2026-11-02, replacing 2026-10-26): no lossy level reached 15% within 1 VMAF
+  point on real live-action footage or the synthetic set, so the bar is quality: gifsicle may cost
+  at most 1 VMAF point on any clip, and its saving is reported. reddit-post's default lossy went
+  from 30 to 10 (real footage: 8.1% smaller, worst loss 0.67). The synthetic bench keeps a 5%
+  floor (measured 5.2%). Data: `specs/003-gif-export/checklists/validation.md`.
 - Application licence (decided 2026-10-27): releases ship **without gifski** (`release.yml`'s
   `gifski` input now defaults to off); the built-in engine covers every target and `max-quality`
   falls back with `ENGINE_FALLBACK`. If gifski is wanted later, the fallback is licensing the app
@@ -153,7 +156,7 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   workflow gets a signing step.
 - Tag `v0.1.0` and `v0.2.0`; Dependabot notices automation.
 - Owner checks: two-phone gallery test, a Reddit upload, +3 VMAF on real footage, Reddit's GIF
-  limits, gifsicle's 15% saving on real footage (SC-009). The Windows installers and desktop app are untested on real hardware.
+  limits, SC-009 on real footage with a mix of content (done for live action, 2026-11-02). The Windows installers and desktop app are untested on real hardware.
 
 ## Release and Project Housekeeping
 

@@ -225,8 +225,8 @@ file,start,duration
 C:\rmedia-qa\footage\game.mp4,42,8
 ```
 
-For this check, the next section writes the CSV and then runs the script. It passes at 15% or
-more smaller over the whole set, with a worst VMAF loss of 1.0 or less. Keep
+For this check, the next section writes the CSV and then runs the script. It passes when no
+clip loses more than 1.0 VMAF point; the saving is recorded, not judged. Keep
 `C:\rmedia-qa\sc009\results.csv`. `-Out` must be a new or empty folder. If an earlier attempt
 left files in `sc009`, pass a new name, such as `$qa\sc009b`.
 

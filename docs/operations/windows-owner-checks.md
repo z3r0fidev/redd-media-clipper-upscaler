@@ -5,10 +5,9 @@ This runbook covers two owner checks that CI cannot run:
 1. **Windows hardware QA:** the installers, the CLI archive and the desktop app on a real Windows
    machine. CI only builds and tests them on `windows-latest` runners
    ([roadmap](../roadmap.md#release-and-project-housekeeping)).
-2. **SC-009 on real footage:** with gifsicle, the default `reddit-post` GIF is at least 15%
-   smaller than without it, and loses at most 1 VMAF point
-   ([spec](../../specs/003-gif-export/spec.md)). The automated synthetic set measured 6.4%
-   (bar 5%).
+2. **SC-009 on real footage:** with gifsicle, the default `reddit-post` GIF loses at most
+   1 VMAF point on every clip, and its saving is recorded
+   ([spec](../../specs/003-gif-export/spec.md)). The 15% saving was dropped on 2026-11-02.
 
 Plan on 2–3 hours, plus the time to choose footage. Run every command in PowerShell on the
 Windows machine (for example over RDP). Over SSH, follow [Windows checks over SSH](windows-owner-checks-ssh.md)
@@ -312,15 +311,15 @@ powershell -ExecutionPolicy Bypass -File C:\rmedia-qa\Measure-Sc009.ps1 -Cli $cl
 The script ends with a line like:
 
 ```text
-SC-009: 10 clips, 61,234,567 -> 50,123,456 bytes (18.1% smaller), worst VMAF loss 0.62: PASS
+SC-009: 10 clips, 61,234,567 -> 56,234,567 bytes (8.2% smaller), worst VMAF loss 0.62: PASS
 ```
 
-The **pass** condition: at least 15% smaller over the whole set, and a worst loss of 1.0 or
-less. Keep `C:\rmedia-qa\sc009\results.csv`; its per-clip rows show which content gifsicle helps.
+The **pass** condition: no clip loses more than 1.0 VMAF point. The saving is recorded, not
+judged. Keep `C:\rmedia-qa\sc009\results.csv`; its per-clip rows show which content gifsicle helps.
 Open a few pairs (`NN\plain` against `NN\gifsicle`) side by side in Edge for a visual check.
 
-If the set fails at the default lossy level (30), that is the result to report; do not tune it
-here. Note the content types that saved the least.
+If a clip loses more than 1.0 at the default lossy level (10), that is the result to report; do
+not tune it here. Note the content types that saved the least and lost the most.
 
 ## Results Sheet
 
