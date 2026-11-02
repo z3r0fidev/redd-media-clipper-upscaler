@@ -10,11 +10,13 @@ use std::path::{Path, PathBuf};
 use tokio_util::sync::CancellationToken;
 
 use super::budget;
-use super::graph::{gifsicle_args, mp4_codec_args, palette_settings, pipe_head, y4m_graph, y4m_tail};
+use super::graph::{
+    bounded_input_parts, gifsicle_args, mp4_codec_args, palette_settings, pipe_head, y4m_graph, y4m_tail,
+};
 use super::plan::{EngineUsed, Estimate, EstimateFrom, GifSpec, Settings};
 use crate::error::{Error, Result};
 use crate::exec::process;
-use crate::plan::ffargs::{common_args, input_parts};
+use crate::plan::ffargs::common_args;
 use crate::plan::{Disposition, JobSpec, Plan};
 use crate::probe::{INPUT_PROTOCOLS, file_arg};
 use crate::time::Ts;
@@ -224,7 +226,7 @@ pub fn sample_args(spec: &GifSpec, s: &Settings, starts: &[Ts], out: SampleOut) 
 
 /// The whole range of a short job, in one run: the same frames as the job's own encode.
 pub fn whole_args(spec: &GifSpec, s: &Settings, out: SampleOut) -> Vec<OsString> {
-    let (source, range) = input_parts(&spec.cut);
+    let (source, range) = bounded_input_parts(&spec.cut);
     let mut a = out.head();
     a.extend(source);
     a.extend(range);

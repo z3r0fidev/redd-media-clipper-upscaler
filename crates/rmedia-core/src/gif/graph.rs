@@ -9,7 +9,8 @@ use std::path::Path;
 use super::LoopCount;
 use super::plan::{GifSpec, Settings};
 use super::target::{GifskiParams, StatsMode};
-use crate::plan::ffargs::{common_args, input_parts};
+use crate::plan::ffargs::{ClipSpec, common_args, input_parts};
+use crate::time::Ts;
 
 /// The encode output (the built-in engine's or gifski's), in the scratch folder.
 pub const ENCODED: &str = "enc.gif";
@@ -52,9 +53,27 @@ pub fn palette_settings(s: &Settings) -> String {
     format!("palettegen=max_colors={}:stats_mode={}:reserve_transparent=1", s.colours, stats(s.stats))
 }
 
+/// How far past the range's end a bounded read goes, so the frame-rate filter still sees the
+/// frame after the last one it keeps. The output-side `-t` still ends the frames exactly.
+const READ_MARGIN: f64 = 0.5;
+
+/// [`input_parts`] with an input-side `-t` too, ending the read just after the range. Needed
+/// where the output-side `-t` alone cannot stop ffmpeg: the palette pass writes its one image
+/// at the end of its input, and a one-pass graph emits nothing until that image exists. Without
+/// it, ffmpeg decodes the source to its end.
+pub(crate) fn bounded_input_parts(cut: &ClipSpec) -> (Vec<OsString>, Vec<OsString>) {
+    let (mut source, range) = input_parts(cut);
+    if let Some(d) = cut.duration {
+        let end = cut.output_seek.unwrap_or(Ts::ZERO) + d + Ts::from_secs_f64(READ_MARGIN);
+        let i = source.iter().position(|a| a == "-i").expect("input_parts ends with -i");
+        source.splice(i..i, [OsString::from("-t"), OsString::from(end.ffmpeg())]);
+    }
+    (source, range)
+}
+
 /// Pass 1: the palette of the final-size frames (FR-002) into `palette` (relative).
 pub fn palette_args(spec: &GifSpec, s: &Settings, palette: &str) -> Vec<OsString> {
-    let (source, range) = input_parts(&spec.cut);
+    let (source, range) = bounded_input_parts(&spec.cut);
     let mut a = common_args();
     a.extend(source);
     a.extend(range);
