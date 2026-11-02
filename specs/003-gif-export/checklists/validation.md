@@ -296,10 +296,59 @@ SC-009 per clip (clips named by ID; 8 s windows chosen free of cuts, see the run
 | 1247209 | 516.0 | 720x547@15 | 25,659,251 | 23,907,114 | 6.8% | 46.81 → 46.76 | 0.05 |
 | 1134827 | 536.0 | 720x405@15 | 12,674,488 | 10,020,963 | 20.9% | 97.46 → 97.16 | 0.31 |
 
-- **SC-009 fails on live action**, as the synthetic set predicted (6.4%, see the US2 calibration
-  above): gifsicle at the target's lossy 30 saves 1.6–21.5% per clip, 8.9% over the set, and one
-  60 fps clip loses 2.19 VMAF. The owner's decision on SC-009 is still open. A lossy sweep on
-  the same clips (0, 30, 60, 80) is being run on Linux to inform it.
+- **These SC-009 numbers came from a build with a palette bug** (fixed in `4e9a41f`, below), so
+  they don't describe the fixed build. They are kept as the record of what run 40740230580
+  produced.
+
+### Palette pass read to the end of the source (found 2026-11-02, fixed in `4e9a41f`)
+
+The GIF palette pass, and the one-pass estimate for jobs of 3 s or less, bounded the range only
+with an output-side `-t`. The palette pass writes its one image at the end of its input, so
+nothing stopped it: ffmpeg decoded from the range's start to the end of the source, and built
+the palette from all those frames. An 8 s GIF from 21 min into a 62 min source took about
+30 min per pass, and every GIF far from the end of a long source got a palette that did not fit
+its frames. Both commands now also bound the input (`-t` to the range's end plus 0.5 s). The
+same GIF takes 6 s. Test: `gif_argv::the_palette_pass_and_the_short_estimate_read_only_the_range`.
+Release run 40740230580 has the bug.
+
+### SC-009 lossy sweep on the fixed build (Linux, 2026-11-02)
+
+The same nine clips and windows, the same commands and VMAF graph as `Measure-Sc009.ps1`, with
+the GIF optimised at `--lossy` 0, 30, 60 and 80 against one `--no-optimise` GIF per clip. At
+lossy 30 the pre-fix Linux rows matched the Windows run byte for byte, so the method agrees.
+
+| Lossy | Saved over the set | Per clip | VMAF loss (mean / worst) | SC-009 |
+|---|---|---|---|---|
+| 0 | 2.0% | −1.1 to 4.8% | 0.00 / 0.00 | FAIL |
+| 30 (default) | 11.9% | 2.8 to 31.4% | 0.48 / 2.06 | FAIL |
+| 60 | 15.0% | 4.0 to 35.3% | 0.96 / 3.97 | FAIL |
+| 80 | 16.6% | 4.9 to 36.8% | 1.20 / 5.19 | FAIL |
+
+| Clip | Plain VMAF | Lossy 0 | 30 | 60 | 80 |
+|---|---|---|---|---|---|
+| 1250486 | 61.68 | −0.3% / 0.00 | 3.2% / 0.15 | 5.2% / 0.36 | 6.2% / 0.41 |
+| 1249955 | 66.42 | 1.4% / 0.00 | 6.5% / 0.20 | 9.6% / 0.35 | 11.5% / 0.40 |
+| 1252497 | 67.51 | −0.7% / 0.00 | 2.8% / 0.22 | 4.0% / 0.42 | 4.9% / 0.55 |
+| 1235334 | 74.12 | 1.5% / 0.00 | 12.2% / 1.10 | 14.2% / 2.05 | 15.4% / 2.26 |
+| 1252564 | 97.37 | −1.1% / 0.00 | 5.1% / 0.17 | 8.3% / 0.46 | 9.4% / 0.63 |
+| 1246419 | 65.58 | 4.7% / 0.00 | 12.1% / 0.15 | 14.0% / 0.30 | 15.0% / 0.40 |
+| 1240064 | 75.51 | 1.3% / 0.00 | 23.4% / 2.06 | 27.2% / 3.97 | 28.9% / 5.19 |
+| 1247209 | 47.05 | 4.0% / 0.00 | 7.9% / 0.05 | 12.4% / 0.18 | 15.1% / 0.26 |
+| 1134827 | 97.72 | 4.8% / 0.00 | 31.4% / 0.25 | 35.3% / 0.52 | 36.8% / 0.73 |
+
+*(cells: bytes saved / VMAF lost against the plain GIF)*
+
+- **No lossy level passes SC-009 on this live-action set.** Savings reach 15% only at lossy 60,
+  where the worst clip loses 3.97 VMAF. 1240064 (a 60 fps source) loses over 1 VMAF at every
+  level above 0. Without it, lossy 30 saves 10.6% with a worst loss of 1.10.
+- With the fix, the plain GIFs are 9–57% larger (a palette that fits the frames keeps more
+  detail), and plain VMAF rises 0.2–2.5 points. The low scores of some clips (47–68) are not
+  from the bug: they stay low with the fix.
+- At lossy 0, gifsicle made three GIFs 0.3–1.1% larger. Keeping whichever file is smaller would
+  avoid that.
+- **The owner's decision on SC-009 is still open.** The data favours restating it by content
+  type (15% on screen and animated content, reported only for live action) over raising the
+  default lossy, which costs more VMAF than SC-009 allows and still misses 15% at 30.
 - Found and fixed on the way: every job warning printed twice on a terminal (`5a1984b`). The SSH
   runbook got fixes for paths built from escape codes, the audio check, the cancel cases and the
   SC-009 steps (`8df357e`, `2f3d1c4`, `159ec4b`, `9dbedbd`).
