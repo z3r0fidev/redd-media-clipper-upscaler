@@ -1,7 +1,7 @@
 //! Output rendering: human (progress bars on stderr, results on stdout) or `--json`
 //! (contracts/json-output.md). Every JSON document carries `"schema": 1`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
@@ -495,7 +495,14 @@ fn plan_doc(plan: &Plan) -> Value {
 /// Event sink for a run.
 pub enum RenderSink {
     Json,
-    Human { multi: MultiProgress, labels: HashMap<JobId, String>, bars: Mutex<HashMap<JobId, ProgressBar>> },
+    Human {
+        multi: MultiProgress,
+        labels: HashMap<JobId, String>,
+        bars: Mutex<HashMap<JobId, ProgressBar>>,
+        /// The job warnings `plan_warnings` printed before the run. The executor sends them
+        /// again as events (for the JSON stream and the desktop), so they are not shown twice.
+        planned: HashSet<(JobId, String)>,
+    },
 }
 
 impl std::fmt::Debug for RenderSink {
@@ -518,10 +525,19 @@ pub fn sink(out: &Output, plan: &Plan) -> Arc<RenderSink> {
         multi,
         labels: plan.jobs.iter().map(|j| (j.id, file_name(&j.output))).collect(),
         bars: Mutex::new(HashMap::new()),
+        planned: plan.jobs.iter().flat_map(|j| j.warnings.iter().map(|w| (j.id, w.clone()))).collect(),
     })
 }
 
 impl RenderSink {
+    /// Whether a warning event still needs printing: one raised during the run, not a planned one.
+    fn is_new_warning(&self, job_id: JobId, message: &str) -> bool {
+        match self {
+            RenderSink::Json => true,
+            RenderSink::Human { planned, .. } => !planned.contains(&(job_id, message.to_owned())),
+        }
+    }
+
     pub fn finish(&self) {
         if let RenderSink::Human { multi, .. } = self {
             let _ = multi.clear();
@@ -545,7 +561,7 @@ impl EventSink for RenderSink {
                 v["schema"] = json!(1);
                 print_json(&v);
             }
-            RenderSink::Human { multi, labels, bars } => {
+            RenderSink::Human { multi, labels, bars, .. } => {
                 let mut bars = bars.lock().expect("bars");
                 match event {
                     Event::JobStarted { job_id } => {
@@ -571,7 +587,7 @@ impl EventSink for RenderSink {
                             pb.set_message(msg);
                         }
                     }
-                    Event::JobWarning { job_id, message, .. } => {
+                    Event::JobWarning { job_id, message, .. } if self.is_new_warning(job_id, &message) => {
                         let label = labels.get(&job_id).cloned().unwrap_or_default();
                         let _ = multi.println(format!("warning: {label}: {message}"));
                     }
@@ -590,5 +606,33 @@ impl EventSink for RenderSink {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn human(planned: &[(JobId, &str)]) -> RenderSink {
+        RenderSink::Human {
+            multi: MultiProgress::with_draw_target(ProgressDrawTarget::hidden()),
+            labels: HashMap::new(),
+            bars: Mutex::new(HashMap::new()),
+            planned: planned.iter().map(|&(id, w)| (id, w.to_owned())).collect(),
+        }
+    }
+
+    #[test]
+    fn a_planned_warning_is_not_printed_again_during_the_run() {
+        let sink = human(&[(1, "15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)")]);
+        assert!(!sink.is_new_warning(1, "15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)"));
+    }
+
+    #[test]
+    fn a_warning_raised_during_the_run_is_printed() {
+        let sink = human(&[(1, "15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)")]);
+        assert!(sink.is_new_warning(1, "gifski is not available; using the built-in engine"));
+        // The same text on another job was not printed for that job.
+        assert!(sink.is_new_warning(2, "15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)"));
     }
 }
