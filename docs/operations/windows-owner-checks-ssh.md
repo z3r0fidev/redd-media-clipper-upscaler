@@ -104,9 +104,13 @@ time to stop it.
 `C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4`, to check that rmedia handles a non-ASCII path and
 never changes its source. Like `$uniDir`, the name is built from escape codes.
 
+Check that `$src` and `$uni` each print a path before going on. If either is empty, `Copy-Item`
+copies the clip into the current folder without an error, and the later commands fail. An empty
+`$uni` usually means step 1's `$uniDir` line wasn't run in this session.
+
 ```powershell
 $src = (Get-ChildItem "$qa\footage\1252564-*.mp4").FullName; $src   # must print one path
-$uni = Join-Path $uniDir ([regex]::Unescape('vid\u00e9o \u00e0.mp4'))
+$uni = Join-Path $uniDir ([regex]::Unescape('vidéo à.mp4')); $uni   # must print ...\vidéo à.mp4
 Copy-Item $src $uni
 Get-Item $uni | Select-Object FullName, Length                        # must show "vidéo à.mp4"
 $before = Get-FileHash $uni
