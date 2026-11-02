@@ -131,7 +131,7 @@ version: Option<String>, ok: bool, reason: Option<String> }`
   allocated.
 - `JobMeasure::Gif`:
   `{ span, format, bytes, width, height, fps, timing, colours, dither, lossy, engine, optimiser:
-  bool, loop_count, deterministic: bool, search: Option<SearchRecord>, trimmed: Option<{ from: Span, to: Span }>,
+  bool (gifsicle's file was kept: it ran and was smaller), loop_count, deterministic: bool, search: Option<SearchRecord>, trimmed: Option<{ from: Span, to: Span }>,
   mp4_estimate: Option<u64> }`. `deterministic` is false only for an engine that failed the Phase 0
   check (research R14).
   It is serialised with `"measure":"gif"` (additive).

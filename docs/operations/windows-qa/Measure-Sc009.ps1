@@ -76,7 +76,8 @@ foreach ($c in Import-Csv $Clips) {
     $p = Invoke-Gif $c.file $c.start $c.duration (Join-Path $dir 'plain') -Plain
     $o = Invoke-Gif $c.file $c.start $c.duration (Join-Path $dir 'gifsicle')
     if ($p.optimiser) { throw "--no-optimise still ran gifsicle on $($c.file)" }
-    if (-not $o.optimiser) { throw "gifsicle did not run on $($c.file); check 'rmedia doctor'" }
+    # optimiser false: gifsicle's file was not smaller, so rmedia kept the plain GIF (no saving,
+    # no loss). That is a result, not an error; 'rmedia doctor' shows whether gifsicle is found.
     $fps = [int][math]::Round([double]$o.fps)
     $vp = Get-Vmaf $p.output $c.file $fps $c.start $p.width $p.height
     $vo = Get-Vmaf $o.output $c.file $fps $c.start $o.width $o.height

@@ -463,7 +463,13 @@ pub async fn post_estimate(
             stderr_tail: out.stderr_tail,
         });
     }
-    measure(tools, spec, s, dir, SAMPLE_OPT, cancel).await
+    // The job keeps the plain GIF when gifsicle's is not smaller, so the estimate does too.
+    let size = |f: &str| std::fs::metadata(dir.join(f)).map(|m| m.len());
+    let kept = match (size(SAMPLE_OPT), size(SAMPLE)) {
+        (Ok(o), Ok(p)) if o >= p => SAMPLE,
+        _ => SAMPLE_OPT,
+    };
+    measure(tools, spec, s, dir, kept, cancel).await
 }
 
 /// [`sample_estimate`]'s predicted size of the job's GIF.

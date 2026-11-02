@@ -195,7 +195,9 @@ pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobM
     ctx.stage_fraction(1.0, total);
     let start = spec.cut.requested.start;
     let trimmed = (len < spec.gif.len - 1e-6).then(|| Span { start, end: start + Ts::from_secs_f64(len) });
-    Ok(measure(spec, &s, bytes, optimise, search, trimmed, mp4_estimate))
+    // Whether gifsicle's file is the one kept, not only whether it ran.
+    let optimised = result.starts_with("opt");
+    Ok(measure(spec, &s, bytes, optimised, search, trimmed, mp4_estimate))
 }
 
 /// The stages of a GIF job and their weights (data-model.md › Stages and weights), renormalised
@@ -325,7 +327,13 @@ impl Encoder<'_> {
         if let (true, Some(gifsicle)) = (self.optimise, spec.gif.optimiser.as_deref()) {
             enter(ctx, "optimise");
             run_gifsicle(ctx, gifsicle, self.scratch, s.lossy, self.limit, (encoded, optimised)).await?;
-            return Ok(optimised);
+            // gifsicle can make a GIF larger (at lossy 0, by up to about 1%), and its output
+            // never looks better than its input: then the plain GIF is kept.
+            let size = |f: &str| std::fs::metadata(self.scratch.join(f)).map(|m| m.len());
+            return Ok(match (size(optimised), size(encoded)) {
+                (Ok(o), Ok(e)) if o >= e => encoded,
+                _ => optimised,
+            });
         }
         Ok(encoded)
     }

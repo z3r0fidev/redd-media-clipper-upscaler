@@ -283,8 +283,9 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 from the request by more than 50 ms). These two keys are unchanged from 0.1.0.
 
 **`measure: "gif"`** (0.3.0) adds `span`, `format`, `bytes`, `width`, `height`, `fps`, `timing`,
-`colours`, `dither` and `lossy` (built-in engine only; otherwise the keys are absent), `engine`, `optimiser` (bool),
-`loop`, `deterministic`, `trimmed` (`{start,end}` when `--allow-trim` shortened the range, else
+`colours`, `dither` and `lossy` (built-in engine only; otherwise the keys are absent), `engine`, `optimiser` (bool:
+true when gifsicle's file is the output; false when it did not run, or when its file was not smaller and the plain GIF was
+kept, and then `lossy` is absent too), `loop`, `deterministic`, `trimmed` (`{start,end}` when `--allow-trim` shortened the range, else
 `null`), `mp4_estimate`, and `search` (`null` without a budget):
 
 ```json

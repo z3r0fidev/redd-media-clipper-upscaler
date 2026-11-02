@@ -376,3 +376,14 @@ Re-measured at lossy 10 (Linux, release build):
 - Found and fixed on the way: every job warning printed twice on a terminal (`5a1984b`). The SSH
   runbook got fixes for paths built from escape codes, the audio check, the cancel cases and the
   SC-009 steps (`8df357e`, `2f3d1c4`, `159ec4b`, `9dbedbd`).
+
+### gifsicle's file is kept only when it is smaller (owner, 2026-11-02)
+
+The sweep found gifsicle making three real-footage GIFs 0.3–1.1% larger at lossy 0. Its output
+never looks better than its input (at lossy 0 it keeps every pixel; above, it gives some up), so
+the owner chose the better-quality file. The job now keeps gifsicle's file only when it is
+smaller, and otherwise the plain GIF, which is both smaller and at least as good. The size
+estimate follows the same rule. The outcome's `optimiser` says which file was kept: when it is
+false, `lossy` is absent. Test: `gif_gifsicle::a_gifsicle_result_that_is_larger_is_not_kept`
+(a stand-in gifsicle that doubles the file). `Measure-Sc009.ps1` records such a clip as
+0% saved and 0 lost, not as an error.

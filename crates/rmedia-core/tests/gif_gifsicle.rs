@@ -106,3 +106,40 @@ async fn without_gifsicle_the_pass_is_skipped() {
     let codes: Vec<IssueCode> = asked.jobs[0].notices.iter().map(|n| n.code).collect();
     assert!(codes.contains(&IssueCode::EngineFallback), "--lossy without gifsicle: {codes:?}");
 }
+
+/// gifsicle can make a GIF larger (on real footage at `--lossy 0`, by up to 1.1%). Its output is
+/// never better to look at than its input, so the job keeps the plain GIF then, and says so:
+/// `optimiser` false and no `lossy`. A stand-in gifsicle that doubles the file shows it.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_gifsicle_result_that_is_larger_is_not_kept() {
+    use std::os::unix::fs::PermissionsExt;
+    require_engine!("palettegen", "paletteuse");
+    let src = fixture(Fixture::Land6);
+    let d = tempfile::tempdir().unwrap();
+    let fake = d.path().join("gifsicle-grows");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\n# Writes its input twice: a larger file than it was given.\n\
+         while [ $# -gt 0 ]; do case \"$1\" in -o) out=\"$2\"; shift 2;; --) in=\"$2\"; break;; *) shift;; esac; done\n\
+         cat \"$in\" \"$in\" > \"$out\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let plain =
+        encode(planned(&src, opts(&d.path().join("a"), |g| g.optimise = false), false).await, d.path()).await;
+    let (tools, mut caps) = engine();
+    caps.gif_engines.gifsicle.path = Some(fake);
+    caps.gif_engines.gifsicle.ok = true;
+    let req =
+        request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], opts(&d.path().join("b"), |g| g.lossy = Some(0)));
+    let p = make_plan(&req, &tools, &caps).await;
+    assert!(!p.has_errors(), "{:?}", p.issues);
+    assert!(p.jobs[0].commands().iter().any(|c| c.program == Program::Gifsicle), "gifsicle is planned");
+    let (out, m) = encode(p, d.path()).await;
+    let JobMeasure::Gif { optimiser, lossy, bytes: kept, .. } = m else { unreachable!() };
+    assert_eq!((optimiser, lossy), (false, None), "reported as not optimised");
+    assert_eq!(kept, bytes(&plain.1), "the plain GIF is kept");
+    assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&plain.0).unwrap(), "byte for byte");
+}
