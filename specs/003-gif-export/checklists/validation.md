@@ -257,3 +257,49 @@ passed. The earlier note that a dead gifski on Windows might be blamed on ffmpeg
   (a 2 s ffprobe wrapper; fails without the fix with exit status none).
 - **Housekeeping found:** `tauri.conf.json` still says `0.2.0`, so the 0.3.0 installers are named
   `…0.2.0…`; bump it when 0.3.0 is released.
+
+## Windows owner checks over SSH (2026-11-01 to 2026-11-02)
+
+Release run **40740230580** (`5e01399`, gifski off), run over SSH with
+[the SSH runbook](../../../docs/operations/windows-owner-checks-ssh.md) on the owner's laptop.
+The checks that need the screen (installer prompts, SmartScreen, the desktop app, closing a
+window mid-job, playback, the MSI) are still open.
+
+```text
+Machine: Windows 11 Pro 10.0.26300, i7-1185G7 (4C/8T), 32 GB, Intel Iris Xe 32.0.101.7092 (+ Microsoft Remote Display Adapter), VC++ runtime: v14.50.35719.00, WebView2: 156.0.4314.58
+Artifact: run 40740230580, commit 5e01399, zip sha256 matches: yes (B0C6860B…AA3FBE)
+Files: setup.exe rmedia_0.2.0_x64-setup.exe 107.72 MiB, msi rmedia_0.2.0_x64_en-US.msi 150.22 MiB, cli zip rmedia-cli-main-x86_64-pc-windows-msvc.zip (size not recorded)
+
+3.1 doctor: rmedia 0.2.0, ffmpeg bundled y (n9.0.2-31-gc89d6ee1ca-20261021), gif/mp4 y, gifsicle 1.98 bundled, gifski no, status ready, SmartScreen <screen>
+3.2 clip: unicode/space path ok, accurate ok, no-clobber skip ok, source hash unchanged True, long path ok, \\?\ shown n, other drive n.a.
+3.3 gif: post 5.4 MB 612x344@12, comment 2.0 MB 408x230@10, mp4 690 kB 720x404@28 video only, max-quality fallback ok (33.9 MB 960x540@20), 9:16 smart ok (5.1 MB 344x612@12), clip --gif ok (5.5 MB 720x405@12), dry-run estimate 6.5 MB vs real 5.4 MB
+3.4 upscale: cpu yes 29 fps, gpu yes 12 fps, ai no 0.2 fps (too slow on Iris Xe: about 162 min for 60 s of 480p); ai on this machine: the worker starts and self-tests, the tier is refused as too slow; static runtime: neither rmedia.exe nor rmedia-sr.exe names vcruntime140/msvcp140/vcomp140 (text search; the runtime is installed here, so not a clean-machine proof)
+3.5 cancel: Ctrl+C gif clean (27%), upscale cancel clean (26%), kill parent clean (twice; no .part or scratch left), Ctrl+C while scanning exit 130 with a summary, window close <screen>
+4.1 NSIS (silent /S over SSH): folder %LOCALAPPDATA%\rmedia (per user), files: rmedia-desktop, rmedia, rmedia-ffmpeg, rmedia-ffprobe, rmedia-gifsicle, rmedia-sr, uninstall.exe, models (yunet, realesr-animevideov3 x2/x3/x4), licenses (no GIFSKI files, no VC++ DLLs); admin/Start menu <screen>
+4.2 desktop: <screen>
+4.3 MSI: <screen>
+5 SC-009: 9 clips, 105,736,960 -> 96,324,889 bytes, 8.9% smaller, worst VMAF loss 2.19 (clip 1240064, 60 fps source): FAIL; single content type (live action)
+Anything odd: every warning printed twice on a terminal (fixed in 5a1984b, after this build); doctor lists the Iris Xe twice (gpu 0 and gpu 1)
+```
+
+SC-009 per clip (clips named by ID; 8 s windows chosen free of cuts, see the runbook's step 8):
+
+| Clip | Start | Size | Plain | gifsicle (lossy 30) | Saved | VMAF plain → opt | Loss |
+|---|---|---|---|---|---|---|---|
+| 1250486 | 283.0 | 406x720@15 | 7,584,587 | 7,387,444 | 2.6% | 59.69 → 59.54 | 0.14 |
+| 1249955 | 307.5 | 720x405@15 | 5,544,088 | 5,245,337 | 5.4% | 66.11 → 65.93 | 0.18 |
+| 1252497 | 130.5 | 720x405@15 | 9,185,793 | 8,941,400 | 2.7% | 67.17 → 66.98 | 0.20 |
+| 1235334 | 1268.5 | 720x720@15 | 5,375,238 | 5,032,594 | 6.4% | 71.67 → 70.80 | 0.86 |
+| 1252564 | 73.5 | 720x405@15 | 16,551,592 | 16,291,859 | 1.6% | 94.88 → 94.70 | 0.18 |
+| 1246419 | 322.0 | 480x680@15 | 12,123,911 | 10,828,783 | 10.7% | 65.08 → 64.91 | 0.16 |
+| 1240064 | 542.5 | 720x403@15 | 11,038,012 | 8,669,395 | 21.5% | 74.05 → 71.86 | 2.19 |
+| 1247209 | 516.0 | 720x547@15 | 25,659,251 | 23,907,114 | 6.8% | 46.81 → 46.76 | 0.05 |
+| 1134827 | 536.0 | 720x405@15 | 12,674,488 | 10,020,963 | 20.9% | 97.46 → 97.16 | 0.31 |
+
+- **SC-009 fails on live action**, as the synthetic set predicted (6.4%, see the US2 calibration
+  above): gifsicle at the target's lossy 30 saves 1.6–21.5% per clip, 8.9% over the set, and one
+  60 fps clip loses 2.19 VMAF. The owner's decision on SC-009 is still open. A lossy sweep on
+  the same clips (0, 30, 60, 80) is being run on Linux to inform it.
+- Found and fixed on the way: every job warning printed twice on a terminal (`5a1984b`). The SSH
+  runbook got fixes for paths built from escape codes, the audio check, the cancel cases and the
+  SC-009 steps (`8df357e`, `2f3d1c4`, `159ec4b`, `9dbedbd`).
