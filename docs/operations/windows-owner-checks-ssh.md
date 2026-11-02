@@ -144,15 +144,17 @@ For each command, record:
 - the summary line (size, width, fps, engine);
 - the dry run's estimate against the real size.
 
-Without a player, check that the MP4s have no audio track:
+Without a player, check that the Reddit MP4s have no audio track:
 
 ```powershell
 $ff = (Get-ChildItem -Recurse $qa\cli -Filter rmedia-ffprobe.exe | Select-Object -First 1).FullName
-Get-ChildItem $qa\out -Filter *.mp4 | ForEach-Object {
+Get-ChildItem $qa\out -Filter *_reddit-*.mp4 | ForEach-Object {
   $_.Name; & $ff -v error -show_entries stream=codec_type -of csv=p=0 "file:$($_.FullName)" }
 ```
 
-Each MP4 should list only `video`. Playback and looping are checked in step 9.
+Each should list only `video`. Only the Reddit MP4s (`--format mp4`) drop the audio: the step 4
+clips and the step 6 upscales keep it, so they are left out. Playback and looping are checked in
+step 9.
 
 ## 6. Upscale and the AI Worker (Runbook §3.4)
 
@@ -173,8 +175,13 @@ Record:
   `vcruntime140.dll`, `msvcp140.dll` or `vcomp140.dll`;
 - the AI clip's `TotalSeconds`.
 
-If you can, time the same clip with run 40452999345's CLI, which needs the VC++ runtime
-installed. If this build is noticeably slower, the fallback is shipping the three DLLs next to
+If `doctor` says `tier: ai no, … too slow on …`, the worker did start: the figure comes from
+its self-test on the GPU. The `--tier ai` clip is then refused within a second, and there is
+nothing to time. Compare the self-test instead.
+
+If you can, run `doctor --recheck` with run 40452999345's CLI (it needs the VC++ runtime
+installed) and compare its `tier: ai` fps, or time the same clip with it when the AI tier is
+available. If this build is noticeably slower, the fallback is shipping the three DLLs next to
 `rmedia-sr.exe`.
 
 ## 7. Cancel and Cleanup (Runbook §3.5)
@@ -183,23 +190,23 @@ installed. If this build is noticeably slower, the fallback is shipping the thre
 function Show-Left { Get-Process | Where-Object Name -like 'rmedia*' | Select-Object Name, Id
                      Get-ChildItem -Recurse $qa\out -Force -Filter *.part -ErrorAction SilentlyContinue }
 
-# a) Ctrl+C during "encode" or "optimise"; it should return within 2 s
-& $cli gif $src --budget none -o $qa\out\cancel
-Show-Left
+# a) Press Ctrl+C once the progress bar starts moving; it should return within 2 s
+& $cli gif $src --budget none -o $qa\out\cancel-a; Show-Left
 
 # a, 002) The same with an upscale job
-& $cli upscale $src --tier cpu -o $qa\out\cancel4
-Show-Left
+& $cli upscale $src --tier cpu -o $qa\out\cancel-a2; Show-Left
 
-# c) Kill only the parent
-Start-Process $cli -ArgumentList 'gif', "`"$src`"", '--budget', 'none', '-o', "$qa\out\cancel3" -NoNewWindow
-Start-Sleep 5; Stop-Process -Name rmedia -Force; Start-Sleep 2; Show-Left
+# c) Kill only the parent (one line: it starts the job, kills rmedia.exe 5 s later, then checks)
+Start-Process $cli -ArgumentList 'gif', "`"$src`"", '--budget', 'none', '-o', "$qa\out\cancel-c" -NoNewWindow; Start-Sleep 5; Stop-Process -Name rmedia -Force; Start-Sleep 2; Show-Left
 
 # d) Ctrl+C while it is still scanning, before any job_started line; expect 130
 & $cli gif C:\Users --json -o $qa\out\cancel5 ; $LASTEXITCODE
 ```
 
-`Show-Left` should print nothing every time. Case (b), closing the window, needs the screen
+`Show-Left` should print nothing every time. Each case needs its own new folder. If a folder
+already holds the output, the job is skipped and there is nothing to cancel: delete the folder
+or pick a new name. In (a) the job must end with `cancelled`. If it ends with `✓`, Ctrl+C came
+too late, so delete the output and try again. Case (b), closing the window, needs the screen
 (step 9).
 
 Over SSH, Ctrl+C reaches the program through the SSH server, not a local console. A failure of
@@ -208,21 +215,20 @@ the screen before reporting it.
 
 ## 8. SC-009 on Real Footage (Runbook §5)
 
-Copy 8–12 real clips into `C:\rmedia-qa\footage` with `scp`. Each should be 6–10 s long, 720p
-or larger, and the set should mix content (see runbook §5.1). List them, one row per clip:
+The script takes 8–12 clips, listed in `C:\rmedia-qa\footage\clips.csv`. Each should be 6–10 s
+long, 720p or larger, and the set should mix content (see runbook §5.1). The CSV has one row
+per clip, with an absolute path and times in seconds. The format looks like this (an example,
+not files on the machine):
 
-```powershell
-@'
+```text
 file,start,duration
 C:\rmedia-qa\footage\game.mp4,42,8
-C:\rmedia-qa\footage\phone_party.mov,5,8
-'@ | Set-Content -Encoding UTF8 $qa\footage\clips.csv
-Get-Content $qa\Measure-Sc009.ps1          # read it before running it
-powershell -ExecutionPolicy Bypass -File $qa\Measure-Sc009.ps1 -Cli $cli -Clips $qa\footage\clips.csv -Out $qa\sc009
 ```
 
-It passes at 15% or more smaller over the whole set, with a worst VMAF loss of 1.0 or less.
-Keep `C:\rmedia-qa\sc009\results.csv`.
+For this check, the next section writes the CSV and then runs the script. It passes at 15% or
+more smaller over the whole set, with a worst VMAF loss of 1.0 or less. Keep
+`C:\rmedia-qa\sc009\results.csv`. `-Out` must be a new or empty folder. If an earlier attempt
+left files in `sc009`, pass a new name, such as `$qa\sc009b`.
 
 ### The Set Used for the 2026-10 Check
 
@@ -246,8 +252,9 @@ $rows = foreach ($c in $set) {
   if ($f.Count -ne 1) { throw "clip $($c[0]): $($f.Count) files match" }
   "$($f[0].FullName),$($c[1]),8"
 }
-@('file,start,duration') + $rows | Set-Content -Encoding UTF8 $qa\footage\clips.csv
-Get-Content $qa\footage\clips.csv          # 10 lines: the header and nine clips
+$csv = "$qa\footage\clips.csv"
+@('file,start,duration') + $rows | Set-Content -Encoding UTF8 $csv
+Get-Content $csv          # 10 lines: the header and nine clips
 ```
 
 | Clip | Start | Peak scene score | Mean YDIF | Brightness range |
@@ -261,6 +268,13 @@ Get-Content $qa\footage\clips.csv          # 10 lines: the header and nine clips
 | 1240064 | 542.5 | 2.9 | 1.4 | 2 |
 | 1247209 | 516.0 | 1.4 | 2.0 | 6 |
 | 1134827 | 536.0 | 2.7 | 5.1 | 11 |
+
+Then run the script:
+
+```powershell
+Get-Content $qa\Measure-Sc009.ps1          # read it before running it
+powershell -ExecutionPolicy Bypass -File $qa\Measure-Sc009.ps1 -Cli $cli -Clips $csv -Out $qa\sc009
+```
 
 ## 9. Needs the Screen or RDP
 
