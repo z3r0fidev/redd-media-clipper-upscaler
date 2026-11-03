@@ -23,7 +23,8 @@ Use the Windows artifact `rmedia-x86_64-pc-windows-msvc` from a `release.yml` ru
 |---|---|---|
 | 40345344064 | `723bbbe` | Existing run (gifski off), digest `sha256:f1fa7fdf7abcce0504dc5ed25d6b4cc0eedfe4c42870a72d59f820055e81bc36`. Predates the Settings › GIF export engine pickers (`813cdeb`) and the fixes in `475ccf4` and `a69089a` |
 | 40452999345 | `789d7e9` | Same code as `a69089a` plus the runbook docs (gifski off, dispatched 2026-10-27). Windows artifact 411,470,509 B, digest `sha256:68075b99d243932f7ce4ed35b47ec39095c5024e90b3945fa4fa117427cd7e27`. Needs the VC++ runtime for the AI tier; predates the Ctrl-C fix (`fae5d47`) and the logging (`c5cbb85`). Keep it for the AI speed comparison in step 3.4 |
-| **40740230580** | `5e01399` | **Use this one.** gifski off, dispatched 2026-10-28 with the owner's approval. Adds the static C runtime (no VC++ runtime DLL needed; ncnn without OpenMP), the Ctrl-C fix and the logging. Windows artifact 412,635,658 B (id 12840729892), digest `sha256:b0c6860b0814add19a2b1aa7c2bfda4107ec7f3315a0cdac40d11b4124aa3fbe` |
+| **41550220800** | `5fa548f` | **Use this one.** gifski off, dispatched 2026-11-02 with the owner's approval. Adds the palette fix (a GIF far into a long source took about 30 min per pass), `reddit-post` at lossy 10 (SC-009 is now a quality bar), gifsicle's file kept only when smaller, and each warning printed once. Windows artifact 412,680,923 B (id 13194480079), digest `sha256:4028a5bc3df8df88b23f7f1123fdd454c0ffa8505cdfa56840a4ff2bce6c9d80` |
+| 40740230580 | `5e01399` | Replaced by 41550220800 (it has the palette bug). gifski off, dispatched 2026-10-28 with the owner's approval. Adds the static C runtime (no VC++ runtime DLL needed; ncnn without OpenMP), the Ctrl-C fix and the logging. Windows artifact 412,635,658 B (id 12840729892), digest `sha256:b0c6860b0814add19a2b1aa7c2bfda4107ec7f3315a0cdac40d11b4124aa3fbe` |
 
 The artifact contains the NSIS setup (`…_x64-setup.exe`), the MSI and the CLI archive
 (`rmedia-cli-<ref>-x86_64-pc-windows-msvc.zip`). The installer file names still carry `0.2.0`,
@@ -192,7 +193,7 @@ Start-Sleep 5; Stop-Process -Name rmedia -Force
 Start-Sleep 2; Show-Left      # expect no rmedia-ffmpeg / rmedia-gifsicle left
 ```
 
-d) Ctrl+C before the run (needs a build from `fae5d47` or later, such as run 40740230580):
+d) Ctrl+C before the run (needs a build from `fae5d47` or later, such as run 41550220800):
    point `gif` at a large folder with `--json` and press Ctrl+C while it is still scanning,
    before any `job_started` line. Expected: exit 130 (`$LASTEXITCODE`), nothing written, and
    the last line a `summary` with `"exit_code":130`.

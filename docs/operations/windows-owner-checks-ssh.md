@@ -9,9 +9,11 @@ MP4 audio without a player. The runbook still says what each result should be, a
 A program started over SSH has no visible window. The installers' prompts, the desktop app,
 closing a window mid-job and playing the results need the screen or RDP ([step 9](#9-needs-the-screen-or-rdp)).
 
-Build under test: `release.yml` run **40740230580** (commit `5e01399`, gifski off). Windows
-artifact `rmedia-x86_64-pc-windows-msvc`, id 12840729892, 412,635,658 B, digest
-`sha256:b0c6860b0814add19a2b1aa7c2bfda4107ec7f3315a0cdac40d11b4124aa3fbe`.
+Build under test: `release.yml` run **41550220800** (commit `5fa548f`, gifski off). Windows
+artifact `rmedia-x86_64-pc-windows-msvc`, id 13194480079, 412,680,923 B, digest
+`sha256:4028a5bc3df8df88b23f7f1123fdd454c0ffa8505cdfa56840a4ff2bce6c9d80`. It has the palette fix,
+`reddit-post` at lossy 10, the kept-smaller-file rule for gifsicle and the single warnings. The
+first SSH run (2026-11-01) used run 40740230580; its results are in the 003 validation log.
 
 ## 0. On the Linux Machine: Fetch the Artifact
 
@@ -20,9 +22,9 @@ digest:
 
 ```bash
 mkdir -p ~/rmedia-qa && cd ~/rmedia-qa
-gh api repos/z3r0fidev/redd-media-clipper-upscaler/actions/artifacts/12840729892/zip > rmedia-x86_64-pc-windows-msvc.zip
+gh api repos/z3r0fidev/redd-media-clipper-upscaler/actions/artifacts/13194480079/zip > rmedia-x86_64-pc-windows-msvc.zip
 sha256sum rmedia-x86_64-pc-windows-msvc.zip
-# expect b0c6860b0814add19a2b1aa7c2bfda4107ec7f3315a0cdac40d11b4124aa3fbe
+# expect 4028a5bc3df8df88b23f7f1123fdd454c0ffa8505cdfa56840a4ff2bce6c9d80
 ```
 
 After step 1 has created the folders on Windows, copy the zip and the SC-009 script:
@@ -66,7 +68,7 @@ Now run the `scp` commands from step 0.
 ## 2. Verify and Unpack
 
 ```powershell
-(Get-FileHash $qa\artifact\rmedia-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash   # B0C6860B…AA3FBE
+(Get-FileHash $qa\artifact\rmedia-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash   # 4028A5BC…6C9D80
 Expand-Archive $qa\artifact\rmedia-x86_64-pc-windows-msvc.zip $qa\artifact\x
 Get-ChildItem -Recurse $qa\artifact\x | Select-Object FullName, Length
 

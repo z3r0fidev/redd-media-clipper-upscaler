@@ -387,3 +387,19 @@ estimate follows the same rule. The outcome's `optimiser` says which file was ke
 false, `lossy` is absent. Test: `gif_gifsicle::a_gifsicle_result_that_is_larger_is_not_kept`
 (a stand-in gifsicle that doubles the file). `Measure-Sc009.ps1` records such a clip as
 0% saved and 0 lost, not as an error.
+
+### Release run 41550220800 (2026-11-02, owner approval)
+
+`release.yml` on `5fa548f` (the palette fix, lossy 10, the kept-smaller-file rule), gifski off,
+dispatched once CI on `5fa548f` passed (run 41532424422, 8/8). Both `package` jobs succeeded, and
+`release gate: ok` printed before staging, after staging and on the built bundles. Nothing was
+published. This is the build for the Windows re-checks.
+
+| Artifact | Size | Digest |
+|---|---|---|
+| `rmedia-x86_64-unknown-linux-gnu` (id 13193349290) | 636,629,615 B | `sha256:568c6ecc7665f16c34db6668b5a7f2fc11ff1948af119d3009ad3cc957f16f9a` |
+| `rmedia-x86_64-pc-windows-msvc` (id 13194480079) | 412,680,923 B | `sha256:4028a5bc3df8df88b23f7f1123fdd454c0ffa8505cdfa56840a4ff2bce6c9d80` |
+
+Files: `rmedia_0.2.0_amd64.deb` 168.85 MiB, `rmedia_0.2.0_amd64.AppImage` 289.33 MiB,
+`rmedia_0.2.0_x64-setup.exe` 107.75 MiB, `rmedia_0.2.0_x64_en-US.msi` 150.24 MiB, plus the CLI
+archives. Still named 0.2.0: `tauri.conf.json` has not been bumped.
