@@ -104,17 +104,39 @@ impl Default for Settings {
 impl Settings {
     /// Loads settings; a missing or unreadable file yields defaults.
     pub fn load() -> Settings {
-        settings_path()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default()
+        settings_path().map(|p| Settings::load_from(&p)).unwrap_or_default()
+    }
+
+    fn load_from(path: &std::path::Path) -> Settings {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Settings::default();
+        };
+        serde_json::from_str(&text).unwrap_or_else(|e| {
+            tracing::warn!("{} is not valid ({e}); using the default settings", path.display());
+            Settings::default()
+        })
     }
 
     /// Saves atomically (temp file + rename).
     pub fn save(&self) -> std::io::Result<()> {
         let path = settings_path().ok_or_else(|| std::io::Error::other("no config directory"))?;
+        self.save_to(&path)
+    }
+
+    /// A file that does not parse (a hand edit with a typo, or one written by a newer version)
+    /// is renamed to `settings.invalid-<unix time>.json` first, so the save does not lose it.
+    fn save_to(&self, path: &std::path::Path) -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
+        }
+        if let Ok(text) = std::fs::read_to_string(path)
+            && serde_json::from_str::<Settings>(&text).is_err()
+        {
+            let secs =
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            let kept = path.with_file_name(format!("settings.invalid-{secs}.json"));
+            std::fs::rename(path, &kept)?;
+            tracing::warn!("{} was not valid; kept it as {}", path.display(), kept.display());
         }
         // A unique temporary name: two saves at once (the app and the CLI) must not rename
         // each other's file away.
@@ -122,7 +144,7 @@ impl Settings {
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
         let tmp = path.with_extension(format!("json.{}-{nanos}.tmp", std::process::id()));
         let written = std::fs::write(&tmp, serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?)
-            .and_then(|()| std::fs::rename(&tmp, &path));
+            .and_then(|()| std::fs::rename(&tmp, path));
         if written.is_err() {
             let _ = std::fs::remove_file(&tmp);
         }
@@ -141,6 +163,44 @@ mod tests {
         assert_eq!(serde_json::from_str::<Settings>(&text).unwrap(), s);
         assert_eq!(serde_json::from_str::<Settings>("{}").unwrap(), Settings::default());
         assert!(serde_json::from_str::<Settings>(r#"{"bogus":1}"#).is_err());
+    }
+
+    fn backups(dir: &std::path::Path) -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("settings.invalid-"))
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn an_invalid_settings_file_is_kept_before_a_save_replaces_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let typo = "{\"jobs\": 2,}\n";
+        std::fs::write(&path, typo).unwrap();
+        // It loads as the defaults...
+        assert_eq!(Settings::load_from(&path), Settings::default());
+        // ...and saving keeps the user's file instead of overwriting it.
+        Settings { jobs: Some(3), ..Settings::default() }.save_to(&path).unwrap();
+        let kept = backups(dir.path());
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert_eq!(std::fs::read_to_string(&kept[0]).unwrap(), typo);
+        assert_eq!(Settings::load_from(&path).jobs, Some(3));
+        // A later save over the now-valid file makes no further copy.
+        Settings::default().save_to(&path).unwrap();
+        assert_eq!(backups(dir.path()).len(), 1);
+    }
+
+    #[test]
+    fn a_settings_file_from_a_newer_version_is_kept_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"jobs":2,"a_field_from_later":true}"#).unwrap();
+        Settings::default().save_to(&path).unwrap();
+        assert_eq!(backups(dir.path()).len(), 1);
     }
 
     #[test]

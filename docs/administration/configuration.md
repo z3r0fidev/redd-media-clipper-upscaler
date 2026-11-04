@@ -43,14 +43,18 @@ GIF engine paths and the models folder only.
 | Any | `$RMEDIA_CONFIG_DIR/settings.json` when `RMEDIA_CONFIG_DIR` is set and not empty |
 
 The file does not exist until you select **Save** in the desktop **Settings** dialog. rmedia writes
-it atomically: it writes `settings.json.tmp` and then renames it over `settings.json`.
+it atomically: it writes a temporary `settings.json.<pid>-<time>.tmp` and then renames it over
+`settings.json`.
 
 ### Load behaviour
 
 - A missing or unreadable file means all defaults are used.
 - The file rejects unknown fields. **If the file contains any unknown field, or any value that fails
-  to parse, the whole file is ignored silently and defaults are used.** No error is shown. The next
-  **Save** from the desktop app then overwrites the file with the in-app values.
+  to parse, the whole file is ignored and defaults are used.** A warning is logged (CLI stderr, the
+  desktop app's `logs/desktop.log`).
+- The next **Save** does not overwrite an invalid file. It first renames it to
+  `settings.invalid-<unix time>.json` in the same folder, then writes the new `settings.json`. Fix
+  the typo in the kept copy and rename it back to `settings.json` (with the app closed) to restore it.
 
 ### Fields
 
