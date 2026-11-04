@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { addClip, addSource, clipCount, emptyQueue, merge, removeClip, removeSource, runnable, setSourceOptions, updateClip } from "./queue";
+import {
+  addClip,
+  addSource,
+  audioSummary,
+  clipCount,
+  emptyQueue,
+  merge,
+  removeClip,
+  removeSource,
+  runnable,
+  setSourceOptions,
+  toggleAudioTrack,
+  updateClip,
+} from "./queue";
 
 describe("queue", () => {
   it("adds sources once and clips in order", () => {
@@ -42,5 +55,24 @@ describe("queue", () => {
     expect(q.videos.find((v) => v.input === "a")!.clips).toHaveLength(2);
     expect(runnable(q).videos.map((v) => v.input)).toEqual(["a", "b"]);
     expect(removeSource(q, "a").videos.map((v) => v.input)).toEqual(["empty", "b"]);
+  });
+
+  it("picks several audio tracks, as the CLI and manifests can", () => {
+    // From "all audio", unticking track 2 of 3 keeps 1 and 3.
+    expect(toggleAudioTrack(undefined, 2, 3)).toEqual([1, 3]);
+    expect(toggleAudioTrack("all", 2, 3)).toEqual([1, 3]);
+    // Ticking adds in track order; ticking every track is "all audio" again.
+    expect(toggleAudioTrack([3], 1, 3)).toEqual([1, 3]);
+    expect(toggleAudioTrack([1, 3], 2, 3)).toBeUndefined();
+    // Unticking the last track is "no audio"; ticking from "no audio" starts a list.
+    expect(toggleAudioTrack([2], 2, 3)).toBe("none");
+    expect(toggleAudioTrack("none", 2, 3)).toEqual([2]);
+  });
+
+  it("summarises every chosen track, not just the first", () => {
+    expect(audioSummary(undefined)).toBe("all audio");
+    expect(audioSummary("none")).toBe("no audio");
+    expect(audioSummary([2])).toBe("audio track 2");
+    expect(audioSummary([1, 3])).toBe("audio tracks 1, 3");
   });
 });

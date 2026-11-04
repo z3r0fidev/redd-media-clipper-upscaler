@@ -189,7 +189,7 @@ Select it to show three lists:
 | Option | Choices | Notes |
 |---|---|---|
 | Mode | **Default mode**, **Fast (no re-encode)**, **Frame-accurate** | **Default mode** uses the mode set in [Settings](#change-settings). See [Fast mode and accurate mode](getting-started.md#fast-mode-and-accurate-mode). |
-| Audio | **All audio**, **No audio**, or one track, for example **Track 2 (eng) · aac** | Lets you keep only one audio track, such as a commentary track. To keep several specific tracks, use the command line (`--audio 1,2`). |
+| Audio | **All audio**, **No audio**, or one track, for example **Track 2 (eng) · aac**. When the video has two or more audio tracks, a tick box per track is shown under the list, so you can keep several, for example tracks 1 and 3 (the list then reads **Tracks 1, 3**). | Keep only the tracks you want, such as the main mix and a commentary track. Ticking every track is the same as **All audio**, and unticking them all is **No audio**. The command line's `--audio 1,3` and a manifest's `"audio": [1, 3]` do the same. |
 | Subtitles | **Keep subtitles**, **No subtitles** | Some output formats cannot store some subtitle types. rmedia warns you when subtitles are dropped. |
 
 These options apply to every clip of that video. Select **×** next to the video name to remove the

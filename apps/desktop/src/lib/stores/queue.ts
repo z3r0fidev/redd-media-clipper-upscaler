@@ -1,5 +1,6 @@
 // Pure queue operations (unit-tested). The UI keeps a Manifest in $state and replaces it with
 // the results of these functions.
+import type { AudioSel } from "../bindings/AudioSel";
 import type { PartialOptions } from "../bindings/PartialOptions";
 import type { ClipEntry, Manifest, VideoEntry } from "../manifest";
 
@@ -50,6 +51,25 @@ export function setSourceOptions(q: Manifest, input: string, options: PartialOpt
     if (Object.keys(cleaned).length === 0) delete next.options;
     return next;
   });
+}
+
+/**
+ * Ticks or unticks audio track `track` (1-based) of a source with `count` audio tracks. Every
+ * track ticked is "all audio" (`undefined`), none ticked is `"none"`.
+ */
+export function toggleAudioTrack(sel: AudioSel | undefined, track: number, count: number): AudioSel | undefined {
+  const all = Array.from({ length: count }, (_, i) => i + 1);
+  const ticked = sel === undefined || sel === "all" ? all : sel === "none" ? [] : sel;
+  const next = ticked.includes(track) ? ticked.filter((t) => t !== track) : [...ticked, track].sort((a, b) => a - b);
+  if (next.length === 0) return "none";
+  return all.every((t) => next.includes(t)) ? undefined : next;
+}
+
+/** "all audio", "no audio", "audio track 2" or "audio tracks 1, 3". */
+export function audioSummary(sel: AudioSel | undefined): string {
+  if (sel === undefined || sel === "all") return "all audio";
+  if (sel === "none" || sel.length === 0) return "no audio";
+  return sel.length === 1 ? `audio track ${sel[0]}` : `audio tracks ${sel.join(", ")}`;
 }
 
 /** Merges an imported manifest (clip list / manifest file) into the queue. */

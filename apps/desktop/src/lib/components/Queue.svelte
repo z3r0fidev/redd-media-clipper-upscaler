@@ -5,7 +5,7 @@
   import { api, errorText } from "../api";
   import type { ClipEntry, TimeValue, VideoEntry } from "../manifest";
   import { app, infoFor, toast } from "../stores/app.svelte";
-  import { clipCount, merge, removeClip, removeSource, runnable, setSourceOptions, updateClip } from "../stores/queue";
+  import { audioSummary, clipCount, merge, removeClip, removeSource, runnable, setSourceOptions, toggleAudioTrack, updateClip } from "../stores/queue";
   import { canRun, runManifest, runner } from "../stores/runner.svelte";
   import { isUpscale } from "../stores/upscale";
   import { baseName, fmt } from "../time";
@@ -31,8 +31,7 @@
 
   function optionsSummary(v: VideoEntry): string {
     const mode = v.options?.mode === "accurate" ? "Frame-accurate" : v.options?.mode === "fast" ? "Fast" : "Default mode";
-    const a = v.options?.audio;
-    const audio = a === undefined ? "all audio" : a === "none" ? "no audio" : Array.isArray(a) ? `audio track ${a[0]}` : String(a);
+    const audio = audioSummary(v.options?.audio);
     const subs = v.options?.subtitles === "none" ? "no subtitles" : "subtitles";
     return `${mode} · ${audio} · ${subs}`;
   }
@@ -53,18 +52,35 @@
     }
   }
 
-  function audioOptions(input: string): { label: string; value: string }[] {
-    const tracks = (infoFor(input)?.streams ?? []).filter((s) => s.kind === "audio");
+  function audioTracks(input: string) {
+    return (infoFor(input)?.streams ?? []).filter((s) => s.kind === "audio");
+  }
+
+  function trackLabel(t: { language?: string; codec: string }, n: number): string {
+    return `Track ${n + 1}${t.language ? ` (${t.language})` : ""} · ${t.codec}`;
+  }
+
+  function audioOptions(v: VideoEntry): { label: string; value: string }[] {
+    const a = v.options?.audio;
     return [
       { label: "All audio", value: "all" },
       { label: "No audio", value: "none" },
-      ...tracks.map((t, n) => ({ label: `Track ${n + 1}${t.language ? ` (${t.language})` : ""} · ${t.codec}`, value: String(n + 1) })),
+      ...audioTracks(v.input).map((t, n) => ({ label: trackLabel(t, n), value: String(n + 1) })),
+      // Several tracks (ticked below, or from a manifest): shown as they are, not as the first.
+      ...(Array.isArray(a) && a.length > 1 ? [{ label: `Tracks ${a.join(", ")}`, value: "several" }] : []),
     ];
   }
 
   function audioValue(v: VideoEntry): string {
     const a = v.options?.audio;
-    return a === undefined ? "all" : Array.isArray(a) ? String(a[0]) : a;
+    if (a === undefined) return "all";
+    if (!Array.isArray(a)) return a;
+    return a.length > 1 ? "several" : String(a[0]);
+  }
+
+  function ticked(v: VideoEntry, track: number): boolean {
+    const a = v.options?.audio;
+    return a === undefined || a === "all" || (Array.isArray(a) && a.includes(track));
   }
 
   function setOption(v: VideoEntry, patch: PartialOptions) {
@@ -72,6 +88,7 @@
   }
 
   function setAudio(v: VideoEntry, value: string) {
+    if (value === "several") return;
     const audio: AudioSel | undefined = value === "all" ? undefined : value === "none" ? "none" : [Number(value)];
     setOption(v, { audio });
   }
@@ -135,8 +152,23 @@
             <option value="accurate">Frame-accurate</option>
           </select>
           <select aria-label="Audio for {baseName(v.input)}" value={audioValue(v)} onchange={(e) => setAudio(v, e.currentTarget.value)}>
-            {#each audioOptions(v.input) as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+            {#each audioOptions(v) as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
           </select>
+          {#if audioTracks(v.input).length > 1}
+            <fieldset class="tracks">
+              <legend class="faint">Audio tracks</legend>
+              {#each audioTracks(v.input) as t, n (n)}
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={ticked(v, n + 1)}
+                    onchange={() => setOption(v, { audio: toggleAudioTrack(v.options?.audio, n + 1, audioTracks(v.input).length) })}
+                  />
+                  {trackLabel(t, n)}
+                </label>
+              {/each}
+            </fieldset>
+          {/if}
           <select aria-label="Subtitles for {baseName(v.input)}" value={v.options?.subtitles ?? "all"} onchange={(e) => setOption(v, { subtitles: e.currentTarget.value === "none" ? "none" : undefined })}>
             <option value="all">Keep subtitles</option>
             <option value="none">No subtitles</option>
@@ -211,6 +243,10 @@
   .card-head { justify-content: space-between; }
   .name { font-weight: 650; padding: 0 var(--space-1); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }
   .opts select { flex: 1; min-width: 0; font-size: 12px; height: 28px; }
+  .opts { flex-wrap: wrap; }
+  .tracks { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); border: 0; padding: 0; margin: 0; font-size: 12px; }
+  .tracks legend { padding: 0; margin-right: var(--space-2); }
+  .tracks label { display: inline-flex; align-items: center; gap: var(--space-1); }
   .t { width: 100px; font-size: 12.5px; }
   .n { flex: 1 1 120px; min-width: 0; }
   .hint, .empty { margin: var(--space-1) 0; font-size: 12.5px; }

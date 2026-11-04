@@ -260,6 +260,17 @@ Upscale and export:
 12. **Export manifest** from the queue, then run it with
     `rmedia batch <manifest> --dry-run`. It plans the same jobs.
 
+Several audio tracks (needs a build newer than run 41550220800; skip it on that build):
+13. Make a test file with two audio tracks, using the bundled ffmpeg from the CLI folder:
+
+    ```powershell
+    & <cli folder>\rmedia-ffmpeg.exe -i $src -map 0:v -map 0:a -map 0:a -c copy $qa\footage\two-audio.mkv
+    ```
+
+    Add it as a source and open its options. Two **Audio tracks** tick boxes show under the
+    audio list. Untick track 2: the summary reads **audio track 1**. Tick it again: **all audio**.
+    Export the manifest: with track 2 unticked it has `"audio": [1]`.
+
 ### 4.3 MSI
 
 Uninstall the NSIS install first (**Settings › Apps › rmedia › Uninstall**; record the entry
