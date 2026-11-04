@@ -39,8 +39,8 @@ Windows. T079: Windows CI 482 passed, 0 failed (run 40345454414). Both are recor
   outgrow the folder's free space (L2, `DISK_FULL`), and a dead gifski is blamed on gifski on
   Windows too (test on both OSes, passed on `windows-latest` 2026-10-27). Also fixed 2026-10-27:
   Ctrl-C before the run (while locating the engine, scanning or planning) now exits 130 with a
-  `summary` line. Release run 40452999345 (gifski off) is the build for the Windows hardware
-  checks ([runbook](../../docs/operations/windows-owner-checks.md)). No engineering follow-ups
+  `summary` line. Release run 41550220800 (on 5fa548f, gifski off; replaces 40452999345) is the build for the
+  Windows hardware re-checks ([runbook](../../docs/operations/windows-owner-checks.md)). No engineering follow-ups
   remain open; `tauri.conf.json` is bumped to 0.3.0 at release.
 
 ## Measured

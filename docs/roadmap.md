@@ -4,7 +4,7 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-10-27.
+Last updated: 2026-11-04.
 
 ## Status at a Glance
 
@@ -157,6 +157,37 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - Tag `v0.1.0` and `v0.2.0`; Dependabot notices automation.
 - Owner checks: two-phone gallery test, a Reddit upload, +3 VMAF on real footage, Reddit's GIF
   limits, SC-009 on real footage with a mix of content (done for live action, 2026-11-02). The Windows installers and desktop app are untested on real hardware.
+
+### Update (2026-10-28 to 2026-11-04)
+
+- Fixed: the palette pass and the short estimate decoded to the end of the source (`4e9a41f`; an
+  8 s GIF from 21 min into a 62 min source went from about 30 min per pass to 6 s); job warnings
+  printed twice (`5a1984b`); gifsicle's file is kept only when smaller (`5fa548f`).
+- SC-009 became a quality bar and reddit-post's lossy went 30 to 10 (`a6a7fdc`, breaking). Sweep
+  on 9 real clips (saved / worst VMAF loss): lossy 0 2.0% / 0.00, 10 8.1% / 0.67, 20 10.4% / 1.42,
+  30 11.9% / 2.06, 60 15.0% / 3.97, 80 16.6% / 5.19.
+- Release run 41550220800 (on `5fa548f`, gifski off, gate ok, nothing published): Windows
+  artifact 13194480079, Linux 13193349290. Files are still named 0.2.0. Windows runbooks point at it.
+- Windows SSH checks on build 40740230580 (i7-1185G7, Iris Xe, Win 11) passed: Unicode and long
+  paths, accurate mode, skip, source hash, GIF post/comment, Reddit MP4, max-quality fallback,
+  9:16 smart, `clip --gif`, cancel cases a, a2, c, d, silent NSIS install, no VC++ DLLs bundled.
+  AI tier: cpu 29 fps, gpu 12 fps, ai 0.2 fps (refused as too slow); auto picks CPU. SC-009 on
+  that build failed (8.9% saved, worst loss 2.19) but does not count (palette bug).
+
+### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
+
+- Windows re-checks on run 41550220800: SC-009 (passes if worst loss is at most 1.0), installer
+  prompts and SmartScreen, the 12 desktop QA steps, cancel case (b), playback, the MSI.
+- AI speed comparison against run 40452999345's CLI (`doctor --recheck`); `doctor` lists the
+  Iris Xe twice (investigate).
+- Optional: clean-machine VC++ test in Windows Sandbox.
+- SC-003 timing on a quiet machine.
+- Cosmetic: "blurred background 00:55-00:55" shows a sub-second range as zero length; warning
+  lines run together over SSH.
+- Optional laptop cleanup: the cancel* output folders (157 MB and 57 MB).
+- Owner items: code signing (waiting on Azure details), the app licence (placeholder; gates any
+  gifski release), Reddit's limits, a real Reddit upload, the 002 owner checks (two-phone gallery
+  test, +3 VMAF on real footage), the 0.3.0 version bump and tags.
 
 ## Release and Project Housekeeping
 

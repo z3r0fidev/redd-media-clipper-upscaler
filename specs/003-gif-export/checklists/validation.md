@@ -85,7 +85,7 @@ Accepted / deferred:
 ## US2 calibration (2026-10-25)
 
 - SC-002, SC-003, SC-004 and SC-005 (same size) pass; numbers in tasks.md › T053.
-- **Open (owner): SC-009.** With gifsicle the default `reddit-post` GIF is 6.4% smaller over the
+- **SC-009 (superseded 2026-11-02: now a quality bar, see below).** With gifsicle the default `reddit-post` GIF is 6.4% smaller over the
   synthetic set (12.3% at the maximum lossy level), not 15%, with at most 0.76 VMAF lost. The
   bench asserts a provisional 5% floor until the owner either sets an automated bar for the
   synthetic set (as 002 did for its VMAF target) with 15% as a real-footage check, or changes

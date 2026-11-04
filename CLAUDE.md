@@ -12,10 +12,11 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Active feature: **003 GIF export for Reddit** (`specs/003-gif-export/`, 6 stories; gifsicle and
   gifski bundled as optional engines, gifski's AGPL gates releases on the app licence). Tasks
   written (T001–T080); 80/80 done (`specs/003-gif-export/progress.md`), including the
-  `release.yml` run with gifski off (40345344064) and the Windows CI results. Owner checks left:
-  the app licence, Reddit's limits, a real Reddit upload, Windows hardware and SC-009's 15% on
-  real footage. Progress list:
-  `docs/roadmap.md`.
+  `release.yml` run with gifski off (40345344064) and the Windows CI results. SC-009 is a quality bar
+  (gifsicle costs at most 1 VMAF point on any clip; the saving is reported; reddit-post lossy 10).
+  Owner checks left: the app licence, Reddit's limits, a real Reddit upload, and the Windows
+  re-checks (SC-009, installer prompts, desktop QA, cancel case b, playback, MSI) on release run
+  41550220800 (on 5fa548f, gifski off, nothing published). Pending list: `docs/roadmap.md`.
 - Done: 001 (`specs/001-video-clipping/`, 0.1.0) and 002 (`specs/002-mobile-upscale/`, 112/112,
   0.2.0 release candidate; owner checks left: two-phone gallery test, Reddit upload, +3 VMAF on
   real footage). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and
