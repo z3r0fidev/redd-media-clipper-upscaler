@@ -214,3 +214,54 @@ async fn cancelling_the_gifski_pipe_is_fast_and_clean() {
 async fn cancelling_the_budget_search_is_fast_and_clean() {
     cancel_gif_during("search", EngineChoice::Builtin, Some(1_000_000)).await;
 }
+
+/// Panics in one job's first progress event, as a bug inside that job's task would.
+struct PanicOnProgress {
+    job: rmedia_core::event::JobId,
+    fired: std::sync::atomic::AtomicBool,
+}
+impl EventSink for PanicOnProgress {
+    fn emit(&self, e: Event) {
+        if matches!(e, Event::JobProgress { job_id, .. } if job_id == self.job)
+            && !self.fired.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            panic!("injected panic in job {}", self.job);
+        }
+    }
+}
+
+/// H2 (001 review): a job whose task panics is reported as failed, never dropped, so the run
+/// cannot exit 0. Its partial file and ffmpeg process are gone, and the other job still runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_job_that_panics_fails_cleanly_and_the_others_still_run() {
+    let _serial = SERIAL.lock().await;
+    require_ffmpeg!();
+    let src = fixture(Fixture::Hd60Mp4);
+    let small = fixture(Fixture::Gop50Mp4);
+    let (tools, caps) = engine();
+    let out = tempfile::tempdir().unwrap();
+    let mut req = request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], opts(out.path(), Mode::Accurate));
+    req.sources.extend(request(&small, vec![clip(1.0, EndSpec::At(secs(3.0)))], Default::default()).sources);
+    let plan = make_plan(&req, &tools, &caps).await;
+    assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+    let (panicking, other) = (plan.jobs[0].id, plan.jobs[1].id);
+
+    let sink = Arc::new(PanicOnProgress { job: panicking, fired: Default::default() });
+    let cfg = RunConfig { jobs: 2, state_dir: Some(out.path().join("state")) };
+    let summary =
+        tokio::time::timeout(Duration::from_secs(60), exec::start(plan, tools, cfg, sink.clone()).wait())
+            .await
+            .expect("the run finishes");
+
+    assert!(sink.fired.load(std::sync::atomic::Ordering::SeqCst), "the panic was injected");
+    let outcome = |id| &summary.jobs.iter().find(|j| j.id == id).expect("every job is reported").outcome;
+    match outcome(panicking) {
+        JobOutcome::Failed { error } => assert_eq!(error.code, "INTERNAL", "{error:?}"),
+        o => panic!("the panicking job should fail, not {o:?}"),
+    }
+    assert!(matches!(outcome(other), JobOutcome::Succeeded { .. }), "{summary:?}");
+    assert_eq!((summary.succeeded, summary.failed), (1, 1));
+    assert_ne!(summary.exit_code, 0, "a run with a failed job must not exit 0");
+    assert!(partials(out.path()).is_empty(), "partial files left: {:?}", partials(out.path()));
+    assert!(child_engines().is_empty(), "orphaned engine processes: {:?}", child_engines());
+}
