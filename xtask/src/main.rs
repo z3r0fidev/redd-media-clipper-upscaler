@@ -407,6 +407,7 @@ fn copy_dir(from: &Path, to: &Path) -> Result<()> {
 
 fn pin_tools() -> Result<()> {
     let mut lock = read_lock()?;
+    let (old_version, old_release) = (lock.version.clone(), lock.release.clone());
     let line = lock.version.trim_start_matches('n').split('.').take(2).collect::<Vec<_>>().join(".");
     let out = Command::new("curl")
         .args([
@@ -475,11 +476,50 @@ fn pin_tools() -> Result<()> {
     }
     std::fs::write(root().join("xtask/tools.lock.json"), serde_json::to_string_pretty(&lock)? + "\n")?;
     println!("pinned {} ({})", lock.version, lock.release);
+    let notice_path = root().join("licenses/FFMPEG-NOTICE.md");
+    let notice = std::fs::read_to_string(&notice_path)?;
+    match ffmpeg_notice_for(&notice, (&old_version, &old_release), (&lock.version, &lock.release)) {
+        Ok(text) => {
+            std::fs::write(&notice_path, text)?;
+            println!("updated licenses/FFMPEG-NOTICE.md for {}", lock.version);
+        }
+        Err(e) => println!("licenses/FFMPEG-NOTICE.md needs updating by hand: {e}"),
+    }
     println!(
         "next, while the autobuild tag still exists: `gh workflow run ffmpeg-source.yml`, then \
-         `cargo xtask mirror mirror-<date>`, update licenses/FFMPEG-NOTICE.md, `cargo xtask check-pins`"
+         `cargo xtask mirror mirror-<date>`, `cargo xtask check-pins`"
     );
     Ok(())
+}
+
+/// The parts of a BtbN build version such as `n9.0.2-31-gc89d6ee1ca`: the tag (`n9.0.2`), the
+/// commits after it (`31`), the commit (`c89d6ee1ca`) and the release branch (`9.0`).
+fn ffmpeg_describe(version: &str) -> Option<(&str, &str, &str, String)> {
+    let (tag, rest) = version.split_once('-')?;
+    let (count, commit) = rest.split_once("-g")?;
+    let branch = tag.strip_prefix('n')?.split('.').take(2).collect::<Vec<_>>().join(".");
+    let ok = count.bytes().all(|b| b.is_ascii_digit())
+        && commit.len() >= 7
+        && commit.bytes().all(|b| b.is_ascii_hexdigit())
+        && branch.contains('.');
+    ok.then_some((tag, count, commit, branch))
+}
+
+/// `licenses/FFMPEG-NOTICE.md` moved from the `old` (version, release) pin to the `new` one: the
+/// build name, the source release and its link, the commit, the tag and the branch.
+fn ffmpeg_notice_for(text: &str, old: (&str, &str), new: (&str, &str)) -> Result<String> {
+    let parts = |v| ffmpeg_describe(v).with_context(|| format!("cannot read the FFmpeg version {v}"));
+    let (o_tag, o_count, o_commit, o_branch) = parts(old.0)?;
+    let (n_tag, n_count, n_commit, n_branch) = parts(new.0)?;
+    Ok(text
+        .replace(old.0, new.0)
+        .replace(old.1, new.1)
+        .replace(o_commit, n_commit)
+        .replace(&format!("release branch {o_branch}"), &format!("release branch {n_branch}"))
+        .replace(
+            &format!("tag `{o_tag}` + {o_count} commits"),
+            &format!("tag `{n_tag}` + {n_count} commits"),
+        ))
 }
 
 /// Downloads every pinned archive (FFmpeg and ncnn for all targets, model release archives) into
@@ -1046,6 +1086,34 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `pin-tools` moves the notice to the new build: every name, tag and link follows.
+    #[test]
+    fn the_ffmpeg_notice_follows_a_new_pin() {
+        let real = std::fs::read_to_string(root().join("licenses/FFMPEG-NOTICE.md")).unwrap();
+        let lock = read_lock().unwrap();
+        let (version, release) = ("n9.1.1-5-gabcdef1234", "autobuild-2026-12-01-12-00");
+        let new = ffmpeg_notice_for(&real, (&lock.version, &lock.release), (version, release)).unwrap();
+        for old in [lock.version.as_str(), lock.release.as_str(), "c89d6ee1ca", "`n9.0.2`", "branch 9.0"] {
+            assert!(!new.contains(old), "{old} is still in the notice:\n{new}");
+        }
+        for want in [
+            "`ffmpeg-n9.1.1-5-gabcdef1234`",
+            "release `autobuild-2026-12-01-12-00`",
+            "releases/tag/ffmpeg-source-n9.1.1-5-gabcdef1234",
+            "commit `abcdef1234` (release branch 9.1, tag `n9.1.1` + 5 commits)",
+            "github.com/FFmpeg/FFmpeg/commit/abcdef1234",
+            "FFmpeg-Builds at `autobuild-2026-12-01-12-00`",
+        ] {
+            assert!(new.contains(want), "missing {want}:\n{new}");
+        }
+        // The same pin leaves the notice as it is; a version it can't read is an error.
+        assert_eq!(
+            ffmpeg_notice_for(&real, (&lock.version, &lock.release), (&lock.version, &lock.release)).unwrap(),
+            real
+        );
+        assert!(ffmpeg_notice_for(&real, (&lock.version, &lock.release), ("n10.0", release)).is_err());
+    }
 
     #[test]
     fn mirror_text_is_added_once_per_pin_in_the_pretty_layout() {

@@ -117,8 +117,10 @@ Prerequisites: `curl` and `tar` on PATH (Linux), or `curl` plus the system `tar.
    repository (creating it if needed), adds the URLs under `mirrors` in both lock files, and sets
    `source` in `tools.lock.json` once the `ffmpeg-source-<version>` release exists. It needs `gh`
    logged in with write access.
-5. **Update `licenses/FFMPEG-NOTICE.md` by hand.** The notice names the exact build, release tag
-   and FFmpeg commit, and links the source release.
+5. **Check `licenses/FFMPEG-NOTICE.md`.** `pin-tools` already moved it to the new build: the build
+   name, the release tag, the FFmpeg commit, tag and branch, and the source-release link. Review the
+   diff. When it prints "needs updating by hand" (a version it can't read, such as after editing
+   `version` to move to a new release line), edit those five things yourself.
 6. `cargo xtask check-pins` must pass (CI runs it on every push): every pinned archive has a
    mirror, `source` is set, and the notice names the version, the release tag and the source
    release. Commit `xtask/*.lock.json` and `licenses/FFMPEG-NOTICE.md` together in a reviewed commit.
