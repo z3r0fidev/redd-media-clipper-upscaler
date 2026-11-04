@@ -173,6 +173,11 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   9:16 smart, `clip --gif`, cancel cases a, a2, c, d, silent NSIS install, no VC++ DLLs bundled.
   AI tier: cpu 29 fps, gpu 12 fps, ai 0.2 fps (refused as too slow); auto picks CPU. SC-009 on
   that build failed (8.9% saved, worst loss 2.19) but does not count (palette bug).
+- Tech debt closed 2026-11-04: an invalid `settings.json` is kept as
+  `settings.invalid-<time>.json` instead of being overwritten (`c8978b2`); `pin-tools` updates
+  `licenses/FFMPEG-NOTICE.md` (`2e2db88`); an injected-panic test covers the 001 review's H2
+  (`761a0c9`); the desktop queue picks several audio tracks (`1f0a223`; desktop step 13 needs a
+  build newer than run 41550220800).
 
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
