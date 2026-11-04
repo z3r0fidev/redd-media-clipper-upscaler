@@ -178,12 +178,18 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 - Windows re-checks on run 41550220800: SC-009 (passes if worst loss is at most 1.0), installer
   prompts and SmartScreen, the 12 desktop QA steps, cancel case (b), playback, the MSI.
-- AI speed comparison against run 40452999345's CLI (`doctor --recheck`); `doctor` lists the
-  Iris Xe twice (investigate).
+- AI speed comparison against run 40452999345's CLI (`doctor --recheck`).
+- `doctor` lists the Iris Xe twice: FFmpeg's Vulkan `GPU listing` reports it at index 0 and 1
+  (same name and PCI ID), which usually means two Intel Vulkan driver manifests are registered.
+  The listing has no UUID, so rmedia can't merge them safely. Owner: run
+  `reg query HKLM\SOFTWARE\Khronos\Vulkan\Drivers` on the laptop to confirm.
 - Optional: clean-machine VC++ test in Windows Sandbox.
 - SC-003 timing on a quiet machine.
-- Cosmetic: "blurred background 00:55-00:55" shows a sub-second range as zero length; warning
-  lines run together over SSH.
+- Fixed: a sub-second blurred-background range shows tenths (`00:54.6–00:55.4`), not
+  "00:55–00:55".
+- Recheck over SSH on run 41550220800: a warning line ran into the `✓` line on the older build,
+  right after the duplicate warning that 5a1984b removed. It does not reproduce in a Linux pty
+  (80 and 120 columns, wrapped warnings included).
 - Optional laptop cleanup: the cancel* output folders (157 MB and 57 MB).
 - Owner items: code signing (waiting on Azure details), the app licence (placeholder; gates any
   gifski release), Reddit's limits, a real Reddit upload, the 002 owner checks (two-phone gallery

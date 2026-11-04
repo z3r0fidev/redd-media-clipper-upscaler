@@ -447,12 +447,7 @@ fn reframe_line(
         AnalysisState::NotNeeded => format!("reframe: {name}"),
         AnalysisState::Pending => format!("reframe: {name} (analysis pending)"),
         AnalysisState::Ready(a, _) => {
-            let mmss = |t: rmedia_core::Ts| {
-                let s = t.as_secs_f64().round() as u64;
-                format!("{:02}:{:02}", s / 60, s % 60)
-            };
-            let ranges: Vec<String> =
-                a.fallback_ranges.iter().map(|r| format!("{}–{}", mmss(r.start), mmss(r.end))).collect();
+            let ranges: Vec<String> = a.fallback_ranges.iter().map(|r| span_label(r.start, r.end)).collect();
             let fallback = if ranges.is_empty() {
                 String::new()
             } else {
@@ -461,6 +456,24 @@ fn reframe_line(
             format!("reframe: {name}, {} shot(s){fallback}", a.shots.len())
         }
     }
+}
+
+/// `00:55–00:58`, or `00:55.2–00:55.8` for a range shorter than a second or one that whole
+/// seconds would show as zero length.
+fn span_label(start: rmedia_core::Ts, end: rmedia_core::Ts) -> String {
+    let mmss = |t: rmedia_core::Ts| {
+        let s = t.as_secs_f64().round() as u64;
+        format!("{:02}:{:02}", s / 60, s % 60)
+    };
+    let (a, b) = (mmss(start), mmss(end));
+    if a != b && end.as_secs_f64() - start.as_secs_f64() >= 1.0 {
+        return format!("{a}–{b}");
+    }
+    let tenths = |t: rmedia_core::Ts| {
+        let d = (t.as_secs_f64() * 10.0).round() as u64;
+        format!("{:02}:{:02}.{}", d / 600, d / 10 % 60, d % 10)
+    };
+    format!("{}–{}", tenths(start), tenths(end))
 }
 
 fn plan_doc(plan: &Plan) -> Value {
@@ -612,6 +625,7 @@ impl EventSink for RenderSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmedia_core::Ts;
 
     fn human(planned: &[(JobId, &str)]) -> RenderSink {
         RenderSink::Human {
@@ -626,6 +640,18 @@ mod tests {
     fn a_planned_warning_is_not_printed_again_during_the_run() {
         let sink = human(&[(1, "15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)")]);
         assert!(!sink.is_new_warning(1, "15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)"));
+    }
+
+    #[test]
+    fn a_range_shorter_than_a_second_is_not_shown_as_zero_length() {
+        let s = |a: f64, b: f64| span_label(Ts::from_secs_f64(a), Ts::from_secs_f64(b));
+        assert_eq!(s(55.2, 55.8), "00:55.2–00:55.8");
+        assert_eq!(s(54.6, 55.4), "00:54.6–00:55.4");
+        assert_eq!(s(59.9, 60.4), "00:59.9–01:00.4");
+        // A second or more keeps the short form.
+        assert_eq!(s(55.0, 58.0), "00:55–00:58");
+        assert_eq!(s(54.6, 55.6), "00:55–00:56");
+        assert_eq!(s(59.0, 86.4), "00:59–01:26");
     }
 
     #[test]
