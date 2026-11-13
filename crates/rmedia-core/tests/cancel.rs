@@ -263,5 +263,11 @@ async fn a_job_that_panics_fails_cleanly_and_the_others_still_run() {
     assert_eq!((summary.succeeded, summary.failed), (1, 1));
     assert_ne!(summary.exit_code, 0, "a run with a failed job must not exit 0");
     assert!(partials(out.path()).is_empty(), "partial files left: {:?}", partials(out.path()));
+    // A panic unwinds the task instead of awaiting the kill: on Windows the Job Object's
+    // kill-on-close ends ffmpeg asynchronously, so it may still be listed for a moment.
+    let t0 = Instant::now();
+    while !child_engines().is_empty() && t0.elapsed() < Duration::from_secs(5) {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     assert!(child_engines().is_empty(), "orphaned engine processes: {:?}", child_engines());
 }
