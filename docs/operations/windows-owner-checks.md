@@ -271,6 +271,13 @@ Several audio tracks (needs a build newer than run 41550220800; skip it on that 
     audio list. Untick track 2: the summary reads **audio track 1**. Tick it again: **all audio**.
     Export the manifest: with track 2 unticked it has `"audio": [1]`.
 
+Portrait preview (needs a build newer than run 41550220800; on that build a tall video shows
+pushed down and cut off at the bottom):
+
+14. Add a portrait video (taller than wide, such as a phone recording) and open it in **Clip**.
+    The whole picture shows, centred in the player, with no part cut off. Resize the window
+    narrower and wider: it stays whole and centred. Do the same with a landscape video.
+
 ### 4.3 MSI
 
 Uninstall the NSIS install first (**Settings › Apps › rmedia › Uninstall**; record the entry

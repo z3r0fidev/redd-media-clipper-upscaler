@@ -453,7 +453,7 @@
   h2 { margin: 0; font-size: 16px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .stage-row { flex: 1; min-height: 160px; display: flex; gap: var(--space-3); }
   .phone { flex: 0 0 auto; min-width: 0; }
-  .stage { position: relative; flex: 1; min-width: 0; min-height: 160px; border-radius: var(--radius-l); background: var(--stage-bg); overflow: hidden; display: grid; place-items: center; }
+  .stage { position: relative; flex: 1; min-width: 0; min-height: 160px; border-radius: var(--radius-l); background: var(--stage-bg); overflow: hidden; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; }
   .stage video, .stage img { width: 100%; height: 100%; object-fit: contain; }
   .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); color: #d9dbe5; background: rgba(7, 8, 12, 0.7); }
   .overlay .ghost { color: #d9dbe5; }
