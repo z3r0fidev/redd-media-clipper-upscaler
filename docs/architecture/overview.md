@@ -152,8 +152,10 @@ Other process rules:
 - On cancel the process tree is killed at once. There is no graceful `q`, because partial output
   is discarded anyway (research.md R7).
 - `ffprobe` calls time out after 60 s (`probe::PROBE_TIMEOUT`).
-- Short synchronous calls (`ffmpeg -version`, `ffmpeg -encoders`) use `tools::quiet_command`,
-  which also sets `CREATE_NO_WINDOW` on Windows.
+- Short looks at a tool (`ffmpeg -version`, `ffmpeg -encoders`, the GIF engines' `--version`)
+  use `exec::process::run_probe`: the same process group, Job Object and `CREATE_NO_WINDOW` as
+  every other spawn, bounded output, and a timeout (30 s for ffmpeg, 5 s for the engines) after
+  which the process tree is killed. No code spawns with `std::process` directly.
 
 ## Key Data Flow: Request → Plan → Exec → Commit
 

@@ -13,7 +13,7 @@ Last updated: 2026-11-14.
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
-| 004 Smart cut | Planned, next; not yet specified (`specs/004-smart-cut/` to come); version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
+| 004 Smart cut | Next; specified (`specs/004-smart-cut/spec.md`, 2026-11-14), plan and tasks to come; version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
 | 005 Budgeted Reddit video | Planned after 004; no version yet | MP4 with audio under Reddit size and length caps, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -204,7 +204,8 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
-Work in this order. The next session starts at item 5 (M1).
+Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; the next session starts with
+`/speckit-plan` for 004 (item 22), then item 8 (L1).
 
 **Owner actions**
 
@@ -222,15 +223,17 @@ Work in this order. The next session starts at item 5 (M1).
 
 **Security review findings (2026-11-14: no Critical or High, 3 Medium, 6 Low)**
 
-5. **M1 (verified; fix first, with a regression test).** `apps/desktop/src-tauri/src/ops.rs`,
+5. **Done 2026-11-14 (M1):** output paths with `..` or `.` steps are refused; regression test
+   `ops::tests::may_write_rejects_parent_dir_escapes`. Was: `apps/desktop/src-tauri/src/ops.rs`,
    `resolve_existing` (about line 1055), used by `may_write` (about 81) and the plan step (about
    405): `<picked>/nope/../../elsewhere` passes `starts_with` lexically and writes outside the
    picked output folder. Reject ParentDir and CurDir components, or normalise lexically and then
    canonicalise.
-6. **M2.** `ops.rs` `load_manifest` (about 348–361): opening a manifest grants read access to
+6. **Done 2026-11-14 (M2), decision: limit.** Manifest-named videos stay readable but never
+   unlock next-to-source writes; their clips need a picked output folder. Was: `ops.rs` `load_manifest` (about 348–361): opening a manifest grants read access to
    every video it names and next-to-source write access in their folders. Decide whether to
    confirm or limit manifest-granted paths; they must not unlock next-to-source writes.
-7. **M3.** `.github/workflows/dependabot-notices.yml`: check out `head.sha`, not `head.ref`, and
+7. **Done 2026-11-14 (M3).** Was: `.github/workflows/dependabot-notices.yml`: check out `head.sha`, not `head.ref`, and
    use the same SHA for the scope check; set `persist-credentials: false` on the PR checkout and
    give the token only to the push step.
 8. **L1.** `crates/rmedia-core/src/tools.rs`: the ffmpeg and ffprobe PATH lookup lacks the
@@ -244,11 +247,13 @@ Work in this order. The next session starts at item 5 (M1).
 
 **Code review findings (2026-11-14: layering holds)**
 
-14. Medium: `crates/rmedia-core/src/gif/engines.rs` (239–291): the banner and `kill_tree` spawn with
+14. Done 2026-11-14 (banner on `exec::process::run_probe`). Was: Medium: `crates/rmedia-core/src/gif/engines.rs` (239–291): the banner and `kill_tree` spawn with
     `std::process`, so no Job Object on Windows; this breaks the `exec::process` rule.
-15. Medium: `crates/rmedia-core/src/doctor.rs` (165–200, 263–270) uses synchronous `std::process`
+15. Done 2026-11-14 (`tools::locate`, `doctor::caps` and `doctor::run` are async, 30 s
+    timeout). Was: Medium: `crates/rmedia-core/src/doctor.rs` (165–200, 263–270) uses synchronous `std::process`
     with no timeout, called inline from the async `doctor_checked` (`ops.rs` 239–283).
-16. Medium: `crates/rmedia-core/src/exec/commit.rs` (50–58): the no-clobber fallback (when hard
+16. Done 2026-11-14 (placeholder removed on a failed rename; test). Was: Medium:
+    `crates/rmedia-core/src/exec/commit.rs` (50–58): the no-clobber fallback (when hard
     links are unavailable) can leave a zero-byte file at the target if the rename fails. Add a
     test.
 17. Medium: `exec/gif.rs` (482–500) `SizeWatch` polls every 250 ms and the overshoot bound is
@@ -259,16 +264,15 @@ Work in this order. The next session starts at item 5 (M1).
 19. Low: `#[allow(unsafe_code)]` in `upscale/capability.rs` (356) contradicts "unsafe only in
     `rmedia-sr` `ffi.rs`": document the exception or move the code.
 20. Low: `expect()` on locks in `crates/rmedia-cli/src/render.rs` (a poisoned lock panics).
-21. Tech debt: route every spawn through `exec::process` (the engines banner, doctor capability
-    probes, `tools::quiet_command`); split the large modules (`ops.rs`, `exec/gif.rs`,
+21. Tech debt: (every spawn now goes through `exec::process`, done 2026-11-14) split the large modules (`ops.rs`, `exec/gif.rs`,
     `upscale/capability.rs` 1373 lines, `plan/mod.rs` 1189, `xtask/gif_tools.rs` 1487, testkit
     `lib.rs` 1467); stop core calling `Settings::load()` inside doctor and capability code; run
     the GIF tests in the distro-ffmpeg CI job.
 
 **Planned features** (a version follows the feature number: 004 becomes 0.4.0)
 
-22. **004 Smart cut** (next; not yet specified; run `/speckit-specify`, then plan and tasks, in
-    `specs/004-smart-cut/`). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+22. **004 Smart cut** (next; specified in `specs/004-smart-cut/spec.md` on 2026-11-14; run
+    `/speckit-clarify` if wanted, then `/speckit-plan` and `/speckit-tasks`). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
     and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
     source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
     accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,
