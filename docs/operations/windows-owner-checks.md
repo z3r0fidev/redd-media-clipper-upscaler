@@ -53,12 +53,36 @@ Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -E
 Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue | Select-Object pv
 ```
 
-Create the working folders. One of them has spaces and non-ASCII letters, to test path handling:
+Set up the folders. Each build gets its own output folder, `$run`: if an earlier build's
+output is already there, rmedia skips the job (`skipped: output already exists`) and nothing is
+tested. If `$run` already exists from an earlier attempt, pick a new name, such as `0.3.0b`.
+`$uni` is the path for the non-ASCII path test in 3.2. Its folder has spaces and non-ASCII
+letters.
 
 ```powershell
 $qa = 'C:\rmedia-qa'
-New-Item -ItemType Directory -Force "$qa\artifact", "$qa\cli", "$qa\footage", "$qa\out", "$qa\Clips ünï 日本" | Out-Null
+$run = "$qa\0.3.0"
+# "Clips ünï 日本" and "vidéo à.mp4". They're built from escape codes because accented and CJK
+# text can reach PowerShell 5.1 mangled when pasted.
+$uniDir = Join-Path $run ([regex]::Unescape('Clips \u00fcn\u00ef \u65e5\u672c'))
+$uni = Join-Path $uniDir ([regex]::Unescape('vid\u00e9o \u00e0.mp4'))
+New-Item -ItemType Directory -Force "$qa\artifact", "$qa\cli", "$qa\footage", "$run\out", $uniDir | Out-Null
 ```
+
+The footage is in `C:\rmedia-qa\footage`. This runbook names each video by the number at the
+start of its file name (`1252564-….mp4`) and finds the file with a wildcard, so the titles stay
+out of the docs. Most steps use clip 1252564 as `$src`: 1280×720 with audio, 161 s long, so the
+cancel tests in 3.5 have time to stop it. On another machine, copy the videos with their names
+unchanged, or point `$src` at any 720p video with audio that is at least 2 minutes long.
+
+```powershell
+$src = (Get-ChildItem "$qa\footage\1252564-*.mp4").FullName; $src   # must print one path
+$uni                                                                # must print ...\vidéo à.mp4
+```
+
+If `$src` or `$uni` is empty, the later commands fail or write to the wrong folder. After
+reopening PowerShell, run this step's lines, step 3.1's `$cli` line and step 3.5's `Show-Left`
+again.
 
 ## 2. Download and Verify
 
@@ -67,10 +91,12 @@ New-Item -ItemType Directory -Force "$qa\artifact", "$qa\cli", "$qa\footage", "$
    authenticated `gh`, run
    `gh run download <run-id> -R z3r0fidev/redd-media-clipper-upscaler -n rmedia-x86_64-pc-windows-msvc -D C:\rmedia-qa\artifact`.
    `gh` unpacks the zip, so skip the hash check below.
-2. Check the zip against the digest on the run page, then unpack it:
+2. Check the zip against the digest on the run page, then unpack it into empty folders. Files
+   left from an earlier build, such as its installers, would otherwise be picked up later:
 
    ```powershell
    Get-FileHash C:\rmedia-qa\artifact\rmedia-x86_64-pc-windows-msvc.zip -Algorithm SHA256
+   Remove-Item -Recurse -Force C:\rmedia-qa\artifact\x, C:\rmedia-qa\cli -ErrorAction SilentlyContinue
    Expand-Archive C:\rmedia-qa\artifact\rmedia-x86_64-pc-windows-msvc.zip C:\rmedia-qa\artifact\x
    Get-ChildItem -Recurse C:\rmedia-qa\artifact\x | Select-Object FullName, Length
    ```
@@ -107,29 +133,30 @@ SmartScreen may warn on first run because the binaries are unsigned. Record whet
 
 ### 3.2 Clips (001) and Never Touching the Source
 
-Copy a real video into both folders, and note its hash:
+Copy the test video to the non-ASCII path, and note its hash:
 
 ```powershell
-Copy-Item <your video> "C:\rmedia-qa\footage\a.mp4"
-Copy-Item <your video> "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4"
-$before = Get-FileHash "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4"
-& $cli clip "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8
-& $cli clip "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8 --mode accurate -o C:\rmedia-qa\out
-& $cli clip "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8     # again: skipped, never overwritten
-(Get-FileHash "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4").Hash -eq $before.Hash   # must be True
+Copy-Item $src $uni
+Get-Item $uni | Select-Object FullName, Length    # must show "vidéo à.mp4"
+$before = Get-FileHash $uni
+& $cli clip $uni -s 10 -d 8
+& $cli clip $uni -s 10 -d 8 --mode accurate -o $run\out
+& $cli clip $uni -s 10 -d 8     # again: skipped, never overwritten
+(Get-FileHash $uni).Hash -eq $before.Hash   # must be True
 ```
 
 Check that:
-- the outputs land in `clips\` next to the source and in `C:\rmedia-qa\out`;
+- the first two commands write a file (`✓`), and the third is skipped;
+- the outputs land in `clips\` next to the source and in `$run\out`;
 - they play in the Windows player;
 - the paths that rmedia prints have no `\\?\` prefix.
 
 Long paths: repeat one clip with `-o` set to a folder whose full path is over 260 characters:
 
 ```powershell
-$long = 'C:\rmedia-qa\' + ('d' * 60 + '\') * 5
+$long = "$run\" + ('d' * 60 + '\') * 5
 New-Item -ItemType Directory -Force $long | Out-Null
-& $cli clip C:\rmedia-qa\footage\a.mp4 -s 10 -d 4 -o $long
+& $cli clip $src -s 10 -d 4 -o $long
 ```
 
 If you have a second drive or a OneDrive folder, also run one clip from it, and one clip to it.
@@ -138,14 +165,17 @@ If you have a second drive or a OneDrive folder, also run one clip from it, and 
 
 ```powershell
 & $cli gif --list-targets
-& $cli gif "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8 --dry-run
-& $cli gif "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8
-& $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 8 --target reddit-comment -o C:\rmedia-qa\out
-& $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 8 --format mp4 -o C:\rmedia-qa\out
-& $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 8 --target max-quality -o C:\rmedia-qa\out   # uses gifski; no ENGINE_FALLBACK
-& $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 6 --shape 9:16 --framing smart -o C:\rmedia-qa\out
-& $cli clip C:\rmedia-qa\footage\a.mp4 -s 30 -d 6 --gif -o C:\rmedia-qa\out
+& $cli gif $uni -s 10 -d 8 --dry-run
+& $cli gif $uni -s 10 -d 8
+& $cli gif $src -s 10 -d 8 --target reddit-comment -o $run\out
+& $cli gif $src -s 10 -d 8 --format mp4 -o $run\out
+& $cli gif $src -s 10 -d 8 --target max-quality -o $run\out   # uses gifski; no ENGINE_FALLBACK
+& $cli gif $src -s 10 -d 6 --shape 9:16 --framing smart -o $run\out
+& $cli clip $src -s 30 -d 6 --gif -o $run\out
 ```
+
+Every command except the dry run should write a file (`✓`). A `skipped` line means `$run`
+already holds that output, so the command tested nothing: start again with a new `$run`.
 
 For each command, record:
 - the summary line (size, width, fps, engine);
@@ -157,9 +187,9 @@ For each command, record:
 
 ```powershell
 & $cli doctor --recheck
-& $cli clip C:\rmedia-qa\footage\a.mp4 -s 10 -d 6 --upscale -o C:\rmedia-qa\out
-& $cli clip C:\rmedia-qa\footage\a.mp4 -s 10 -d 6 --upscale --tier ai -o C:\rmedia-qa\out
-& $cli upscale C:\rmedia-qa\footage\a.mp4 --dry-run          # whole video: plan only
+& $cli clip $src -s 10 -d 6 --upscale -o $run\out
+& $cli clip $src -s 10 -d 6 --upscale --tier ai -o $run\out\ai
+& $cli upscale $src --dry-run          # whole video: plan only
 ```
 
 Record the `tier:` lines.
@@ -174,25 +204,27 @@ build is noticeably slower, the fallback is shipping the three DLLs next to `rme
 ### 3.5 Cancel and Cleanup (001 SC-007, 003 SC-008)
 
 These tests check that Job Objects kill every child process and that no partial files are left.
-Use a source of a minute or more as `a.mp4`, so that each job is still running when you stop it.
-Close the desktop app first: case (c) ends every process named `rmedia`. Start a long GIF job,
-then stop it in three ways:
+`$src` is 161 s long, so each job is still running when you stop it. Close the desktop app first:
+case (c) ends every process named `rmedia`. Start a long GIF job, then stop it in three ways.
+Ctrl+C also stops the rest of the PowerShell line, so `Show-Left` and `$LASTEXITCODE` are
+separate commands: run them after the job has ended.
 
 ```powershell
 function Show-Left { Get-Process | Where-Object Name -like 'rmedia*' | Select-Object Name, Id
-                     Get-ChildItem -Recurse C:\rmedia-qa\out -Force -Filter *.part -ErrorAction SilentlyContinue }
+                     Get-ChildItem -Recurse $run\out -Force -Filter *.part -ErrorAction SilentlyContinue }
 
 # a) Ctrl+C: press it during "encode" or "optimise"; time how long it takes to return
-& $cli gif C:\rmedia-qa\footage\a.mp4 --budget none -o C:\rmedia-qa\out\cancel
+& $cli gif $src --budget none -o $run\out\cancel
 Show-Left      # expect nothing
 
 # b) Close the window: start the same job in a new PowerShell window, then close that window
-Start-Process powershell -ArgumentList '-NoExit', '-Command', "& '$cli' gif C:\rmedia-qa\footage\a.mp4 --budget none -o C:\rmedia-qa\out\cancel2"
+Start-Process powershell -ArgumentList '-NoExit', '-Command', "& '$cli' gif '$src' --budget none -o '$run\out\cancel2'"
 # ...close it with the X while it is encoding, then:
 Show-Left      # expect nothing
 
-# c) Kill the parent: start it again, then end only rmedia.exe
-Start-Process $cli -ArgumentList 'gif', 'C:\rmedia-qa\footage\a.mp4', '--budget', 'none', '-o', 'C:\rmedia-qa\out\cancel3'
+# c) Kill the parent: start it again, then end only rmedia.exe. Press nothing until Show-Left
+#    prints: Ctrl+C here would cancel the job normally and skip the kill.
+Start-Process $cli -ArgumentList 'gif', "`"$src`"", '--budget', 'none', '-o', "`"$run\out\cancel3`""
 Start-Sleep 5; Stop-Process -Name rmedia -Force
 Start-Sleep 2; Show-Left      # expect no rmedia-ffmpeg / rmedia-gifsicle left
 ```
@@ -203,10 +235,12 @@ d) Ctrl+C before the run (needs a build from `fae5d47` or later, such as run 435
    the last line a `summary` with `"exit_code":130`.
 
    ```powershell
-   & $cli gif C:\Users --json -o C:\rmedia-qa\out\cancel5 ; $LASTEXITCODE
+   & $cli gif C:\Users --json -o $run\out\cancel5
+   $LASTEXITCODE      # expect 130
    ```
 
-Repeat case (a) with an upscale job for 002: `& $cli upscale C:\rmedia-qa\footage\a.mp4 --tier cpu -o C:\rmedia-qa\out\cancel4`.
+Repeat case (a) with an upscale job for 002, then run `Show-Left`:
+`& $cli upscale $src --tier cpu -o $run\out\cancel4`.
 
 Pass: case (a) returns within 2 s. In every case, no `rmedia-ffmpeg`, `rmedia-ffprobe`,
 `rmedia-gifsicle`, `rmedia-gifski` or `rmedia-sr` process is left, and no `.part` file remains.
@@ -241,7 +275,8 @@ Basics:
 
 Clip and queue:
 
-4. Add `C:\rmedia-qa\Clips ünï 日本` as a source. The video lists and plays, and seeking works.
+4. Add the folder `C:\rmedia-qa\0.3.0\Clips ünï 日本` (`$uniDir`, with the copy from 3.2) as a
+   source. The video lists and plays, and seeking works.
 5. Mark In and Out and add a clip to the queue. **Run**. The clip is written, and the result
    plays in the app.
 
@@ -251,7 +286,8 @@ GIF view:
    or format.
 7. **Export now** (SC-007: count the clicks after opening the video; at most 3). The result card
    shows its size. The GIF plays in the app and is within the target's limit.
-8. Export the same range with the CLI (`gif … -s <in> -e <out>`). The two files must be
+8. Export the same range with the CLI, into its own folder so it isn't skipped
+   (`& $cli gif <video> -s <in> -e <out> -o $run\out\cli`). The two files must be
    byte-identical:
 
    ```powershell
@@ -270,12 +306,12 @@ Upscale and export:
 
 Several audio tracks (needs run 43534418980 or newer; skip it on older builds):
 
-13. Make a test file with two audio tracks from `a.mp4` (it needs an audio track), using the
+13. Make a test file with two audio tracks from `$src` (it has one audio track), using the
     bundled ffmpeg next to `$cli` from step 3.1:
 
     ```powershell
     $ffmpeg = Join-Path (Split-Path $cli) rmedia-ffmpeg.exe
-    & $ffmpeg -i C:\rmedia-qa\footage\a.mp4 -map 0:v -map 0:a -map 0:a -c copy C:\rmedia-qa\footage\two-audio.mkv
+    & $ffmpeg -i $src -map 0:v -map 0:a -map 0:a -c copy $run\two-audio.mkv
     ```
 
     Add it as a source and open its options. Two **Audio tracks** tick boxes show under the
@@ -285,9 +321,10 @@ Several audio tracks (needs run 43534418980 or newer; skip it on older builds):
 Portrait preview (needs run 43534418980 or newer; on older builds a tall video shows
 pushed down and cut off at the bottom):
 
-14. Add a portrait video (taller than wide, such as a phone recording) and open it in **Clip**.
+14. Add a portrait video (taller than wide, such as clip 1250486, whose SC-009 GIF was 406×720)
+    and open it in **Clip**.
     The whole picture shows, centred in the player, with no part cut off. Resize the window
-    narrower and wider: it stays whole and centred. Do the same with a landscape video.
+    narrower and wider: it stays whole and centred. Do the same with a landscape video, such as `$src`.
 
 ### 4.3 MSI
 
@@ -303,7 +340,9 @@ Start the app once, then uninstall it. Check that `%APPDATA%\OpenLogic\rmedia` a
 
 ### 5.1 Choose the Footage
 
-Pick 8–12 real clips of the kind you would post, each 6–10 s long and 720p or larger. Mix the
+The footage folder already holds the nine clips chosen for the 2026-10 check. Step 8 of
+[Windows checks over SSH](windows-owner-checks-ssh.md#the-set-used-for-the-2026-10-check) writes
+`clips.csv` for them; the same commands work here. To choose a new set instead, pick 8–12 real clips of the kind you would post, each 6–10 s long and 720p or larger. Mix the
 content:
 - gameplay;
 - phone video of people;
@@ -314,7 +353,8 @@ content:
 - a talking head.
 
 Avoid clips whose scene changes completely at every cut. List them in
-`C:\rmedia-qa\footage\clips.csv` (absolute paths; start and duration in seconds):
+`C:\rmedia-qa\footage\clips.csv` (absolute paths; start and duration in seconds). For example
+(these are not files on the machine):
 
 ```text
 file,start,duration
@@ -335,7 +375,7 @@ the repo, or copy it over RDP. For each clip it:
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/z3r0fidev/redd-media-clipper-upscaler/main/docs/operations/windows-qa/Measure-Sc009.ps1 -OutFile C:\rmedia-qa\Measure-Sc009.ps1
 Get-Content C:\rmedia-qa\Measure-Sc009.ps1      # read it before running it
-powershell -ExecutionPolicy Bypass -File C:\rmedia-qa\Measure-Sc009.ps1 -Cli $cli -Clips C:\rmedia-qa\footage\clips.csv -Out C:\rmedia-qa\sc009
+powershell -ExecutionPolicy Bypass -File C:\rmedia-qa\Measure-Sc009.ps1 -Cli $cli -Clips C:\rmedia-qa\footage\clips.csv -Out $run\sc009
 ```
 
 The script ends with a line like:
@@ -345,7 +385,7 @@ SC-009: 10 clips, 61,234,567 -> 56,234,567 bytes (8.2% smaller), worst VMAF loss
 ```
 
 The **pass** condition: no clip loses more than 1.0 VMAF point. The saving is recorded, not
-judged. Keep `C:\rmedia-qa\sc009\results.csv`; its per-clip rows show which content gifsicle helps.
+judged. Keep `$run\sc009\results.csv`; its per-clip rows show which content gifsicle helps.
 Open a few pairs (`NN\plain` against `NN\gifsicle`) side by side in Edge for a visual check.
 
 If a clip loses more than 1.0 at the default lossy level (10), that is the result to report; do

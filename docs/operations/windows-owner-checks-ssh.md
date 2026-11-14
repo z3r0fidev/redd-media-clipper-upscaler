@@ -43,16 +43,21 @@ out of the docs. On another machine, copy the videos with their names unchanged.
 ## 1. Start PowerShell and Set Up
 
 OpenSSH on Windows usually opens `cmd`, so start PowerShell first. UTF-8 output makes the
-Unicode folder names print correctly:
+Unicode folder names print correctly.
+
+Each build gets its own output folder, `$run`: if an earlier build's output is already there,
+rmedia skips the job (`skipped: output already exists`) and nothing is tested. If `$run` already
+exists from an earlier attempt, pick a new name, such as `0.3.0b`.
 
 ```powershell
 powershell
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $qa = 'C:\rmedia-qa'
+$run = "$qa\0.3.0"
 # "Clips ünï 日本", for step 4's non-ASCII path test. It's built from escape codes because
 # accented and CJK text typed or pasted over SSH can reach PowerShell 5.1 mangled.
-$uniDir = Join-Path $qa ([regex]::Unescape('Clips \u00fcn\u00ef \u65e5\u672c'))
-New-Item -ItemType Directory -Force "$qa\artifact", "$qa\cli", "$qa\footage", "$qa\out", $uniDir | Out-Null
+$uniDir = Join-Path $run ([regex]::Unescape('Clips \u00fcn\u00ef \u65e5\u672c'))
+New-Item -ItemType Directory -Force "$qa\artifact", "$qa\cli", "$qa\footage", "$run\out", $uniDir | Out-Null
 ```
 
 Record the machine details:
@@ -69,8 +74,12 @@ Now run the `scp` commands from step 0.
 
 ## 2. Verify and Unpack
 
+Unpack into empty folders. Files left from an earlier build, such as its installers, would
+otherwise be picked up later (step 9's `$setup` finds two installers and fails).
+
 ```powershell
 (Get-FileHash $qa\artifact\rmedia-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash   # A437796F…BD42B
+Remove-Item -Recurse -Force $qa\artifact\x, $qa\cli -ErrorAction SilentlyContinue
 Expand-Archive $qa\artifact\rmedia-x86_64-pc-windows-msvc.zip $qa\artifact\x
 Get-ChildItem -Recurse $qa\artifact\x | Select-Object FullName, Length
 
@@ -79,7 +88,7 @@ Expand-Archive $zip.FullName $qa\cli
 $cli = (Get-ChildItem -Recurse $qa\cli -Filter rmedia.exe | Select-Object -First 1).FullName
 ```
 
-If the SSH session drops, reconnect and run `powershell`, the `[Console]` line, the `$qa` and
+If the SSH session drops, reconnect and run `powershell`, the `[Console]` line, the `$qa`, `$run` and
 `$uniDir` lines, the `$cli` line, and step 4's `$src` and `$uni` lines again. Step 7's
 `Show-Left` must be defined again too.
 
@@ -106,7 +115,7 @@ Steps 4–7 use clip 1252564: 1280×720 with audio, 161 s long, so the cancel te
 time to stop it.
 
 `$uni` is not a file you supply. The `Copy-Item` line makes it: a copy of the clip at
-`C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4`, to check that rmedia handles a non-ASCII path and
+`C:\rmedia-qa\0.3.0\Clips ünï 日本\vidéo à.mp4`, to check that rmedia handles a non-ASCII path and
 never changes its source. Like `$uniDir`, the name is built from escape codes.
 
 Check that `$src` and `$uni` each print a path before going on. If either is empty, `Copy-Item`
@@ -119,13 +128,13 @@ $uni = Join-Path $uniDir ([regex]::Unescape('vid\u00e9o \u00e0.mp4')); $uni   # 
 Copy-Item $src $uni
 Get-Item $uni | Select-Object FullName, Length                        # must show "vidéo à.mp4"
 $before = Get-FileHash $uni
-& $cli clip $uni -s 10 -d 8
-& $cli clip $uni -s 10 -d 8 --mode accurate -o $qa\out
+& $cli clip $uni -s 10 -d 8                          # must write a file (✓)
+& $cli clip $uni -s 10 -d 8 --mode accurate -o $run\out
 & $cli clip $uni -s 10 -d 8          # again: must say skipped
 (Get-FileHash $uni).Hash -eq $before.Hash   # must be True
 
 # A path over 260 characters
-$long = 'C:\rmedia-qa\' + ('d' * 60 + '\') * 5
+$long = "$run\" + ('d' * 60 + '\') * 5
 New-Item -ItemType Directory -Force $long | Out-Null
 & $cli clip $src -s 10 -d 4 -o $long
 ```
@@ -138,12 +147,15 @@ Check that no path rmedia prints starts with `\\?\`.
 & $cli gif --list-targets
 & $cli gif $uni -s 10 -d 8 --dry-run
 & $cli gif $uni -s 10 -d 8
-& $cli gif $src -s 10 -d 8 --target reddit-comment -o $qa\out
-& $cli gif $src -s 10 -d 8 --format mp4 -o $qa\out
-& $cli gif $src -s 10 -d 8 --target max-quality -o $qa\out    # uses gifski; no ENGINE_FALLBACK
-& $cli gif $src -s 10 -d 6 --shape 9:16 --framing smart -o $qa\out
-& $cli clip $src -s 30 -d 6 --gif -o $qa\out
+& $cli gif $src -s 10 -d 8 --target reddit-comment -o $run\out
+& $cli gif $src -s 10 -d 8 --format mp4 -o $run\out
+& $cli gif $src -s 10 -d 8 --target max-quality -o $run\out    # uses gifski; no ENGINE_FALLBACK
+& $cli gif $src -s 10 -d 6 --shape 9:16 --framing smart -o $run\out
+& $cli clip $src -s 30 -d 6 --gif -o $run\out
 ```
+
+Every command except the dry run should write a file (`✓`). A `skipped` line means `$run`
+already holds that output, so the command tested nothing: start again with a new `$run`.
 
 For each command, record:
 - the summary line (size, width, fps, engine);
@@ -153,7 +165,7 @@ Without a player, check that the Reddit MP4s have no audio track:
 
 ```powershell
 $ff = (Get-ChildItem -Recurse $qa\cli -Filter rmedia-ffprobe.exe | Select-Object -First 1).FullName
-Get-ChildItem $qa\out -Filter *_reddit-*.mp4 | ForEach-Object {
+Get-ChildItem $run\out -Filter *_reddit-*.mp4 | ForEach-Object {
   $_.Name; & $ff -v error -show_entries stream=codec_type -of csv=p=0 "file:$($_.FullName)" }
 ```
 
@@ -168,8 +180,8 @@ no OpenMP, so the AI worker should start without the VC++ runtime.
 
 ```powershell
 & $cli doctor --recheck
-& $cli clip $src -s 10 -d 6 --upscale -o $qa\out
-Measure-Command { & $cli clip $src -s 10 -d 6 --upscale --tier ai -o $qa\out\ai | Out-Host } |
+& $cli clip $src -s 10 -d 6 --upscale -o $run\out
+Measure-Command { & $cli clip $src -s 10 -d 6 --upscale --tier ai -o $run\out\ai | Out-Host } |
   Select-Object TotalSeconds
 & $cli upscale $src --dry-run
 ```
@@ -193,20 +205,28 @@ available. If this build is noticeably slower, the fallback is shipping the thre
 
 ```powershell
 function Show-Left { Get-Process | Where-Object Name -like 'rmedia*' | Select-Object Name, Id
-                     Get-ChildItem -Recurse $qa\out -Force -Filter *.part -ErrorAction SilentlyContinue }
+                     Get-ChildItem -Recurse $run\out -Force -Filter *.part -ErrorAction SilentlyContinue }
 
 # a) Press Ctrl+C once the progress bar starts moving; it should return within 2 s
-& $cli gif $src --budget none -o $qa\out\cancel-a; Show-Left
+& $cli gif $src --budget none -o $run\out\cancel-a
+Show-Left
 
 # a, 002) The same with an upscale job
-& $cli upscale $src --tier cpu -o $qa\out\cancel-a2; Show-Left
+& $cli upscale $src --tier cpu -o $run\out\cancel-a2
+Show-Left
 
-# c) Kill only the parent (one line: it starts the job, kills rmedia.exe 5 s later, then checks)
-Start-Process $cli -ArgumentList 'gif', "`"$src`"", '--budget', 'none', '-o', "$qa\out\cancel-c" -NoNewWindow; Start-Sleep 5; Stop-Process -Name rmedia -Force; Start-Sleep 2; Show-Left
+# c) Kill only the parent (one line: it starts the job, kills rmedia.exe 5 s later, then checks).
+#    Press nothing until Show-Left has run: Ctrl+C would cancel the job normally and skip the kill.
+Start-Process $cli -ArgumentList 'gif', "`"$src`"", '--budget', 'none', '-o', "$run\out\cancel-c" -NoNewWindow; Start-Sleep 5; Stop-Process -Name rmedia -Force; Start-Sleep 2; Show-Left
 
 # d) Ctrl+C while it is still scanning, before any job_started line; expect 130
-& $cli gif C:\Users --json -o $qa\out\cancel5 ; $LASTEXITCODE
+& $cli gif C:\Users --json -o $run\out\cancel5
+$LASTEXITCODE      # expect 130
 ```
+
+Ctrl+C also stops the rest of the PowerShell line, so in (a) and (d) `Show-Left` and
+`$LASTEXITCODE` are separate commands: run them after the job has ended. In (c), the
+`cancelling…` line must not appear: rmedia is killed, not cancelled.
 
 `Show-Left` should print nothing every time. Each case needs its own new folder. If a folder
 already holds the output, the job is skipped and there is nothing to cancel: delete the folder
@@ -232,8 +252,8 @@ C:\rmedia-qa\footage\game.mp4,42,8
 
 For this check, the next section writes the CSV and then runs the script. It passes when no
 clip loses more than 1.0 VMAF point; the saving is recorded, not judged. Keep
-`C:\rmedia-qa\sc009\results.csv`. `-Out` must be a new or empty folder. If an earlier attempt
-left files in `sc009`, pass a new name, such as `$qa\sc009b`.
+`C:\rmedia-qa\0.3.0\sc009\results.csv`. `-Out` must be a new or empty folder. If an earlier attempt
+left files in `sc009`, pass a new name, such as `$run\sc009b`.
 
 ### The Set Used for the 2026-10 Check
 
@@ -278,7 +298,7 @@ Then run the script:
 
 ```powershell
 Get-Content $qa\Measure-Sc009.ps1          # read it before running it
-powershell -ExecutionPolicy Bypass -File $qa\Measure-Sc009.ps1 -Cli $cli -Clips $csv -Out $qa\sc009
+powershell -ExecutionPolicy Bypass -File $qa\Measure-Sc009.ps1 -Cli $cli -Clips $csv -Out $run\sc009
 ```
 
 ## 9. Needs the Screen or RDP
@@ -307,7 +327,7 @@ Fill in the [results sheet](windows-owner-checks.md#results-sheet), then copy th
 files back to the Linux machine:
 
 ```bash
-scp <user>@<host>:C:/rmedia-qa/doctor.json <user>@<host>:C:/rmedia-qa/sc009/results.csv .
+scp <user>@<host>:C:/rmedia-qa/doctor.json <user>@<host>:C:/rmedia-qa/0.3.0/sc009/results.csv .
 ```
 
 ## Related
