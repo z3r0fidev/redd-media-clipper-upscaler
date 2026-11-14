@@ -115,7 +115,7 @@ copies the clip into the current folder without an error, and the later commands
 
 ```powershell
 $src = (Get-ChildItem "$qa\footage\1252564-*.mp4").FullName; $src   # must print one path
-$uni = Join-Path $uniDir ([regex]::Unescape('vidéo à.mp4')); $uni   # must print ...\vidéo à.mp4
+$uni = Join-Path $uniDir ([regex]::Unescape('vid\u00e9o \u00e0.mp4')); $uni   # must print ...\vidéo à.mp4
 Copy-Item $src $uni
 Get-Item $uni | Select-Object FullName, Length                        # must show "vidéo à.mp4"
 $before = Get-FileHash $uni
