@@ -254,7 +254,7 @@ impl AppState {
     }
 
     /// Locates the engine (cached until settings change), without the GPU check.
-    pub fn doctor(&self) -> DoctorReport {
+    pub async fn doctor(&self) -> DoctorReport {
         let s = lock(&self.settings).clone();
         let (report, found) = doctor::run(&LocateOptions {
             ffmpeg: s.ffmpeg_path,
@@ -262,7 +262,8 @@ impl AppState {
             gifsicle: s.gifsicle_path,
             gifski: s.gifski_path,
             bundled_dir: None,
-        });
+        })
+        .await;
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = found;
         report
     }
@@ -293,17 +294,18 @@ impl AppState {
             gifsicle: s.gifsicle_path,
             gifski: s.gifski_path,
             bundled_dir: None,
-        });
+        })
+        .await;
         doctor::check_capability(&mut report, found.as_mut(), mode, &CancellationToken::new()).await;
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = found;
         Ok(report)
     }
 
-    fn engine(&self) -> OpResult<(Tools, Caps)> {
+    async fn engine(&self) -> OpResult<(Tools, Caps)> {
         if let Some(e) = self.engine.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
             return Ok(e);
         }
-        let report = self.doctor();
+        let report = self.doctor().await;
         self.engine
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -313,7 +315,7 @@ impl AppState {
 
     pub async fn probe(&self, path: &Path) -> OpResult<MediaInfo> {
         let path = self.require_allowed(path)?;
-        let (tools, _) = self.engine()?;
+        let (tools, _) = self.engine().await?;
         probe::probe(&tools, &path, &CancellationToken::new()).await.map_err(|e| e.to_string())
     }
 
@@ -325,7 +327,7 @@ impl AppState {
         on_event: &(dyn Fn(ScanEvent) + Send + Sync),
     ) -> OpResult<ScanResult> {
         let roots = roots.iter().map(|r| self.require_allowed(r)).collect::<OpResult<Vec<_>>>()?;
-        let (tools, _) = self.engine()?;
+        let (tools, _) = self.engine().await?;
         let cancel = CancellationToken::new();
         lock(&self.scans).insert(scan_id.clone(), cancel.clone());
         let result = discover::scan(&tools, &roots, &opts, on_event, &cancel).await;
@@ -423,7 +425,7 @@ impl AppState {
     /// Validates the queue and plans it. The plan is kept for `run` under its run id.
     pub async fn plan(&self, manifest: &Value) -> OpResult<Plan> {
         let req = self.queue_request(manifest)?;
-        let (tools, caps) = self.engine()?;
+        let (tools, caps) = self.engine().await?;
         let mut plan = plan::plan(&req, &tools, &caps, &CancellationToken::new()).await;
         {
             let allowed = lock(&self.allowed);
@@ -450,7 +452,7 @@ impl AppState {
         if plan.has_errors() {
             return Err("the queue has errors; fix them before running".into());
         }
-        let (tools, _) = self.engine()?;
+        let (tools, _) = self.engine().await?;
         let jobs = lock(&self.settings).jobs.map_or_else(exec::default_jobs, usize::from);
         let handle = exec::start(plan, tools, RunConfig { jobs, ..RunConfig::default() }, sink);
         lock(&self.runs).insert(run_id.to_owned(), handle.control());
@@ -520,7 +522,7 @@ impl AppState {
         on_progress: &(dyn Fn(f64) + Send + Sync),
     ) -> OpResult<String> {
         let info = self.probe(path).await?;
-        let (tools, _) = self.engine()?;
+        let (tools, _) = self.engine().await?;
         let proxy = preview::ensure_proxy(
             &tools,
             &info,
@@ -536,7 +538,7 @@ impl AppState {
 
     pub async fn frame_at(&self, path: &Path, t: f64, height: u32) -> OpResult<Vec<u8>> {
         let info = self.probe(path).await?;
-        let (tools, _) = self.engine()?;
+        let (tools, _) = self.engine().await?;
         preview::frame_at(
             &tools,
             &info,
@@ -552,7 +554,7 @@ impl AppState {
     pub async fn thumbnails(&self, path: &Path, n: usize) -> OpResult<Vec<String>> {
         use base64::Engine as _;
         let info = self.probe(path).await?;
-        let (tools, _) = self.engine()?;
+        let (tools, _) = self.engine().await?;
         let files = preview::thumbnails(&tools, &info, n, &self.cache(), &CancellationToken::new())
             .await
             .map_err(|e| e.to_string())?;
@@ -617,7 +619,7 @@ impl AppState {
 
     /// Sets (or resets) a GIF engine's program. Only from the native file dialog in Rust, never
     /// from the page: a regular file (no symlink, no folder) that identifies itself as the engine.
-    pub fn set_gif_engine_path(&self, kind: EngineKind, path: Option<PathBuf>) -> OpResult<()> {
+    pub async fn set_gif_engine_path(&self, kind: EngineKind, path: Option<PathBuf>) -> OpResult<()> {
         let path = match path {
             None => None,
             Some(p) => {
@@ -628,7 +630,7 @@ impl AppState {
                         p.display()
                     ));
                 }
-                let status = rmedia_core::gif::engines::locate(kind, Some(&p), None, None, &[]);
+                let status = rmedia_core::gif::engines::locate(kind, Some(&p), None, None, &[]).await;
                 if !status.ok {
                     return Err(format!(
                         "{}: {}",
@@ -680,7 +682,7 @@ impl AppState {
         }
         let (start, end) = span.map(RangeArg::span).transpose()?.unwrap_or((Ts::ZERO, EndSpec::EndOfMedia));
         let path = self.require_allowed(path)?;
-        let (tools, caps) = self.engine()?;
+        let (tools, caps) = self.engine().await?;
         let cancel = CancellationToken::new();
         {
             // Under the runs lock: a run that starts after this check cancels the estimate
@@ -797,7 +799,7 @@ impl AppState {
                 }
             }
         }
-        let (tools, _) = self.engine()?;
+        let (tools, _) = self.engine().await?;
         let info =
             probe::probe(&tools, &expected, &CancellationToken::new()).await.map_err(|e| e.to_string())?;
         let v = info.first_video().ok_or("the output has no video")?;
@@ -836,7 +838,7 @@ impl AppState {
         }
         let span = span.map(RangeArg::span).transpose()?;
         let path = self.require_allowed(path)?;
-        let (tools, caps) = self.engine()?;
+        let (tools, caps) = self.engine().await?;
         let cancel = CancellationToken::new();
         {
             let mut running = lock(&self.analyses);
@@ -897,7 +899,7 @@ impl AppState {
         let span = span.map(RangeArg::span).transpose()?;
         let at = seconds(at)?;
         let path = self.require_allowed(path)?;
-        let (tools, caps) = self.engine()?;
+        let (tools, caps) = self.engine().await?;
         let presets = PresetRegistry::load(rmedia_core::settings::config_dir().as_deref());
         let req = PreviewRequest { path, span, at, options: options.clone() };
         let out = self.cache_dir.join("upscale-preview");

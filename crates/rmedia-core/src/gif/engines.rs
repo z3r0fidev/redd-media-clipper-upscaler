@@ -10,12 +10,13 @@
 //! cleared environment, a 5 s timeout and bounded output.
 
 use std::ffi::OsString;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
 
+use crate::error::Error;
+use crate::exec::process;
 use crate::tools::{Tool, ToolSource};
 
 /// How long `--version` may take.
@@ -128,29 +129,31 @@ pub struct EngineLookup {
 
 impl Engines {
     /// Finds both engines (environment variables included).
-    pub fn locate(opts: &EngineLookup) -> Engines {
+    pub async fn locate(opts: &EngineLookup) -> Engines {
         let bundled_dir = opts
             .bundled_dir
             .clone()
             .or_else(|| std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)));
         let env = |k: EngineKind| std::env::var_os(k.env_var()).filter(|v| !v.is_empty()).map(PathBuf::from);
         let refused: Vec<PathBuf> = std::env::current_dir().into_iter().collect();
-        Engines {
-            gifsicle: locate(
+        let (gifsicle_env, gifski_env) = (env(EngineKind::Gifsicle), env(EngineKind::Gifski));
+        let (gifsicle, gifski) = tokio::join!(
+            locate(
                 EngineKind::Gifsicle,
                 opts.gifsicle.as_deref(),
-                env(EngineKind::Gifsicle).as_deref(),
+                gifsicle_env.as_deref(),
                 bundled_dir.as_deref(),
                 &refused,
             ),
-            gifski: locate(
+            locate(
                 EngineKind::Gifski,
                 opts.gifski.as_deref(),
-                env(EngineKind::Gifski).as_deref(),
+                gifski_env.as_deref(),
                 bundled_dir.as_deref(),
                 &refused,
             ),
-        }
+        );
+        Engines { gifsicle, gifski }
     }
 
     /// Refuses PATH-found engines inside any of `dirs` (a job's input folders and scratch).
@@ -174,7 +177,7 @@ impl Engines {
 }
 
 /// Finds one engine and checks that it runs and identifies itself.
-pub fn locate(
+pub async fn locate(
     kind: EngineKind,
     explicit: Option<&Path>,
     env: Option<&Path>,
@@ -206,7 +209,7 @@ pub fn locate(
             format!("found on PATH inside {}, which is not trusted", dir.display()),
         );
     }
-    match banner(&path, BANNER_TIMEOUT).map(|b| kind.parse_banner(&b)) {
+    match banner(&path, BANNER_TIMEOUT).await.map(|b| kind.parse_banner(&b)) {
         Ok(Some(version)) => EngineStatus {
             name: kind,
             path: Some(path),
@@ -240,55 +243,27 @@ pub(crate) fn engine_env() -> Vec<(OsString, OsString)> {
 }
 
 /// Runs `path --version` with a cleared environment, returning at most 4 KiB of its stdout.
-fn banner(path: &Path, timeout: Duration) -> Result<String, String> {
-    let mut cmd = crate::tools::quiet_command(path);
-    // A neutral working directory (the user's may be an untrusted folder), and on Unix a
-    // process group of its own, so a timeout kills anything it started too.
-    cmd.arg("--version").env_clear().envs(engine_env()).current_dir(std::env::temp_dir());
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+async fn banner(path: &Path, timeout: Duration) -> Result<String, String> {
+    let args = [OsString::from("--version")];
+    let env = engine_env();
+    // A neutral working directory (the user's may be an untrusted folder); the process tree is
+    // killed on timeout and once the banner is read (the program may still be writing).
+    let cwd = std::env::temp_dir();
+    let cancel = tokio_util::sync::CancellationToken::new();
     // A program written moments ago can be briefly busy (another thread forked while it was
     // open for writing): retry that case a few times.
     let mut tries = 0;
-    let mut child = loop {
-        match cmd.spawn() {
-            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 5 => {
+    loop {
+        match process::run_probe(path, &args, Some(&cwd), Some(&env), BANNER_BYTES, timeout, &cancel).await {
+            Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 5 => {
                 tries += 1;
-                std::thread::sleep(Duration::from_millis(50));
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
-            r => break r.map_err(|e| format!("cannot run {}: {e}", path.display()))?,
+            Ok(text) => return Ok(String::from_utf8_lossy(&text).into_owned()),
+            Err(Error::EngineMissing(reason)) => return Err(reason),
+            Err(e) => return Err(format!("cannot run {}: {e}", path.display())),
         }
-    };
-    let stdout = child.stdout.take().expect("stdout is piped");
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut text = Vec::new();
-        let _ = stdout.take(BANNER_BYTES).read_to_end(&mut text);
-        let _ = tx.send(text);
-    });
-    let text = match rx.recv_timeout(timeout) {
-        Ok(t) => t,
-        Err(_) => {
-            kill_tree(&mut child);
-            return Err(format!(
-                "{} --version did not finish within {} s",
-                path.display(),
-                timeout.as_secs()
-            ));
-        }
-    };
-    // The banner is read; the program may still be writing (bounded read): stop it.
-    kill_tree(&mut child);
-    Ok(String::from_utf8_lossy(&text).into_owned())
-}
-
-/// Kills a banner check and its process group, then reaps it.
-fn kill_tree(child: &mut std::process::Child) {
-    #[cfg(unix)]
-    crate::exec::process::kill_group(child.id());
-    let _ = child.kill();
-    let _ = child.wait();
+    }
 }
 
 #[cfg(test)]
@@ -316,14 +291,16 @@ mod tests {
         assert_eq!(s.parse_banner(""), None);
     }
 
-    #[test]
-    fn a_missing_configured_path_is_unavailable_with_a_reason() {
+    #[tokio::test]
+    async fn a_missing_configured_path_is_unavailable_with_a_reason() {
         let st =
-            locate(EngineKind::Gifsicle, Some(Path::new("/definitely/missing/gifsicle")), None, None, &[]);
+            locate(EngineKind::Gifsicle, Some(Path::new("/definitely/missing/gifsicle")), None, None, &[])
+                .await;
         assert!(!st.ok);
         assert!(st.reason.as_deref().unwrap().contains("does not exist"), "{st:?}");
         assert_eq!(st.source, Some(ToolSource::Config));
-        let env = locate(EngineKind::Gifski, None, Some(Path::new("/definitely/missing/gifski")), None, &[]);
+        let env =
+            locate(EngineKind::Gifski, None, Some(Path::new("/definitely/missing/gifski")), None, &[]).await;
         assert!(!env.ok && env.reason.as_deref().unwrap().contains("does not exist"), "{env:?}");
         assert_eq!(env.program(), None);
     }
@@ -365,8 +342,8 @@ mod tests {
             p
         }
 
-        #[test]
-        fn explicit_beats_env_beats_bundled() {
+        #[tokio::test]
+        async fn explicit_beats_env_beats_bundled() {
             let dir = tempfile::tempdir().unwrap();
             let explicit = program(dir.path(), "explicit", "echo 'LCDF Gifsicle 1.91'");
             let env = program(dir.path(), "env", "echo 'LCDF Gifsicle 1.92'");
@@ -374,52 +351,52 @@ mod tests {
             let k = EngineKind::Gifsicle;
             let v = |s: EngineStatus| (s.version, s.source);
             assert_eq!(
-                v(locate(k, Some(&explicit), Some(&env), Some(dir.path()), &[])),
+                v(locate(k, Some(&explicit), Some(&env), Some(dir.path()), &[]).await),
                 (Some("1.91".into()), Some(ToolSource::Config))
             );
             assert_eq!(
-                v(locate(k, None, Some(&env), Some(dir.path()), &[])),
+                v(locate(k, None, Some(&env), Some(dir.path()), &[]).await),
                 (Some("1.92".into()), Some(ToolSource::Config))
             );
             assert_eq!(
-                v(locate(k, None, None, Some(dir.path()), &[])),
+                v(locate(k, None, None, Some(dir.path()), &[]).await),
                 (Some("1.98".into()), Some(ToolSource::Bundled))
             );
-            let st = locate(k, None, None, Some(dir.path()), &[]);
+            let st = locate(k, None, None, Some(dir.path()), &[]).await;
             assert!(st.ok && st.path.unwrap().is_absolute());
         }
 
-        #[test]
-        fn a_program_that_does_not_identify_itself_is_unavailable() {
+        #[tokio::test]
+        async fn a_program_that_does_not_identify_itself_is_unavailable() {
             let dir = tempfile::tempdir().unwrap();
             let liar = program(dir.path(), "rmedia-gifski", "echo 'definitely not gifski'");
-            let st = locate(EngineKind::Gifski, None, None, Some(dir.path()), &[]);
+            let st = locate(EngineKind::Gifski, None, None, Some(dir.path()), &[]).await;
             assert!(!st.ok);
             assert!(st.reason.as_deref().unwrap().contains("did not identify itself as gifski"), "{st:?}");
             assert_eq!(st.path.as_deref(), crate::paths::canonicalize(&liar).ok().as_deref());
             let failing = program(dir.path(), "fails", "exit 3");
-            assert!(!locate(EngineKind::Gifski, Some(&failing), None, None, &[]).ok);
+            assert!(!locate(EngineKind::Gifski, Some(&failing), None, None, &[]).await.ok);
         }
 
-        #[test]
-        fn the_banner_check_is_bounded_in_time_and_size() {
+        #[tokio::test]
+        async fn the_banner_check_is_bounded_in_time_and_size() {
             let dir = tempfile::tempdir().unwrap();
             let slow = program(dir.path(), "slow", "sleep 10; echo 'gifski 1.34.0'");
             let started = std::time::Instant::now();
-            let err = banner(&slow, Duration::from_millis(300)).unwrap_err();
+            let err = banner(&slow, Duration::from_millis(300)).await.unwrap_err();
             assert!(err.contains("did not finish"), "{err}");
             assert!(started.elapsed() < Duration::from_secs(5));
             let chatty = program(dir.path(), "chatty", "echo 'gifski 1.34.0'; yes rmedia | head -c 10000000");
-            let text = banner(&chatty, Duration::from_secs(5)).unwrap();
+            let text = banner(&chatty, Duration::from_secs(5)).await.unwrap();
             assert!(text.len() as u64 <= BANNER_BYTES);
             assert_eq!(EngineKind::Gifski.parse_banner(&text).as_deref(), Some("1.34.0"));
         }
 
-        #[test]
-        fn engines_run_with_a_cleared_environment() {
+        #[tokio::test]
+        async fn engines_run_with_a_cleared_environment() {
             let dir = tempfile::tempdir().unwrap();
             let envdump = program(dir.path(), "envdump", "env");
-            let text = banner(&envdump, Duration::from_secs(5)).unwrap();
+            let text = banner(&envdump, Duration::from_secs(5)).await.unwrap();
             for line in text.lines().filter(|l| l.contains('=')) {
                 let key = line.split('=').next().unwrap();
                 assert!(["LANG", "PWD", "SHLVL", "_"].contains(&key), "leaked {key}: {text}");

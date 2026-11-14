@@ -206,14 +206,14 @@ pub async fn pick_engine(
     };
     if let Some(k) = gif {
         if reset {
-            state.set_gif_engine_path(k, None)?;
+            state.set_gif_engine_path(k, None).await?;
         } else {
             let dialog = app.dialog().file().set_title(format!("Choose the {} program", k.name()));
             let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
                 .await
                 .map_err(|e| e.to_string())?;
             if let Some(path) = picked.and_then(|p| p.into_path().ok()) {
-                state.set_gif_engine_path(k, Some(path))?;
+                state.set_gif_engine_path(k, Some(path)).await?;
             }
         }
         return state.doctor_checked(CheckMode::Cached).await;

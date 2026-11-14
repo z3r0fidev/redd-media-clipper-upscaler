@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::{ExitStatus, Stdio};
+use std::time::Duration;
 
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -243,6 +244,45 @@ where
     Fut: std::future::Future<Output = std::io::Result<()>>,
 {
     run(program, args, cwd, None, cancel, consume).await
+}
+
+/// A short look at a tool (a version banner, an encoder list): returns at most `max` bytes of
+/// its stdout. The process tree is killed once they are read, after `timeout`
+/// ([`Error::EngineMissing`]) and on cancel, and always reaped before this returns.
+pub(crate) async fn run_probe(
+    program: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    env: Env<'_>,
+    max: u64,
+    timeout: Duration,
+    cancel: &CancellationToken,
+) -> Result<Vec<u8>> {
+    let mut child = spawn(program, args, cwd, env)?;
+    let stdout = child.stdout().take().expect("stdout is piped");
+    let stderr_task = tokio::spawn(collect_stderr(child.stderr().take()));
+    let mut limited = stdout.take(max);
+    let mut buf = Vec::new();
+    let read = tokio::select! {
+        r = limited.read_to_end(&mut buf) => Some(r),
+        () = tokio::time::sleep(timeout) => None,
+        () = cancel.cancelled() => {
+            kill(child.as_mut()).await;
+            stderr_task.abort();
+            return Err(Error::Cancelled);
+        }
+    };
+    // Whatever the tool still does after `max` bytes (or the timeout) is not needed.
+    kill(child.as_mut()).await;
+    stderr_task.abort();
+    match read {
+        Some(r) => r.map(|_| buf).map_err(Error::Io),
+        None => Err(Error::EngineMissing(format!(
+            "{} did not finish within {} s",
+            program.display(),
+            timeout.as_secs_f64()
+        ))),
+    }
 }
 
 /// Spawns, drains stdout with `consume` (racing cancellation), then reaps the child.

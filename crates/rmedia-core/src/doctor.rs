@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::plan::Caps;
 use crate::plan::streams::Container;
 use crate::tools::{self, LocateOptions, Tool, Tools};
@@ -151,7 +151,7 @@ pub struct CapabilitySummary {
 
 /// Locates the engine and inspects its capabilities (no GPU check: see [`check_capability`]).
 /// Never fails; problems are reported.
-pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
+pub async fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
     let mut report = DoctorReport {
         schema: 1,
         kind: "doctor",
@@ -170,7 +170,7 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
         preset_problems: Vec::new(),
         gif: GifReport::default(),
     };
-    let tools = match tools::locate(opts) {
+    let tools = match tools::locate(opts).await {
         Ok(t) => t,
         Err(e) => {
             report.problems.push(e.to_string());
@@ -180,7 +180,7 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
     report.ffmpeg = Some(tools.ffmpeg.clone());
     report.ffprobe = Some(tools.ffprobe.clone());
     report.version = Some(tools.version.text().to_owned());
-    let mut caps = match caps(&tools) {
+    let mut caps = match caps(&tools).await {
         Ok(c) => c,
         Err(e) => {
             report.problems.push(e.to_string());
@@ -192,7 +192,8 @@ pub fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
         gifsicle: opts.gifsicle.clone().or(settings.gifsicle_path),
         gifski: opts.gifski.clone().or(settings.gifski_path),
         bundled_dir: opts.bundled_dir.clone(),
-    });
+    })
+    .await;
     for enc in KEY_ENCODERS {
         report.encoders.insert(enc.to_owned(), caps.encoders.contains(enc));
     }
@@ -260,22 +261,21 @@ pub async fn check_capability(
 }
 
 /// Reads the encoder and filter lists of the ffmpeg build.
-pub fn caps(tools: &Tools) -> Result<Caps> {
-    let list = |flag: &str| {
-        tools::quiet_command(&tools.ffmpeg.path)
-            .args(["-hide_banner", flag])
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-            .map_err(|e| Error::EngineMissing(format!("cannot run ffmpeg: {e}")))
+pub async fn caps(tools: &Tools) -> Result<Caps> {
+    let list = |flag: &'static str| async move {
+        tools::probe(&tools.ffmpeg.path, &["-hide_banner", flag])
+            .await
+            .map(|o| String::from_utf8_lossy(&o).into_owned())
     };
+    let (encoders, filters, muxers) = tokio::join!(list("-encoders"), list("-filters"), list("-muxers"));
     let settings = crate::settings::Settings::load();
     let models = crate::models::ModelSet::discover(&settings, &[crate::models::YUNET]);
     let face =
         models.get(crate::models::YUNET).cloned().map(crate::upscale::reframe::detect::DetectorSpec::Yunet);
     Ok(Caps {
-        encoders: parse_encoders(&list("-encoders")?),
-        filters: parse_filters(&list("-filters")?),
-        muxers: parse_muxers(&list("-muxers")?),
+        encoders: parse_encoders(&encoders?),
+        filters: parse_filters(&filters?),
+        muxers: parse_muxers(&muxers?),
         face,
         models,
         reframe_cache: crate::settings::cache_root().map(|c| c.join("reframe")),

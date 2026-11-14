@@ -11,8 +11,15 @@ use rmedia_core::tools::{LocateOptions, Tools};
 use rmedia_core::{EndSpec, Ts};
 use tokio_util::sync::CancellationToken;
 
+/// Locates the engine. Callable from sync and async tests alike: the doctor runs on a thread of
+/// its own with its own runtime.
 pub fn engine() -> (Tools, Caps) {
-    let (report, found) = rmedia_core::doctor::run(&LocateOptions::default());
+    let (report, found) = std::thread::spawn(|| {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(rmedia_core::doctor::run(&LocateOptions::default()))
+    })
+    .join()
+    .unwrap();
     found.unwrap_or_else(|| panic!("engine unavailable: {:?}", report.problems))
 }
 

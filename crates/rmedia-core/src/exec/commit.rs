@@ -49,13 +49,20 @@ fn no_clobber(temp: &Path, target: &Path) -> io::Result<()> {
             Ok(())
         }
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(e),
-        // FAT/exFAT and some network shares lack hard links: atomically reserve the name with
-        // create_new (fails if it exists), then replace our own placeholder with the temp file.
-        Err(_) => {
-            std::fs::OpenOptions::new().write(true).create_new(true).open(target)?;
-            std::fs::rename(temp, target)
-        }
+        Err(_) => reserve_and_rename(temp, target),
     }
+}
+
+/// For FAT/exFAT and some network shares, which lack hard links: atomically reserve the name with
+/// create_new (fails if it exists), then replace our own placeholder with the temp file. If that
+/// rename fails the placeholder is removed, so no zero-byte "output" is left at the target.
+fn reserve_and_rename(temp: &Path, target: &Path) -> io::Result<()> {
+    std::fs::OpenOptions::new().write(true).create_new(true).open(target)?;
+    std::fs::rename(temp, target).inspect_err(|_| {
+        if std::fs::symlink_metadata(target).is_ok_and(|m| m.is_file() && m.len() == 0) {
+            let _ = std::fs::remove_file(target);
+        }
+    })
 }
 
 fn rename_free(temp: &Path, output: &Path) -> io::Result<PathBuf> {
@@ -145,6 +152,22 @@ mod tests {
         assert_eq!(commit(&tmp, &out, OnExists::Skip).unwrap(), out);
         assert_eq!(std::fs::read_to_string(&out).unwrap(), "new");
         assert!(!tmp.exists());
+    }
+
+    #[test]
+    fn the_no_link_fallback_leaves_no_placeholder_when_the_rename_fails() {
+        let d = tempfile::tempdir().unwrap();
+        let (tmp, out) = (d.path().join("t.part"), d.path().join("o.mp4"));
+        // The temp file is gone, so the rename after the reservation fails.
+        assert!(reserve_and_rename(&tmp, &out).is_err());
+        assert!(!out.exists(), "a zero-byte placeholder was left at the target");
+        write(&tmp, "new");
+        reserve_and_rename(&tmp, &out).unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "new");
+        // An existing target is never touched.
+        write(&tmp, "newer");
+        assert_eq!(reserve_and_rename(&tmp, &out).unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "new");
     }
 
     #[test]

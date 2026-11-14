@@ -1,8 +1,8 @@
 //! Locating ffmpeg/ffprobe: explicit path → env → bundled beside the executable → PATH.
 
-use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -79,7 +79,7 @@ pub struct LocateOptions {
 }
 
 /// Finds both tools and checks the ffmpeg version.
-pub fn locate(opts: &LocateOptions) -> Result<Tools> {
+pub async fn locate(opts: &LocateOptions) -> Result<Tools> {
     let bundled_dir = opts
         .bundled_dir
         .clone()
@@ -93,12 +93,8 @@ pub fn locate(opts: &LocateOptions) -> Result<Tools> {
         "ffprobe",
         bundled_dir.as_deref(),
     )?;
-    let output = quiet_command(&ffmpeg.path)
-        .arg("-hide_banner")
-        .arg("-version")
-        .output()
-        .map_err(|e| Error::EngineMissing(format!("cannot run {}: {e}", ffmpeg.path.display())))?;
-    let text = String::from_utf8_lossy(&output.stdout);
+    let stdout = probe(&ffmpeg.path, &["-hide_banner", "-version"]).await?;
+    let text = String::from_utf8_lossy(&stdout);
     let version = parse_version(&text).ok_or_else(|| {
         Error::EngineMissing(format!("{} did not report an ffmpeg version", ffmpeg.path.display()))
     })?;
@@ -193,19 +189,25 @@ pub fn parse_version(output: &str) -> Option<Version> {
     }
 }
 
-/// A `std::process::Command` that never opens a console window on Windows.
-pub(crate) fn quiet_command(program: impl AsRef<OsStr>) -> Command {
-    #[allow(unused_mut)]
-    let mut cmd = Command::new(program);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    cmd.stdin(std::process::Stdio::null());
-    cmd
+/// How long a look at ffmpeg (`-version`, `-encoders`…) may take; generous for a cold start
+/// under an antivirus scan, but a hung engine never stalls the caller.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Runs ffmpeg with `args` and returns its stdout (bounded in time and size; the process tree
+/// is killed on timeout).
+pub(crate) async fn probe(ffmpeg: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    crate::exec::process::run_probe(ffmpeg, &args, None, None, PROBE_MAX_BYTES, PROBE_TIMEOUT, &cancel)
+        .await
+        .map_err(|e| match e {
+            Error::EngineMissing(_) => e,
+            e => Error::EngineMissing(format!("cannot run {}: {e}", ffmpeg.display())),
+        })
 }
+
+/// ffmpeg's longest list (`-filters`) is well under 1 MiB.
+const PROBE_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
 #[cfg(test)]
 mod tests {
