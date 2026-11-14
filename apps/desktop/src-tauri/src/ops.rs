@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -43,6 +43,8 @@ pub type OpResult<T> = Result<T, String>;
 #[derive(Debug, Default)]
 pub struct Allowed {
     files: HashSet<OsString>,
+    /// Videos named by an opened manifest: readable, but they never unlock writes next to them.
+    manifest_files: HashSet<OsString>,
     dirs: Vec<PathBuf>,
     save_targets: HashSet<OsString>,
     /// Clip lists and manifests picked as such (only these may be parsed).
@@ -66,6 +68,20 @@ impl Allowed {
         }
     }
 
+    fn allow_from_manifest(&mut self, p: &Path) {
+        if let Some((c, k)) = Self::key(p)
+            && c.is_file()
+        {
+            self.manifest_files.insert(k);
+        }
+    }
+
+    /// Opened by the user, or inside a folder they picked (not merely named by a manifest).
+    fn is_picked(&self, p: &Path) -> bool {
+        let Some((c, k)) = Self::key(p) else { return false };
+        self.files.contains(&k) || self.dirs.iter().any(|d| c.starts_with(d))
+    }
+
     pub fn allow_list(&mut self, p: &Path) {
         if let Some((_, k)) = Self::key(p) {
             self.lists.insert(k);
@@ -76,11 +92,14 @@ impl Allowed {
         Self::key(p).is_some_and(|(_, k)| self.lists.contains(&k))
     }
 
-    /// Where a clip may be written: inside a folder the user picked, or next to its source
-    /// (the default `clips/` folder and template sub-folders).
+    /// Where a clip may be written: inside a folder the user picked, or next to a source the user
+    /// picked (the default `clips/` folder and template sub-folders).
     fn may_write(&self, output: &Path, source: &Path) -> bool {
-        let resolved = resolve_existing(output);
-        let source_dir = source.parent().and_then(|d| std::fs::canonicalize(d).ok());
+        let Some(resolved) = resolve_existing(output) else { return false };
+        let source_dir = Some(source)
+            .filter(|s| self.is_picked(s))
+            .and_then(|s| s.parent())
+            .and_then(|d| std::fs::canonicalize(d).ok());
         self.dirs.iter().any(|d| resolved.starts_with(d))
             || source_dir.is_some_and(|d| resolved.starts_with(d))
     }
@@ -90,8 +109,7 @@ impl Allowed {
     }
 
     pub fn is_allowed(&self, p: &Path) -> bool {
-        let Some((c, k)) = Self::key(p) else { return false };
-        self.files.contains(&k) || self.dirs.iter().any(|d| c.starts_with(d))
+        self.is_picked(p) || Self::key(p).is_some_and(|(_, k)| self.manifest_files.contains(&k))
     }
 
     fn is_save_target(&self, p: &Path) -> bool {
@@ -345,7 +363,8 @@ impl AppState {
         manifest_value(&req, &PartialOptions::default())
     }
 
-    /// Opens a manifest; its videos become allowed sources (the user chose the manifest).
+    /// Opens a manifest; its videos become readable sources (the user chose the manifest), but
+    /// clips of them are written only to a folder the user picked, never next to them.
     pub fn load_manifest(&self, path: &Path) -> OpResult<Value> {
         if !lock(&self.allowed).is_list(path) {
             return Err("open the manifest with Open manifest…".into());
@@ -359,7 +378,12 @@ impl AppState {
         // A manifest may only grant access to video files it names (not arbitrary files).
         let videos: Vec<PathBuf> =
             req.sources.iter().map(|s| s.path.clone()).filter(|p| is_video_name(p) && p.is_file()).collect();
-        self.allow(&videos);
+        {
+            let mut a = lock(&self.allowed);
+            for v in &videos {
+                a.allow_from_manifest(v);
+            }
+        }
         // Keep the manifest's own defaults (e.g. output folder) in the queue.
         manifest_value(&req, &PartialOptions::diff(&req.defaults, &Options::default()))
     }
@@ -1051,8 +1075,13 @@ fn is_video_name(p: &Path) -> bool {
     rmedia_core::discover::VIDEO_EXTENSIONS.contains(&ext(p).as_str())
 }
 
-/// Canonicalizes the nearest existing ancestor and re-appends the rest.
-fn resolve_existing(p: &Path) -> PathBuf {
+/// Canonicalizes the nearest existing ancestor and re-appends the rest. `None` when the path has
+/// a `..` or `.` step: kept after a missing folder it passes a lexical prefix check but resolves
+/// elsewhere once the folders are created (`<picked>/nope/../../elsewhere`).
+fn resolve_existing(p: &Path) -> Option<PathBuf> {
+    if p.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)) {
+        return None;
+    }
     let mut existing = p.to_path_buf();
     let mut rest = Vec::new();
     while !existing.exists() {
@@ -1068,7 +1097,7 @@ fn resolve_existing(p: &Path) -> PathBuf {
     for part in rest.iter().rev() {
         out.push(part);
     }
-    out
+    Some(out)
 }
 
 fn ext(p: &Path) -> String {
@@ -1095,5 +1124,50 @@ pub fn parse_end(text: &str) -> OpResult<Value> {
         EndSpec::EndOfMedia => Ok(Value::String("end".into())),
         EndSpec::At(t) => Ok(serde_json::json!(t.as_secs_f64())),
         EndSpec::Duration(d) => Ok(Value::String(format!("+{}", d.as_secs_f64()))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn may_write_rejects_parent_dir_escapes() {
+        let picked = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let source = src_dir.path().join("a.mp4");
+        std::fs::write(&source, b"").unwrap();
+        let mut allowed = Allowed::default();
+        allowed.allow(picked.path());
+        allowed.allow(&source);
+        // Missing folders are fine while the path stays inside the picked folder.
+        assert!(allowed.may_write(&picked.path().join("new/sub/a.mp4"), &source));
+        // `nope` does not exist, so the `..` steps were kept lexically and passed the prefix check.
+        let escape =
+            picked.path().join("nope/../..").join(elsewhere.path().file_name().unwrap()).join("x.mp4");
+        assert!(!allowed.may_write(&escape, &source));
+        assert!(!allowed.may_write(&picked.path().join("../x.mp4"), &source));
+        // The next-to-source rule is held to the same standard.
+        assert!(allowed.may_write(&src_dir.path().join("clips/a.mp4"), &source));
+        assert!(!allowed.may_write(&src_dir.path().join("clips/../../x.mp4"), &source));
+    }
+
+    #[test]
+    fn manifest_sources_are_readable_but_never_unlock_writes_next_to_them() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let picked = tempfile::tempdir().unwrap();
+        let source = src_dir.path().join("a.mp4");
+        std::fs::write(&source, b"").unwrap();
+        let mut allowed = Allowed::default();
+        allowed.allow_from_manifest(&source);
+        assert!(allowed.is_allowed(&source));
+        assert!(!allowed.may_write(&src_dir.path().join("clips/a.mp4"), &source));
+        // A picked output folder still works.
+        allowed.allow(picked.path());
+        assert!(allowed.may_write(&picked.path().join("a.mp4"), &source));
+        // Opening the video itself restores the next-to-source default.
+        allowed.allow(&source);
+        assert!(allowed.may_write(&src_dir.path().join("clips/a.mp4"), &source));
     }
 }
