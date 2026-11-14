@@ -420,9 +420,9 @@ Files: setup.exe rmedia_0.3.0_x64-setup.exe 108.43 MiB, msi rmedia_0.3.0_x64_en-
 
 3.1 doctor: rmedia 0.3.0, ffmpeg bundled y (n9.0.2-31-gc89d6ee1ca-20261021), gif/mp4 y, gifsicle 1.98 bundled, gifski 1.34.0 bundled, status ready, licenses (FFmpeg, ncnn, glslang, GIFSICLE, GIFSKI + deps) + LICENSE.txt ok, SmartScreen <passed per owner>
 3.2 clip: unicode/space path ok, accurate ok, no-clobber skip ok, source hash unchanged True, long path ok, \\?\ shown n, other drive n.a.
-3.3 gif: post <real file not made on the fresh folder; dry-run estimate 6.6 MB at 612 px, 12 fps>, comment 2.2 MB 408x230@10 (4 encodes), mp4 690 kB 720x404@28 (2 encodes), max-quality gifski ok (29.8 MB 960x540@20, no ENGINE_FALLBACK), 9:16 smart ok (6.4 MB 344x612@12, 6 encodes), clip --gif ok (6.9 MB 720x405@12, 5 encodes)
+3.3 gif: post 6.4 MB 612x344@12 (6 encodes; dry-run estimate 6.6 MB), comment 2.2 MB 408x230@10 (4 encodes), mp4 690 kB 720x404@28 video only (2 encodes), max-quality gifski ok (29.8 MB 960x540@20, no ENGINE_FALLBACK), 9:16 smart ok (6.4 MB 344x612@12, 6 encodes), clip --gif ok (6.9 MB 720x405@12, 5 encodes)
 3.4 upscale: cpu yes 28 fps, gpu yes 9.8-18 fps (varies between runs), ai no 0.2 fps (too slow on Iris Xe: about 159-161 min for 60 s of 480p); clip --upscale ok (auto picks CPU); --tier ai refused in 0.5 s
-3.5 cancel: Ctrl+C gif clean (53%), upscale cancel cancelled (26%, first pass), window close clean (owner), kill parent <not tested: the job ended before Stop-Process ran>, Ctrl+C while scanning <not run: the command lacked the &>
+3.5 cancel: Ctrl+C gif clean (53%), upscale cancel cancelled (26%, first pass), window close clean (owner), kill parent clean (second try; the first ended before Stop-Process ran; no process, .part or output left), Ctrl+C while scanning exit 130 with a summary
 4.1 NSIS: per user, %LOCALAPPDATA%\rmedia; files as 0.2.0 plus rmedia-gifski.exe, GIFSKI-NOTICE/LICENSE/DEPS and licenses\LICENSE.txt; the installer shows "Copyright (C) 2026 OpenLogic Distribution Ltd"; admin, Start menu <passed per owner>
 4.2 desktop: steps 1-14 passed per owner; step 2 seen: gifsicle 1.98 and gifski 1.34.0, both bundled
 4.3 MSI: passed per owner
@@ -450,6 +450,6 @@ agree.
 - **Picking the wrong program is refused.** Choosing `rmedia-gifsicle.exe` under **Choose
   gifski…** shows "did not identify itself as gifski 1.x" and keeps the setting unchanged.
   Each button passes its own engine to `pick_engine`, so this is the check working as designed.
-- **Still open:** cancel cases (c) and (d) on this build, the reddit-post GIF's real size against
-  the 6.6 MB estimate, and the MP4 audio check on a 0.3.0 file. The runbooks now put case (c) on
-  one line and say to keep the `&` in case (d).
+- **Cancel cases (c) and (d)** needed a second try. The first (c) ended before the separate
+  `Stop-Process` line ran, and the first (d) lacked the `&`. The runbooks now put (c) on one line
+  and say to keep the `&` in (d). With these, every Windows check on 0.3.0 has passed.

@@ -183,13 +183,12 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
 - Windows re-checks on run 43534418980 (0.3.0 on `b96bfdd`, gifski on; Windows artifact
-  14091030429, `sha256:a437796f…`). Passed 2026-11-14: SC-009 (8.1% saved, worst loss 0.67,
-  matching Linux), doctor with gifski bundled, paths, clips, GIF comment, Reddit MP4,
-  `max-quality` on gifski, 9:16 smart, `clip --gif`, cancel (a), the NSIS install, and (per
-  the owner) the installer prompts, desktop steps 1-14, cancel (b), playback and the MSI
-  ([validation log](../specs/003-gif-export/checklists/validation.md)). Left: cancel (c) and
-  (d), the reddit-post GIF against its estimate, and the MP4 audio check on a 0.3.0 file. Tag
-  `v0.3.0` on `b96bfdd` (or later) once they pass.
+  14091030429, `sha256:a437796f…`): **all passed 2026-11-14**. SC-009 8.1% saved, worst loss
+  0.67 (matching Linux); doctor with gifski bundled, paths, clips, every GIF target, the Reddit
+  MP4 (video only), `max-quality` on gifski, cancel cases a-d, the NSIS install, and (per the
+  owner) the installer prompts, desktop steps 1-14, playback and the MSI
+  ([validation log](../specs/003-gif-export/checklists/validation.md)). Next: tag `v0.3.0`
+  (owner's go-ahead).
 - AI speed comparison against run 40452999345's CLI (`doctor --recheck`).
 - `doctor` lists the Iris Xe twice. Checked on the laptop (2026-11-13): one Vulkan driver is
   registered (the per-adapter `VulkanDriverName`), and `vulkaninfo --summary` also shows GPU0
