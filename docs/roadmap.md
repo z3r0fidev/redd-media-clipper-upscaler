@@ -13,7 +13,7 @@ Last updated: 2026-11-14.
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
-| 004 Smart cut | Next; specified (`specs/004-smart-cut/spec.md`, 2026-11-14), plan and tasks to come; version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
+| 004 Smart cut | Next; specified and planned (`specs/004-smart-cut/`, 2026-11-14), tasks to come; version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
 | 005 Budgeted Reddit video | Planned after 004; no version yet | MP4 with audio under Reddit size and length caps, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -205,7 +205,7 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
 Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; the next session starts with
-`/speckit-plan` for 004 (item 22), then item 8 (L1).
+`/speckit-tasks` for 004 and its Phase 0 spikes (item 22), then item 8 (L1).
 
 **Owner actions**
 
@@ -271,8 +271,8 @@ Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; the next se
 
 **Planned features** (a version follows the feature number: 004 becomes 0.4.0)
 
-22. **004 Smart cut** (next; specified in `specs/004-smart-cut/spec.md` on 2026-11-14; run
-    `/speckit-clarify` if wanted, then `/speckit-plan` and `/speckit-tasks`). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+22. **004 Smart cut** (next; specified and planned in `specs/004-smart-cut/` on 2026-11-14; run
+    `/speckit-tasks`, then the Phase 0 spikes S1–S3 in its quickstart). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
     and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
     source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
     accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,

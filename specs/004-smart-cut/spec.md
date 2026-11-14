@@ -222,7 +222,8 @@ the run's report matches what was shown.
   accurate mode, with a distinct stable reason code, for: a video codec other than H.264
   (HEVC and AV1 included); a container other than those of FR-006; interlaced video; variable
   frame rate; open-GOP or non-IDR boundaries; stream parameters that change within the range or
-  cannot be matched (FR-004); bit depth above 8 bits or chroma other than 4:2:0; no complete GOP
+  cannot be matched (FR-004); an H.264 profile other than Baseline, Main or High; bit depth above
+  8 bits or chroma other than 4:2:0; a display rotation the output cannot carry; no complete GOP
   inside the range; and no suitable encoder in the engine.
 - **FR-008**: A fallback MUST NOT be an error: the job succeeds in accurate mode and reports the
   fallback, its reason code and a plain-language message, in the human and the JSON output.
@@ -270,9 +271,9 @@ the run's report matches what was shown.
 - **Smart plan**: for one clip, the head, copied and tail spans with their times and frame
   counts, the copied share, the stream parameters to match, and the eligibility verdict (smart, or
   fallback with a reason).
-- **Fallback reason**: a stable code and a plain-language message (codec, container, interlaced,
-  variable frame rate, open GOP, mismatched parameters, bit depth, no full GOP, encoder missing,
-  seam check).
+- **Fallback reason**: a stable code and a plain-language message (encoder missing, codec,
+  container, profile, pixel format, interlaced, variable frame rate, rotation, no full GOP, open
+  GOP, mismatched parameters, seam check).
 - **Smart result**: the mode actually used, actual start and end, copied and re-encoded frame
   counts, and the fallback reason if any.
 
@@ -288,8 +289,8 @@ the run's report matches what was shown.
   set, and audio stays within one audio frame (about 20 ms) of the video at every seam.
 - **SC-004**: 100% of the generated risky sources (FR-007) are cut in accurate mode, frame-exact,
   each reporting its expected reason code.
-- **SC-005**: A 60 s range of a 1080p H.264 source is smart-cut in at most 25% of the time accurate
-  mode takes for the same range on the same machine.
+- **SC-005**: A 60 s range of a 1080p H.264 source is smart-cut in at most one third of the time
+  accurate mode takes for the same range on the same machine.
 - **SC-006**: The re-encoded head and tail score at least as well as accurate mode's output for
   the same frames on the perceptual-quality measure used in 002, and copied frames are identical
   to the source.

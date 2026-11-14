@@ -15,10 +15,10 @@ for Reddit (003). Spec-driven via Spec Kit.
   nothing published, no GitHub release yet). rmedia is AGPL-3.0-or-later; releases bundle gifski.
   Owner checks left: Reddit's limits and a real upload, the 002 two-phone test and +3 VMAF.
   Pending list and review findings: `docs/roadmap.md`.
-- Next feature: **004 Smart cut** (`--mode smart`; specified in `specs/004-smart-cut/spec.md`,
-  plan and tasks to come), then 005 budgeted Reddit video. The active plan below stays on 003
-  until 004 has a plan.
-- First work of the next session: `/speckit-plan` for 004, then security L1 (see the roadmap).
+- Next feature: **004 Smart cut** (`--mode smart`; spec and plan in `specs/004-smart-cut/`,
+  tasks to come), then 005 budgeted Reddit video.
+- First work of the next session: `/speckit-tasks` for 004, then its Phase 0 spikes S1–S3
+  (`specs/004-smart-cut/quickstart.md`), then security L1 (see the roadmap).
 - Session close: follow `docs/operations/session-close.md`.
 - The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and `fetch-models` for its GPU
   tests) before `cargo build --workspace`.
@@ -42,5 +42,5 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Commits: Conventional Commits.
 
 <!-- SPECKIT START -->
-Active plan: specs/003-gif-export/plan.md
+Active plan: specs/004-smart-cut/plan.md
 <!-- SPECKIT END -->
