@@ -10,11 +10,12 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
 - Active feature: **003 GIF export for Reddit** (`specs/003-gif-export/`, 6 stories; gifsicle and
-  gifski bundled as optional engines, gifski's AGPL gates releases on the app licence). Tasks
+  gifski bundled as optional engines; rmedia is AGPL-3.0-or-later since 2026-11-13, so releases
+  bundle gifski). Tasks
   written (T001–T080); 80/80 done (`specs/003-gif-export/progress.md`), including the
   `release.yml` run with gifski off (40345344064) and the Windows CI results. SC-009 is a quality bar
   (gifsicle costs at most 1 VMAF point on any clip; the saving is reported; reddit-post lossy 10).
-  Owner checks left: the app licence, Reddit's limits, a real Reddit upload, and the Windows
+  Owner checks left: Reddit's limits, a real Reddit upload, and the Windows
   re-checks (SC-009, installer prompts, desktop QA, cancel case b, playback, MSI) on release run
   41550220800 (on 5fa548f, gifski off, nothing published). Pending list: `docs/roadmap.md`.
 - Done: 001 (`specs/001-video-clipping/`, 0.1.0) and 002 (`specs/002-mobile-upscale/`, 112/112,

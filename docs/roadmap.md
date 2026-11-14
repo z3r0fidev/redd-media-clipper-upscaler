@@ -87,8 +87,8 @@ size-budget search (P2), a silent "Reddit MP4" alternative (P3), portrait and sq
 002's reframe (P4), batch and `clip` integration (P5), and a desktop GIF view (P6). It reuses the
 job model that feature 002 introduced. Owner decision: gifsicle (GPL-2.0) and gifski (AGPL-3.0)
 are optional engines, and (2026-10-23) both are bundled, pinned and built from source; a release
-that bundles gifski fails until the application licence is decided (a root `LICENSE` and an
-allowed `app_licence` in the root `Cargo.toml`). Owner check
+that bundles gifski needs a root `LICENSE` and an allowed `app_licence` in the root
+`Cargo.toml`; both are in place since rmedia became AGPL-3.0-or-later (2026-11-13). Owner check
 before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Progress (2026-10-25)
@@ -142,7 +142,8 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   at most 1 VMAF point on any clip, and its saving is reported. reddit-post's default lossy went
   from 30 to 10 (real footage: 8.1% smaller, worst loss 0.67). The synthetic bench keeps a 5%
   floor (measured 5.2%). Data: `specs/003-gif-export/checklists/validation.md`.
-- Application licence (decided 2026-10-27): releases ship **without gifski** (`release.yml`'s
+- Application licence (decided 2026-10-27, replaced 2026-11-13 by AGPL-3.0-or-later with gifski
+  bundled): releases ship **without gifski** (`release.yml`'s
   `gifski` input now defaults to off); the built-in engine covers every target and `max-quality`
   falls back with `ENGINE_FALLBACK`. If gifski is wanted later, the fallback is licensing the app
   AGPL-3.0 or GPL-3.0 (allowed by `cargo xtask check-release-gate`); the commercial
@@ -196,16 +197,16 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   right after the duplicate warning that 5a1984b removed. It does not reproduce in a Linux pty
   (80 and 120 columns, wrapped warnings included).
 - Optional laptop cleanup: the cancel* output folders (157 MB and 57 MB).
-- Owner items: code signing (waiting on Azure details), the app licence (placeholder; gates any
-  gifski release), Reddit's limits, a real Reddit upload, the 002 owner checks (two-phone gallery
+- Owner items: code signing (waiting on Azure details), Reddit's limits, a real Reddit upload, the 002 owner checks (two-phone gallery
   test, +3 VMAF on real footage), the 0.3.0 version bump and tags.
 
 ## Release and Project Housekeeping
 
 - [ ] Tag `v0.1.0` and `v0.2.0` and run the release workflow; publishing and code signing are
   manual.
-- [x] Decide the application licence for releases: ship without gifski (2026-10-27); AGPL-3.0 or
-  GPL-3.0 if gifski is wanted later. The manifests' `MIT OR Apache-2.0` is still a placeholder.
+- [x] Decide the application licence: AGPL-3.0-or-later, copyright OpenLogic Distribution Ltd
+  (2026-11-13; replaces "ship without gifski" from 2026-10-27). Root `LICENSE`, manifests,
+  `app_licence` and cargo-deny exceptions for rmedia's own crates; releases bundle gifski.
 - [x] Mirror the pinned third-party archives and publish the FFmpeg corresponding source
   (`mirror-2026-10-22`, `ffmpeg-source-n9.0.2-31-gc89d6ee1ca`; see
   [Build and Release](operations/build-and-release.md)).

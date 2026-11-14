@@ -212,9 +212,9 @@ and `GIFSKI-NOTICE.md` naming the pinned version and source). The current pin is
 
 **Release gate (FR-025).** Bundling gifski is distribution under the AGPL, so `release.yml`
 runs `cargo xtask check-release-gate`, which fails when gifski is bundled and no allowed app
-licence is recorded. Owner decision (2026-10-27): releases ship without gifski, so the `gifski`
-input defaults to off; turning it on also needs a root `LICENSE` and an AGPL-3.0 or GPL-3.0
-`app_licence` ([Roadmap](../roadmap.md)). Commits before 003 have no `gif-tools.lock.json`, so
+licence is recorded. Owner decision (2026-11-13): rmedia is AGPL-3.0-or-later (root `LICENSE`,
+`app_licence` in the root `Cargo.toml`), so the gate passes and the `gifski` input defaults to
+on; tag pushes bundle gifski too ([Roadmap](../roadmap.md)). Commits before 003 have no `gif-tools.lock.json`, so
 tagging `v0.1.0`/`v0.2.0` is unaffected.
 
 ## Static ncnn for the Windows AI Worker
@@ -303,9 +303,9 @@ Steps per platform:
    gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav`.
 3. Release gate: `cargo xtask check-release-gate` runs before and after staging, and after
    packaging with `--scan apps/desktop/src-tauri/target/release --scan dist` (the built
-   installers' trees and scripts, and the CLI archives). A build with gifski fails until the
-   application licence is decided (FR-025, docs/roadmap.md), so today only a manual run with
-   `gifski` off can pass.
+   installers' trees and scripts, and the CLI archives). A build with gifski passes only while
+   the root `LICENSE` and an allowed `app_licence` are in place (FR-025); both are, since
+   2026-11-13.
 4. Stage the bundled programs and models: `cargo xtask fetch-tools --target <T>` (with
    `--no-gifski` when the input is off; gifsicle is always staged),
    `cargo xtask fetch-ncnn --target <T>`, `cargo xtask fetch-models` and

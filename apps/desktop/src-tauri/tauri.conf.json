@@ -38,6 +38,8 @@
       "msi"
     ],
     "publisher": "OpenLogic Distribution Ltd",
+    "copyright": "Copyright (C) 2026 OpenLogic Distribution Ltd",
+    "license": "AGPL-3.0-or-later",
     "category": "Video",
     "shortDescription": "Cut video clips \u2014 fast or frame-accurate",
     "longDescription": "rmedia cuts clips from videos by timestamps, clip lists and batch manifests, on Linux and Windows. Includes the rmedia command-line tool.",
@@ -57,6 +59,7 @@
       "../../../binaries/rmedia-gifski"
     ],
     "resources": {
+      "../../../LICENSE": "licenses/LICENSE.txt",
       "../../../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
       "../../../licenses/FFMPEG-NOTICE.md": "licenses/FFMPEG-NOTICE.md",
       "../../../licenses/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",

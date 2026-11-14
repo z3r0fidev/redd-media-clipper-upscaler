@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       gifski:
-        description: "Bundle gifski (AGPL-3.0). Off by default (owner decision 2026-10-27: releases ship without it); on needs an allowed app_licence or the release gate fails."
+        description: "Bundle gifski (AGPL-3.0). On by default (owner decision 2026-11-13: rmedia is AGPL-3.0-or-later, so releases bundle it)."
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -117,6 +117,7 @@ jobs:
           cp binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffmpeg${{ matrix.exe }}"
           cp binaries/rmedia-ffprobe-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-ffprobe${{ matrix.exe }}"
           cp binaries/rmedia-gifsicle-${{ matrix.triple }}${{ matrix.exe }} "dist/$name/rmedia-gifsicle${{ matrix.exe }}"
+          cp LICENSE "dist/$name/LICENSE.txt"
           cp THIRD_PARTY_NOTICES.md licenses/FFMPEG-NOTICE.md licenses/FFMPEG-LICENSE.txt licenses/NCNN-NOTICE.md \
             licenses/NCNN-LICENSE.txt licenses/GLSLANG-LICENSE.txt licenses/GIFSICLE-NOTICE.md \
             licenses/GIFSICLE-COPYING.txt "dist/$name/licenses/"

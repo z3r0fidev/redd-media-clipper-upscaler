@@ -8,7 +8,7 @@ exclude = ["apps/desktop/src-tauri"]
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.94"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/openlogic/rmedia"
 
 [workspace.dependencies]
@@ -52,3 +52,8 @@ all = { level = "warn", priority = -1 }
 [profile.release]
 lto = "thin"
 strip = true
+
+# The application licence (owner decision 2026-11-13). `cargo xtask check-release-gate` lets a
+# release bundle gifski (AGPL-3.0) only with an allowed id here and a root LICENSE.
+[workspace.metadata.rmedia]
+app_licence = "AGPL-3.0-or-later"

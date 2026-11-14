@@ -3,7 +3,7 @@ name = "rmedia-desktop"
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.94"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0-or-later"
 publish = false
 description = "rmedia desktop app (Tauri 2): thin adapters over rmedia-core"
 

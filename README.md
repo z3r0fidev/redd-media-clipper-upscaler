@@ -196,7 +196,8 @@ Before tagging: bump `version` in `Cargo.toml`, `apps/desktop/package.json`,
 `cargo xtask notices`; and check `cargo xtask check-pins` (every pinned archive mirrored, the
 FFmpeg corresponding source published). The release workflow also runs
 `cargo xtask check-release-gate`, which fails when gifski is bundled without an allowed app
-licence; releases ship without gifski (the `gifski` input is off by default). Details:
+licence; rmedia is AGPL-3.0-or-later, so releases bundle gifski (the `gifski` input is on by
+default). Details:
 `docs/operations/build-and-release.md`.
 
 Other tasks: `cargo xtask gen-bindings` (TypeScript types from the core), `cargo xtask notices`
@@ -219,13 +220,14 @@ specs/  research/      Spec Kit specifications, plans, contracts and research no
 
 ## Licensing
 
-- rmedia's own license: **to be decided by the owner** (Cargo manifests currently declare
-  `MIT OR Apache-2.0` as a placeholder).
+- rmedia's own licence: **GNU Affero General Public License v3.0 or later** (`LICENSE`).
+  Copyright (C) 2026 OpenLogic Distribution Ltd. The source of every release is this
+  repository at the release's tag.
 - Bundled FFmpeg: GPL v3 or later, shipped as separate programs — see
   `licenses/FFMPEG-NOTICE.md` for the build and the corresponding-source offer.
 - Bundled models and libraries: the YuNet face detector (MIT), Real-ESRGAN models (BSD-3-Clause)
   and ncnn (BSD-3-Clause) — texts in `licenses/`.
 - Bundled GIF engines (0.3.0), separate programs: gifsicle 1.98 (GPL v2,
   `licenses/GIFSICLE-NOTICE.md`) and gifski 1.34.0 (AGPL v3 or later,
-  `licenses/GIFSKI-NOTICE.md`; shipped only once the app licence allows it).
+  `licenses/GIFSKI-NOTICE.md`).
 - Third-party Rust and JavaScript components: `THIRD_PARTY_NOTICES.md`.

@@ -16,8 +16,8 @@ does not link to it. Its source is unmodified, built from the upstream crate bel
   rmedia workflow `.github/workflows/gif-tools.yml` (each binary carries a build attestation from
   it).
 
-**Releases that bundle gifski wait for the application licence decision** (`cargo xtask
-check-release-gate`, docs/roadmap.md).
+**rmedia is licensed AGPL-3.0-or-later** (root `LICENSE`, owner decision 2026-11-13), so
+releases bundle gifski; `cargo xtask check-release-gate` enforces that pairing.
 
 ## Build
 

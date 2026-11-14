@@ -252,7 +252,7 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
 | The desktop page can register any allowed media file (including files under a picked folder) with the media server | Inherent to the path policy; limited to user-chosen locations | `ops.rs` |
 | Windows-specific controls (Job Objects, reparse-point flag, cloud placeholders, long paths) | Type-checked locally; **Unverified** beyond CI | `checklists/validation.md` |
 | A user-supplied gifsicle or gifski (flag, setting, environment or `PATH`) is trusted at the level of the user's own shell; only the banner is checked | Accepted (same as ffmpeg) | research R7 |
-| gifski (AGPL-3.0) cannot ship until the app licence is decided | Gated: `check-release-gate` fails the release | research R10 |
+| gifski (AGPL-3.0) must not ship under an incompatible app licence | Gated: `check-release-gate` fails a release that bundles gifski without a root `LICENSE` and an allowed `app_licence`; rmedia is AGPL-3.0-or-later since 2026-11-13 | research R10 |
 | `Settings::load` silently falls back to defaults on an unreadable or invalid file | Low impact (availability only) | `settings.rs` |
 
 ## Related Documentation
