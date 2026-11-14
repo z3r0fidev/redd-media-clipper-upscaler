@@ -23,13 +23,14 @@ Use the Windows artifact `rmedia-x86_64-pc-windows-msvc` from a `release.yml` ru
 |---|---|---|
 | 40345344064 | `723bbbe` | Existing run (gifski off), digest `sha256:f1fa7fdf7abcce0504dc5ed25d6b4cc0eedfe4c42870a72d59f820055e81bc36`. Predates the Settings › GIF export engine pickers (`813cdeb`) and the fixes in `475ccf4` and `a69089a` |
 | 40452999345 | `789d7e9` | Same code as `a69089a` plus the runbook docs (gifski off, dispatched 2026-10-27). Windows artifact 411,470,509 B, digest `sha256:68075b99d243932f7ce4ed35b47ec39095c5024e90b3945fa4fa117427cd7e27`. Needs the VC++ runtime for the AI tier; predates the Ctrl-C fix (`fae5d47`) and the logging (`c5cbb85`). Keep it for the AI speed comparison in step 3.4 |
-| **41550220800** | `5fa548f` | **Use this one.** gifski off, dispatched 2026-11-02 with the owner's approval. Adds the palette fix (a GIF far into a long source took about 30 min per pass), `reddit-post` at lossy 10 (SC-009 is now a quality bar), gifsicle's file kept only when smaller, and each warning printed once. Windows artifact 412,680,923 B (id 13194480079), digest `sha256:4028a5bc3df8df88b23f7f1123fdd454c0ffa8505cdfa56840a4ff2bce6c9d80` |
+| **43534418980** | `b96bfdd` | **Use this one.** 0.3.0, gifski **on** (AGPL-3.0-or-later, owner decision 2026-11-13), dispatched 2026-11-13 with the owner's approval. Adds the portrait preview fix (`d969f39`), several audio tracks in the queue (`1f0a223`), the kept `settings.json` (`c8978b2`) and the root `LICENSE`. Windows artifact 415,370,575 B (id 14091030429), digest `sha256:a437796f813789fdbb4bcfc06f3c623c2e18d6f46d3d3598eb8cd08d5bcbd42b` |
+| 41550220800 | `5fa548f` | Replaced by 43534418980. gifski off, dispatched 2026-11-02 with the owner's approval. Adds the palette fix (a GIF far into a long source took about 30 min per pass), `reddit-post` at lossy 10 (SC-009 is now a quality bar), gifsicle's file kept only when smaller, and each warning printed once. Windows artifact 412,680,923 B (id 13194480079), digest `sha256:4028a5bc3df8df88b23f7f1123fdd454c0ffa8505cdfa56840a4ff2bce6c9d80` |
 | 40740230580 | `5e01399` | Replaced by 41550220800 (it has the palette bug). gifski off, dispatched 2026-10-28 with the owner's approval. Adds the static C runtime (no VC++ runtime DLL needed; ncnn without OpenMP), the Ctrl-C fix and the logging. Windows artifact 412,635,658 B (id 12840729892), digest `sha256:b0c6860b0814add19a2b1aa7c2bfda4107ec7f3315a0cdac40d11b4124aa3fbe` |
 
 The artifact contains the NSIS setup (`…_x64-setup.exe`), the MSI and the CLI archive
-(`rmedia-cli-<ref>-x86_64-pc-windows-msvc.zip`). The installer file names still carry `0.2.0`,
-because `tauri.conf.json` has not been bumped. With gifski off, gifski is not bundled:
-`max-quality` falls back to the built-in engine with `ENGINE_FALLBACK`, as designed.
+(`rmedia-cli-<ref>-x86_64-pc-windows-msvc.zip`). The installers are named `0.3.0`. gifski is
+bundled, so `max-quality` uses it. (On the older gifski-off builds, `max-quality` falls back to
+the built-in engine with `ENGINE_FALLBACK`.)
 
 ## 1. Machine and Folders
 
@@ -94,10 +95,11 @@ Expected:
 - All encoders `yes`.
 - `gif: yes`, `reddit mp4: yes`.
 - `gifsicle: 1.98 (bundled …\rmedia-gifsicle.exe)`.
-- `gifski: no (…)`.
+- `gifski: 1.34.0 (bundled …\rmedia-gifski.exe)` (`no (…)` on the gifski-off builds).
 - `model:` lines `ok`.
 - `status: ready`.
-- `licenses\` contains the FFmpeg, ncnn, glslang and GIFSICLE notices, and no GIFSKI files.
+- `licenses\` contains the FFmpeg, ncnn, glslang, GIFSICLE and GIFSKI notices, and the archive's
+  top folder has `LICENSE.txt` (AGPL-3.0).
 
 SmartScreen may warn on first run because the binaries are unsigned. Record whether it does.
 
@@ -138,7 +140,7 @@ If you have a second drive or a OneDrive folder, also run one clip from it, and 
 & $cli gif "C:\rmedia-qa\Clips ünï 日本\vidéo à.mp4" -s 10 -d 8
 & $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 8 --target reddit-comment -o C:\rmedia-qa\out
 & $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 8 --format mp4 -o C:\rmedia-qa\out
-& $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 8 --target max-quality -o C:\rmedia-qa\out   # ENGINE_FALLBACK (no gifski)
+& $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 8 --target max-quality -o C:\rmedia-qa\out   # uses gifski; no ENGINE_FALLBACK
 & $cli gif C:\rmedia-qa\footage\a.mp4 -s 10 -d 6 --shape 9:16 --framing smart -o C:\rmedia-qa\out
 & $cli clip C:\rmedia-qa\footage\a.mp4 -s 30 -d 6 --gif -o C:\rmedia-qa\out
 ```
@@ -230,7 +232,7 @@ Basics:
 1. The window opens. **Settings** shows the bundled engine.
 2. **Settings › GIF export** (needs a build from `813cdeb` or later) shows:
    - GIF yes and Reddit MP4 yes;
-   - gifsicle 1.98 (bundled) and gifski not found.
+   - gifsicle 1.98 (bundled) and gifski 1.34.0 (bundled).
 3. **Choose gifsicle…**: pick `rmedia-gifsicle.exe` from the CLI folder. The source becomes the
    setting. **Use automatic** goes back to bundled.
 
@@ -260,7 +262,7 @@ Upscale and export:
 12. **Export manifest** from the queue, then run it with
     `rmedia batch <manifest> --dry-run`. It plans the same jobs.
 
-Several audio tracks (needs a build newer than run 41550220800; skip it on that build):
+Several audio tracks (needs run 43534418980 or newer; skip it on older builds):
 13. Make a test file with two audio tracks, using the bundled ffmpeg from the CLI folder:
 
     ```powershell
@@ -271,7 +273,7 @@ Several audio tracks (needs a build newer than run 41550220800; skip it on that 
     audio list. Untick track 2: the summary reads **audio track 1**. Tick it again: **all audio**.
     Export the manifest: with track 2 unticked it has `"audio": [1]`.
 
-Portrait preview (needs a build newer than run 41550220800; on that build a tall video shows
+Portrait preview (needs run 43534418980 or newer; on older builds a tall video shows
 pushed down and cut off at the bottom):
 
 14. Add a portrait video (taller than wide, such as a phone recording) and open it in **Clip**.
@@ -351,7 +353,7 @@ Files: setup.exe <name, size>, msi <name, size>, cli zip <name, size>
 
 3.1 doctor: ffmpeg bundled <y/n>, gif/mp4 <y/n>, gifsicle <line>, gifski <line>, status <..>, SmartScreen <y/n>
 3.2 clip: unicode/space path <ok/..>, accurate <ok/..>, no-clobber skip <ok/..>, source hash unchanged <True/False>, long path <ok/..>, \\?\ shown <y/n>, other drive <ok/n.a.>
-3.3 gif: post <size, WxH@fps>, comment <..>, mp4 <..>, max-quality fallback <ok/..>, 9:16 smart <ok/..>, clip --gif <ok/..>, dry-run estimate vs real <..>
+3.3 gif: post <size, WxH@fps>, comment <..>, mp4 <..>, max-quality gifski <ok/..>, 9:16 smart <ok/..>, clip --gif <ok/..>, dry-run estimate vs real <..>
 3.4 upscale: tiers <cpu/gpu/ai lines>, ai on this machine <works | error text>
 3.5 cancel: Ctrl+C <s>, window close <clean/left: ..>, kill parent <clean/left: ..>, upscale cancel <..>
 4.1 NSIS: admin <y/n>, folder <..>, files <..>, Start menu <..>

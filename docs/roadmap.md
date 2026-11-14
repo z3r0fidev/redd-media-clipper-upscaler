@@ -182,8 +182,11 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
-- Windows re-checks on run 41550220800: SC-009 (passes if worst loss is at most 1.0), installer
-  prompts and SmartScreen, the 12 desktop QA steps, cancel case (b), playback, the MSI.
+- Windows re-checks on run 43534418980 (0.3.0 on `b96bfdd`, gifski on, both platforms green
+  2026-11-14; Windows artifact 14091030429, `sha256:a437796f…`): SC-009 (passes if worst loss is
+  at most 1.0), installer prompts and SmartScreen, desktop QA steps 1-14 (13: audio tracks, 14:
+  portrait preview), cancel case (b), playback, the MSI, and `max-quality` now using gifski. Tag
+  `v0.3.0` on `b96bfdd` (or later) once they pass.
 - AI speed comparison against run 40452999345's CLI (`doctor --recheck`).
 - `doctor` lists the Iris Xe twice. Checked on the laptop (2026-11-13): one Vulkan driver is
   registered (the per-adapter `VulkanDriverName`), and `vulkaninfo --summary` also shows GPU0
@@ -195,7 +198,7 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - SC-003 timing on a quiet machine.
 - Fixed: a sub-second blurred-background range shows tenths (`00:54.6–00:55.4`), not
   "00:55–00:55".
-- Recheck over SSH on run 41550220800: a warning line ran into the `✓` line on the older build,
+- Recheck over SSH on run 43534418980: a warning line ran into the `✓` line on the older build,
   right after the duplicate warning that 5a1984b removed. It does not reproduce in a Linux pty
   (80 and 120 columns, wrapped warnings included).
 - Optional laptop cleanup: the cancel* output folders (157 MB and 57 MB).

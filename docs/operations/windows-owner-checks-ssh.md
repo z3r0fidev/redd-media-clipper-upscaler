@@ -9,11 +9,12 @@ MP4 audio without a player. The runbook still says what each result should be, a
 A program started over SSH has no visible window. The installers' prompts, the desktop app,
 closing a window mid-job and playing the results need the screen or RDP ([step 9](#9-needs-the-screen-or-rdp)).
 
-Build under test: `release.yml` run **41550220800** (commit `5fa548f`, gifski off). Windows
-artifact `rmedia-x86_64-pc-windows-msvc`, id 13194480079, 412,680,923 B, digest
-`sha256:4028a5bc3df8df88b23f7f1123fdd454c0ffa8505cdfa56840a4ff2bce6c9d80`. It has the palette fix,
-`reddit-post` at lossy 10, the kept-smaller-file rule for gifsicle and the single warnings. The
-first SSH run (2026-11-01) used run 40740230580; its results are in the 003 validation log.
+Build under test: `release.yml` run **43534418980** (commit `b96bfdd`, 0.3.0, gifski on). Windows
+artifact `rmedia-x86_64-pc-windows-msvc`, id 14091030429, 415,370,575 B, digest
+`sha256:a437796f813789fdbb4bcfc06f3c623c2e18d6f46d3d3598eb8cd08d5bcbd42b`. It has everything in
+run 41550220800 (the palette fix, `reddit-post` at lossy 10, the kept-smaller-file rule for
+gifsicle, the single warnings) plus gifski, the portrait preview fix and several audio tracks.
+The first SSH run (2026-11-01) used run 40740230580; its results are in the 003 validation log.
 
 ## 0. On the Linux Machine: Fetch the Artifact
 
@@ -93,9 +94,9 @@ Expected:
 - `ffmpeg` and `ffprobe` show `(bundled)`.
 - All encoders `yes`.
 - `gif: yes`, `reddit mp4: yes`.
-- gifsicle 1.98 bundled, and gifski `no`.
+- gifsicle 1.98 bundled, and gifski 1.34.0 bundled.
 - `model:` lines `ok`, and `status: ready`.
-- `licenses\` has no GIFSKI files.
+- `licenses\` has the GIFSKI notice, licence and deps files, and the top folder `LICENSE.txt`.
 
 ## 4. Clips and the Untouched Source (Runbook §3.2)
 
@@ -137,7 +138,7 @@ Check that no path rmedia prints starts with `\\?\`.
 & $cli gif $uni -s 10 -d 8
 & $cli gif $src -s 10 -d 8 --target reddit-comment -o $qa\out
 & $cli gif $src -s 10 -d 8 --format mp4 -o $qa\out
-& $cli gif $src -s 10 -d 8 --target max-quality -o $qa\out    # expect ENGINE_FALLBACK (no gifski)
+& $cli gif $src -s 10 -d 8 --target max-quality -o $qa\out    # uses gifski; no ENGINE_FALLBACK
 & $cli gif $src -s 10 -d 6 --shape 9:16 --framing smart -o $qa\out
 & $cli clip $src -s 30 -d 6 --gif -o $qa\out
 ```
