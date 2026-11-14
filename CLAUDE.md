@@ -9,19 +9,20 @@ for Reddit (003). Spec-driven via Spec Kit.
   04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
-- Active feature: **003 GIF export for Reddit** (`specs/003-gif-export/`, 6 stories; gifsicle and
-  gifski bundled as optional engines; rmedia is AGPL-3.0-or-later since 2026-11-13, so releases
-  bundle gifski). Tasks
-  written (T001–T080); 80/80 done (`specs/003-gif-export/progress.md`), including the
-  `release.yml` run with gifski off (40345344064) and the Windows CI results. SC-009 is a quality bar
-  (gifsicle costs at most 1 VMAF point on any clip; the saving is reported; reddit-post lossy 10).
-  Owner checks left: Reddit's limits and a real Reddit upload. The Windows re-checks on release
-  run 43534418980 (0.3.0 on b96bfdd, gifski on, nothing published) all passed 2026-11-14;
-  tagged v0.3.0 on b96bfdd (release notes `docs/releases/0.3.0.md`; no GitHub release yet). Pending list: `docs/roadmap.md`.
-- Done: 001 (`specs/001-video-clipping/`, 0.1.0) and 002 (`specs/002-mobile-upscale/`, 112/112,
-  0.2.0 release candidate; owner checks left: two-phone gallery test, Reddit upload, +3 VMAF on
-  real footage). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and
-  `fetch-models` for its GPU tests) before `cargo build --workspace`. Roadmap: `docs/roadmap.md`.
+- Done and released: 001 (`specs/001-video-clipping/`, 0.1.0, tag v0.1.0), 002
+  (`specs/002-mobile-upscale/`, 112/112, 0.2.0, tag v0.2.0) and **003 GIF export for Reddit**
+  (`specs/003-gif-export/`, 80/80, 0.3.0, tag v0.3.0 on b96bfdd; tag build run 43573283485 ok,
+  nothing published, no GitHub release yet). rmedia is AGPL-3.0-or-later; releases bundle gifski.
+  Owner checks left: Reddit's limits and a real upload, the 002 two-phone test and +3 VMAF.
+  Pending list and review findings: `docs/roadmap.md`.
+- Next feature: **004 Smart cut** (`--mode smart`; not yet specified; `/speckit-specify` creates
+  `specs/004-smart-cut/`), then 005 budgeted Reddit video. The active plan below stays on 003
+  until 004 has a plan.
+- First work of the next session: security M1 (output-folder scope bypass via `..` in
+  `apps/desktop/src-tauri/src/ops.rs`) and M3 (`dependabot-notices.yml`), see the roadmap.
+- Session close: follow `docs/operations/session-close.md`.
+- The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and `fetch-models` for its GPU
+  tests) before `cargo build --workspace`.
 - Git: public remote `origin` (github.com/z3r0fidev/redd-media-clipper-upscaler), work on `main`.
   CI must be green. Pinned third-party downloads are mirrored: after `cargo xtask pin-tools`,
   run the `ffmpeg-source` workflow and `cargo xtask mirror mirror-<date>`; `cargo xtask

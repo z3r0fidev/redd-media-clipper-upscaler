@@ -1,8 +1,8 @@
 # rmedia documentation
 
 rmedia cuts clips from videos on Linux and Windows, from the `rmedia` command line or the desktop
-app. The unreleased `rmedia upscale` (feature 002, 0.2.0 release candidate) makes videos
-phone-ready, and `rmedia gif` (feature 003, 0.3.0 in development) makes GIFs and silent MP4 loops
+app. `rmedia upscale` (feature 002, 0.2.0) makes videos
+phone-ready, and `rmedia gif` (feature 003, 0.3.0, tag `v0.3.0`) makes GIFs and silent MP4 loops
 that fit Reddit; see the [Roadmap](roadmap.md). Start with the page for your role.
 
 ## Users
@@ -43,9 +43,10 @@ that fit Reddit; see the [Roadmap](roadmap.md). Start with the page for your rol
 | [Build and release](operations/build-and-release.md) | CI, packaging, pinned FFmpeg, releasing |
 | [Windows owner checks](operations/windows-owner-checks.md) | Runbook: Windows hardware QA and SC-009 (gifsicle's quality cost) on real footage |
 | [Windows checks over SSH](operations/windows-owner-checks-ssh.md) | The same runbook for an SSH session into the Windows machine, and the checks that need the screen |
+| [Closing a session](operations/session-close.md) | Checklist for ending a development session: green CI, docs, numbering, Obsidian notes, push, handoff |
 | [Roadmap](roadmap.md) | What is done, next and planned; owner validation items |
 | [Release notes 0.1.0](releases/0.1.0.md) | What feature 001 delivers; known issues |
-| [Release notes 0.2.0](releases/0.2.0.md) | Release candidate: phone upscaling (CPU, GPU and AI tiers), smart reframe, `clip --upscale`, manifests and the desktop upscale view |
+| [Release notes 0.2.0](releases/0.2.0.md) | Phone upscaling (CPU, GPU and AI tiers), smart reframe, `clip --upscale`, manifests and the desktop upscale view |
 | [Release notes 0.3.0](releases/0.3.0.md) | GIF export for Reddit: `rmedia gif`, size budgets, the Reddit MP4, gifsicle and gifski, `clip --gif`, the desktop GIF view |
 
 Specifications, plans and contracts live in [`specs/`](../specs/); research notes are in

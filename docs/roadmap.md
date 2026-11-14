@@ -4,7 +4,7 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-11-04.
+Last updated: 2026-11-14.
 
 ## Status at a Glance
 
@@ -13,6 +13,8 @@ Last updated: 2026-11-04.
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
+| 004 Smart cut | Planned, next; not yet specified (`specs/004-smart-cut/` to come); version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
+| 005 Budgeted Reddit video | Planned after 004; no version yet | MP4 with audio under Reddit size and length caps, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -49,7 +51,7 @@ the suite also passes against the minimum FFmpeg 6.1.
 Each phase ends with a checkpoint: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`,
 `cargo test --workspace`, the quickstart section for the story, and the two reviews.
 
-All of 002 is on `main`; no tagged release includes it yet (0.2.0 is a release candidate).
+All of 002 is on `main` and released as tag `v0.2.0` (no GitHub release yet).
 
 ### Owner validation (cannot be automated)
 
@@ -180,29 +182,107 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   (`761a0c9`); the desktop queue picks several audio tracks (`1f0a223`; desktop step 13 needs a
   build newer than run 41550220800).
 
+### Update (2026-11-14)
+
+- Windows checks on 0.3.0 (run 43534418980) all passed; `v0.3.0` tagged on `b96bfdd` and the
+  release notes finalised (`docs/releases/0.3.0.md`).
+- **Tag build, release run 43573283485: success on both platforms; nothing published.**
+
+  | Artifact | Id | Size | sha256 |
+  |---|---|---|---|
+  | `rmedia-x86_64-pc-windows-msvc` | 14105967890 | 415,376,129 B | `50247ba85ef961d46e9b4a99e592c4ac1ba5e00caafd1decb9c64bd59dfc5165` |
+  | `rmedia-x86_64-unknown-linux-gnu` | 14106166938 | 639,646,386 B | `b02253d5b63d6b4e979ba12f3f4f031818625e33d9de832be55fc2c01726e70a` |
+- Also this session: rmedia is AGPL-3.0-or-later with gifski bundled; Dependabot PRs handled
+  (TypeScript 7 and later ignored, #27 closed); `dependabot-notices.yml` regenerates
+  `THIRD_PARTY_NOTICES.md` on Dependabot PRs; desktop portrait preview fixed (`d969f39`); flaky
+  Windows cancel test fixed (`ea3601c`); troubleshooting entries for the duplicate graphics card
+  and the libEGL DRI3 warning; the Windows runbooks rewritten for per-build output folders.
+- Reviews run at the 0.3.0 milestone (senior-code-reviewer, security-auditor,
+  product-strategy-advisor): no Critical or High findings and nothing that corrupts data. Their
+  findings are items 5 to 7 below. The close-out procedure is a permanent runbook:
+  [Closing a session](operations/session-close.md).
+
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
-- Windows re-checks on run 43534418980 (0.3.0 on `b96bfdd`, gifski on; Windows artifact
-  14091030429, `sha256:a437796f…`): **all passed 2026-11-14**. SC-009 8.1% saved, worst loss
-  0.67 (matching Linux); doctor with gifski bundled, paths, clips, every GIF target, the Reddit
-  MP4 (video only), `max-quality` on gifski, cancel cases a-d, the NSIS install, and (per the
-  owner) the installer prompts, desktop steps 1-14, playback and the MSI
-  ([validation log](../specs/003-gif-export/checklists/validation.md)). Tagged `v0.3.0` on
-  `b96bfdd` 2026-11-14; the tag build is release run 43573283485. No GitHub release yet.
-- AI speed comparison against run 40452999345's CLI (`doctor --recheck`).
-- `doctor` lists the Iris Xe twice. Checked on the laptop (2026-11-13): one Vulkan driver is
-  registered (the per-adapter `VulkanDriverName`), and `vulkaninfo --summary` also shows GPU0
-  and GPU1 with the same `deviceUUID`, so the Vulkan loader reports one GPU twice; likely an
-  implicit layer (OBS, RTSS, Steam, Vulkan SDK). No functional impact; documented in
-  troubleshooting. Optional owner check: `VK_LOADER_LAYERS_DISABLE=~implicit~` with
-  `vulkaninfo --summary`.
-- Optional: clean-machine VC++ test in Windows Sandbox.
-- SC-003 timing on a quiet machine.
-- Fixed: a sub-second blurred-background range shows tenths (`00:54.6–00:55.4`), not
-  "00:55–00:55".
-- Optional laptop cleanup: the cancel* output folders (157 MB and 57 MB).
-- Owner items: code signing (waiting on Azure details), Reddit's limits, a real Reddit upload, the 002 owner checks (two-phone gallery
-  test, +3 VMAF on real footage), the 0.3.0 version bump and tags.
+Work in this order. The next session starts at item 5 (M1).
+
+**Owner actions**
+
+1. Publish a GitHub release for `v0.3.0` from the packages of run 43573283485 (unsigned); decide
+   whether to publish catch-up releases for 0.1.0 and 0.2.0.
+2. Code signing: create the Azure Artifact Signing account and pass identity validation; then a
+   signing step, `SHA256SUMS` and an attestation go into `release.yml`.
+3. Reddit: confirm the current limits in its Help Center and do a real upload (post GIF, comment
+   GIF, `reddit-916` and `reddit-feed-45` outputs).
+4. 002 owner checks: two-phone gallery test (SC-001) and +3 VMAF on real footage (SC-002).
+   Optional: AI speed on a faster Windows GPU; the Wayland check of the GIF view; the
+   `VK_LOADER_LAYERS_DISABLE=~implicit~` `vulkaninfo` test; Linux NVIDIA VM diagnostics for the
+   libEGL DRI3 warning; clean-machine VC++ test in Windows Sandbox; SC-003 timing on a quiet
+   machine; cleanup of old cancel output folders on the laptop.
+
+**Security review findings (2026-11-14: no Critical or High, 3 Medium, 6 Low)**
+
+5. **M1 (verified; fix first, with a regression test).** `apps/desktop/src-tauri/src/ops.rs`,
+   `resolve_existing` (about line 1055), used by `may_write` (about 81) and the plan step (about
+   405): `<picked>/nope/../../elsewhere` passes `starts_with` lexically and writes outside the
+   picked output folder. Reject ParentDir and CurDir components, or normalise lexically and then
+   canonicalise.
+6. **M2.** `ops.rs` `load_manifest` (about 348–361): opening a manifest grants read access to
+   every video it names and next-to-source write access in their folders. Decide whether to
+   confirm or limit manifest-granted paths; they must not unlock next-to-source writes.
+7. **M3.** `.github/workflows/dependabot-notices.yml`: check out `head.sha`, not `head.ref`, and
+   use the same SHA for the scope check; set `persist-credentials: false` on the PR checkout and
+   give the token only to the push step.
+8. **L1.** `crates/rmedia-core/src/tools.rs`: the ffmpeg and ffprobe PATH lookup lacks the
+   refuse-cwd guard and the clean environment the GIF engines have.
+9. **L2.** `release.yml`: packages are unsigned and have no `SHA256SUMS`, SBOM or provenance
+   attestation; `npm ci` runs install scripts; rust-cache is used on tag builds.
+10. **L3.** `set_engine_path` has no `-version` banner check for ffmpeg (the GIF engines have one).
+11. **L4.** Clip lists and manifests are read without a size cap.
+12. **L5.** The `media_server` accept loop spins on persistent errors.
+13. **L6.** The desktop CSP allows `img-src` and `media-src` from any 127.0.0.1 port.
+
+**Code review findings (2026-11-14: layering holds)**
+
+14. Medium: `crates/rmedia-core/src/gif/engines.rs` (239–291): the banner and `kill_tree` spawn with
+    `std::process`, so no Job Object on Windows; this breaks the `exec::process` rule.
+15. Medium: `crates/rmedia-core/src/doctor.rs` (165–200, 263–270) uses synchronous `std::process`
+    with no timeout, called inline from the async `doctor_checked` (`ops.rs` 239–283).
+16. Medium: `crates/rmedia-core/src/exec/commit.rs` (50–58): the no-clobber fallback (when hard
+    links are unavailable) can leave a zero-byte file at the target if the rename fails. Add a
+    test.
+17. Medium: `exec/gif.rs` (482–500) `SizeWatch` polls every 250 ms and the overshoot bound is
+    untested; `exec/gif.rs` (766 lines, 3 unit tests) and `gif/plan.rs` (660 lines, no tests)
+    need tests.
+18. Low: `apps/desktop/src-tauri/src/ops.rs` `AppState` (1099 lines, about 12 `Mutex<HashMap>`):
+    a generic `Registry<T>` and a split per feature.
+19. Low: `#[allow(unsafe_code)]` in `upscale/capability.rs` (356) contradicts "unsafe only in
+    `rmedia-sr` `ffi.rs`": document the exception or move the code.
+20. Low: `expect()` on locks in `crates/rmedia-cli/src/render.rs` (a poisoned lock panics).
+21. Tech debt: route every spawn through `exec::process` (the engines banner, doctor capability
+    probes, `tools::quiet_command`); split the large modules (`ops.rs`, `exec/gif.rs`,
+    `upscale/capability.rs` 1373 lines, `plan/mod.rs` 1189, `xtask/gif_tools.rs` 1487, testkit
+    `lib.rs` 1467); stop core calling `Settings::load()` inside doctor and capability code; run
+    the GIF tests in the distro-ffmpeg CI job.
+
+**Planned features** (a version follows the feature number: 004 becomes 0.4.0)
+
+22. **004 Smart cut** (next; not yet specified; run `/speckit-specify`, then plan and tasks, in
+    `specs/004-smart-cut/`). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+    and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
+    source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
+    accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,
+    10-bit or no full GOP. Seams are verified; the dry run reports copied against re-encoded; the
+    manifest gets a `mode` value; the desktop app gets a Smart mode and keyframe markers. Out of
+    scope: HEVC and AV1 smart cut, joining clips, effects, changes to upscale or GIF, multi-file
+    input. Suggested criteria: ±1 frame; at least 80% copied on long clips; no seam decode errors;
+    every risky source falls back with a code. Research: `research/01-clipping-discovery.md` §1.4.
+23. **005 Budgeted Reddit video**: an MP4 with audio, with size and length caps as data targets.
+    Start after the Reddit limits check (item 3).
+24. Later candidates (no number yet): a desktop crop-path editor for smart reframe
+    (`research/08`); audio-only export with loudness normalisation; frame and timecode input and
+    chapter or EDL import.
+25. Deferred: animated WebP and AVIF, captions, generative outpaint.
 
 ## Release and Project Housekeeping
 
@@ -212,7 +292,7 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   Windows tests without the staged ffmpeg); 0.1.0 is superseded, so it has no artifacts. The `v0.2.0` build
   (43534837537) passed: Windows artifact 14090577285 (406,978,945 B, `sha256:bff5b80a…`), Linux
   14089591743 (631,585,854 B, `sha256:c28ae45f…`). Publishing and code signing
-  are manual. `v0.3.0` waits for the Windows checks on the 0.3.0 build.
+  are manual. `v0.3.0` was tagged on 2026-11-14 after the Windows checks (tag build 43573283485, success).
 - [x] Decide the application licence: AGPL-3.0-or-later, copyright OpenLogic Distribution Ltd
   (2026-11-13; replaces "ship without gifski" from 2026-10-27). Root `LICENSE`, manifests,
   `app_licence` and cargo-deny exceptions for rmedia's own crates; releases bundle gifski.

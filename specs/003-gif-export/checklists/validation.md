@@ -453,3 +453,13 @@ agree.
 - **Cancel cases (c) and (d)** needed a second try. The first (c) ended before the separate
   `Stop-Process` line ran, and the first (d) lacked the `&`. The runbooks now put (c) on one line
   and say to keep the `&` in (d). With these, every Windows check on 0.3.0 has passed.
+
+## Tag build of v0.3.0 (2026-11-14)
+
+Release run **43573283485**, on tag `v0.3.0` (`b96bfdd`, gifski on): success on both platforms;
+nothing published. The release gate passed.
+
+| Artifact | Id | Size | sha256 |
+|---|---|---|---|
+| `rmedia-x86_64-pc-windows-msvc` | 14105967890 | 415,376,129 B | `50247ba85ef961d46e9b4a99e592c4ac1ba5e00caafd1decb9c64bd59dfc5165` |
+| `rmedia-x86_64-unknown-linux-gnu` | 14106166938 | 639,646,386 B | `b02253d5b63d6b4e979ba12f3f4f031818625e33d9de832be55fc2c01726e70a` |

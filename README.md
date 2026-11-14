@@ -9,7 +9,7 @@ Cut clips from videos on **Linux and Windows**, from the command line or a deskt
   your start time and tells you so). **Accurate** mode re-encodes and is frame-exact.
 - Source files are never modified; existing outputs are never overwritten unless you ask.
 
-**Phone-ready upscaling** (0.2.0, release candidate): `rmedia upscale` makes a video fill a phone
+**Phone-ready upscaling** (0.2.0, tag `v0.2.0`): `rmedia upscale` makes a video fill a phone
 held upright, using a device preset (default 1080x2340):
 
 - **Smart reframe** turns landscape into portrait by following faces, cutting at scene changes
@@ -21,7 +21,7 @@ held upright, using a device preset (default 1080x2340):
 - Cut and upscale in one pass (`clip --upscale`), upscale from batch manifests, and a desktop
   **Upscale for phone** view with a before/after preview.
 
-**GIF export for Reddit** (0.3.0, in development): `rmedia gif` makes a GIF that fits a Reddit
+**GIF export for Reddit** (0.3.0, tag `v0.3.0`): `rmedia gif` makes a GIF that fits a Reddit
 post or comment, or a silent looping "Reddit MP4" that is usually five or more times smaller:
 
 - A bounded size-budget search lowers the least visible settings first and reports what it
@@ -91,7 +91,7 @@ rmedia upscale talk.mp4 --preset reddit-916 --reframe smart --dry-run   # shots,
 rmedia clip game.mkv -s 1:30 -d 20 --upscale   # cut and upscale in one pass
 rmedia doctor --recheck            # which tiers this machine can run (CPU, GPU, AI)
 
-# GIFs for Reddit (0.3.0, in development)
+# GIFs for Reddit (0.3.0)
 rmedia gif clip.mp4                # writes gifs/clip_reddit-post.gif, under 8 MB
 rmedia gif talk.mp4 -s 0:12 -e 0:18 --target reddit-comment --shape 9:16
 rmedia gif clip.mp4 --format mp4   # the silent looping Reddit MP4
