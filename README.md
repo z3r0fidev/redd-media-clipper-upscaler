@@ -28,10 +28,10 @@ post or comment, or a silent looping "Reddit MP4" that is usually five or more t
   changed; a dry run predicts the size from short sample encodes before the GIF is made.
 - GIF targets as data (`reddit-post`, `reddit-comment`, `max-quality`, `flat-ui`, or your own);
   Reddit's limits are estimates, labelled unverified.
-- Optional gifsicle and gifski engines for smaller and better-looking GIFs, bundled where the
-  licence allows; everything works without them.
+- Optional gifsicle and gifski engines for smaller and better-looking GIFs, bundled with the
+  packages; everything works without them.
 - Portrait and square GIFs with 002's face-following reframe, `clip --gif`, `batch --gif`, and a
-  desktop **GIF for Reddit** view. See [`docs/releases/0.3.0-dev.md`](docs/releases/0.3.0-dev.md).
+  desktop **GIF for Reddit** view. See [`docs/releases/0.3.0.md`](docs/releases/0.3.0.md).
 
 Progress: [`docs/roadmap.md`](docs/roadmap.md), `specs/` and `research/`.
 

@@ -309,7 +309,7 @@ gifski pipe, or the MP4 encode), an optional gifsicle post-pass and a verify sta
 (`exec/gif.rs`), reusing 002's frame chain, reframe analysis, scratch folders, events and commit.
 GIF targets are data (`gif/target.rs`, four built-ins plus `<config>/gif-targets/`). See
 [Domain Breakdown › GIF Export](domains.md#gif-export-feature-003) and the
-[0.3.0 release notes](../releases/0.3.0-dev.md).
+[0.3.0 release notes](../releases/0.3.0.md).
 
 ## Job-Kind Refactors
 

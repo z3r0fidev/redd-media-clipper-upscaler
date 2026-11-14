@@ -502,8 +502,8 @@ Exit codes are those in [Exit Codes](#exit-codes).
 
 ## `rmedia gif`
 
-Makes GIFs (or silent "Reddit MP4" loops) that fit a Reddit size budget. Added in the unreleased
-0.3.0 ([release notes](../releases/0.3.0-dev.md)).
+Makes GIFs (or silent "Reddit MP4" loops) that fit a Reddit size budget. Added in
+0.3.0 ([release notes](../releases/0.3.0.md)).
 
 ```text
 rmedia gif [OPTIONS] [INPUT]...

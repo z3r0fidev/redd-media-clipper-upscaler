@@ -12,7 +12,7 @@ Last updated: 2026-11-04.
 |---|---|---|
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
-| 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); 0.3.0 in development, waiting on owner checks | On `main`, unreleased: `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0-dev.md)) |
+| 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -187,8 +187,8 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   0.67 (matching Linux); doctor with gifski bundled, paths, clips, every GIF target, the Reddit
   MP4 (video only), `max-quality` on gifski, cancel cases a-d, the NSIS install, and (per the
   owner) the installer prompts, desktop steps 1-14, playback and the MSI
-  ([validation log](../specs/003-gif-export/checklists/validation.md)). Next: tag `v0.3.0`
-  (owner's go-ahead).
+  ([validation log](../specs/003-gif-export/checklists/validation.md)). Tagged `v0.3.0` on
+  `b96bfdd` 2026-11-14; the tag build is release run 43573283485. No GitHub release yet.
 - AI speed comparison against run 40452999345's CLI (`doctor --recheck`).
 - `doctor` lists the Iris Xe twice. Checked on the laptop (2026-11-13): one Vulkan driver is
   registered (the per-adapter `VulkanDriverName`), and `vulkaninfo --summary` also shows GPU0
