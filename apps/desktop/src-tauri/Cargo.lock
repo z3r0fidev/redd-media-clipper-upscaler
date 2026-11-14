@@ -3102,7 +3102,7 @@ dependencies = [
 
 [[package]]
 name = "rmedia-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "csv",
  "directories",
@@ -3125,7 +3125,7 @@ dependencies = [
 
 [[package]]
 name = "rmedia-desktop"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.4.3",
@@ -3146,7 +3146,7 @@ dependencies = [
 
 [[package]]
 name = "rmedia-testkit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "sha2 0.11.1",
