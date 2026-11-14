@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Started by dependabot-notices.yml after it pushes regenerated notices (a GITHUB_TOKEN push
+  # does not trigger workflows).
+  workflow_dispatch:
   schedule:
     - cron: "17 6 * * 1" # weekly: catch new advisories against unchanged code
 

@@ -31,6 +31,11 @@ updates:
     directory: /apps/desktop
     schedule:
       interval: weekly
+    ignore:
+      # svelte-check 4.7.x cannot install with TypeScript 7 (npm ERESOLVE, 2026-11-13). Remove
+      # this once svelte-check supports it.
+      - dependency-name: typescript
+        versions: [">=7"]
     groups:
       npm-desktop:
         patterns: ["*"]

@@ -219,6 +219,9 @@ before release: confirm Reddit's GIF size limits in its Help Center.
   `ncnn-static-2026-10-28`), every Windows binary built with `crt-static`, checked in CI (2026-10-28).
   Owner check left: AI speed on Windows hardware (runbook §3.4); if it is noticeably slower,
   ship the three DLLs next to `rmedia-sr.exe` instead.
+- [x] Dependabot notices automation (2026-11-13): `dependabot-notices.yml` regenerates
+  `THIRD_PARTY_NOTICES.md` on Dependabot's PRs and starts CI; TypeScript 7 is ignored until
+  svelte-check supports it.
 - [ ] Windows code signing with Azure Artifact Signing (US organisation, decided 2026-10-27):
   account and identity validation by the owner, then a signing step in `release.yml`.
 - [ ] Manual desktop QA on Windows hardware (Windows paths and Job Object handling are unverified;

@@ -1,0 +1,98 @@
+name: Dependabot notices
+
+# Dependabot updates lockfiles but not THIRD_PARTY_NOTICES.md, so CI's "notices are up to date"
+# check fails on most dependency bumps. This regenerates the file on Dependabot's pull requests,
+# pushes it to the PR branch and starts CI on the new commit.
+#
+# pull_request_target runs with a write token, so no code from the pull request runs here:
+# - xtask is built from the base branch before anything from the PR is copied in;
+# - only the PR's dependency manifests and lockfiles are copied, as data, and a PR that changes
+#   any other file is skipped;
+# - `cargo metadata` downloads and reads the new crates without building them, and npm runs with
+#   --ignore-scripts.
+# A commit pushed with GITHUB_TOKEN does not trigger workflows, hence the explicit CI dispatch.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: write # push the regenerated file to the PR branch
+  actions: write # start CI on that commit
+  pull-requests: read
+
+concurrency:
+  group: dependabot-notices-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  notices:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-22.04
+    steps:
+      - name: The pull request changes only dependency manifests and lockfiles
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename')
+          echo "$files"
+          allowed='^(Cargo\.(toml|lock)|apps/desktop/src-tauri/Cargo\.(toml|lock)|apps/desktop/package(-lock)?\.json|THIRD_PARTY_NOTICES\.md)$'
+          if [ -z "$files" ] || echo "$files" | grep -qvE "$allowed"; then
+            echo "::notice::Other files changed (or none); notices left alone."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the base branch (trusted code)
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Check out the pull request branch (data only)
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          path: pr
+
+      - name: Build xtask from the base branch
+        if: steps.scope.outputs.run == 'true'
+        working-directory: base
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          cargo build --locked -p xtask
+
+      - name: Regenerate the notices with the pull request's dependencies
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          for f in Cargo.toml Cargo.lock apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock \
+                   apps/desktop/package.json apps/desktop/package-lock.json; do
+            cp "pr/$f" "base/$f"
+          done
+          (cd base/apps/desktop && npm ci --ignore-scripts --no-audit --no-fund)
+          (cd base && ./target/debug/xtask notices)
+          cp base/THIRD_PARTY_NOTICES.md pr/THIRD_PARTY_NOTICES.md
+
+      - name: Push the regenerated file and start CI
+        if: steps.scope.outputs.run == 'true'
+        working-directory: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- THIRD_PARTY_NOTICES.md; then
+            echo "THIRD_PARTY_NOTICES.md is already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(notices): regenerate for the dependency update" -- THIRD_PARTY_NOTICES.md
+          git push origin "HEAD:refs/heads/$BRANCH"
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"

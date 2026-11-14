@@ -7,7 +7,7 @@ packages. It covers the CI pipeline, the release workflow, the pinned FFmpeg sup
 packaging, third-party notices, and code-signing status.
 
 Authoritative sources: `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
-`.github/dependabot.yml`, `deny.toml`, `xtask/src/main.rs`, `xtask/tools.lock.json`,
+`.github/dependabot.yml`, `.github/workflows/dependabot-notices.yml`, `deny.toml`, `xtask/src/main.rs`, `xtask/tools.lock.json`,
 `apps/desktop/src-tauri/tauri.conf.json`, `licenses/FFMPEG-NOTICE.md`.
 
 For local builds and tests, see the [Development Guide](../developer/development-guide.md). For
@@ -268,7 +268,7 @@ Gaps visible in the workflow (not defects, but worth knowing):
 | Section | Rule |
 |---|---|
 | `advisories` | Yanked crates are errors. |
-| `licenses` | Allowed: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC, Unicode-3.0, Zlib, MPL-2.0, CC0-1.0 (confidence 0.9). |
+| `licenses` | Allowed: MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC, Unicode-3.0, Zlib, MPL-2.0, CC0-1.0 (confidence 0.9). rmedia's own crates are AGPL-3.0-or-later through per-crate exceptions; dependencies must still be permissive. |
 | `bans` | Duplicate versions warn; wildcard version requirements are errors (path dependencies allowed). |
 | `sources` | Unknown registries and unknown Git sources are errors. |
 
@@ -279,7 +279,18 @@ Weekly update PRs for:
 - `github-actions` (root directory);
 - `cargo` in the root workspace (`/`);
 - `cargo` in the separate desktop manifest (`/apps/desktop/src-tauri`);
-- `npm` in the desktop frontend (`/apps/desktop`).
+- `npm` in the desktop frontend (`/apps/desktop`). TypeScript 7 is ignored until svelte-check
+  supports it (it fails to install with `ERESOLVE`).
+
+Dependabot changes lockfiles but not `THIRD_PARTY_NOTICES.md`, so CI's notices check would fail on
+most bumps. `dependabot-notices.yml` (`pull_request_target`, Dependabot's PRs only) regenerates
+the file, pushes it to the PR branch as `github-actions[bot]` and starts CI with
+`workflow_dispatch` (a push made with `GITHUB_TOKEN` starts no workflows). It runs with a write
+token, so it runs no code from the PR: xtask is built from the base branch first, only the
+PR's Cargo and npm manifests and lockfiles are copied in, `cargo metadata` reads the new crates
+without building them, and npm runs with `--ignore-scripts`. A PR that changes any other file
+is left alone. After that commit Dependabot stops rebasing the PR on its own; comment
+`@dependabot recreate` to get a fresh one.
 
 ## Release Workflow (`release.yml`)
 
