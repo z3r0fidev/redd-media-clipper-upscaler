@@ -301,6 +301,53 @@ reason: often one of the read errors listed under
 1. Read the message, and fix the problem it describes (for example, a missing or damaged file).
 2. Select **Retry**.
 
+### "libEGL warning: DRI3 error: Could not get DRI3 device"
+
+Linux. When the desktop app starts, the terminal shows:
+
+```text
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+```
+
+#### Cause
+
+The message comes from Mesa, the system graphics library, not from rmedia. The X server has no
+DRI3 support, so Mesa cannot reach the graphics card and draws the app's window on the CPU
+instead. This is common in virtual machines and remote sessions: the desktop runs on a virtual
+display adapter (QXL, virtio or VMware SVGA) or over VNC, xrdp or X forwarding, even when an
+NVIDIA card is passed through to the machine. The NVIDIA driver never prints this message, so
+seeing it means the card is not drawing the desktop.
+
+Only the window and the player are affected: they work, but use more CPU, and playback of large
+files may stutter. Cutting, GIF export and encoding run in the video engine, a separate program,
+and the AI upscaler talks to the graphics card through Vulkan, so neither is affected.
+
+#### Resolution
+
+Nothing is needed if the app looks and plays normally. To check what draws the desktop:
+
+```bash
+lspci -k | grep -EA3 'VGA|3D'              # which adapter and driver drive the display
+xdpyinfo -queryExtensions | grep -i dri3   # no output: the X server has no DRI3
+glxinfo -B | grep -E 'vendor|renderer'     # "llvmpipe" means software rendering
+rmedia doctor                              # the AI upscaler should still list the NVIDIA card
+```
+
+`glxinfo` is in the `mesa-utils` package.
+
+* To hide the message, start the app with `LIBGL_ALWAYS_SOFTWARE=1`. This uses the same CPU
+  rendering without first trying DRI3.
+* If the window stays blank or white, or the app closes at start, start it with
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1`. If that does not help, also set
+  `WEBKIT_DISABLE_COMPOSITING_MODE=1`.
+* For a graphics-card-drawn window in a virtual machine, the X session must run on the card
+  itself (for example, a passed-through NVIDIA card driving X, with a remote desktop such as
+  NICE DCV or Sunshine), or the hypervisor must provide 3D (virtio-gpu with virgl or Venus).
+
+> **Unverified:** The environment variables are WebKitGTK and Mesa settings. They were not tested
+> on the reporting virtual machine.
+
 ---
 
 ## Clip Timing
