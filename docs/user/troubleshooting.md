@@ -709,6 +709,26 @@ Intel(R) Graphics (integrated): about 106 min for 60 s of 480p (limit 10 min)`. 
 3. The AI tier needs a graphics card fast enough for the self-test; integrated graphics usually
    are not. Use `--tier gpu`, `--tier cpu` or leave the default, `--tier auto`.
 
+### `doctor` lists the same graphics card twice
+
+#### Cause
+
+Windows. The Vulkan loader reports one GPU as two devices, so `rmedia doctor` shows it at two
+indexes with the same name and PCI ID. `vulkaninfo --summary` shows the same thing: two GPUs
+with the same `deviceUUID`, which means one physical GPU. On the test laptop (Intel Iris Xe,
+driver 101.7092) only one Vulkan driver was registered, so the likely cause is an implicit
+Vulkan layer installed by other software, such as an overlay or capture tool (OBS, RivaTuner,
+Steam) or the Vulkan SDK.
+
+#### Resolution
+
+Nothing is needed: both entries are the same GPU, and the GPU and AI tiers work as usual. To
+find the layer, compare `vulkaninfo --summary` with and without implicit layers:
+
+```powershell
+$env:VK_LOADER_LAYERS_DISABLE = "~implicit~"; vulkaninfo --summary; Remove-Item Env:VK_LOADER_LAYERS_DISABLE
+```
+
 ### "too slow: estimated N min for this clip on the AI tier"
 
 #### Cause

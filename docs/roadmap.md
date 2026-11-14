@@ -185,12 +185,12 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - Windows re-checks on run 41550220800: SC-009 (passes if worst loss is at most 1.0), installer
   prompts and SmartScreen, the 12 desktop QA steps, cancel case (b), playback, the MSI.
 - AI speed comparison against run 40452999345's CLI (`doctor --recheck`).
-- `doctor` lists the Iris Xe twice: FFmpeg's Vulkan `GPU listing` reports it at index 0 and 1
-  (same name and PCI ID), which usually means two Intel Vulkan driver manifests are registered.
-  The listing has no UUID, so rmedia can't merge them safely. `HKLM\SOFTWARE\Khronos\Vulkan\Drivers`
-  does not exist on the laptop (2026-11-13; DCH drivers register per adapter instead). Owner: run
-  `reg query "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}" /s /v VulkanDriverName`
-  and `vulkaninfo --summary` to confirm.
+- `doctor` lists the Iris Xe twice. Checked on the laptop (2026-11-13): one Vulkan driver is
+  registered (the per-adapter `VulkanDriverName`), and `vulkaninfo --summary` also shows GPU0
+  and GPU1 with the same `deviceUUID`, so the Vulkan loader reports one GPU twice; likely an
+  implicit layer (OBS, RTSS, Steam, Vulkan SDK). No functional impact; documented in
+  troubleshooting. Optional owner check: `VK_LOADER_LAYERS_DISABLE=~implicit~` with
+  `vulkaninfo --summary`.
 - Optional: clean-machine VC++ test in Windows Sandbox.
 - SC-003 timing on a quiet machine.
 - Fixed: a sub-second blurred-background range shows tenths (`00:54.6–00:55.4`), not
