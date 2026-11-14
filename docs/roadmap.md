@@ -207,7 +207,9 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - [x] Tag `v0.1.0` (`bd1eef8`, the 0.1.0 notes' last commit) and `v0.2.0` (`b6385a1`, 002
   complete) on 2026-11-13; the tag pushes ran the release workflow. The `v0.1.0` build
   (43534837432) fails in that commit's own workflow (Linux apt conflict, fixed in `165b023`;
-  Windows tests without the staged ffmpeg); 0.1.0 is superseded, so it has no artifacts. Publishing and code signing
+  Windows tests without the staged ffmpeg); 0.1.0 is superseded, so it has no artifacts. The `v0.2.0` build
+  (43534837537) passed: Windows artifact 14090577285 (406,978,945 B, `sha256:bff5b80a…`), Linux
+  14089591743 (631,585,854 B, `sha256:c28ae45f…`). Publishing and code signing
   are manual. `v0.3.0` waits for the Windows checks on the 0.3.0 build.
 - [x] Decide the application licence: AGPL-3.0-or-later, copyright OpenLogic Distribution Ltd
   (2026-11-13; replaces "ship without gifski" from 2026-10-27). Root `LICENSE`, manifests,
