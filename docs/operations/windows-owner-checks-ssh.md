@@ -7,7 +7,8 @@ MP4 audio without a player. The runbook still says what each result should be, a
 [results sheet](windows-owner-checks.md#results-sheet) is where you record them.
 
 A program started over SSH has no visible window. The installers' prompts, the desktop app,
-closing a window mid-job and playing the results need the screen or RDP ([step 9](#9-needs-the-screen-or-rdp)).
+closing a window mid-job and playing the results need the screen or RDP
+([step 9](#9-needs-the-screen-or-rdp)).
 
 Build under test: `release.yml` run **43534418980** (commit `b96bfdd`, 0.3.0, gifski on). Windows
 artifact `rmedia-x86_64-pc-windows-msvc`, id 14091030429, 415,370,575 B, digest
@@ -23,9 +24,9 @@ digest:
 
 ```bash
 mkdir -p ~/rmedia-qa && cd ~/rmedia-qa
-gh api repos/z3r0fidev/redd-media-clipper-upscaler/actions/artifacts/13194480079/zip > rmedia-x86_64-pc-windows-msvc.zip
+gh api repos/z3r0fidev/redd-media-clipper-upscaler/actions/artifacts/14091030429/zip > rmedia-x86_64-pc-windows-msvc.zip
 sha256sum rmedia-x86_64-pc-windows-msvc.zip
-# expect 4028a5bc3df8df88b23f7f1123fdd454c0ffa8505cdfa56840a4ff2bce6c9d80
+# expect a437796f813789fdbb4bcfc06f3c623c2e18d6f46d3d3598eb8cd08d5bcbd42b
 ```
 
 After step 1 has created the folders on Windows, copy the zip and the SC-009 script:
@@ -69,7 +70,7 @@ Now run the `scp` commands from step 0.
 ## 2. Verify and Unpack
 
 ```powershell
-(Get-FileHash $qa\artifact\rmedia-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash   # 4028A5BC…6C9D80
+(Get-FileHash $qa\artifact\rmedia-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash   # A437796F…BD42B
 Expand-Archive $qa\artifact\rmedia-x86_64-pc-windows-msvc.zip $qa\artifact\x
 Get-ChildItem -Recurse $qa\artifact\x | Select-Object FullName, Length
 
@@ -79,7 +80,8 @@ $cli = (Get-ChildItem -Recurse $qa\cli -Filter rmedia.exe | Select-Object -First
 ```
 
 If the SSH session drops, reconnect and run `powershell`, the `[Console]` line, the `$qa` and
-`$uniDir` lines, the `$cli` line, and step 4's `$src` and `$uni` lines again. Step 7's `Show-Left` must be defined again too.
+`$uniDir` lines, the `$cli` line, and step 4's `$src` and `$uni` lines again. Step 7's
+`Show-Left` must be defined again too.
 
 ## 3. Doctor (Runbook §3.1)
 
@@ -161,8 +163,8 @@ step 9.
 
 ## 6. Upscale and the AI Worker (Runbook §3.4)
 
-This is the main check for this build: the Windows binaries link the C runtime statically, and
-ncnn has no OpenMP.
+Builds since 2026-10-28 link the C runtime statically into the Windows binaries, and ncnn has
+no OpenMP, so the AI worker should start without the VC++ runtime.
 
 ```powershell
 & $cli doctor --recheck
@@ -292,7 +294,9 @@ powershell -ExecutionPolicy Bypass -File $qa\Measure-Sc009.ps1 -Cli $cli -Clips 
   Get-ChildItem "$env:LOCALAPPDATA\rmedia" -Recurse | Select-Object FullName, Length
   ```
 
-- **Desktop QA (runbook §4.2):** all twelve steps.
+- **Desktop QA (runbook §4.2):** all fourteen steps. Steps 13 (audio tracks) and 14 (portrait
+  preview) are new in this build. For step 13, `$src` (clip 1252564, which has audio) works as
+  the source.
 - **Cancel case (b) (runbook §3.5):** closing a terminal window while a job runs.
 - **Playback:** the GIFs loop in Edge, the MP4s play, and the SC-009 pairs (`NN\plain` and
   `NN\gifsicle`) look right side by side.
