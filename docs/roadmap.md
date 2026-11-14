@@ -10,8 +10,8 @@ Last updated: 2026-11-04.
 
 | Feature | State | Available now |
 |---|---|---|
-| 001 Video clipping | Complete (73/73 tasks); version 0.1.0, not yet tagged | `clip`, `batch`, `scan`, `doctor`, desktop app |
-| 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0 release candidate, not yet tagged | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
+| 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
+| 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); 0.3.0 in development, waiting on owner checks | On `main`, unreleased: `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0-dev.md)) |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -204,8 +204,9 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 ## Release and Project Housekeeping
 
-- [ ] Tag `v0.1.0` and `v0.2.0` and run the release workflow; publishing and code signing are
-  manual.
+- [x] Tag `v0.1.0` (`bd1eef8`, the 0.1.0 notes' last commit) and `v0.2.0` (`b6385a1`, 002
+  complete) on 2026-11-13; the tag pushes ran the release workflow. Publishing and code signing
+  are manual. `v0.3.0` waits for the Windows checks on the 0.3.0 build.
 - [x] Decide the application licence: AGPL-3.0-or-later, copyright OpenLogic Distribution Ltd
   (2026-11-13; replaces "ship without gifski" from 2026-10-27). Root `LICENSE`, manifests,
   `app_licence` and cargo-deny exceptions for rmedia's own crates; releases bundle gifski.
