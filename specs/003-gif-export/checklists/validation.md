@@ -403,3 +403,53 @@ published. This is the build for the Windows re-checks.
 Files: `rmedia_0.2.0_amd64.deb` 168.85 MiB, `rmedia_0.2.0_amd64.AppImage` 289.33 MiB,
 `rmedia_0.2.0_x64-setup.exe` 107.75 MiB, `rmedia_0.2.0_x64_en-US.msi` 150.24 MiB, plus the CLI
 archives. Still named 0.2.0: `tauri.conf.json` has not been bumped.
+
+## Windows owner checks on 0.3.0 (2026-11-14)
+
+Release run **43534418980** (`b96bfdd`, 0.3.0, gifski on), on the owner's laptop over SSH and
+RDP with the [runbook](../../../docs/operations/windows-owner-checks.md). The first pass ran into
+outputs left by the 11-02 build, so most clip and GIF commands were skipped. The runbooks now
+write each build's outputs to their own folder (`a8dcfb7`), and steps 3.2–3.5 were run again into
+`C:\rmedia-qa\0.3.0`. The owner reports desktop QA steps 1–14, cancel case (b), playback and the
+MSI as passed, without the details.
+
+```text
+Machine: Windows 11 Pro 10.0.26300, i7-1185G7 (4C/8T), 32 GB, Intel Iris Xe 32.0.101.7092 (+ Microsoft Remote Display Adapter), VC++ runtime: v14.50.35719.00, WebView2: 157.0.4341.46
+Artifact: run 43534418980, commit b96bfdd, zip sha256 matches: yes (A437796F…BD42B)
+Files: setup.exe rmedia_0.3.0_x64-setup.exe 108.43 MiB, msi rmedia_0.3.0_x64_en-US.msi 151.27 MiB, cli zip rmedia-cli-main-x86_64-pc-windows-msvc.zip 137.13 MiB
+
+3.1 doctor: rmedia 0.3.0, ffmpeg bundled y (n9.0.2-31-gc89d6ee1ca-20261021), gif/mp4 y, gifsicle 1.98 bundled, gifski 1.34.0 bundled, status ready, licenses (FFmpeg, ncnn, glslang, GIFSICLE, GIFSKI + deps) + LICENSE.txt ok, SmartScreen <passed per owner>
+3.2 clip: unicode/space path ok, accurate ok, no-clobber skip ok, source hash unchanged True, long path ok, \\?\ shown n, other drive n.a.
+3.3 gif: post <real file not made on the fresh folder; dry-run estimate 6.6 MB at 612 px, 12 fps>, comment 2.2 MB 408x230@10 (4 encodes), mp4 690 kB 720x404@28 (2 encodes), max-quality gifski ok (29.8 MB 960x540@20, no ENGINE_FALLBACK), 9:16 smart ok (6.4 MB 344x612@12, 6 encodes), clip --gif ok (6.9 MB 720x405@12, 5 encodes)
+3.4 upscale: cpu yes 28 fps, gpu yes 9.8-18 fps (varies between runs), ai no 0.2 fps (too slow on Iris Xe: about 159-161 min for 60 s of 480p); clip --upscale ok (auto picks CPU); --tier ai refused in 0.5 s
+3.5 cancel: Ctrl+C gif clean (53%), upscale cancel cancelled (26%, first pass), window close clean (owner), kill parent <not tested: the job ended before Stop-Process ran>, Ctrl+C while scanning <not run: the command lacked the &>
+4.1 NSIS: per user, %LOCALAPPDATA%\rmedia; files as 0.2.0 plus rmedia-gifski.exe, GIFSKI-NOTICE/LICENSE/DEPS and licenses\LICENSE.txt; the installer shows "Copyright (C) 2026 OpenLogic Distribution Ltd"; admin, Start menu <passed per owner>
+4.2 desktop: steps 1-14 passed per owner; step 2 seen: gifsicle 1.98 and gifski 1.34.0, both bundled
+4.3 MSI: passed per owner
+5 SC-009: 9 clips, 134,628,759 -> 123,674,338 bytes, 8.1% smaller, worst VMAF loss 0.67 (clip 1240064): PASS; single content type (live action)
+Anything odd: doctor lists the Iris Xe twice (known); no warning ran into a ✓ line (the older build's issue did not recur)
+```
+
+SC-009 per clip (reddit-post, lossy 10, `--budget none`):
+
+| Clip | Start | Size | Plain | gifsicle | Saved | VMAF plain → opt | Loss |
+|---|---|---|---|---|---|---|---|
+| 1250486 | 283.0 | 406x720@15 | 11,728,329 | 11,583,628 | 1.2% | 61.68 → 61.65 | 0.04 |
+| 1249955 | 307.5 | 720x405@15 | 6,635,174 | 6,406,958 | 3.4% | 66.42 → 66.36 | 0.06 |
+| 1252497 | 130.5 | 720x405@15 | 10,638,190 | 10,503,881 | 1.3% | 67.51 → 67.43 | 0.08 |
+| 1235334 | 1268.5 | 720x720@15 | 8,446,118 | 7,596,966 | 10.1% | 74.12 → 73.76 | 0.36 |
+| 1252564 | 73.5 | 720x405@15 | 22,641,147 | 22,274,105 | 1.6% | 97.37 → 97.33 | 0.04 |
+| 1246419 | 322.0 | 480x680@15 | 15,391,632 | 13,985,278 | 9.1% | 65.58 → 65.53 | 0.06 |
+| 1240064 | 542.5 | 720x403@15 | 13,697,353 | 11,432,623 | 16.5% | 75.51 → 74.85 | 0.67 |
+| 1247209 | 516.0 | 720x547@15 | 28,056,847 | 26,673,487 | 4.9% | 47.05 → 47.04 | 0.01 |
+| 1134827 | 536.0 | 720x405@15 | 17,393,969 | 13,217,412 | 24.0% | 97.72 → 97.61 | 0.11 |
+
+The totals match the Linux sweep at lossy 10 (8.1% saved, worst loss 0.67), so Windows and Linux
+agree.
+
+- **Picking the wrong program is refused.** Choosing `rmedia-gifsicle.exe` under **Choose
+  gifski…** shows "did not identify itself as gifski 1.x" and keeps the setting unchanged.
+  Each button passes its own engine to `pick_engine`, so this is the check working as designed.
+- **Still open:** cancel cases (c) and (d) on this build, the reddit-post GIF's real size against
+  the 6.6 MB estimate, and the MP4 audio check on a 0.3.0 file. The runbooks now put case (c) on
+  one line and say to keep the `&` in case (d).

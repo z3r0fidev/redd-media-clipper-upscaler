@@ -226,7 +226,9 @@ $LASTEXITCODE      # expect 130
 
 Ctrl+C also stops the rest of the PowerShell line, so in (a) and (d) `Show-Left` and
 `$LASTEXITCODE` are separate commands: run them after the job has ended. In (c), the
-`cancelling…` line must not appear: rmedia is killed, not cancelled.
+`cancelling…` line must not appear: rmedia is killed, not cancelled. `Stop-Process` must not say
+`Cannot find a process with the name "rmedia"` either: the job had already ended, so nothing
+was killed. Use a new folder and run the line again.
 
 `Show-Left` should print nothing every time. Each case needs its own new folder. If a folder
 already holds the output, the job is skipped and there is nothing to cancel: delete the folder

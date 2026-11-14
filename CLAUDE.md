@@ -15,9 +15,10 @@ for Reddit (003). Spec-driven via Spec Kit.
   written (T001–T080); 80/80 done (`specs/003-gif-export/progress.md`), including the
   `release.yml` run with gifski off (40345344064) and the Windows CI results. SC-009 is a quality bar
   (gifsicle costs at most 1 VMAF point on any clip; the saving is reported; reddit-post lossy 10).
-  Owner checks left: Reddit's limits, a real Reddit upload, and the Windows
-  re-checks (SC-009, installer prompts, desktop QA steps 1-14, cancel case b, playback, MSI) on
-  release run 43534418980 (0.3.0 on b96bfdd, gifski on, nothing published); tag v0.3.0 after. Pending list: `docs/roadmap.md`.
+  Owner checks left: Reddit's limits, a real Reddit upload, and the last Windows re-checks on
+  release run 43534418980 (0.3.0 on b96bfdd, gifski on, nothing published): cancel cases c and d,
+  the reddit-post GIF against its estimate, the MP4 audio check (the rest passed 2026-11-14);
+  tag v0.3.0 after. Pending list: `docs/roadmap.md`.
 - Done: 001 (`specs/001-video-clipping/`, 0.1.0) and 002 (`specs/002-mobile-upscale/`, 112/112,
   0.2.0 release candidate; owner checks left: two-phone gallery test, Reddit upload, +3 VMAF on
   real footage). The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and

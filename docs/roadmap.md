@@ -182,10 +182,13 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
-- Windows re-checks on run 43534418980 (0.3.0 on `b96bfdd`, gifski on, both platforms green
-  2026-11-14; Windows artifact 14091030429, `sha256:a437796f…`): SC-009 (passes if worst loss is
-  at most 1.0), installer prompts and SmartScreen, desktop QA steps 1-14 (13: audio tracks, 14:
-  portrait preview), cancel case (b), playback, the MSI, and `max-quality` now using gifski. Tag
+- Windows re-checks on run 43534418980 (0.3.0 on `b96bfdd`, gifski on; Windows artifact
+  14091030429, `sha256:a437796f…`). Passed 2026-11-14: SC-009 (8.1% saved, worst loss 0.67,
+  matching Linux), doctor with gifski bundled, paths, clips, GIF comment, Reddit MP4,
+  `max-quality` on gifski, 9:16 smart, `clip --gif`, cancel (a), the NSIS install, and (per
+  the owner) the installer prompts, desktop steps 1-14, cancel (b), playback and the MSI
+  ([validation log](../specs/003-gif-export/checklists/validation.md)). Left: cancel (c) and
+  (d), the reddit-post GIF against its estimate, and the MP4 audio check on a 0.3.0 file. Tag
   `v0.3.0` on `b96bfdd` (or later) once they pass.
 - AI speed comparison against run 40452999345's CLI (`doctor --recheck`).
 - `doctor` lists the Iris Xe twice. Checked on the laptop (2026-11-13): one Vulkan driver is
@@ -198,9 +201,6 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 - SC-003 timing on a quiet machine.
 - Fixed: a sub-second blurred-background range shows tenths (`00:54.6–00:55.4`), not
   "00:55–00:55".
-- Recheck over SSH on run 43534418980: a warning line ran into the `✓` line on the older build,
-  right after the duplicate warning that 5a1984b removed. It does not reproduce in a Linux pty
-  (80 and 120 columns, wrapped warnings included).
 - Optional laptop cleanup: the cancel* output folders (157 MB and 57 MB).
 - Owner items: code signing (waiting on Azure details), Reddit's limits, a real Reddit upload, the 002 owner checks (two-phone gallery
   test, +3 VMAF on real footage), the 0.3.0 version bump and tags.

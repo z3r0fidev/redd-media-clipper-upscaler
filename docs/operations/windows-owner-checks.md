@@ -222,17 +222,21 @@ Start-Process powershell -ArgumentList '-NoExit', '-Command', "& '$cli' gif '$sr
 # ...close it with the X while it is encoding, then:
 Show-Left      # expect nothing
 
-# c) Kill the parent: start it again, then end only rmedia.exe. Press nothing until Show-Left
-#    prints: Ctrl+C here would cancel the job normally and skip the kill.
-Start-Process $cli -ArgumentList 'gif', "`"$src`"", '--budget', 'none', '-o', "`"$run\out\cancel3`""
-Start-Sleep 5; Stop-Process -Name rmedia -Force
-Start-Sleep 2; Show-Left      # expect no rmedia-ffmpeg / rmedia-gifsicle left
+# c) Kill the parent. One line: it starts the job, ends only rmedia.exe 5 s later, then checks.
+#    The job takes about a minute, so on separate lines it can finish before the kill.
+#    Press nothing until Show-Left prints: Ctrl+C would cancel the job normally and skip the kill.
+Start-Process $cli -ArgumentList 'gif', "`"$src`"", '--budget', 'none', '-o', "`"$run\out\cancel3`""; Start-Sleep 5; Stop-Process -Name rmedia -Force; Start-Sleep 2; Show-Left
 ```
+
+In (c), `Stop-Process` must not say `Cannot find a process with the name "rmedia"`: that means
+the job had already ended and nothing was killed. Use a new folder and run the line again.
+Expect no `rmedia-ffmpeg` or `rmedia-gifsicle` left.
 
 d) Ctrl+C before the run (needs a build from `fae5d47` or later, such as run 43534418980):
    point `gif` at a large folder with `--json` and press Ctrl+C while it is still scanning,
    before any `job_started` line. Expected: exit 130 (`$LASTEXITCODE`), nothing written, and
-   the last line a `summary` with `"exit_code":130`.
+   the last line a `summary` with `"exit_code":130`. Keep the `&` at the start: without it,
+   PowerShell stops with `Unexpected token 'gif'` and nothing runs.
 
    ```powershell
    & $cli gif C:\Users --json -o $run\out\cancel5
