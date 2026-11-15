@@ -51,7 +51,7 @@ the suite also passes against the minimum FFmpeg 6.1.
 Each phase ends with a checkpoint: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`,
 `cargo test --workspace`, the quickstart section for the story, and the two reviews.
 
-All of 002 is on `main` and released as tag `v0.2.0` (no GitHub release yet).
+All of 002 is on `main` and released as tag `v0.2.0` (GitHub release published 2026-11-15).
 
 ### Owner validation (cannot be automated)
 
@@ -211,8 +211,9 @@ spikes S1–S3, item 22), then item 8 (L1).
 **Owner actions**
 
 1. ~~Publish a GitHub release for `v0.3.0`~~ done 2026-11-15: [v0.3.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.3.0), the six
-   packages of run 43573283485 (unsigned) plus `SHA256SUMS`. Still to decide: catch-up releases
-   for 0.1.0 and 0.2.0.
+   packages of run 43573283485 (unsigned) plus `SHA256SUMS`. Catch-up releases also published
+   2026-11-15: [v0.2.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.2.0) (packages of run 43534837537) and [v0.1.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.1.0)
+   (source only: its tag build failed, and its FFmpeg pin has no published source).
 2. Code signing: create the Azure Artifact Signing account and pass identity validation; then a
    signing step, `SHA256SUMS` and an attestation go into `release.yml`.
 3. Reddit: confirm the current limits in its Help Center and do a real upload (post GIF, comment
