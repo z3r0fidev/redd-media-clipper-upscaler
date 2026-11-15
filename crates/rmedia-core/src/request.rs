@@ -33,6 +33,9 @@ pub enum Mode {
     Fast,
     /// Frame-accurate re-encode.
     Accurate,
+    /// Frame-accurate; whole GOPs are copied and only the partial GOPs at each end re-encoded
+    /// (feature 004). Sources it cannot handle are cut in accurate mode.
+    Smart,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -78,6 +81,11 @@ pub struct StreamSelection {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Options {
     pub mode: Mode,
+    /// With `Mode::Smart`: cut a source that cannot be smart-cut in accurate mode (`true`) or fail
+    /// the job (`false`, strict). Serialized only when `false`.
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub smart_fallback: bool,
     /// `None` = `<source dir>/clips`.
     #[serde(serialize_with = "crate::pathser::opt_path")]
     pub output_dir: Option<PathBuf>,
@@ -110,6 +118,7 @@ impl Default for Options {
     fn default() -> Self {
         Options {
             mode: Mode::Fast,
+            smart_fallback: true,
             output_dir: None,
             name_template: DEFAULT_NAME_TEMPLATE.to_owned(),
             container: None,
@@ -131,6 +140,9 @@ pub struct PartialOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub mode: Option<Mode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub smart_fallback: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "crate::pathser::opt_path")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub output_dir: Option<PathBuf>,
@@ -165,6 +177,7 @@ impl PartialOptions {
         let pick = |same: bool| !same;
         PartialOptions {
             mode: pick(opts.mode == base.mode).then_some(opts.mode),
+            smart_fallback: pick(opts.smart_fallback == base.smart_fallback).then_some(opts.smart_fallback),
             output_dir: pick(opts.output_dir == base.output_dir).then(|| opts.output_dir.clone()).flatten(),
             name_template: pick(opts.name_template == base.name_template).then(|| opts.name_template.clone()),
             container: pick(opts.container == base.container).then(|| opts.container.clone()).flatten(),
@@ -193,6 +206,7 @@ impl PartialOptions {
     pub fn apply(&self, base: &Options) -> Options {
         Options {
             mode: self.mode.unwrap_or(base.mode),
+            smart_fallback: self.smart_fallback.unwrap_or(base.smart_fallback),
             output_dir: self.output_dir.clone().or_else(|| base.output_dir.clone()),
             name_template: self.name_template.clone().unwrap_or_else(|| base.name_template.clone()),
             container: self.container.clone().or_else(|| base.container.clone()),
@@ -213,6 +227,14 @@ impl PartialOptions {
             gif_fill: base.gif_fill.clone(),
         }
     }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(v: &bool) -> bool {
+    *v
 }
 
 /// Where a request came from, for error messages.

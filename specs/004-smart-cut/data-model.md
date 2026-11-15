@@ -67,8 +67,8 @@ enum FallbackReason {
 | `copied_share` | `f64` | copy frames ÷ all frames |
 | `kprev` | `Ts` (absolute) | the keyframe the copy step seeks to (research R3) |
 | `encode` | `PartEncode` | the matched encoder settings (research R4) |
-| `sample_entry` | `Option<&'static str>` | `"avc3"` for mp4/m4v/mov (research R5) |
-| `rotation` | `Option<f64>` | set again in the final mux (research R5) |
+| `sample_entry` | `Option<&'static str>` | `"avc1"` for mp4/m4v/mov (research R5, spike S1); `None` for mkv and ts |
+| `rotation` | `Option<f64>` | the head and tail are encoded with `-noautorotate`; set again on the join's input (research R5, spike S2) |
 
 `Part { span: Span, frames: u32 }`.
 

@@ -10,7 +10,7 @@ use crate::request::{BatchRequest, ClipRequest, Mode, Options, Origin, PartialOp
 use crate::time::{EndSpec, Ts};
 use crate::upscale::{MAX_CRF, PartialUpscale};
 
-const COLUMNS: [&str; 29] = [
+const COLUMNS: [&str; 30] = [
     "input",
     "start",
     "end",
@@ -40,6 +40,7 @@ const COLUMNS: [&str; 29] = [
     "gif_engine",
     "gif_optimise",
     "gif_strict_engine",
+    "smart_fallback",
 ];
 
 /// Columns a plain 001 manifest has; the `upscale_*` and `gif_*` ones are written only when
@@ -47,6 +48,9 @@ const COLUMNS: [&str; 29] = [
 const CLIP_COLUMNS: usize = 7;
 /// Where the `gif_*` columns start (after the six `upscale_*` ones).
 const GIF_COLUMNS: usize = CLIP_COLUMNS + 6;
+/// Where the `gif_*` columns end (`smart_fallback`, feature 004, follows them).
+const GIF_END: usize = GIF_COLUMNS + 16;
+const _: () = assert!(GIF_END + 1 == COLUMNS.len());
 
 pub fn load(path: &Path, cli: &Options) -> Result<BatchRequest, Vec<Issue>> {
     match std::fs::read(path) {
@@ -108,7 +112,8 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
     let (c_end, c_dur, c_name, c_mode, c_out) =
         (col("end"), col("duration"), col("name"), col("mode"), col("output"));
     let c_up: Vec<Option<usize>> = COLUMNS[CLIP_COLUMNS..GIF_COLUMNS].iter().map(|c| col(c)).collect();
-    let c_gif: Vec<Option<usize>> = COLUMNS[GIF_COLUMNS..].iter().map(|c| col(c)).collect();
+    let c_gif: Vec<Option<usize>> = COLUMNS[GIF_COLUMNS..GIF_END].iter().map(|c| col(c)).collect();
+    let c_smart = col("smart_fallback");
 
     let mut sources: Vec<SourceRequest> = Vec::new();
     for record in rdr.records() {
@@ -165,8 +170,18 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
             None => None,
             Some("fast") => Some(Mode::Fast),
             Some("accurate") => Some(Mode::Accurate),
+            Some("smart") => Some(Mode::Smart),
             Some(other) => {
-                row_issues.push(format!("mode must be fast or accurate, not \"{other}\""));
+                row_issues.push(format!("mode must be fast, accurate or smart, not \"{other}\""));
+                None
+            }
+        };
+        let smart_fallback = match get(c_smart).map(str::to_ascii_lowercase).as_deref() {
+            None => None,
+            Some("true") => Some(true),
+            Some("false") => Some(false),
+            Some(other) => {
+                row_issues.push(format!("smart_fallback must be true or false, not \"{other}\""));
                 None
             }
         };
@@ -180,6 +195,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
             name: get(c_name).map(str::to_owned),
             overrides: PartialOptions {
                 mode,
+                smart_fallback,
                 output_dir: get(c_out).map(|o| resolve(&base, Path::new(o))),
                 upscale,
                 gif,
@@ -388,7 +404,7 @@ fn gif_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<crate::
 fn gif_row(g: Option<&crate::gif::GifOptions>) -> Vec<String> {
     let Some(g) = g else {
         let mut off = vec!["off".to_owned()];
-        off.resize(COLUMNS.len() - GIF_COLUMNS, String::new());
+        off.resize(GIF_END - GIF_COLUMNS, String::new());
         return off;
     };
     let opt = |v: Option<String>| v.unwrap_or_default();
@@ -469,7 +485,7 @@ pub fn write(req: &BatchRequest) -> String {
         columns.extend(&COLUMNS[CLIP_COLUMNS..GIF_COLUMNS]);
     }
     if gifs {
-        columns.extend(&COLUMNS[GIF_COLUMNS..]);
+        columns.extend(&COLUMNS[GIF_COLUMNS..GIF_END]);
     }
     let mut w = csv::Writer::from_writer(Vec::new());
     let _ = w.write_record(&columns);
@@ -488,6 +504,7 @@ pub fn write(req: &BatchRequest) -> String {
             let mode = match o.mode {
                 Mode::Fast => "fast",
                 Mode::Accurate => "accurate",
+                Mode::Smart => "smart",
             };
             let mut row = vec![
                 s.path.to_string_lossy().into_owned(),

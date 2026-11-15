@@ -76,6 +76,12 @@ pub enum IssueCode {
     TimingApproximate,
     /// Warning: the range is longer than the GIF target's recommended duration (003).
     LongRange,
+    /// Warning: a smart job is cut in accurate mode instead; `detail.reason` says why (004).
+    SmartFallback,
+    /// A smart job that may not fall back (strict mode) cannot be smart-cut (004).
+    SmartUnavailable,
+    /// Notice: the job also upscales or makes a GIF, so smart cut does not apply (004).
+    SmartNotApplied,
 }
 
 impl IssueCode {
@@ -102,6 +108,9 @@ impl IssueCode {
             IssueCode::EngineFallback => "ENGINE_FALLBACK",
             IssueCode::TimingApproximate => "TIMING_APPROXIMATE",
             IssueCode::LongRange => "LONG_RANGE",
+            IssueCode::SmartFallback => "SMART_FALLBACK",
+            IssueCode::SmartUnavailable => "SMART_UNAVAILABLE",
+            IssueCode::SmartNotApplied => "SMART_NOT_APPLIED",
         }
     }
 }
@@ -222,4 +231,22 @@ pub struct ErrorDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub min_bytes: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IssueCode;
+
+    #[test]
+    fn issue_codes_serialize_as_their_names() {
+        for code in [
+            IssueCode::LongRange,
+            IssueCode::SmartFallback,
+            IssueCode::SmartUnavailable,
+            IssueCode::SmartNotApplied,
+        ] {
+            assert_eq!(serde_json::to_value(code).unwrap(), code.as_str());
+        }
+        assert_eq!(IssueCode::SmartNotApplied.as_str(), "SMART_NOT_APPLIED");
+    }
 }

@@ -109,7 +109,9 @@ pub struct ClipArgs {
     /// Clip length instead of an end time: 15, +15, 1:00 …
     #[arg(short = 'd', long, value_name = "DURATION", allow_hyphen_values = true)]
     pub duration: Option<String>,
-    /// fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode.
+    /// fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode;
+    /// smart = frame-exact, copying whole GOPs and re-encoding only the ends (H.264 in mp4, mov,
+    /// mkv or ts; other sources are cut in accurate mode).
     #[arg(long, value_enum, default_value_t = ModeArg::Fast)]
     pub mode: ModeArg,
     /// Also upscale every clip for phones, in the same pass (feature 002; see `rmedia upscale`).
@@ -691,6 +693,7 @@ pub struct DoctorArgs {
 pub enum ModeArg {
     Fast,
     Accurate,
+    Smart,
 }
 
 impl From<ModeArg> for Mode {
@@ -698,6 +701,7 @@ impl From<ModeArg> for Mode {
         match m {
             ModeArg::Fast => Mode::Fast,
             ModeArg::Accurate => Mode::Accurate,
+            ModeArg::Smart => Mode::Smart,
         }
     }
 }

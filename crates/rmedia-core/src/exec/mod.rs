@@ -11,6 +11,7 @@ pub mod journal;
 mod pipeline;
 pub mod process;
 pub mod progress;
+mod smart;
 mod upscale;
 
 use std::collections::HashMap;

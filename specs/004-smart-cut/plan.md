@@ -21,8 +21,10 @@ GOP in the range and re-encodes only the partial GOPs at each end.
   profile, level, references, B-frames, pixel format, colour and SAR; `stitchable=1`; written as
   MPEG-TS parts.
 - **Join** (R5): the TS parts go through the concat demuxer and are muxed with the audio. mp4 and
-  mov use the `avc3` sample entry, so parameter sets may change between parts. Player
-  compatibility is spike S1.
+  mov keep the `avc1` sample entry with in-band parameter sets, which may change between parts
+  (spike S1: FFmpeg, GStreamer, VLC, Firefox and Chrome decode it; `avc3` fails in VLC and
+  Chrome). Rotated sources: head and tail with `-noautorotate`, rotation set again in the join
+  (spike S2).
 - **Audio** (R6): one re-encode over the whole range, as in accurate mode.
 - **Verification before commit** (R7): a packet scan, decodes of the two seam windows, and a
   framemd5 check of the copied GOPs at the seams. A failure re-runs the job in accurate mode, or
@@ -36,8 +38,8 @@ GOP in the range and re-encodes only the partial GOPs at each end.
 
 **Primary Dependencies**:
 - No new crates and no new sidecars.
-- Bundled FFmpeg n9.0.2 with libx264, the segment muxer, the concat demuxer, mpegts, and the
-  `avc3` tag in the mp4/mov muxer (all used in the R1–R8 measurements).
+- Bundled FFmpeg n9.0.2 with libx264, the segment muxer, the concat demuxer and mpegts (all used
+  in the R1–R8 measurements and spikes S1–S3).
 
 **Storage**: files only.
 - Parts go in the job's scratch folder (002 convention, journaled).
@@ -167,7 +169,7 @@ crate.
 |---|---|
 | FR-001 mode everywhere | data-model › Mode, Options.smart_fallback; [cli.md](./contracts/cli.md); [manifest-smart.md](./contracts/manifest-smart.md) |
 | FR-002 frame-exact, FR-003 copy middle | R3, R4 (exact seeks, `-frames:v`), SmartPlan |
-| FR-004 parameter matching | R4, `PartEncode`, R5 (`avc3`) |
+| FR-004 parameter matching | R4, `PartEncode`, R5 (in-band parameter sets, spike S1) |
 | FR-005 audio and streams | R6 |
 | FR-006 H.264 in mp4/mov/mkv/ts | R2 `codec`, `container` |
 | FR-007/008 fallback reasons, not an error | R2, FallbackReason, `SMART_FALLBACK` |
@@ -185,9 +187,9 @@ crate.
 
 | Risk | Mitigation |
 |---|---|
-| Players that mishandle parameter-set changes inside one file (R5) | Spike S1 before the MVP; `avc3` versus `avc1` with in-band parameter sets is one constant; mkv/ts are unaffected; owner check with a Reddit upload |
+| Players that mishandle parameter-set changes inside one file (R5) | Spike S1 done on the desktop players (all decode `avc1` correctly); WebView2, phones and a Reddit upload remain owner checks |
 | Sources whose parameter sets cannot be matched by x264 (other encoders' SPS) | Parameter sets travel in-band, so they need not be identical; the seam decode (R7) catches incompatibilities and falls back |
-| Rotation lost in the join (R5) | Spike S2; otherwise the `rotation` fallback reason |
+| Rotation lost in the join (R5) | Spike S2: `-noautorotate` parts and `-display_rotation` on the join keep it in mp4, mov and mkv; ts outputs fall back with `rotation` |
 | ts sources with imprecise copy seeks | Kprev seeking plus segment splits (R3); the copied frame count is verified against the index (R7) |
 
 ## Complexity Tracking
@@ -196,5 +198,5 @@ crate.
 |---|---|---|
 | Multi-step job (head, copy, tail, audio, join, verify) in `exec/smart.rs` | FR-002/003: exact ends with a copied middle need separate encode and copy passes | One ffmpeg command cannot copy and encode the same video stream; filter-based cutting re-encodes everything (that is accurate mode) |
 | MPEG-TS intermediate parts | R5: joining mp4 parts broke DTS monotonicity at seams (measured) | Joining mp4 or mkv parts directly failed or needs timestamp rewriting |
-| `avc3` sample entry for mp4/mov | R5: the head, copy and tail carry different parameter sets | A single `avcC` cannot describe several parameter sets with FFmpeg's muxer; identical parameter sets cannot be guaranteed (R4) |
+| In-band parameter sets that change between parts | R5: the head, copy and tail carry different parameter sets | A single `avcC` cannot describe several parameter sets with FFmpeg's muxer; identical parameter sets cannot be guaranteed (R4); `avc3` is less compatible (spike S1) |
 | Three new issue codes and the `smart_fallback` option | FR-007/008/009: scriptable fallbacks and strict mode | Plain warning strings are not stable to scripts; a mode-only switch could not express strict mode |

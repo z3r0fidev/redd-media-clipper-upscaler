@@ -482,6 +482,8 @@ impl Planner<'_> {
         // Upscaling and GIF export always re-encode, so they cut like accurate mode (and `mode`
         // is ignored).
         let mode = if up.is_some() || gif.is_some() { Mode::Accurate } else { opts.mode };
+        // TODO(004 T026): plan smart jobs; until then they cut like accurate mode.
+        let mode = if mode == Mode::Smart { Mode::Accurate } else { mode };
 
         // --- times ---------------------------------------------------------------------------
         let duration = media.duration;

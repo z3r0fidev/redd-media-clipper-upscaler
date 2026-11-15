@@ -204,9 +204,9 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
-Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; item 1's 0.3.0 release and the 004
-tasks were done on 2026-11-15; the next session starts with 004 T001–T014 (Phases 1–2 with the
-spikes S1–S3, item 22), then item 8 (L1).
+Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; item 1's releases (0.1.0–0.3.0) and
+004's tasks and Phases 1–2 (T001–T014, spikes S1–S3) were done on 2026-11-15; the next session
+starts with 004 US1 (T015–T030, item 22), then item 8 (L1).
 
 **Owner actions**
 
@@ -275,7 +275,8 @@ spikes S1–S3, item 22), then item 8 (L1).
 **Planned features** (a version follows the feature number: 004 becomes 0.4.0)
 
 22. **004 Smart cut** (next; specified and planned in `specs/004-smart-cut/` on 2026-11-14; tasks
-    T001–T059 on 2026-11-15; start with Phases 1–2, including the spikes S1–S3). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+    T001–T059 on 2026-11-15; Phases 1–2 (T001–T014, spikes S1–S3) done on 2026-11-15; next US1,
+    T015–T030). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
     and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
     source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
     accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,

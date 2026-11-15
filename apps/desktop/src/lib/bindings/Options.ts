@@ -10,6 +10,11 @@ import type { UpscaleOptions } from "./UpscaleOptions";
  */
 export type Options = { mode: Mode, 
 /**
+ * With `Mode::Smart`: cut a source that cannot be smart-cut in accurate mode (`true`) or fail
+ * the job (`false`, strict). Serialized only when `false`.
+ */
+smart_fallback?: boolean, 
+/**
  * `None` = `<source dir>/clips`.
  */
 output_dir: string | null, name_template: string, 

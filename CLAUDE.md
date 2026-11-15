@@ -17,8 +17,10 @@ for Reddit (003). Spec-driven via Spec Kit.
   Pending list and review findings: `docs/roadmap.md`.
 - Next feature: **004 Smart cut** (`--mode smart`; spec, plan and tasks in
   `specs/004-smart-cut/`, 59 tasks), then 005 budgeted Reddit video.
-- First work of the next session: 004 Phase 1–2 (`specs/004-smart-cut/tasks.md` T001–T014,
-  including the spikes S1–S3), then security L1 (see the roadmap).
+- 004 progress: T001–T014 done (Phases 1–2; spikes S1–S3 in `research.md` R3/R5: `avc1`,
+  `-noautorotate`, `-copyts`). First work of the next session: 004 US1, the MVP (T015–T030),
+  then security L1 (see the roadmap). Run tests with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to
+  `binaries/rmedia-ff*-x86_64-unknown-linux-gnu` (the system ffmpeg lacks libvmaf).
 - Session close: follow `docs/operations/session-close.md`.
 - The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and `fetch-models` for its GPU
   tests) before `cargo build --workspace`.

@@ -62,7 +62,8 @@ rmedia clip /tmp/open.mp4 --start 1.3 --end 8.7 --mode smart --no-smart-fallback
 
 ## Phase 0 spikes (before the MVP)
 
-- **S1, player compatibility** (research R5): play smart outputs (mp4 `avc3`, mp4 `avc1` with
+- **S1, player compatibility** (research R5; desktop rows done 2026-11-15, `avc1` chosen; open:
+  WebView2, an Android phone, an iPhone, a Reddit upload): play smart outputs (mp4 `avc3`, mp4 `avc1` with
   in-band parameter sets, mkv, ts) made from a source with different encoder settings in WebKitGTK,
   WebView2, Chrome, Firefox, VLC, an Android phone and an iPhone. Record the results in
   research.md, then set the default sample entry.

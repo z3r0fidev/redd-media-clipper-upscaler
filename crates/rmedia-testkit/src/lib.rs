@@ -83,6 +83,28 @@ pub enum Fixture {
     /// and 8.5–9.5 s) and zooming mandelbrot between them, so the samples underestimate the
     /// full encode (the search's retry, research R5).
     HiddenBusy10,
+    /// 1280x720 @ 25 fps, 30 s H.264 (x264, 2 s closed GOPs, 3 B-frames) + AAC: the smart cut
+    /// eligible source (feature 004).
+    SmartMp4,
+    /// `SmartMp4` remuxed to MOV.
+    SmartMov,
+    /// `SmartMp4` remuxed to Matroska.
+    SmartMkv,
+    /// `SmartMp4` remuxed to MPEG-TS (its timestamps start at 1.4 s).
+    SmartTs,
+    /// 1280x720 @ 25 fps, 20 s H.264 Baseline (no B-frames), no audio.
+    SmartBaseline,
+    /// 1920x1080 @ 25 fps, 75 s H.264 (2 s closed GOPs) + AAC: the smart-cut speed bench (SC-005).
+    SmartHd60,
+    /// 1280x720 @ 25 fps, 10 s H.264 with open GOPs (leading pictures after each keyframe).
+    OpenGop,
+    /// 640x360 @ 25 fps, 6 s H.264 High 10 (`yuv420p10le`).
+    High10,
+    /// 640x360 @ 25 fps, 6 s HEVC (libx265).
+    HevcMp4,
+    /// 1280x720 @ 25 fps, 20 s H.264 made with other encoder settings (preset slow, 4 references,
+    /// 5 B-frames, 2 s GOPs) + AAC: smart cut's re-encoded parts cannot copy its parameter sets.
+    OtherEncoder,
 }
 
 impl Fixture {
@@ -120,6 +142,16 @@ impl Fixture {
             Fixture::Alpha => "alpha.mkv",
             Fixture::Narrow => "narrow.mp4",
             Fixture::HiddenBusy10 => "hidden-busy10.mp4",
+            Fixture::SmartMp4 => "smart.mp4",
+            Fixture::SmartMov => "smart.mov",
+            Fixture::SmartMkv => "smart.mkv",
+            Fixture::SmartTs => "smart.ts",
+            Fixture::SmartBaseline => "smart-baseline.mp4",
+            Fixture::SmartHd60 => "smart-hd60.mp4",
+            Fixture::OpenGop => "open-gop.mp4",
+            Fixture::High10 => "high10.mp4",
+            Fixture::HevcMp4 => "hevc.mp4",
+            Fixture::OtherEncoder => "other-encoder.mp4",
         }
     }
 
@@ -128,6 +160,7 @@ impl Fixture {
         match self {
             Fixture::DegradedPortrait | Fixture::DegradedPortrait360 => Some(Fixture::CleanPortrait),
             Fixture::Rotated90 => Some(Fixture::TinySource),
+            Fixture::SmartMov | Fixture::SmartMkv | Fixture::SmartTs => Some(Fixture::SmartMp4),
             _ => None,
         }
     }
@@ -852,8 +885,77 @@ impl Fixture {
                 "-f",
                 "mp4",
             ],
+            Fixture::SmartMp4 => smart_args("1280x720", 30, "veryfast", "bframes=3", true),
+            Fixture::SmartMov => vec!["-i", "{src}", "-map", "0", "-c", "copy", "-f", "mov"],
+            Fixture::SmartMkv => vec!["-i", "{src}", "-map", "0", "-c", "copy", "-f", "matroska"],
+            Fixture::SmartTs => vec!["-i", "{src}", "-map", "0", "-c", "copy", "-f", "mpegts"],
+            Fixture::SmartBaseline => {
+                let mut a = smart_args("1280x720", 20, "veryfast", "bframes=0", false);
+                a.splice(a.len() - 2..a.len() - 2, ["-profile:v", "baseline"]);
+                a
+            }
+            Fixture::SmartHd60 => smart_args("1920x1080", 75, "veryfast", "bframes=3", true),
+            Fixture::OpenGop => smart_args("1280x720", 10, "veryfast", "bframes=3:open-gop=1", false),
+            Fixture::OtherEncoder => smart_args("1280x720", 20, "slow", "ref=4:bframes=5", true),
+            Fixture::High10 => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x360:rate=25:duration=6",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p10le",
+                "-profile:v",
+                "high10",
+                "-f",
+                "mp4",
+            ],
+            Fixture::HevcMp4 => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x360:rate=25:duration=6",
+                "-c:v",
+                "libx265",
+                "-preset",
+                "ultrafast",
+                "-x265-params",
+                "log-level=error",
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mp4",
+            ],
         }
     }
+}
+
+/// Arguments for the smart cut fixtures (feature 004): testsrc2 at 25 fps with 2 s closed GOPs
+/// (`keyint=50`, no scene cuts) and the given x264 options, optionally with a sine track, as mp4.
+fn smart_args(size: &str, secs: u32, preset: &'static str, x264: &str, audio: bool) -> Vec<&'static str> {
+    let leak = |s: String| -> &'static str { Box::leak(s.into_boxed_str()) };
+    let mut a = vec!["-f", "lavfi", "-i", leak(format!("testsrc2=size={size}:rate=25:duration={secs}"))];
+    if audio {
+        a.extend(["-f", "lavfi", "-i", leak(format!("sine=frequency=440:duration={secs}"))]);
+    }
+    a.extend([
+        "-c:v",
+        "libx264",
+        "-preset",
+        preset,
+        "-x264-params",
+        leak(format!("keyint=50:min-keyint=50:scenecut=0:{x264}")),
+        "-pix_fmt",
+        "yuv420p",
+    ]);
+    if audio {
+        a.extend(["-c:a", "aac", "-shortest"]);
+    }
+    a.extend(["-f", "mp4"]);
+    a
 }
 
 /// ffmetadata for `ChaptersMp4`: a title and two chapters.
@@ -1014,6 +1116,90 @@ pub fn fixture(kind: Fixture) -> PathBuf {
         assert!(target.exists(), "fixture {kind:?} could not be created");
     }
     target
+}
+
+/// A video packet of the first video stream (seconds, as ffprobe reports them).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Packet {
+    pub pts: Option<f64>,
+    pub dts: Option<f64>,
+    pub key: bool,
+}
+
+/// The first video stream's packets in decode order (feature 004).
+pub fn video_packets(path: &Path) -> Vec<Packet> {
+    let out = Command::new(ffprobe())
+        .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,dts_time,flags"])
+        .args(["-of", "csv=p=0"])
+        .arg(path)
+        .output()
+        .expect("run ffprobe");
+    assert!(out.status.success(), "ffprobe failed on {}", path.display());
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut f = l.split(',');
+            let (pts, dts, flags) = (f.next()?, f.next()?, f.next()?);
+            Some(Packet { pts: pts.parse().ok(), dts: dts.parse().ok(), key: flags.starts_with('K') })
+        })
+        .collect()
+}
+
+/// The number of decoded video frames (`-count_frames`).
+pub fn frame_count(path: &Path) -> u64 {
+    let out = Command::new(ffprobe())
+        .args(["-v", "error", "-count_frames", "-select_streams", "v:0"])
+        .args(["-show_entries", "stream=nb_read_frames", "-of", "csv=p=0"])
+        .arg(path)
+        .output()
+        .expect("run ffprobe");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .and_then(|l| l.trim().parse().ok())
+        .expect("frame count")
+}
+
+/// The error lines of a full decode of every stream (`-v error -f null -`); empty = clean.
+pub fn decode_errors(path: &Path) -> Vec<String> {
+    let out = Command::new(ffmpeg())
+        .args(["-hide_banner", "-nostdin", "-v", "error", "-i"])
+        .arg(path)
+        .args(["-f", "null", "-"])
+        .output()
+        .expect("run ffmpeg");
+    String::from_utf8_lossy(&out.stderr).lines().map(str::to_owned).collect()
+}
+
+/// MD5 of each of `frames` decoded video frames starting at `from` seconds (user time, exact
+/// seek), without timestamps, so frames from different files compare directly.
+pub fn framemd5(path: &Path, from: f64, frames: u32) -> Vec<String> {
+    let out = Command::new(ffmpeg())
+        .args(["-hide_banner", "-nostdin", "-v", "error", "-ss", &format!("{from}"), "-i"])
+        .arg(path)
+        .args(["-map", "0:v:0", "-frames:v", &frames.to_string(), "-f", "framemd5", "-"])
+        .output()
+        .expect("run ffmpeg");
+    assert!(out.status.success(), "framemd5 failed on {}", path.display());
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| l.rsplit(',').next().map(|h| h.trim().to_owned()))
+        .collect()
+}
+
+/// The start times (seconds) of the first video and the first audio stream.
+pub fn stream_starts(path: &Path) -> (f64, f64) {
+    let json = probe_json(path);
+    let start = |kind: &str| {
+        json["streams"]
+            .as_array()
+            .and_then(|s| s.iter().find(|s| s["codec_type"] == kind))
+            .and_then(|s| s["start_time"].as_str())
+            .and_then(|t| t.parse().ok())
+            .unwrap_or_else(|| panic!("no {kind} start time in {}", path.display()))
+    };
+    (start("video"), start("audio"))
 }
 
 /// Runs ffprobe and returns its JSON (`-show_format -show_streams`).
@@ -1455,6 +1641,49 @@ mod tests {
         }
         let alpha = probe_json(&fixture(Fixture::Alpha));
         assert_eq!(alpha["streams"][0]["pix_fmt"], "yuva420p");
+    }
+
+    #[test]
+    fn smart_fixtures_have_two_second_closed_gops() {
+        if !require_engine(&["libx264"]) {
+            return;
+        }
+        for kind in [
+            Fixture::SmartMp4,
+            Fixture::SmartMov,
+            Fixture::SmartMkv,
+            Fixture::SmartTs,
+            Fixture::SmartBaseline,
+        ] {
+            let p = fixture(kind);
+            let packets = video_packets(&p);
+            let zero = packets.iter().filter_map(|p| p.pts).fold(f64::INFINITY, f64::min);
+            let keys: Vec<f64> =
+                packets.iter().filter(|p| p.key).filter_map(|p| p.pts).map(|t| t - zero).collect();
+            assert!(keys.len() >= 10, "{kind:?}: {keys:?}");
+            assert!(
+                keys.iter().enumerate().all(|(i, k)| (k - 2.0 * i as f64).abs() < 0.001),
+                "{kind:?}: {keys:?}"
+            );
+            assert!(decode_errors(&p).is_empty(), "{kind:?}");
+        }
+        assert_eq!(frame_count(&fixture(Fixture::SmartBaseline)), 500);
+        assert_eq!(stream_types(&fixture(Fixture::SmartBaseline)), ["video"]);
+        let (v, a) = stream_starts(&fixture(Fixture::SmartMp4));
+        assert!(v.abs() < 0.001 && a.abs() < 0.03, "{v} {a}");
+        let ten = probe_json(&fixture(Fixture::High10));
+        assert_eq!(ten["streams"][0]["pix_fmt"], "yuv420p10le");
+    }
+
+    #[test]
+    fn framemd5_hashes_frames_without_timestamps() {
+        if !require_engine(&["libx264"]) {
+            return;
+        }
+        let p = fixture(Fixture::SmartBaseline);
+        let a = framemd5(&p, 4.0, 3);
+        assert_eq!(a.len(), 3);
+        assert_eq!(framemd5(&p, 4.04, 2), a[1..], "an exact seek starts on the next frame");
     }
 
     #[test]

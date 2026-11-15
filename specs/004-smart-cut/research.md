@@ -48,7 +48,7 @@ reason has a stable `snake_case` value (data-model › FallbackReason).
 | `pixel_format` | the pixel format is not `yuv420p` or `yuvj420p` (10-bit, 4:2:2, 4:4:4) | probe `pix_fmt` |
 | `interlaced` | the field order is `tt`, `bb`, `tb` or `bt` | `StreamInfo::is_interlaced` |
 | `vfr` | `avg_frame_rate` differs from `r_frame_rate` (`is_vfr`), or packet spacing in the window is uneven by more than one timebase tick | probe and index |
-| `rotation` | a display rotation that the final mux cannot carry (R5) | probe side data |
+| `rotation` | the source has a display rotation and the output container is ts, which cannot carry it (R5, spike S2) | probe side data, output extension |
 | `no_full_gop` | there is no keyframe pair K1 < K2 inside the range | index |
 | `open_gop` | a packet after K1 or K2 in decode order has a pts below that keyframe's pts | index |
 | `params_changed` | the frames at a seam do not have the stream's size and pixel format (checked after encoding, R7) | seam check |
@@ -71,11 +71,13 @@ matters (leading pictures) with data we already have.
 
 ## R3. The copied middle: split exactly on keyframes
 
-**Decision**: copy the middle with the segment muxer. The command is `-ss <Kprev> -i file:<src>
--map 0:v:0 -c copy -f segment -segment_format mpegts -segment_times <K1−Kprev>,<K2−Kprev>`, and
-the middle segment is kept. `Kprev` is a keyframe at or before K1, so the input seek lands on a
-keyframe even in containers without an index. The segment boundaries cut on keyframes, so the
-middle is exactly the GOPs [K1, K2).
+**Decision**: copy the middle with the segment muxer. The command is `-ss <Kprev> -copyts -i
+file:<src> -map 0:v:0 -c copy -f segment -segment_format mpegts -segment_times
+<K1−Kprev>,<K2−Kprev> -segment_list <list> -segment_list_type csv`. `Kprev` is the keyframe
+before K1 (user time, as `-ss` counts from the file's start), so the input seek lands on a
+keyframe even in containers without an index. The segment boundaries cut on keyframes, so one
+segment is exactly the GOPs [K1, K2). That segment is the one whose start in the segment list
+equals K1 in source time (zero point + K1); its number is not fixed (spike S3).
 
 **Measured**:
 - A copy cut with `-ss K1 -t (K2−K1)` gave 402 frames instead of 400 (the B-frame reorder delay
@@ -83,6 +85,16 @@ middle is exactly the GOPs [K1, K2).
 - The segment muxer gave exactly 100, 400 and 250 frames for splits at 4 s and 20 s of a 30 s
   source.
 - The 400 copied frames were identical to the source when decoded (framemd5, 400 of 400).
+
+**Spike S3 (2026-11-15, bundled FFmpeg n9.0.2)**: with `-copyts`, `-segment_times` counts from the
+`-ss` point and the segment list reports source (absolute) times.
+- Without `-copyts`, or with Kprev = K1, the segment holding [K1, K2) was not the second one: a
+  K1 = Kprev split at 0 produced 50/200/150 frames instead of a 250-frame middle. Picking the
+  segment by its listed start fixes this for every Kprev.
+- `OffsetTs` (zero point 11.4 s) and `MislabelledTs` (a ts named `.mp4`, zero point 1.48 s),
+  range [4, 14): the middle has 250 frames, equal to the index count, and all 250 are identical
+  to the source (framemd5). The segments' own pts start 1.4 s later (the mpegts muxer delay);
+  the concat join resets that.
 
 **Rationale**: GOP-exact boundaries make the frame count predictable, which the verification
 needs (R7).
@@ -130,9 +142,12 @@ copy would need our own muxer.
 **Decision**:
 - Join the TS parts with the concat demuxer, `-c copy`, then mux them with the audio (R6) into
   the output container in the same step.
-- For mp4, m4v and mov, write the `avc3` sample entry (`-tag:v avc3`), which allows parameter sets
-  to be carried in-band and to change between parts.
+- For mp4, m4v and mov, keep FFmpeg's default `avc1` sample entry. The `avcC` box holds the head's
+  parameter sets, and every part also carries its own in-band, so they may change between parts
+  (spike S1 chose `avc1` over `avc3`).
 - mkv and ts carry in-band parameter sets natively.
+- A rotated source: the head and tail are encoded with `-noautorotate`, and the join sets
+  `-display_rotation` on the joined input (spike S2).
 
 **Measured**:
 - Joining mp4 parts failed: "non monotonically increasing dts" at a seam.
@@ -140,20 +155,38 @@ copy would need our own muxer.
 - The joined mp4 holds 12 in-band SPS/PPS against the source's 1.
 - `-tag:v avc3` with `+faststart` was accepted and decoded with 0 errors.
 
-**Player compatibility [verify, Phase 0 spike S1]**: FFmpeg decodes both the `avc1` form (in-band
-changes) and the `avc3` form. Other players must be checked:
-- the desktop app's webviews (WebKitGTK on Linux, WebView2 on Windows);
-- Chrome, Firefox and VLC;
-- an Android phone and an iPhone;
-- a Reddit upload (an owner check).
+**Spike S1, player compatibility (2026-11-15)**: a smart cut of an `OtherEncoder`-like source
+(1280×720 25 fps, x264 preset slow, `ref=4:bframes=5`, 2 s closed GOPs, AAC), range 3.32–14.72 s:
+head 17 + copy 250 + tail 18 = 285 frames. Head and tail used `ref=4:bframes=3`, so their SPS/PPS
+differ from the source's. Controls: an accurate-mode encode of the same range (`acc.mp4`), its
+`avc3` remux and its ts remux.
 
-If `avc3` turns out to be less compatible than `avc1` with in-band parameter sets, the spike
-switches the default. The choice is one constant plus a snapshot.
+| Player | mp4 `avc1` | mp4 `avc3` | mkv | ts | How it was checked |
+|---|---|---|---|---|---|
+| FFmpeg n9.0.2 | ok | ok | ok | ok | 285 frames, 0 decode errors; copied frames framemd5-identical |
+| GStreamer 1.24.2 (WebKitGTK's backend, desktop app on Linux) | ok | ok | ok | ok | `uridecodebin`: 285 frames, no errors or warnings |
+| VLC 3.0.24 (Flatpak) | ok | **fails** | ok | ok | decoded to raw frames and matched to FFmpeg's frames by content: every frame VLC output is identical and in order. VLC's transcode path drops frames 1–2 of any mp4 and the last frame of any ts, the controls included. `avc3` gives 0 frames ("buffer deadlock prevented") for the plain control too |
+| Firefox 157 (Linux) | ok | ok | ok | not playable | 285 frames presented, 0 dropped at 1×; seam frames (16–18, 266–268) and frame 100 captured after seeks match FFmpeg's frames as closely as the control's do. ts is not a browser format |
+| Chrome 157 (Linux) | ok | **fails** | ok | not playable | 285 frames, 0 dropped, 0 corrupted; full-size captures of frames 16, 17, 100, 266, 267 and 284 match FFmpeg's frame at 29.2–29.6 dB (the control: 29.3 dB; neighbouring frames ≈16–18 dB). `avc3` files (the plain control too) never reach `ended` |
+| WebView2 (Windows), Android, iPhone, Reddit upload | open | — | open | — | owner checks (quickstart › S1) |
 
-**Display rotation [verify, Phase 0 spike S2]**: the TS parts carry no display matrix. The final
-mux must set the source's rotation again (the `-display_rotation` input option on the joined
-input). If that does not work for every output container, rotated sources fall back with the
-`rotation` reason.
+Decision: **`avc1`** with in-band parameter sets is the default for mp4, m4v and mov; `avc3` is
+not used (VLC 3 and Chrome fail on any `avc3` file). Giving the head and tail their own parameter
+set ids (x264 `sps-id`) made no difference in Chrome and is not needed.
+
+A false alarm, kept for the record: a 160×90 capture made in Chrome right after each seek
+pointed at wrong frames for the smart files. Full-size captures showed the decode is right; the
+small capture is not a reliable probe in Chrome.
+
+**Spike S2, display rotation (2026-11-15)**: a 640×360 source with a 90° display matrix, range
+1.32–9.72 s (17 + 150 + 18 frames).
+- With FFmpeg's default autorotation, the head and tail are encoded upright (360×640) while the
+  copied middle stays 640×360: the size changes mid-stream (R7 would report `params_changed`).
+- With `-noautorotate` on the head and tail inputs, every part is 640×360, and
+  `-display_rotation 90` on the joined input writes the matrix into mp4, mov and mkv (ffprobe:
+  640×360, rotation 90; 185 frames; 0 decode errors).
+- ts has no display matrix, so a rotated source cut to a ts output falls back with `rotation`.
+  For every other output container, rotation is carried.
 
 ## R6. Audio and the other streams
 

@@ -9,8 +9,8 @@ description: "Task list for 004 Smart Cut"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R11), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-15)**: not started. First: Phase 1, then the Phase 2 spikes T012–T014.
-Roadmap: `docs/roadmap.md`.
+**Status (2026-11-15)**: T001–T014 done (Phases 1 and 2, with the spikes S1–S3; S1's WebView2,
+phone and Reddit rows are owner checks). Next: US1 (T015–). Roadmap: `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.
@@ -34,19 +34,22 @@ Roadmap: `docs/roadmap.md`.
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Record the 0.3.0 baseline in a new `specs/004-smart-cut/checklists/validation.md`:
+- [X] T001 Record the 0.3.0 baseline in a new `specs/004-smart-cut/checklists/validation.md`:
   - run `cargo test --workspace` (bundled engine, `RMEDIA_REQUIRE_FFMPEG=1`) and the desktop
     tests (`apps/desktop/src-tauri`: `cargo test`; `apps/desktop`: `npm test`);
   - note the passing counts (workspace 505 / 15 ignored, desktop 22) and the insta snapshot
     list (`core-tests/snapshots`, `cli-tests/snapshots`).
 
-  Every phase must keep them green (SC-009, FR-018).
-- [ ] T002 Scaffold empty modules and register them:
+  Every phase must keep them green (SC-009, FR-018). Done: 505 passed / 0 failed / 15 ignored
+  with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to the bundled engine (without them the libvmaf
+  tests fail on the system ffmpeg); recorded in `checklists/validation.md`.
+- [X] T002 Scaffold empty modules and register them:
   - `core/smart/{mod,keyframes,args}.rs`, declared as `pub mod smart` in `core/lib.rs`;
   - `core/exec/smart.rs`, declared in `core/exec/mod.rs`;
-  - empty test files `core-tests/smart_us1.rs` … `smart_us4.rs` and
-    `core-tests/smart_keyframes.rs`, each with the `mod common;` header the other suites use.
-- [ ] T003 [P] Add testkit fixtures in `crates/rmedia-testkit/src/lib.rs` (plan › Testing):
+  - test files `core-tests/smart_keyframes.rs` and `smart_us4.rs`; `smart_us1.rs` …
+    `smart_us3.rs` are created with their stories' first tests, so no empty test binaries are
+    built.
+- [X] T003 [P] Add testkit fixtures in `crates/rmedia-testkit/src/lib.rs` (plan › Testing):
   - `SmartMp4` (testsrc2 1280×720 25 fps, 30 s, sine audio, libx264
     `keyint=50:min-keyint=50:scenecut=0:bframes=3`, closed GOPs), plus derived `SmartMov`,
     `SmartMkv` and `SmartTs` (same streams, remuxed);
@@ -56,12 +59,13 @@ Roadmap: `docs/roadmap.md`.
   - `High10` (`-pix_fmt yuv420p10le`, `-profile:v high10`, 6 s);
   - `HevcMp4` (libx265 if the engine has it, else the test skips with `require_encoder!`);
   - `ResChange` (two 4 s halves at 1280×720 and 960×540, joined with the concat demuxer in TS,
-    then remuxed to mp4);
+    then remuxed to mp4) — moved to T032, its only user: a fixture made from two encodes needs a
+    builder that the single-command `Fixture::args` does not have;
   - `OtherEncoder` (`preset=slow:ref=4:bframes=5`, 2 s GOPs, 20 s; the R4 matching case).
 
   Reuse `Gop50Mp4`, `Hd60Mp4`, `VfrMp4`, `OffsetTs`, `MislabelledTs`, `Rotated90`,
   `Anamorphic`, the interlaced fixture and `MultiMkv`. Derived fixtures hash their parent's spec.
-- [ ] T004 [P] Add testkit helpers in `crates/rmedia-testkit/src/lib.rs`:
+- [X] T004 [P] Add testkit helpers in `crates/rmedia-testkit/src/lib.rs`:
   - `video_packets(path) -> Vec<Packet { pts, dts, key }>` (ffprobe packet JSON, v:0);
   - `frame_count(path)` (`-count_frames nb_read_frames`);
   - `decode_errors(path) -> Vec<String>` (`ffmpeg -v error -f null -`);
@@ -77,7 +81,7 @@ fallback types exist; the spikes settle the join format. No user story can start
 
 ### Mode and options (data-model › Mode, Options.smart_fallback)
 
-- [ ] T005 [P] Tests first in `core-tests/smart_us4.rs` (`mode_parses_everywhere`), and extend
+- [X] T005 [P] Tests first in `core-tests/smart_us4.rs` (`mode_parses_everywhere`), and extend
   the existing parser tests:
   - `Mode::Smart` from JSON manifests at run, video and clip level, from the CSV `mode` column
     (case-insensitive) and from `Settings.defaults.mode`;
@@ -86,28 +90,28 @@ fallback types exist; the spikes settle the join format. No user story can start
   - layering: clip over video over run over settings, for both fields;
   - every 0.3.0 manifest and settings fixture under `core-tests/data` loads with identical
     `Options`.
-- [ ] T006 Add `Mode::Smart` (serde `"smart"`, doc comment) and `Options.smart_fallback: bool`
+- [X] T006 Add `Mode::Smart` (serde `"smart"`, doc comment) and `Options.smart_fallback: bool`
   (default `true`; `PartialOptions.smart_fallback: Option<bool>` with the existing layering) in
   `core/request.rs`; settings defaults in `core/settings.rs`.
-- [ ] T007 Accept `smart` and the `smart_fallback` column in `core/input/manifest_csv.rs` and
+- [X] T007 Accept `smart` and the `smart_fallback` column in `core/input/manifest_csv.rs` and
   `smart_fallback` at all three levels in `core/input/manifest_json.rs`; update the CSV error
   message. Do not change the CSV writer yet (T046). T005 passes.
-- [ ] T008 Until US1 lands, resolve `Mode::Smart` to `Mode::Accurate` in `core/plan/mod.rs`
+- [X] T008 Until US1 lands, resolve `Mode::Smart` to `Mode::Accurate` in `core/plan/mod.rs`
   with a `// TODO(004 T026)` marker, so `--mode smart` already works end to end as accurate.
   Every existing snapshot stays unchanged.
 
 ### Issue codes and fallback types (data-model › FallbackReason, Issue codes)
 
-- [ ] T009 [P] Add `FallbackReason` (12 variants, serde `snake_case`, `Ord` for the totals map,
+- [X] T009 [P] Add `FallbackReason` (12 variants, serde `snake_case`, `Ord` for the totals map,
   `message()`, `known_before_encoding()`) in `core/smart/mod.rs`, with a unit test that pins
   every serde value and message (the values are stable once released, FR-007).
-- [ ] T010 [P] Add the issue codes `SMART_FALLBACK` (warning), `SMART_UNAVAILABLE` (error) and
+- [X] T010 [P] Add the issue codes `SMART_FALLBACK` (warning), `SMART_UNAVAILABLE` (error) and
   `SMART_NOT_APPLIED` (notice) in `core/error.rs`, following the existing code table and its
   test.
 
 ### Keyframe index (research R1, R2)
 
-- [ ] T011 Tests first in `core-tests/smart_keyframes.rs`:
+- [X] T011 Tests first in `core-tests/smart_keyframes.rs`:
   - table tests on recorded packet JSON (`core-tests/data/smart/*.json`, text, small): a
     closed-GOP x264 stream (every keyframe `clean`), an `open-gop=1` stream (the leading
     picture at 1.960 marks the keyframe at 2.000 not clean), a stream without B-frames;
@@ -117,27 +121,43 @@ fallback types exist; the spikes settle the join format. No user story can start
     all clean; `OpenGop` gives unclean keyframes; a window read returns only the window's
     packets.
 
-  Then implement `KeyframeIndex`, `KeyframeEntry` and `keyframes(src, window, cancel)` in
+  Then implement `KeyframeIndex`, `KeyframeEntry` and `keyframes(tools, media, window, cancel)` in
   `core/smart/keyframes.rs`: ffprobe through `exec::process` (`-select_streams v:0
   -show_entries packet=pts,dts,flags -read_intervals`), reusing 001's packet-JSON parsing in
   `core/probe.rs`; a plan-time index keeps every packet in the window, the whole-file index only
   keyframes; 20,000-keyframe and 30 s caps.
 
+  Done, with two findings: MPEG-TS seeks land after the requested point, so a window is read
+  from 12 s, then 65 s, before its start (as 001's `keyframe_at_or_before` does), and whole-file
+  chunks start at the file's beginning and overlap by 30 s (`chunked_reads_find_every_keyframe_once`);
+  x264 `open-gop=1` puts leading pictures after some keyframes only (the `OpenGop` fixture has
+  open GOPs at 2 s and 4 s and closed ones at 6 s and 8 s).
+
 ### Phase 0 spikes (quickstart › Phase 0 spikes; results go in research.md)
 
-- [ ] T012 Spike S1, player compatibility (R5): with a throwaway script in the scratchpad (not
+- [X] T012 Spike S1, player compatibility (R5): with a throwaway script in the scratchpad (not
   committed), make smart outputs from `OtherEncoder` by hand as in R3–R5: mp4 `avc3`, mp4 `avc1`
   with in-band parameter sets, mkv and ts. Play each in WebKitGTK (the desktop app), Chrome,
   Firefox and VLC on Linux; WebView2 on Windows (owner machine or CI artifact); an Android phone
   and an iPhone (owner). Record a table in `research.md` R5 and set the default sample entry. The
   phone and Reddit rows may stay open as owner checks; the default is chosen from the desktop
   rows.
-- [ ] T013 [P] Spike S2, rotation (R5): smart-cut `Rotated90` by hand with `-display_rotation` on
+
+  Done: `avc1` with in-band parameter sets. FFmpeg, GStreamer 1.24, VLC 3.0.24, Firefox 157 and
+  Chrome 157 decode it, seams included; `avc3` fails in VLC 3 and Chrome even for plain files.
+  VLC was installed as a user Flatpak. Open: WebView2, Android, iPhone, Reddit.
+- [X] T013 [P] Spike S2, rotation (R5): smart-cut `Rotated90` by hand with `-display_rotation` on
   the joined input for mp4, mov, mkv and ts; record the displayed size per container in
   `research.md` R5, and whether `rotation` stays a fallback reason (and for which containers).
-- [ ] T014 [P] Spike S3, ts copy seek (R3): run the segment-muxer copy with Kprev seeking on
+
+  Done: head and tail need `-noautorotate`; with it, mp4, mov and mkv keep the rotation; ts
+  outputs fall back with `rotation`.
+- [X] T014 [P] Spike S3, ts copy seek (R3): run the segment-muxer copy with Kprev seeking on
   `OffsetTs` and `MislabelledTs`; record in `research.md` R3 whether the copied frame count
   equals the index count, and any adjustment needed.
+
+  Done: 250 of 250 frames, identical, on both. Adjustment: `-copyts`, and the middle segment is
+  picked by its start in `-segment_list` (its number is not fixed).
 
 **Checkpoint**: `--mode smart` runs as accurate everywhere; T001's baseline is green; the spikes
 are recorded and any change to R3/R5 is reflected in plan.md and data-model.md.
@@ -189,10 +209,11 @@ whole GOPs are copied, verified before commit.
   the matching reason for the rest; build `SmartPlan` (head, copy, tail `Part`s with frame counts
   from the index, `copied_share`, `kprev`, `PartEncode` from the probe, `sample_entry`,
   `rotation`). Unit tests on synthetic indexes for the part boundaries in T016.
-- [ ] T025 [US1] `core/smart/args.rs`: pure argv builders for head and tail (R4: exact seek,
-  `-frames:v N`, matched profile, level, `ref`, `bframes`, `open-gop=0:stitchable=1`, colour
+- [ ] T025 [US1] `core/smart/args.rs`: pure argv builders for head and tail (R4: exact seek with
+  `-noautorotate` (S2), `-frames:v N`, matched profile, level, `ref`, `bframes`, `open-gop=0:stitchable=1`, colour
   tags, `setsar`, `-fps_mode passthrough`, preset medium CRF 18, mpegts), copy (R3: Kprev seek,
-  segment muxer, `-segment_times`), audio (R6: accurate mode's `EncodeProfile` over [A, Z)), and
+  segment muxer, `-copyts`, `-segment_times` relative to Kprev, the middle picked from
+  `-segment_list`), audio (R6: accurate mode's `EncodeProfile` over [A, Z)), and
   join (R5: concat demuxer over relative TS names, `-tag:v` from `sample_entry`, rotation from
   S2, `StreamPlan` mapping as in accurate mode). T021 passes.
 - [ ] T026 [US1] Add `ClipSpec.smart: Option<SmartPlan>` in `core/plan/ffargs.rs`; in
@@ -237,7 +258,8 @@ with its distinct reason.
   reason known before encoding, with its fixture: `HevcMp4` → `codec`, a `.webm`/`.avi` source or
   output → `container`, a High 4:2:2 or `High10` profile → `profile`/`pixel_format` (whichever
   rule R2 reaches first; assert the documented one), the interlaced fixture → `interlaced`,
-  `VfrMp4` → `vfr`, `Rotated90` → `rotation` only if S2 kept it, a sub-GOP range → `no_full_gop`,
+  `VfrMp4` → `vfr`, `Rotated90` cut to a `.ts` output → `rotation` (S2; other containers keep the rotation and are
+  smart-cut), a sub-GOP range → `no_full_gop`,
   `OpenGop` → `open_gop`, an engine without libx264 (fake caps) → `encoder_missing`. Each job
   succeeds, is frame-exact, has `mode_used: accurate`, `copied_frames: 0`, the reason, and the
   `SMART_FALLBACK` notice with `detail.reason`.

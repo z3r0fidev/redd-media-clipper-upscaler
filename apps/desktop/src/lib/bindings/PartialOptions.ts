@@ -9,7 +9,7 @@ import type { SubSel } from "./SubSel";
 /**
  * Overrides layered as defaults < source < clip.
  */
-export type PartialOptions = { mode?: Mode, output_dir?: string, name_template?: string, container?: string, on_exists?: OnExists, audio?: AudioSel, subtitles?: SubSel, 
+export type PartialOptions = { mode?: Mode, smart_fallback?: boolean, output_dir?: string, name_template?: string, container?: string, on_exists?: OnExists, audio?: AudioSel, subtitles?: SubSel, 
 /**
  * Present = upscaling on at this layer (unless `enabled: false`); absent = inherited.
  */

@@ -63,11 +63,11 @@ pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<Job
     }
     let start = match spec.mode {
         Mode::Fast => predicted.map_or(requested.start, |p| p.start),
-        Mode::Accurate => requested.start,
+        Mode::Accurate | Mode::Smart => requested.start,
     };
     let produced = match spec.mode {
         Mode::Fast => produced,
-        Mode::Accurate => info.duration.unwrap_or(produced),
+        Mode::Accurate | Mode::Smart => info.duration.unwrap_or(produced),
     };
     let actual = Span { start, end: start + produced };
     Ok(JobMeasure::Clip { actual, adjusted: adjusted(requested, actual) })

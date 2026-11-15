@@ -16,6 +16,7 @@ pub mod preview;
 pub mod probe;
 pub mod request;
 pub mod settings;
+pub mod smart;
 pub mod time;
 pub mod tools;
 pub mod upscale;
