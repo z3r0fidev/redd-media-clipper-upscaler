@@ -11,14 +11,14 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
 - Done and released: 001 (`specs/001-video-clipping/`, 0.1.0, tag v0.1.0), 002
   (`specs/002-mobile-upscale/`, 112/112, 0.2.0, tag v0.2.0) and **003 GIF export for Reddit**
-  (`specs/003-gif-export/`, 80/80, 0.3.0, tag v0.3.0 on b96bfdd; tag build run 43573283485 ok,
-  nothing published, no GitHub release yet). rmedia is AGPL-3.0-or-later; releases bundle gifski.
+  (`specs/003-gif-export/`, 80/80, 0.3.0, tag v0.3.0 on b96bfdd; GitHub release v0.3.0 published
+  2026-11-15 from tag build run 43573283485, unsigned). rmedia is AGPL-3.0-or-later; releases bundle gifski.
   Owner checks left: Reddit's limits and a real upload, the 002 two-phone test and +3 VMAF.
   Pending list and review findings: `docs/roadmap.md`.
-- Next feature: **004 Smart cut** (`--mode smart`; spec and plan in `specs/004-smart-cut/`,
-  tasks to come), then 005 budgeted Reddit video.
-- First work of the next session: `/speckit-tasks` for 004, then its Phase 0 spikes S1–S3
-  (`specs/004-smart-cut/quickstart.md`), then security L1 (see the roadmap).
+- Next feature: **004 Smart cut** (`--mode smart`; spec, plan and tasks in
+  `specs/004-smart-cut/`, 59 tasks), then 005 budgeted Reddit video.
+- First work of the next session: 004 Phase 1–2 (`specs/004-smart-cut/tasks.md` T001–T014,
+  including the spikes S1–S3), then security L1 (see the roadmap).
 - Session close: follow `docs/operations/session-close.md`.
 - The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and `fetch-models` for its GPU
   tests) before `cargo build --workspace`.

@@ -13,7 +13,7 @@ Last updated: 2026-11-14.
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
-| 004 Smart cut | Next; specified and planned (`specs/004-smart-cut/`, 2026-11-14), tasks to come; version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
+| 004 Smart cut | Next; specified, planned and broken into 59 tasks (`specs/004-smart-cut/`, 2026-11-15); version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
 | 005 Budgeted Reddit video | Planned after 004; no version yet | MP4 with audio under Reddit size and length caps, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -204,13 +204,15 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 ### Pending (single list; the Obsidian TODO and ROADMAP notes mirror it)
 
-Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; the next session starts with
-`/speckit-tasks` for 004 and its Phase 0 spikes (item 22), then item 8 (L1).
+Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; item 1's 0.3.0 release and the 004
+tasks were done on 2026-11-15; the next session starts with 004 T001–T014 (Phases 1–2 with the
+spikes S1–S3, item 22), then item 8 (L1).
 
 **Owner actions**
 
-1. Publish a GitHub release for `v0.3.0` from the packages of run 43573283485 (unsigned); decide
-   whether to publish catch-up releases for 0.1.0 and 0.2.0.
+1. ~~Publish a GitHub release for `v0.3.0`~~ done 2026-11-15: [v0.3.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.3.0), the six
+   packages of run 43573283485 (unsigned) plus `SHA256SUMS`. Still to decide: catch-up releases
+   for 0.1.0 and 0.2.0.
 2. Code signing: create the Azure Artifact Signing account and pass identity validation; then a
    signing step, `SHA256SUMS` and an attestation go into `release.yml`.
 3. Reddit: confirm the current limits in its Help Center and do a real upload (post GIF, comment
@@ -271,8 +273,8 @@ Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; the next se
 
 **Planned features** (a version follows the feature number: 004 becomes 0.4.0)
 
-22. **004 Smart cut** (next; specified and planned in `specs/004-smart-cut/` on 2026-11-14; run
-    `/speckit-tasks`, then the Phase 0 spikes S1–S3 in its quickstart). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+22. **004 Smart cut** (next; specified and planned in `specs/004-smart-cut/` on 2026-11-14; tasks
+    T001–T059 on 2026-11-15; start with Phases 1–2, including the spikes S1–S3). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
     and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
     source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
     accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,
