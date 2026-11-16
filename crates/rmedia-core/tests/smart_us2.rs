@@ -112,6 +112,11 @@ async fn risky_sources_fall_back() {
         assert_eq!(fallback_notice(&plan), Some(reason), "{kind:?}");
         let JobSpec::Clip(c) = &plan.jobs[0].spec else { panic!("{kind:?}: not a clip job") };
         assert_eq!((c.mode, c.smart.is_none()), (Mode::Accurate, true), "{kind:?}");
+        // T041: the dry run's summary and totals say the same.
+        let s = plan.jobs[0].smart.as_ref().expect("a smart summary");
+        assert_eq!((s.mode, s.copy, s.copied_share, s.fallback), (Mode::Accurate, None, None, Some(reason)));
+        let totals = plan.smart.as_ref().expect("smart totals");
+        assert_eq!((totals.smart, totals.fallback.get(&reason), totals.not_applied), (0, Some(&1), 0));
         let (output, smart, events) = run_one(plan, out.path()).await;
         assert_eq!((smart.mode_used, smart.copied_frames, smart.fallback), (Mode::Accurate, 0, Some(reason)));
         assert_eq!(smart.copied_share, 0.0);
@@ -186,6 +191,12 @@ async fn strict_mode() {
     assert!(left.is_empty(), "{left:?}");
 }
 
+/// The plan's smart totals: (smart, fallback, not applied).
+fn totals(plan: &Plan) -> (usize, usize, usize) {
+    let t = plan.smart.as_ref().expect("smart totals");
+    (t.smart, t.fallback.values().sum(), t.not_applied)
+}
+
 /// T034 (FR-013): an upscale or a GIF re-encodes anyway, so smart mode does not apply; the job
 /// is planned exactly as in accurate mode, with a `SMART_NOT_APPLIED` notice.
 #[tokio::test(flavor = "multi_thread")]
@@ -212,6 +223,8 @@ async fn not_applied_with_upscale_or_gif() {
         let (smart, accurate) = (plan_in(Mode::Smart).await, plan_in(Mode::Accurate).await);
         assert!(smart.issues.is_empty(), "{what}: {:?}", smart.issues);
         let (s, a) = (&smart.jobs[0], &accurate.jobs[0]);
+        assert!(s.smart.is_none(), "{what}: no smart summary");
+        assert_eq!(totals(&smart), (0, 0, 1), "{what}");
         let codes: Vec<_> = s.notices.iter().map(|n| n.code).collect();
         assert!(codes.contains(&IssueCode::SmartNotApplied), "{what}: {codes:?}");
         assert!(!codes.contains(&IssueCode::SmartFallback), "{what}: {codes:?}");

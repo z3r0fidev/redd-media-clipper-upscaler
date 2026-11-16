@@ -45,8 +45,12 @@ fn redact(v: &mut Value, dir: &str) {
 }
 
 fn run(dir: &Path, args: &[&str]) -> Vec<Value> {
+    run_on(Fixture::Gop50Mp4, dir, args)
+}
+
+fn run_on(kind: Fixture, dir: &Path, args: &[&str]) -> Vec<Value> {
     let src = dir.join("in.mp4");
-    std::fs::copy(fixture(Fixture::Gop50Mp4), &src).unwrap();
+    std::fs::copy(fixture(kind), &src).unwrap();
     let o = Command::new(cargo_bin("rmedia"))
         .env("RMEDIA_STATE_DIR", dir)
         .args(args)
@@ -100,4 +104,20 @@ fn clip_smart_outcome_events() {
     let kept: Vec<Value> =
         docs.into_iter().filter(|v| matches!(v["type"].as_str(), Some("job_finished" | "summary"))).collect();
     insta::assert_json_snapshot!(kept);
+}
+
+/// Feature 004, T040: a smart clip's dry-run document: the `smart` block, the five argv of its
+/// pipeline and the plan-level totals (contracts/json-output.md).
+#[test]
+fn smart_plan_json() {
+    if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let docs = run_on(
+        Fixture::SmartMp4,
+        d.path(),
+        &["clip", "-s", "3.32", "-e", "20.72", "--mode", "smart", "--dry-run", "--json"],
+    );
+    insta::assert_json_snapshot!(docs);
 }

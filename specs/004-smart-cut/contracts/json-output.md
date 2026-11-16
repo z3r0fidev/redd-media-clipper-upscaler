@@ -17,6 +17,9 @@ the new fields are absent unless a job requested smart mode.
    "copied_share":0.9195,"fallback":null}}
 ```
 
+The job document also has `cwd`, the job's scratch folder, as for an upscale job: the join reads
+`list.txt` from it.
+
 A fallback known while planning:
 
 ```json

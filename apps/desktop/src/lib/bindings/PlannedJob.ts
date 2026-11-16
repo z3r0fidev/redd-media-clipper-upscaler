@@ -2,6 +2,7 @@
 import type { Disposition } from "./Disposition";
 import type { Notice } from "./Notice";
 import type { OnExists } from "./OnExists";
+import type { SmartSummary } from "./SmartSummary";
 import type { Span } from "./Span";
 
 export type PlannedJob = { id: number, source: string, output: string, on_exists: OnExists, disposition: Disposition, 
@@ -12,4 +13,9 @@ requested: Span, warnings: Array<string>,
 /**
  * The warnings that have a code, with it (empty for clip and upscale jobs).
  */
-notices?: Array<Notice>, };
+notices?: Array<Notice>, 
+/**
+ * What smart mode will do (feature 004): present when the clip asked for smart mode and it
+ * applies (not with an upscale or a GIF).
+ */
+smart?: SmartSummary, };

@@ -9,9 +9,9 @@ description: "Task list for 004 Smart Cut"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R11), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-16)**: T001–T039 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
-phone and Reddit rows are owner checks), US1, the MVP, and US2 (fallbacks and strict mode).
-Next: US3 (T040–). Roadmap:
+**Status (2026-11-16)**: T001–T042 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
+phone and Reddit rows are owner checks), US1, the MVP, US2 (fallbacks and strict mode) and US3
+(the dry run). Next: US4 (T043–). Roadmap:
 `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
@@ -347,16 +347,18 @@ back.
 **Independent Test**: a dry run of five smart clips (three eligible, two falling back) lists the
 spans, shares and reasons, and writes nothing.
 
-- [ ] T040 [P] [US3] Tests first in `cli-tests/batch.rs` › `smart_dry_run` and
+- [X] T040 [P] [US3] Tests first in `cli-tests/batch.rs` › `smart_dry_run` and
   `contract_clip_json.rs` › `smart_plan_json`: the human lines `smart: head … · copy … · tail … ·
   NN% copied` and `smart → accurate: <message>`; the batch line `smart: 3 jobs; fallback: 2
   (open_gop 1, vfr 1)`; the JSON `smart` block per job and the plan-level `smart` totals
-  (contracts/json-output.md); no file or scratch folder written.
-- [ ] T041 [US3] `SmartSummary` on `PlannedJob` and `SmartTotals` on `Plan` in
+  (contracts/json-output.md); no file or scratch folder written. Done; strict mode's two
+  `SMART_UNAVAILABLE` issues carry `detail.reason` in the JSON too.
+- [X] T041 [US3] `SmartSummary` on `PlannedJob` and `SmartTotals` on `Plan` in
   `core/plan/mod.rs` (data-model › Planned job additions), filled from `check`; `pipeline`
-  lists the five argv (contracts/json-output.md).
-- [ ] T042 [US3] Render the per-job and batch lines in `cli/render.rs`; JSON is the serde form.
-  T040 passes.
+  lists the five argv (contracts/json-output.md). Done; `PlannedJob::commands()` lists them, and
+  the job document adds `cwd` (the join reads `list.txt` from the scratch folder).
+- [X] T042 [US3] Render the per-job and batch lines in `cli/render.rs`; JSON is the serde form.
+  T040 passes. Done; the dry run shows the `smart →` line in place of the fallback warning.
 
 **Checkpoint**: T040 green; the JSON contract matches contracts/json-output.md word for word.
 

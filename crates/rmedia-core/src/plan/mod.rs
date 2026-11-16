@@ -167,8 +167,80 @@ pub struct PlannedJob {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<Notice>>", optional))]
     pub notices: Vec<Notice>,
+    /// What smart mode will do (feature 004): present when the clip asked for smart mode and it
+    /// applies (not with an upscale or a GIF).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub smart: Option<SmartSummary>,
     #[serde(skip)]
     pub spec: JobSpec,
+}
+
+/// What a smart job will do, for the dry run (data-model.md › Planned job additions).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct SmartSummary {
+    pub requested: bool,
+    /// What will run: `smart`, or `accurate` on a fallback.
+    pub mode: Mode,
+    /// `--no-smart-fallback`: a reason is an error instead.
+    pub strict: bool,
+    pub head: Option<crate::smart::Part>,
+    /// Absent on a fallback.
+    pub copy: Option<crate::smart::Part>,
+    pub tail: Option<crate::smart::Part>,
+    pub copied_share: Option<f64>,
+    /// A reason known before encoding (`None` also when the keyframes could not be read).
+    pub fallback: Option<crate::smart::FallbackReason>,
+}
+
+impl SmartSummary {
+    fn of(cut: &ClipSpec, strict: bool) -> Self {
+        let p = cut.smart.as_ref();
+        SmartSummary {
+            requested: true,
+            mode: cut.mode,
+            strict,
+            head: p.and_then(|p| p.head),
+            copy: p.map(|p| p.copy),
+            tail: p.and_then(|p| p.tail),
+            copied_share: p.map(|p| p.copied_share),
+            fallback: cut.smart_fallback,
+        }
+    }
+}
+
+/// The plan's smart jobs, counted (present when any job asked for smart mode).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct SmartTotals {
+    /// Jobs that will be smart-cut.
+    pub smart: usize,
+    /// Jobs that will run in accurate mode instead, by reason.
+    pub fallback: std::collections::BTreeMap<crate::smart::FallbackReason, usize>,
+    /// Jobs that upscale or make a GIF, so smart does not apply.
+    pub not_applied: usize,
+}
+
+impl SmartTotals {
+    pub fn of(jobs: &[PlannedJob]) -> Option<Self> {
+        let mut t = SmartTotals::default();
+        let mut any = false;
+        for j in jobs {
+            if j.notices.iter().any(|n| n.code == IssueCode::SmartNotApplied) {
+                any = true;
+                t.not_applied += 1;
+            }
+            let Some(s) = &j.smart else { continue };
+            any = true;
+            match (s.mode, s.fallback) {
+                (Mode::Smart, _) => t.smart += 1,
+                (_, Some(r)) => *t.fallback.entry(r).or_default() += 1,
+                (_, None) => {}
+            }
+        }
+        any.then_some(t)
+    }
 }
 
 impl PlannedJob {
@@ -214,6 +286,21 @@ impl PlannedJob {
     /// upscale jobs the last one writes the output, and its arguments are [`PlannedJob::args`].
     pub fn commands(&self) -> Vec<JobCommand> {
         let ffmpeg = |args| JobCommand { program: Program::Ffmpeg, args };
+        // A smart clip: head, copy, tail, the other streams, then the join (exec/smart.rs).
+        if let (JobSpec::Clip(c), Some(dir)) = (&self.spec, &self.scratch)
+            && let Some(p) = &c.smart
+        {
+            use crate::smart::args::{COPY, HEAD, TAIL, copy_args, part_args, rest_spec};
+            let mut cmds: Vec<JobCommand> =
+                p.head.map(|h| ffmpeg(part_args(c, p, h, &dir.join(HEAD)))).into_iter().collect();
+            cmds.push(ffmpeg(copy_args(c, p, &dir.join(COPY))));
+            cmds.extend(p.tail.map(|t| ffmpeg(part_args(c, p, t, &dir.join(TAIL)))));
+            cmds.extend(
+                rest_spec(c).map(|r| ffmpeg(ffargs::clip_args(&r, &dir.join(crate::exec::SMART_REST)))),
+            );
+            cmds.push(ffmpeg(self.args()));
+            return cmds;
+        }
         if let JobSpec::Gif(g) = &self.spec {
             use crate::gif::graph::{
                 ENCODED, OPTIMISED, gifsicle_args, gifski_args, palette_args, palette_name,
@@ -301,6 +388,10 @@ pub struct Plan {
     pub issues: Vec<Issue>,
     /// Planning was interrupted; the plan is incomplete and must not be run.
     pub cancelled: bool,
+    /// The smart jobs, counted (feature 004).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub smart: Option<SmartTotals>,
 }
 
 impl Plan {
@@ -388,6 +479,7 @@ pub async fn plan_with_targets(
     planner.check_free_space();
     Plan {
         run_id: planner.run_id,
+        smart: SmartTotals::of(&planner.jobs),
         jobs: planner.jobs,
         issues: planner.issues,
         cancelled: cancel.is_cancelled(),
@@ -776,6 +868,7 @@ impl Planner<'_> {
             smart: None,
             smart_fallback: None,
         };
+        let mut smart = None;
         if smart_requested {
             let strict = !opts.smart_fallback;
             let reason = match self.smart_plan(media, &cut, end.is_none()).await {
@@ -807,6 +900,7 @@ impl Planner<'_> {
                 notice(&mut warnings, IssueCode::SmartFallback, message, detail);
                 cut.smart_fallback = reason;
             }
+            smart = Some(SmartSummary::of(&cut, strict));
         }
         let (spec, scratch) = match (gif, up) {
             (Some(g), _) => {
@@ -858,6 +952,7 @@ impl Planner<'_> {
             requested,
             warnings,
             notices,
+            smart,
             spec,
         });
     }

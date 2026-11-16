@@ -59,3 +59,17 @@ this session (agents are spawned only when asked).
 
 Reviews: self-review of the diff. The senior-code-reviewer pass the checkpoint lists was not run
 (agents are spawned only when asked). The quickstart's dry-run line for a fallback comes with US3.
+
+## US3 checkpoint (T040–T042, 2026-11-16)
+
+| Criterion | Result |
+|---|---|
+| Per-job dry-run lines | CLI `batch::smart_dry_run`: `smart: head 0.680 s (17 fr) re-encoded · copy 16.000 s (400 fr) · tail 0.720 s (18 fr) re-encoded · 92% copied`, a copy-only job (`100% copied`), and `smart → accurate: <reason>` for the open-GOP and VFR sources |
+| Batch line | `smart: 3 jobs; fallback: 2 (open_gop 1, vfr 1)` |
+| JSON contract | `contract_clip_json::smart_plan_json` snapshot: the job's `smart` block, the five argv in `pipeline` (head, copy, tail, audio, join), `cwd`, and the plan's `smart` totals. The fallback job's block matches contracts/json-output.md exactly |
+| Strict mode in the dry run | `--no-smart-fallback --dry-run --json` exits 3 with two `SMART_UNAVAILABLE` issues, `detail.reason` `open_gop` and `vfr` |
+| Nothing written | no clips folder and no `.rmedia-` scratch folder after either dry run |
+| Core | `smart_us2`: every fallback's `SmartSummary` and `SmartTotals`; upscale and GIF jobs have no summary and count as `not_applied` |
+
+Reviews: self-review of the diff; the senior-code-reviewer pass was not run (agents are spawned
+only when asked).

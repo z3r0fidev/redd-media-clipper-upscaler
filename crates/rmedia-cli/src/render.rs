@@ -46,8 +46,13 @@ impl Output {
 
     /// Input-file problems found before planning (exit 3).
     pub fn issues(&self, issues: &[rmedia_core::plan::Issue]) -> u8 {
-        let plan =
-            Plan { run_id: String::new(), jobs: Vec::new(), issues: issues.to_vec(), cancelled: false };
+        let plan = Plan {
+            run_id: String::new(),
+            jobs: Vec::new(),
+            issues: issues.to_vec(),
+            cancelled: false,
+            smart: None,
+        };
         self.plan_issues(&plan);
         exit::INVALID_INPUT
     }
@@ -130,7 +135,16 @@ impl Output {
             if let JobSpec::Gif(g) = &j.spec {
                 gif_lines(&g.gif);
             }
-            for w in &j.warnings {
+            if let Some(s) = &j.smart {
+                println!("     {}", smart_line(s, &j.notices));
+            }
+            // A smart fallback is shown by the line above.
+            let fallback = |w: &String| {
+                j.notices
+                    .iter()
+                    .any(|n| n.code == rmedia_core::error::IssueCode::SmartFallback && &n.message == w)
+            };
+            for w in j.warnings.iter().filter(|w| !fallback(w)) {
                 println!("     warning: {w}");
             }
             if self.verbose > 0 {
@@ -149,6 +163,11 @@ impl Output {
         });
         if let Some((gif, mp4)) = hint {
             mp4_note(gif, mp4);
+        }
+        if let Some(t) = &plan.smart
+            && plan.jobs.len() > 1
+        {
+            println!("{}", smart_totals_line(t, &plan.jobs));
         }
         let skipped = plan.jobs.iter().filter(|j| j.disposition != Disposition::Run).count();
         let noun = if plan.jobs.iter().all(|j| j.kind() == "clip") { "clip(s)" } else { "job(s)" };
@@ -425,6 +444,17 @@ fn job_doc(j: &PlannedJob) -> Value {
     if !j.notices.is_empty() {
         m.insert("notices".into(), json!(j.notices));
     }
+    if let Some(s) = &j.smart {
+        m.insert("smart".into(), json!(s));
+        if s.copy.is_some() {
+            let pipeline: Vec<Value> = j.commands().iter().map(|c| json!(display_args(&c.args))).collect();
+            m.insert("pipeline".into(), json!(pipeline));
+            // The join reads its list of parts relative to the scratch folder.
+            if let Some(cwd) = &j.scratch {
+                m.insert("cwd".into(), json!(lossy(cwd)));
+            }
+        }
+    }
     if let JobSpec::Upscale(u) = &j.spec {
         m.insert("kind".into(), json!("upscale"));
         m.insert("upscale".into(), u.up.to_json());
@@ -445,6 +475,48 @@ fn job_doc(j: &PlannedJob) -> Value {
         m.insert("pipeline".into(), json!(pipeline));
     }
     v
+}
+
+/// `smart: head 0.680 s (17 fr) re-encoded · copy 16.000 s (400 fr) · … · 92% copied`, or
+/// `smart → accurate: <reason>` (contracts/cli.md).
+fn smart_line(s: &rmedia_core::plan::SmartSummary, notices: &[rmedia_core::plan::Notice]) -> String {
+    let Some(copy) = s.copy else {
+        let why = notices
+            .iter()
+            .find(|n| n.code == rmedia_core::error::IssueCode::SmartFallback)
+            .and_then(|n| n.message.strip_prefix("smart cut not possible: "))
+            .and_then(|m| m.strip_suffix("; cutting in accurate mode"))
+            .unwrap_or("smart cut not possible");
+        return format!("smart → accurate: {why}");
+    };
+    let part = |p: rmedia_core::smart::Part| {
+        format!("{:.3} s ({} fr)", (p.span.end - p.span.start).as_secs_f64(), p.frames)
+    };
+    let mut parts = Vec::new();
+    if let Some(h) = s.head {
+        parts.push(format!("head {} re-encoded", part(h)));
+    }
+    parts.push(format!("copy {}", part(copy)));
+    if let Some(t) = s.tail {
+        parts.push(format!("tail {} re-encoded", part(t)));
+    }
+    parts.push(format!("{:.0}% copied", s.copied_share.unwrap_or(0.0) * 100.0));
+    format!("smart: {}", parts.join(" · "))
+}
+
+/// `smart: 3 jobs; fallback: 2 (open_gop 1, vfr 1)` (contracts/cli.md).
+fn smart_totals_line(t: &rmedia_core::plan::SmartTotals, jobs: &[PlannedJob]) -> String {
+    let fallback = jobs.iter().filter(|j| j.smart.as_ref().is_some_and(|s| s.copy.is_none())).count();
+    let mut reasons: Vec<String> = t.fallback.iter().map(|(r, n)| format!("{r} {n}")).collect();
+    reasons.sort();
+    let mut line = format!("smart: {} jobs; fallback: {fallback}", t.smart);
+    if !reasons.is_empty() {
+        line.push_str(&format!(" ({})", reasons.join(", ")));
+    }
+    if t.not_applied > 0 {
+        line.push_str(&format!("; not applied: {}", t.not_applied));
+    }
+    line
 }
 
 /// `reframe: smart, 2 shots; fallback 00:40–00:44` (contracts/cli.md › Human dry run).
@@ -500,20 +572,26 @@ fn plan_doc(plan: &Plan) -> Value {
             if i.code == rmedia_core::error::IssueCode::BudgetUnreachable {
                 // At plan time only the static floor is checked (contracts/json-output.md).
                 m.insert("detail".into(), json!({"min_bytes": rmedia_core::gif::plan::MIN_BUDGET}));
+            } else if let Some(d) = &i.detail {
+                m.insert("detail".into(), json!(d));
             }
             Value::Object(m)
         })
         .collect();
     let skipped = plan.jobs.iter().filter(|j| j.disposition != Disposition::Run).count();
     let errors = plan.issues.iter().filter(|i| i.severity == Severity::Error).count();
-    json!({
+    let mut doc = json!({
         "schema": 1,
         "type": "plan",
         "run_id": plan.run_id,
         "jobs": plan.jobs.iter().map(job_doc).collect::<Vec<_>>(),
         "issues": issues,
         "summary": {"planned": plan.jobs.len() - skipped, "skipped": skipped, "errors": errors},
-    })
+    });
+    if let Some(t) = &plan.smart {
+        doc["smart"] = json!(t);
+    }
+    doc
 }
 
 /// Event sink for a run.
