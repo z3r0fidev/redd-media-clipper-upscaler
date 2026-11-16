@@ -152,3 +152,39 @@ async fn bench_gif_sc003_busy10_to_the_post_budget() {
         assert!(elapsed <= Duration::from_secs(30), "SC-003 violated: {elapsed:?}");
     }
 }
+
+/// Feature 004, T023 (SC-005): a smart cut of a 60 s range of a 1080p H.264 source takes at most
+/// one third of accurate mode's time (planning and verification included).
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "benchmark"]
+async fn bench_sc005_smart_vs_accurate() {
+    rmedia_testkit::require_engine!("libx264", "aac");
+    let src = fixture(Fixture::SmartHd60);
+    let (tools, caps) = engine();
+    let mut times = Vec::new();
+    for mode in [Mode::Accurate, Mode::Smart] {
+        let out = tempfile::tempdir().unwrap();
+        let t0 = Instant::now();
+        let req = request(&src, vec![clip(5.3, EndSpec::At(secs(65.7)))], opts(out.path(), mode));
+        let plan = make_plan(&req, &tools, &caps).await;
+        let (summary, _) = run_plan(plan, tools.clone(), out.path()).await;
+        assert_eq!(summary.succeeded, 1, "{summary:?}");
+        if mode == Mode::Smart {
+            let s = match &summary.jobs[0].outcome {
+                rmedia_core::event::JobOutcome::Succeeded {
+                    measure: rmedia_core::event::JobMeasure::Clip { smart: Some(s), .. },
+                    ..
+                } => s.clone(),
+                other => panic!("{other:?}"),
+            };
+            assert_eq!(s.mode_used, Mode::Smart, "{s:?}");
+        }
+        times.push(t0.elapsed());
+    }
+    let (accurate, smart) = (times[0], times[1]);
+    eprintln!(
+        "60 s of 1080p: accurate {accurate:?}, smart {smart:?} ({:.0}%)",
+        100.0 * smart.as_secs_f64() / accurate.as_secs_f64()
+    );
+    assert!(smart.as_secs_f64() <= accurate.as_secs_f64() / 3.0, "SC-005 violated");
+}

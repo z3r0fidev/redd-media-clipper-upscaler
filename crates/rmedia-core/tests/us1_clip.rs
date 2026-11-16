@@ -11,7 +11,7 @@ use rmedia_testkit::{Fixture, duration, first_frame_psnr, fixture, require_ffmpe
 
 fn succeeded(o: &JobOutcome) -> (&std::path::Path, f64, f64, bool) {
     match o {
-        JobOutcome::Succeeded { output, measure: JobMeasure::Clip { actual, adjusted } } => {
+        JobOutcome::Succeeded { output, measure: JobMeasure::Clip { actual, adjusted, .. } } => {
             (output, actual.start.as_secs_f64(), actual.end.as_secs_f64(), *adjusted)
         }
         other => panic!("job did not succeed: {other:?}"),

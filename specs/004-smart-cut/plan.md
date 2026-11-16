@@ -15,8 +15,9 @@ GOP in the range and re-encodes only the partial GOPs at each end.
   Open GOPs are found from decode order: a packet after a keyframe with an earlier pts.
 - **Eligibility** (R2): one pure check returns a `SmartPlan` or a `FallbackReason`. There are 12
   stable reasons, 10 of them known before encoding.
-- **Middle** (R3): the segment muxer splits on keyframes, so the copied GOPs [K1, K2) come out
-  frame-exact (400 of 400 frames, identical to the source).
+- **Middle** (R3): a stream copy as fast mode makes it, cut a few frames before K1 and ended by
+  the exact packet count, so the copied GOPs [K1, K2) come out frame-exact and identical to the
+  source. (The segment muxer, chosen first, depends on where seeks land and was dropped in US1.)
 - **Head and tail** (R4): libx264 with exact seeks and exact frame counts, matched to the source's
   profile, level, references, B-frames, pixel format, colour and SAR; `stitchable=1`; written as
   MPEG-TS parts.
@@ -38,7 +39,7 @@ GOP in the range and re-encodes only the partial GOPs at each end.
 
 **Primary Dependencies**:
 - No new crates and no new sidecars.
-- Bundled FFmpeg n9.0.2 with libx264, the segment muxer, the concat demuxer and mpegts (all used
+- Bundled FFmpeg n9.0.2 with libx264, the concat demuxer and mpegts (all used
   in the R1–R8 measurements and spikes S1–S3).
 
 **Storage**: files only.
@@ -190,7 +191,7 @@ crate.
 | Players that mishandle parameter-set changes inside one file (R5) | Spike S1 done on the desktop players (all decode `avc1` correctly); WebView2, phones and a Reddit upload remain owner checks |
 | Sources whose parameter sets cannot be matched by x264 (other encoders' SPS) | Parameter sets travel in-band, so they need not be identical; the seam decode (R7) catches incompatibilities and falls back |
 | Rotation lost in the join (R5) | Spike S2: `-noautorotate` parts and `-display_rotation` on the join keep it in mp4, mov and mkv; ts outputs fall back with `rotation` |
-| ts sources with imprecise copy seeks | Kprev seeking plus segment splits (R3); the copied frame count is verified against the index (R7) |
+| ts sources with imprecise copy seeks | A coarse seek 10 s before K1 and an output-side cut (R3); the copied frame count and the copied frames are verified (R7) |
 
 ## Complexity Tracking
 

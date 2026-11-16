@@ -227,3 +227,26 @@ fn sigint_cancels_gracefully() {
     assert!(files_in(&clips).is_empty(), "left behind: {:?}", files_in(&clips));
     assert!(engines.iter().all(|p| !alive(*p)), "ffmpeg survived");
 }
+
+/// Feature 004, T030: `--mode smart` makes a frame-exact clip and says how much was copied.
+#[test]
+fn smart_mode_clip() {
+    if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let src = copy_fixture(Fixture::Gop50Mp4, d.path(), "in.mp4");
+    let out = d.path().join("out");
+    let o = rmedia(d.path())
+        .args(["clip", "-s", "3.32", "-e", "28.72", "--mode", "smart", "-o"])
+        .arg(&out)
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+    let stdout = String::from_utf8_lossy(&o.stdout);
+    // 600 of 635 frames are whole GOPs (4 s to 28 s).
+    assert!(stdout.contains("(smart, 94% copied)"), "{stdout}");
+    let clip = out.join("in_001_00-00-03.320_00-00-28.720.mp4");
+    assert_eq!(rmedia_testkit::frame_count(&clip), 635);
+}

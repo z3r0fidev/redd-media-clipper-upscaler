@@ -65,14 +65,18 @@ enum FallbackReason {
 | `copy` | `Part` | the GOPs [K1, K2) |
 | `tail` | `Option<Part>` | `None` when the end is on a keyframe or is the end of media |
 | `copied_share` | `f64` | copy frames ÷ all frames |
-| `kprev` | `Ts` (absolute) | the keyframe the copy step seeks to (research R3) |
+| `copy_lead` | `Ts` | how far before K1 the copy is cut (research R3) |
+| `to_end`, `frame`, `first_gop`, `last_gop` | | the copy runs to the end; frame spacing; frames in the first and last copied GOP (the seam checks, R7) |
+| `video_index`, `zero`, `shift`, `precise` | | where the parts' seeks point, as in accurate mode |
+| `strict` | `bool` | `smart_fallback: false` (FR-009) |
 | `encode` | `PartEncode` | the matched encoder settings (research R4) |
 | `sample_entry` | `Option<&'static str>` | `"avc1"` for mp4/m4v/mov (research R5, spike S1); `None` for mkv and ts |
 | `rotation` | `Option<f64>` | the head and tail are encoded with `-noautorotate`; set again on the join's input (research R5, spike S2) |
 
 `Part { span: Span, frames: u32 }`.
 
-`PartEncode { profile, level, refs, bframes, pix_fmt, colour: ColourTags, sar: (u32, u32) }`
+`PartEncode { profile, level, bframes, pix_fmt, colour: ColourTags, sar: Option<(u32, u32)>, width, height }`
+(references are not matched, research R4)
 holds no free-form strings. The argument builder (`smart/args.rs`) maps it to argv, and the argv
 is snapshot-tested.
 
@@ -131,7 +135,7 @@ SmartOutcome {
 | Stage | Process | Weight (research R9) |
 |---|---|---|
 | `head` | ffmpeg encode, `-frames:v` | 1.0 × head frames |
-| `copy` | ffmpeg segment copy | 0.02 × copy frames |
+| `copy` | ffmpeg stream copy | 0.02 × copy frames |
 | `tail` | ffmpeg encode | 1.0 × tail frames |
 | `audio` | ffmpeg audio encode | 0.05 × seconds |
 | `join` | ffmpeg concat + mux | 0.02 × all frames |

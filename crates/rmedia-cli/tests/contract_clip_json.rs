@@ -87,3 +87,17 @@ fn clip_run_outcome_events() {
         docs.into_iter().filter(|v| matches!(v["type"].as_str(), Some("job_finished" | "summary"))).collect();
     insta::assert_json_snapshot!(kept);
 }
+
+/// Feature 004, T030: a smart clip's outcome carries the `smart` block
+/// (contracts/json-output.md › Outcome).
+#[test]
+fn clip_smart_outcome_events() {
+    if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let docs = run(d.path(), &["clip", "-s", "3.32", "-e", "8.72", "--mode", "smart", "--json"]);
+    let kept: Vec<Value> =
+        docs.into_iter().filter(|v| matches!(v["type"].as_str(), Some("job_finished" | "summary"))).collect();
+    insta::assert_json_snapshot!(kept);
+}

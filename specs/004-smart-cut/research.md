@@ -69,38 +69,41 @@ reason.
 bitstream filter. It is accurate but expensive, and the decode-order rule catches the case that
 matters (leading pictures) with data we already have.
 
-## R3. The copied middle: split exactly on keyframes
+## R3. The copied middle: from K1, exactly the GOPs [K1, K2)
 
-**Decision**: copy the middle with the segment muxer. The command is `-ss <Kprev> -copyts -i
-file:<src> -map 0:v:0 -c copy -f segment -segment_format mpegts -segment_times
-<K1−Kprev>,<K2−Kprev> -segment_list <list> -segment_list_type csv`. `Kprev` is the keyframe
-before K1 (user time, as `-ss` counts from the file's start), so the input seek lands on a
-keyframe even in containers without an index. The segment boundaries cut on keyframes, so one
-segment is exactly the GOPs [K1, K2). That segment is the one whose start in the segment list
-equals K1 in source time (zero point + K1); its number is not fixed (spike S3).
+**Decision** (revised in US1, 2026-11-15): a stream copy in the way fast mode (001) copies,
+ended by a packet count:
+`-ss <K1 − 10 s> -i file:<src> -ss <K1 − lead> -map 0:<v> -c copy -frames:v <N> -f mpegts copy.ts`.
+- The input seek is coarse (as accurate mode's on MPEG-TS) and may land anywhere before K1.
+- The output seek is measured from the input seek point. A stream copy drops packets by decode
+  time and then waits for a keyframe, so it cuts `lead` before K1: more than the B-frame delay
+  (max(4, `has_b_frames` + 2) frames; K1's packet has a dts up to that much before its pts) and
+  less than half the GOP before K1 (that keyframe must not be kept).
+- `-frames:v N` with N = the frames in [K1, K2) ends the copy on the last packet before K2's
+  keyframe: with closed GOPs, every frame of [K1, K2) comes before K2 in decode order. A copy
+  that runs to the end of the video has no `-frames:v`.
 
-**Measured**:
-- A copy cut with `-ss K1 -t (K2−K1)` gave 402 frames instead of 400 (the B-frame reorder delay
-  lets two extra frames through).
-- The segment muxer gave exactly 100, 400 and 250 frames for splits at 4 s and 20 s of a 30 s
-  source.
-- The 400 copied frames were identical to the source when decoded (framemd5, 400 of 400).
+**Measured** (bundled FFmpeg n9.0.2, `copytest` in the US1 session): 200 of 200 frames copied and
+identical to the source (framemd5) for K1 = 2, 4 and 14 s on `SmartMkv`, `SmartMp4`, `SmartTs`,
+`OffsetTs` and `OtherEncoder`.
 
-**Spike S3 (2026-11-15, bundled FFmpeg n9.0.2)**: with `-copyts`, `-segment_times` counts from the
-`-ss` point and the segment list reports source (absolute) times.
-- Without `-copyts`, or with Kprev = K1, the segment holding [K1, K2) was not the second one: a
-  K1 = Kprev split at 0 produced 50/200/150 frames instead of a 250-frame middle. Picking the
-  segment by its listed start fixes this for every Kprev.
-- `OffsetTs` (zero point 11.4 s) and `MislabelledTs` (a ts named `.mp4`, zero point 1.48 s),
-  range [4, 14): the middle has 250 frames, equal to the index count, and all 250 are identical
-  to the source (framemd5). The segments' own pts start 1.4 s later (the mpegts muxer delay);
-  the concat join resets that.
+**The segment muxer, first chosen here, was dropped**:
+- `-segment_times` are measured from wherever the demuxer's seek landed. Matroska seeks land
+  early: a seek to 2 s landed on the keyframe at 0 s, and one to 4.02 s on the keyframe at 2 s.
+  The "middle" segment then began a GOP early. The seam check (R7) caught it: the copied
+  frames were not the source's.
+- The segment list reports times relative to the landing for Matroska, but absolute for MP4 and
+  MPEG-TS sources.
+- Spike S3's MPEG-TS result (250 of 250 frames) only held because those seeks landed exactly.
+- A copy cut with `-ss K1 -t (K2−K1)` gives 402 frames instead of 400 (the B-frame reorder delay
+  lets two extra frames through), and an output seek right at K1 drops K1 itself (its dts is
+  before its pts); both are why the lead and the packet count are used.
 
-**Rationale**: GOP-exact boundaries make the frame count predictable, which the verification
-needs (R7).
+**Rationale**: no step depends on where a demuxer seek lands; the frame count is exact, which
+the verification needs (R7).
 
-**Alternatives considered**: `-ss`/`-t` copy cuts are off by the reorder delay. A packet-level
-copy would need our own muxer.
+**Alternatives considered**: the segment muxer (above); no input seek at all (exact, but reads
+the file from its start); a packet-level copy would need our own muxer.
 
 ## R4. The re-encoded head and tail: matching the source
 
@@ -111,7 +114,8 @@ copy would need our own muxer.
 - Match the source's parameters:
   - `-profile:v` and `-level` from the source;
   - `-pix_fmt yuv420p` (or `yuvj420p` with full range);
-  - `-x264-params ref=<refs>:bframes=<0 if the source has none, else 3>:open-gop=0:stitchable=1`;
+  - `-x264-params bframes=<0 if the source has none, else 3>:open-gop=0:stitchable=1`
+    (references are not matched, see below);
   - the colour tags (primaries, transfer, matrix, range) copied from the probe;
   - the SAR set with `setsar`;
   - `-fps_mode passthrough`.
@@ -124,6 +128,11 @@ copy would need our own muxer.
   22.1 dB for the neighbouring frame), and so did the last frame at the requested end (45.4 dB).
 - With matched `ref` and `bframes`, the head's SPS was identical to the source's. Its PPS differed
   in two fields (`num_ref_idx_l0_default_active_minus1` and `pic_init_qp_minus26`).
+
+**Reference count (US1)**: ffprobe does not report it, and the SPS field
+(`max_num_ref_frames`) does not map onto x264's `ref` (a veryfast source with B-pyramid shows 4).
+It is not matched: the parts carry their own parameter sets in-band (R5), and spike S1 showed
+decoders handle the change, so x264's default for preset medium is used.
 
 **Rationale**:
 - `stitchable=1` stops x264 from tailoring headers to the content.
@@ -208,18 +217,23 @@ needs priming and padding handling at each seam, for very little saving.
 
 ## R7. Verification before commit (FR-010)
 
-**Decision**: three checks run on the joined `.part` file, all through `exec::process`:
-1. **Packet scan** (no decoding): the video frame count equals head + copy + tail; the pts
-   values, once sorted, increase by one frame duration (±1 tick) across both seams; the first
-   pts is 0 and the duration is within one frame of Z − A.
-2. **Seam decode**: decode the GOP before and the GOP after each seam with `-v error`. There
-   must be no error lines, the decoded frame count of each window must be as planned, and every
-   frame must have the stream's size and pixel format (`params_changed` otherwise).
-3. **Copy identity**: the framemd5 of the first and last copied GOP equals the source's for the
-   same frames. These are the GOPs where a broken reference would show.
+**Decision** (as built in US1): two checks run on the joined `.part` file, all through
+`exec::process`:
+1. **Packet scan** (ffprobe, no decoding): the video packet count equals head + copy + tail,
+   and the sorted pts step by one frame duration (± max(2 ms, 5 %)) everywhere.
+2. **Seam windows** (ffmpeg `-v error -noautoscale -f framemd5`): around each seam, decode up to
+   one GOP before and one after (an exact input seek; MPEG-TS outputs seek on the output side).
+   - Any error line, or a window with too few frames: `seam_check`.
+   - A frame whose decoded size is not the stream's (`-noautoscale` keeps a size change
+     visible): `params_changed`.
+   - The window's copied frames must have the same MD5s as the same frames decoded from the
+     source (the first copied GOP at the first seam, the last one at the second): otherwise
+     `seam_check`. This is where a broken reference or wrong parameter set shows; it is the
+     check that caught the segment-muxer error (R3).
 
 A failure discards the `.part` file. The job then runs again in accurate mode with the reason
-(`params_changed` or `seam_check`), or fails under strict mode.
+(`params_changed` or `seam_check`) and a `SMART_FALLBACK` warning, or fails with
+`SMART_UNAVAILABLE` under strict mode.
 
 **Measured**: a full decode of a 60 s 1080p result takes 1.2 s; the two seam windows take 0.4 s.
 Seam windows keep verification cheap on long clips.

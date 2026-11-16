@@ -5,6 +5,7 @@ import type { GifEngineUsed } from "./GifEngineUsed";
 import type { GifFormat } from "./GifFormat";
 import type { GifSearchRecord } from "./GifSearchRecord";
 import type { GifTiming } from "./GifTiming";
+import type { SmartOutcome } from "./SmartOutcome";
 import type { Span } from "./Span";
 import type { Tier } from "./Tier";
 
@@ -12,7 +13,11 @@ export type JobOutcome = { "status": "succeeded", output: string, } & ({ "measur
 /**
  * The produced span differs from the requested one by more than 50 ms.
  */
-adjusted: boolean, } | { "measure": "upscale", span: Span, tier_used: Tier, 
+adjusted: boolean, 
+/**
+ * How a smart job was cut (feature 004); absent unless smart mode was requested.
+ */
+smart?: SmartOutcome, } | { "measure": "upscale", span: Span, tier_used: Tier, 
 /**
  * An automatic GPU job failed and was retried on the CPU tier (FR-008).
  */

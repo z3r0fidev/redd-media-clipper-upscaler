@@ -35,6 +35,9 @@ pub enum Error {
     /// and `best_bytes` (the smallest size reached).
     #[error("{}", budget_message(*fits_secs, *best_bytes, *min_bytes))]
     BudgetUnreachable { fits_secs: Option<f64>, best_bytes: Option<u64>, min_bytes: Option<u64> },
+    /// A smart job that may not fall back (strict mode) could not be smart-cut (feature 004).
+    #[error("smart cut not possible: {}", .0.message())]
+    SmartUnavailable(crate::smart::FallbackReason),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -142,6 +145,7 @@ impl Error {
             Error::Cancelled => IssueCode::Cancelled,
             Error::EngineMissing(_) => IssueCode::EngineMissing,
             Error::BudgetUnreachable { .. } => IssueCode::BudgetUnreachable,
+            Error::SmartUnavailable(_) => IssueCode::SmartUnavailable,
             Error::Io(_) => IssueCode::IoError,
         }
     }
@@ -175,7 +179,11 @@ impl Error {
                     fits_secs: fits_secs.map(|s| (s * 10.0).round() / 10.0),
                     best_bytes: *best_bytes,
                     min_bytes: *min_bytes,
+                    reason: None,
                 }),
+                Error::SmartUnavailable(reason) => {
+                    Some(ErrorDetail { reason: Some(*reason), ..ErrorDetail::default() })
+                }
                 _ => None,
             },
         }
@@ -231,6 +239,10 @@ pub struct ErrorDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub min_bytes: Option<u64>,
+    /// Why a smart job could not be smart-cut (`SMART_UNAVAILABLE`, feature 004).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub reason: Option<crate::smart::FallbackReason>,
 }
 
 #[cfg(test)]

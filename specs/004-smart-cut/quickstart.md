@@ -69,5 +69,6 @@ rmedia clip /tmp/open.mp4 --start 1.3 --end 8.7 --mode smart --no-smart-fallback
   research.md, then set the default sample entry.
 - **S2, rotation** (research R5): make a smart cut of `Rotated90` with `-display_rotation` on the
   joined input; check the displayed size in every output container.
-- **S3, copy seek in ts** (research R3): `OffsetTs` and `MislabelledTs` with Kprev seeking; the
+- **S3, copy seek in ts** (research R3; done, then superseded in US1 by the seek-and-count copy):
+  `OffsetTs` and `MislabelledTs` with Kprev seeking; the
   copied frame count equals the index count.

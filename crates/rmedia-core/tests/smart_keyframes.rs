@@ -43,9 +43,17 @@ async fn open_gop_keyframes_are_unclean() {
     let clean: Vec<bool> = idx.keyframes.iter().map(|k| k.clean).collect();
     assert_eq!(clean.len(), 5, "{clean:?}");
     assert!(clean[0], "the first GOP has nothing before it");
-    // x264 puts leading pictures after the keyframes at 2 s and 4 s; at 6 s and 8 s it chose
-    // none, so those GOPs are closed in fact and copying from them is safe.
-    assert_eq!(clean, [true, false, false, true, true]);
+    // x264 puts leading pictures after some keyframes only (a GOP without them is closed in
+    // fact): the index must agree with the packets, read independently, keyframe by keyframe.
+    let packets = rmedia_testkit::video_packets(&fixture(Fixture::OpenGop));
+    let expected: Vec<bool> = packets
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.key)
+        .map(|(i, k)| packets[i + 1..].iter().take_while(|p| !p.key).all(|p| p.pts > k.pts))
+        .collect();
+    assert_eq!(clean, expected);
+    assert!(clean.iter().any(|c| !c), "the fixture has open GOPs: {clean:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -164,8 +164,8 @@ impl Output {
         }
         for j in &s.jobs {
             match &j.outcome {
-                JobOutcome::Succeeded { output, measure: JobMeasure::Clip { actual, adjusted } } => {
-                    let note = if *adjusted {
+                JobOutcome::Succeeded { output, measure: JobMeasure::Clip { actual, adjusted, smart } } => {
+                    let mut note = if *adjusted {
                         format!(
                             "  (actual {} → {}, requested {} → {})",
                             actual.start, actual.end, j.requested.start, j.requested.end
@@ -173,6 +173,17 @@ impl Output {
                     } else {
                         String::new()
                     };
+                    // Feature 004: what smart mode did (contracts/cli.md).
+                    match smart {
+                        Some(s) if s.fallback.is_none() => {
+                            note.push_str(&format!("  (smart, {:.0}% copied)", s.copied_share * 100.0));
+                        }
+                        Some(s) => {
+                            let reason = s.fallback.map(|r| r.as_str()).unwrap_or_default();
+                            note.push_str(&format!("  (accurate (smart fallback: {reason}))"));
+                        }
+                        None => {}
+                    }
                     println!("✓ {}{note}", output.display());
                 }
                 JobOutcome::Succeeded { output, measure: JobMeasure::Upscale { .. } } => {

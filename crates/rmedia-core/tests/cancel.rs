@@ -271,3 +271,42 @@ async fn a_job_that_panics_fails_cleanly_and_the_others_still_run() {
     }
     assert!(child_engines().is_empty(), "orphaned engine processes: {:?}", child_engines());
 }
+
+/// Feature 004, T022 (SC-008): cancelling a smart job at each of its stages stops it within 2 s
+/// and leaves no `.part`, no scratch folder (with its parts) and no engine process.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_smart_job_at_each_stage_is_fast_and_clean() {
+    let _serial = SERIAL.lock().await;
+    rmedia_testkit::require_engine!("libx264", "aac");
+    let src = fixture(Fixture::SmartHd60);
+    let (tools, caps) = engine();
+    for stage in ["head", "copy", "tail", "audio", "join", "verify"] {
+        let out = tempfile::tempdir().unwrap();
+        let req = request(&src, vec![clip(3.32, EndSpec::At(secs(70.72)))], opts(out.path(), Mode::Smart));
+        let plan = make_plan(&req, &tools, &caps).await;
+        assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+        let scratch = plan.jobs[0].scratch.clone().expect("smart jobs have a scratch folder");
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let cfg = RunConfig { jobs: 1, state_dir: Some(out.path().join("state")) };
+        let handle = exec::start(plan, tools.clone(), cfg, Arc::new(Notify(tx)));
+        loop {
+            match tokio::time::timeout(Duration::from_secs(60), rx.recv()).await {
+                Ok(Some(Event::JobStage { stage: s, .. })) if s == stage => break,
+                Ok(Some(_)) => continue,
+                other => panic!("{stage}: the stage never started: {other:?}"),
+            }
+        }
+        // Let the stage's process start.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let t0 = Instant::now();
+        handle.cancel();
+        let summary = handle.wait().await;
+        let elapsed = t0.elapsed();
+        assert!(elapsed < Duration::from_secs(2), "{stage}: cancel took {elapsed:?}");
+        assert!(matches!(summary.jobs[0].outcome, JobOutcome::Cancelled), "{stage}: {summary:?}");
+        assert!(partials(out.path()).is_empty(), "{stage}: partial files left: {:?}", partials(out.path()));
+        assert!(!scratch.exists(), "{stage}: scratch folder left");
+        assert!(child_engines().is_empty(), "{stage}: orphaned engine processes: {:?}", child_engines());
+    }
+}

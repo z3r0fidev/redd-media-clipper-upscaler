@@ -29,6 +29,9 @@ use crate::plan::{Disposition, JobSpec, Plan, PlannedJob, Resource};
 use crate::time::Ts;
 use crate::tools::Tools;
 use journal::Journal;
+
+/// Where a smart job's audio step writes the clip's other streams (in its scratch folder).
+pub const SMART_REST: &str = smart::REST;
 use progress::{ProgressBlock, Throttle};
 
 #[derive(Debug, Clone)]

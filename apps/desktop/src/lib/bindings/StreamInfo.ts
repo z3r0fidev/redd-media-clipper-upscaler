@@ -51,4 +51,16 @@ time_base?: [number, number],
 /**
  * The pixel format has an alpha plane (feature 003 flattens it, research R15).
  */
-has_alpha: boolean, };
+has_alpha: boolean, 
+/**
+ * The codec profile as ffprobe names it (`High`, `Constrained Baseline`, …).
+ */
+profile?: string, 
+/**
+ * The codec level as ffprobe reports it (H.264: 31 = level 3.1).
+ */
+level?: number, 
+/**
+ * Frames of reordering delay (0: no B-frames).
+ */
+has_b_frames?: number, };

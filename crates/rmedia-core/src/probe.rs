@@ -98,6 +98,18 @@ pub struct StreamInfo {
     pub time_base: Option<(u32, u32)>,
     /// The pixel format has an alpha plane (feature 003 flattens it, research R15).
     pub has_alpha: bool,
+    /// The codec profile as ffprobe names it (`High`, `Constrained Baseline`, …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub profile: Option<String>,
+    /// The codec level as ffprobe reports it (H.264: 31 = level 3.1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub level: Option<i32>,
+    /// Frames of reordering delay (0: no B-frames).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub has_b_frames: Option<u32>,
 }
 
 impl StreamInfo {
@@ -282,6 +294,9 @@ pub fn parse_probe_json(path: &Path, size: u64, json: &str) -> Result<MediaInfo>
                 r_frame_rate: s.r_frame_rate.as_deref().and_then(parse_rational),
                 nb_frames: s.nb_frames.as_deref().and_then(|n| n.parse().ok()).filter(|n| *n > 0),
                 time_base: s.time_base.as_deref().and_then(parse_rational),
+                profile: s.profile.filter(|p| !p.is_empty() && p != "unknown"),
+                level: s.level.filter(|l| *l > 0),
+                has_b_frames: s.has_b_frames,
             })
             .collect();
     Ok(MediaInfo {
@@ -456,6 +471,9 @@ struct RawStream {
     color_transfer: Option<String>,
     color_range: Option<String>,
     side_data_list: Option<Vec<RawSideData>>,
+    profile: Option<String>,
+    level: Option<i32>,
+    has_b_frames: Option<u32>,
 }
 
 #[derive(Deserialize)]

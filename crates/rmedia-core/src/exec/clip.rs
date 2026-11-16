@@ -5,8 +5,8 @@ use std::path::Path;
 use super::JobCtx;
 use super::process::run_lines;
 use super::progress::ProgressParser;
-use crate::error::{Error, Result};
-use crate::event::{JobMeasure, Span};
+use crate::error::{Error, IssueCode, Result};
+use crate::event::{JobMeasure, SmartOutcome, Span};
 use crate::plan::ffargs::{ClipSpec, clip_args};
 use crate::probe;
 use crate::request::Mode;
@@ -16,7 +16,49 @@ use crate::time::Ts;
 const ADJUST_TOLERANCE: Ts = Ts::from_micros(50_000);
 
 pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<JobMeasure> {
-    let (requested, predicted) = (spec.requested, spec.predicted);
+    let Some(plan) = &spec.smart else {
+        encode(spec, ctx).await?;
+        return measure(spec, ctx, None).await;
+    };
+    let total = plan.total_frames();
+    let reason = match super::smart::execute(spec, plan, ctx).await? {
+        Ok(()) => {
+            let smart = SmartOutcome {
+                mode_used: Mode::Smart,
+                copied_frames: plan.copy.frames,
+                reencoded_frames: total - plan.copy.frames,
+                copied_share: plan.copied_share,
+                fallback: None,
+            };
+            return measure(spec, ctx, Some(smart)).await;
+        }
+        Err(reason) => reason,
+    };
+    // The joined clip failed its seam check (research R7): it is never kept.
+    let temp = ctx.temp.to_path_buf();
+    let _ = tokio::task::spawn_blocking(move || super::commit::remove_with_retry(&temp)).await;
+    if plan.strict {
+        return Err(Error::SmartUnavailable(reason));
+    }
+    ctx.warn_code(
+        IssueCode::SmartFallback,
+        format!("smart cut not possible: {}; cutting in accurate mode", reason.message()),
+    );
+    let accurate = ClipSpec { mode: Mode::Accurate, smart: None, ..spec.clone() };
+    encode(&accurate, ctx).await?;
+    let smart = SmartOutcome {
+        mode_used: Mode::Accurate,
+        copied_frames: 0,
+        reencoded_frames: total,
+        copied_share: 0.0,
+        fallback: Some(reason),
+    };
+    measure(&accurate, ctx, Some(smart)).await
+}
+
+/// Runs ffmpeg into the temp file.
+async fn encode(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<()> {
+    let requested = spec.requested;
     let args = clip_args(spec, ctx.temp);
     let total = requested.end.saturating_sub(requested.start);
     let mut parser = ProgressParser::default();
@@ -30,8 +72,12 @@ pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<Job
     if !out.status.success() {
         return Err(classify_failure(&out.stderr_tail, ctx.output));
     }
+    Ok(())
+}
 
-    // Verify the output before committing it.
+/// Verifies the temp file before it is committed, and measures what it holds.
+async fn measure(spec: &ClipSpec, ctx: &mut JobCtx<'_>, smart: Option<SmartOutcome>) -> Result<JobMeasure> {
+    let (requested, predicted) = (spec.requested, spec.predicted);
     let info = probe::probe(ctx.tools, ctx.temp, ctx.cancel)
         .await
         .map_err(|e| Error::VerifyFailed(e.to_string()))?;
@@ -70,7 +116,7 @@ pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<Job
         Mode::Accurate | Mode::Smart => info.duration.unwrap_or(produced),
     };
     let actual = Span { start, end: start + produced };
-    Ok(JobMeasure::Clip { actual, adjusted: adjusted(requested, actual) })
+    Ok(JobMeasure::Clip { actual, adjusted: adjusted(requested, actual), smart })
 }
 
 fn adjusted(requested: Span, actual: Span) -> bool {

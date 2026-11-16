@@ -75,8 +75,11 @@ impl KeyframeIndex {
         keep_packets: bool,
     ) -> KeyframeIndex {
         let user = |t: Ts| Ts::from_micros(t.as_micros() - zero.as_micros());
+        // A read that starts with a seek can begin inside a GOP (MPEG-TS): the packets before the
+        // first keyframe belong to a GOP whose start was not read, so they are left out.
         let packets: Vec<Packet> = raw
             .iter()
+            .skip_while(|p| !p.key)
             .filter_map(|p| Some(Packet { pts: user(p.pts?), dts: p.dts.map(user), key: p.key }))
             .collect();
         let mut keyframes: Vec<KeyframeEntry> = Vec::new();
@@ -207,13 +210,14 @@ pub async fn keyframes_in_chunks(
         }
     };
     if let Some(w) = window {
-        let starts = LEAD_INS.iter().map(|l| Some(w.start.saturating_sub(*l) + zero)).chain([None]);
+        // A lead-in that reaches the start of the file reads it from the start, without a seek.
+        let starts = LEAD_INS.iter().map(|l| (w.start > *l).then(|| w.start - *l + zero)).chain([None]);
         let mut index = None;
         for from in starts {
             let idx = KeyframeIndex::from_packets(&read(from, w.end + zero).await?, zero, Some(w), true);
             let found = idx.keyframes.first().is_some_and(|k| k.at <= w.start);
             index = Some(idx);
-            if found || from.is_none_or(|f| f <= zero) {
+            if found || from.is_none() {
                 break;
             }
         }
@@ -325,8 +329,10 @@ mod tests {
             .collect();
         let idx = KeyframeIndex::from_packets(&raw(&cfr), Ts::ZERO, None, true);
         assert_eq!(idx.frame_duration, Some(Ts::from_micros(40_000)));
-        let ntsc: String =
-            (0..60).map(|i| format!("{:.6},{:.6},___\n", i as f64 * 1001.0 / 30000.0, 0.0)).collect();
+        let flag = |i: i32| if i == 0 { "K__" } else { "___" };
+        let ntsc: String = (0..60)
+            .map(|i| format!("{:.6},{:.6},{}\n", f64::from(i) * 1001.0 / 30000.0, 0.0, flag(i)))
+            .collect();
         let idx = KeyframeIndex::from_packets(&raw(&ntsc), Ts::ZERO, None, true);
         let d = idx.frame_duration.expect("29.97 fps rounds to the microsecond but is even").as_micros();
         assert!((33_366..=33_367).contains(&d), "{d}");

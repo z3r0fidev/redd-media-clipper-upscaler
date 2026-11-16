@@ -94,6 +94,19 @@ pub enum JobOutcome {
     Cancelled,
 }
 
+/// What a smart clip job did (feature 004, contracts/json-output.md › Outcome).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct SmartOutcome {
+    /// `smart`, or `accurate` after a fallback.
+    pub mode_used: crate::request::Mode,
+    pub copied_frames: u32,
+    pub reencoded_frames: u32,
+    pub copied_share: f64,
+    /// Why the job was cut in accurate mode instead (`None`: it was smart-cut).
+    pub fallback: Option<crate::smart::FallbackReason>,
+}
+
 /// What a succeeded job measured on its output, per job kind.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "measure", rename_all = "snake_case")]
@@ -103,6 +116,10 @@ pub enum JobMeasure {
         actual: Span,
         /// The produced span differs from the requested one by more than 50 ms.
         adjusted: bool,
+        /// How a smart job was cut (feature 004); absent unless smart mode was requested.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        smart: Option<SmartOutcome>,
     },
     Upscale {
         span: Span,
@@ -230,7 +247,7 @@ mod tests {
         assert_eq!(serde_json::to_value(floor.info()).unwrap()["detail"], json!({"min_bytes": 65_536}));
         assert_eq!(
             ErrorDetail::default(),
-            ErrorDetail { fits_secs: None, best_bytes: None, min_bytes: None }
+            ErrorDetail { fits_secs: None, best_bytes: None, min_bytes: None, reason: None }
         );
     }
 

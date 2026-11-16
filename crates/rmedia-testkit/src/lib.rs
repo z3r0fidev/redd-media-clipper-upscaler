@@ -895,7 +895,11 @@ impl Fixture {
                 a
             }
             Fixture::SmartHd60 => smart_args("1920x1080", 75, "veryfast", "bframes=3", true),
-            Fixture::OpenGop => smart_args("1280x720", 10, "veryfast", "bframes=3:open-gop=1", false),
+            // One thread: x264's frame-type decisions (and so where it puts leading pictures)
+            // depend on the thread count, and this fixture's open GOPs must not vary by machine.
+            Fixture::OpenGop => {
+                smart_args("1280x720", 10, "veryfast", "bframes=3:open-gop=1:threads=1", false)
+            }
             Fixture::OtherEncoder => smart_args("1280x720", 20, "slow", "ref=4:bframes=5", true),
             Fixture::High10 => vec![
                 "-f",

@@ -9,8 +9,9 @@ description: "Task list for 004 Smart Cut"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R11), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-15)**: T001–T014 done (Phases 1 and 2, with the spikes S1–S3; S1's WebView2,
-phone and Reddit rows are owner checks). Next: US1 (T015–). Roadmap: `docs/roadmap.md`.
+**Status (2026-11-15)**: T001–T030 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
+phone and Reddit rows are owner checks) and US1, the MVP. Next: US2 (T031–). Roadmap:
+`docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.
@@ -130,8 +131,9 @@ fallback types exist; the spikes settle the join format. No user story can start
   Done, with two findings: MPEG-TS seeks land after the requested point, so a window is read
   from 12 s, then 65 s, before its start (as 001's `keyframe_at_or_before` does), and whole-file
   chunks start at the file's beginning and overlap by 30 s (`chunked_reads_find_every_keyframe_once`);
-  x264 `open-gop=1` puts leading pictures after some keyframes only (the `OpenGop` fixture has
-  open GOPs at 2 s and 4 s and closed ones at 6 s and 8 s).
+  x264 `open-gop=1` puts leading pictures after some keyframes only, and where depends on its
+  thread count (CI and this machine differed at 6 s), so `OpenGop` is encoded with `threads=1`
+  and the test checks the index against the packets read independently.
 
 ### Phase 0 spikes (quickstart › Phase 0 spikes; results go in research.md)
 
@@ -157,7 +159,9 @@ fallback types exist; the spikes settle the join format. No user story can start
   equals the index count, and any adjustment needed.
 
   Done: 250 of 250 frames, identical, on both. Adjustment: `-copyts`, and the middle segment is
-  picked by its start in `-segment_list` (its number is not fixed).
+  picked by its start in `-segment_list` (its number is not fixed). Superseded in US1: the
+  segment muxer depends on where seeks land (Matroska lands a GOP early), so T025 copies as fast
+  mode does, ended by a packet count (research R3).
 
 **Checkpoint**: `--mode smart` runs as accurate everywhere; T001's baseline is green; the spikes
 are recorded and any change to R3/R5 is reflected in plan.md and data-model.md.
@@ -174,67 +178,78 @@ whole GOPs are copied, verified before commit.
 
 ### Tests for User Story 1 ⚠️ (write first, confirm they fail)
 
-- [ ] T015 [P] [US1] `core-tests/smart_us1.rs` › `frame_exact_ends` (SC-001): for
+- [X] T015 [P] [US1] `core-tests/smart_us1.rs` › `frame_exact_ends` (SC-001): for
   `SmartMp4/Mov/Mkv/Ts` and `SmartBaseline`, ranges with both ends mid-GOP: the output frame
   count equals the planned count, and the first and last frames match the source frames at the
   requested start and end (PSNR against the neighbours, as R4 measured).
-- [ ] T016 [P] [US1] `smart_us1.rs` › `keyframe_aligned_ends_skip_parts` (scenario 2 and edge
+- [X] T016 [P] [US1] `smart_us1.rs` › `keyframe_aligned_ends_skip_parts` (scenario 2 and edge
   cases): start on a keyframe → no head; end on a keyframe → no tail; both → pure copy, still
   frame-exact; end of media → no tail; a range ending after the last keyframe → tail from it.
-- [ ] T017 [P] [US1] `smart_us1.rs` › `long_clips_copy_most_frames` (SC-002) and
+- [X] T017 [P] [US1] `smart_us1.rs` › `long_clips_copy_most_frames` (SC-002) and
   `copied_frames_are_identical` (SC-006 part): `copied_share ≥ 0.8` for clips of ≥ 10 GOPs;
   framemd5 of every copied frame equals the source's.
-- [ ] T018 [P] [US1] `smart_us1.rs` › `seams_decode_cleanly` (SC-003): 0 decode errors; sorted pts
+- [X] T018 [P] [US1] `smart_us1.rs` › `seams_decode_cleanly` (SC-003): 0 decode errors; sorted pts
   step by one frame duration across both seams; audio and video start within 20 ms and the
   audio covers the range (scenario 3); run on every eligible fixture including `OtherEncoder`.
-- [ ] T019 [P] [US1] `smart_us1.rs` › `reencoded_parts_match_accurate_quality` (SC-006): head and
+- [X] T019 [P] [US1] `smart_us1.rs` › `reencoded_parts_match_accurate_quality` (SC-006): head and
   tail VMAF (`testkit::vmaf()`) against the source ≥ accurate mode's for the same frames.
-- [ ] T020 [P] [US1] `smart_us1.rs` › `outcome_reports_shares` (scenario 4, FR-012) and
+- [X] T020 [P] [US1] `smart_us1.rs` › `outcome_reports_shares` (scenario 4, FR-012) and
   `deterministic_per_machine` (R10): `JobMeasure::Clip.smart` has `mode_used: smart` and the
   copied and re-encoded frame counts; two runs give byte-identical outputs.
-- [ ] T021 [P] [US1] Argv snapshots in `core-tests/snapshots_ffargs.rs` (new cases, insta): the
+- [X] T021 [P] [US1] Argv snapshots in `core-tests/snapshots_ffargs.rs` (new cases, insta): the
   head, copy, tail, audio and join argv for `SmartMp4` (mp4 with the S1 sample entry), `SmartMkv`
   and `SmartTs`, and a source with colour tags and SAR (`Anamorphic`). Paths are `file:`, concat
   list entries are relative names.
-- [ ] T022 [P] [US1] `core-tests/cancel.rs` › `smart_*` (SC-008, scenario 5): cancel during each
+- [X] T022 [P] [US1] `core-tests/cancel.rs` › `smart_*` (SC-008, scenario 5): cancel during each
   stage (head, copy, tail, audio, join, verify); stopped within 2 s, no `.part`, scratch folder
   or child process left.
-- [ ] T023 [P] [US1] `core-tests/bench.rs` › `smart_vs_accurate` (`#[ignore]`, SC-005): a 60 s
+- [X] T023 [P] [US1] `core-tests/bench.rs` › `smart_vs_accurate` (`#[ignore]`, SC-005): a 60 s
   range of `SmartHd60`; smart ≤ ⅓ of accurate mode's wall time.
 
 ### Implementation for User Story 1
 
-- [ ] T024 [US1] `smart::check(media, index, range, caps, output_ext) -> Result<SmartPlan,
+- [X] T024 [US1] `smart::check(media, index, range, caps, output_ext) -> Result<SmartPlan,
   FallbackReason>` in `core/smart/mod.rs` (R2), for now returning `Ok` for eligible sources and
   the matching reason for the rest; build `SmartPlan` (head, copy, tail `Part`s with frame counts
-  from the index, `copied_share`, `kprev`, `PartEncode` from the probe, `sample_entry`,
+  from the index, `copied_share`, `copy_lead`, `PartEncode` from the probe, `sample_entry`,
   `rotation`). Unit tests on synthetic indexes for the part boundaries in T016.
-- [ ] T025 [US1] `core/smart/args.rs`: pure argv builders for head and tail (R4: exact seek with
+
+  Done, with every R2 rule (T035's rules are in; US2 adds their tests and notices). Also: an
+  odd-sized picture (x264 cannot encode it) gives `params_changed`; the reference count is not
+  matched (research R4); `copied_share` has four decimals, as the contract shows it.
+- [X] T025 [US1] `core/smart/args.rs`: pure argv builders for head and tail (R4: exact seek with
   `-noautorotate` (S2), `-frames:v N`, matched profile, level, `ref`, `bframes`, `open-gop=0:stitchable=1`, colour
-  tags, `setsar`, `-fps_mode passthrough`, preset medium CRF 18, mpegts), copy (R3: Kprev seek,
-  segment muxer, `-copyts`, `-segment_times` relative to Kprev, the middle picked from
-  `-segment_list`), audio (R6: accurate mode's `EncodeProfile` over [A, Z)), and
+  tags, `setsar`, `-fps_mode passthrough`, preset medium CRF 18, mpegts), copy (R3, revised: a
+  coarse seek, an output-side cut `copy_lead` before K1, `-frames:v` = the copied frames), audio (R6: accurate mode's `EncodeProfile` over [A, Z)), and
   join (R5: concat demuxer over relative TS names, `-tag:v` from `sample_entry`, rotation from
   S2, `StreamPlan` mapping as in accurate mode). T021 passes.
-- [ ] T026 [US1] Add `ClipSpec.smart: Option<SmartPlan>` in `core/plan/ffargs.rs`; in
+- [X] T026 [US1] Add `ClipSpec.smart: Option<SmartPlan>` in `core/plan/ffargs.rs`; in
   `core/plan/mod.rs` replace T008's shim: when the resolved mode is `Smart`, read the plan-time
   index window and call `check`; `Ok` keeps `Mode::Smart` with `ClipSpec.smart`, `Err` plans an
   ordinary accurate `ClipSpec` (the reasons and notices come in US2). Existing snapshots stay
   unchanged.
-- [ ] T027 [US1] `core/exec/smart.rs`: run the stages head → copy → tail → audio → join in the
+
+  Done. The index is read 3 s past the end, so a keyframe on the end, and the packets after K2
+  (the open-GOP rule), are in it; plan-time reasons are logged at info level until US2's notices.
+- [X] T027 [US1] `core/exec/smart.rs`: run the stages head → copy → tail → audio → join in the
   job's scratch folder (002's `create_scratch`, journaled), one process at a time through
   `exec::process`; join into the `.part` file; emit `JobStage` events with the R9 stage names
   and weights; remove the scratch folder on success, failure and cancel. Dispatch from
   `core/exec/clip.rs` when `ClipSpec.smart` is `Some`.
-- [ ] T028 [US1] Verification (R7) in `core/exec/smart.rs`: packet scan (count, pts steps across
+- [X] T028 [US1] Verification (R7) in `core/exec/smart.rs`: packet scan (count, pts steps across
   seams, first pts 0, duration within one frame), seam-window decodes (no error lines, frame
   counts, size and pixel format), framemd5 of the first and last copied GOP against the source.
   On failure, discard the `.part` file and return the reason (`params_changed`/`seam_check`);
   the retry comes in US2 (T037). On success, commit through the existing no-clobber commit.
-- [ ] T029 [US1] `SmartOutcome` on `JobMeasure::Clip` in `core/event.rs` (absent unless smart was
+
+  Done as R7 now describes it (packet scan; seam windows with `-noautoscale` framemd5: errors,
+  frame sizes, copy identity). The run-time fallback (T037) is in `exec/clip.rs` already: the
+  `.part` is removed, a `SMART_FALLBACK` warning is sent and the job runs as accurate; strict
+  mode fails it with `SMART_UNAVAILABLE` (`detail.reason`). US2 adds the tests.
+- [X] T029 [US1] `SmartOutcome` on `JobMeasure::Clip` in `core/event.rs` (absent unless smart was
   requested), filled from the plan and the verified counts; the ts-rs export for the desktop
   types.
-- [ ] T030 [US1] CLI: `--mode smart` in `cli/commands/{clip,batch}.rs` (clap value), the human
+- [X] T030 [US1] CLI: `--mode smart` in `cli/commands/{clip,batch}.rs` (clap value), the human
   result line `smart, 92% copied` in `cli/render.rs`; `cli-tests/clip_single.rs` ›
   `smart_mode_clip` and a `contract_clip_json.rs` case for the outcome JSON
   (contracts/json-output.md › Outcome).

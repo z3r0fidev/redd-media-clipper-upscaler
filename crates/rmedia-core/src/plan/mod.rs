@@ -35,6 +35,9 @@ use streams::Container;
 /// Filters smart reframe needs besides the common upscale ones (research R5, R6).
 pub(crate) const SMART_FILTERS: [&str; 6] = ["sendcmd", "scdet", "metadata", "split", "overlay", "crop"];
 
+/// How far past a smart job's end its keyframe index is read (feature 004).
+const INDEX_RUNOUT: Ts = Ts::from_micros(3_000_000);
+
 /// How far before the target an approximate (coarse) input seek lands.
 const COARSE_SEEK_MARGIN: Ts = Ts::from_micros(10_000_000);
 
@@ -165,7 +168,13 @@ impl PlannedJob {
     /// pipe).
     pub fn args(&self) -> Vec<OsString> {
         match &self.spec {
-            JobSpec::Clip(c) => ffargs::clip_args(c, &self.temp),
+            JobSpec::Clip(c) => match (&c.smart, &self.scratch) {
+                (Some(p), Some(dir)) => {
+                    let rest = crate::smart::args::rest_spec(c).map(|_| dir.join(crate::exec::SMART_REST));
+                    crate::smart::args::join_args(c, p, rest.as_deref(), &self.temp)
+                }
+                _ => ffargs::clip_args(c, &self.temp),
+            },
             JobSpec::Upscale(u) => ffargs::upscale_args(u, &self.temp),
             JobSpec::Gif(g) if g.gif.engine == crate::gif::plan::EngineUsed::Gifski => {
                 crate::gif::graph::y4m_args(g, &g.gif.start, crate::gif::graph::PROGRESS)
@@ -482,8 +491,10 @@ impl Planner<'_> {
         // Upscaling and GIF export always re-encode, so they cut like accurate mode (and `mode`
         // is ignored).
         let mode = if up.is_some() || gif.is_some() { Mode::Accurate } else { opts.mode };
-        // TODO(004 T026): plan smart jobs; until then they cut like accurate mode.
-        let mode = if mode == Mode::Smart { Mode::Accurate } else { mode };
+        // A smart job is planned as an accurate one first (its other streams, and the fallback,
+        // are cut exactly as accurate mode cuts them); the smart plan is added below (004).
+        let smart_requested = mode == Mode::Smart;
+        let mode = if smart_requested { Mode::Accurate } else { mode };
 
         // --- times ---------------------------------------------------------------------------
         let duration = media.duration;
@@ -731,7 +742,7 @@ impl Planner<'_> {
 
         let id = self.jobs.len() as JobId + 1;
         let temp = temp_path(&output, &self.run_id, id);
-        let cut = ClipSpec {
+        let mut cut = ClipSpec {
             input,
             input_seek,
             output_seek,
@@ -744,7 +755,23 @@ impl Planner<'_> {
             container,
             encode,
             streams: stream_plan,
+            smart: None,
         };
+        if smart_requested {
+            match self.smart_plan(media, &cut, end.is_none()).await {
+                Ok(mut p) => {
+                    p.strict = !opts.smart_fallback;
+                    cut.mode = Mode::Smart;
+                    cut.smart = Some(p);
+                }
+                Err(Some(reason)) => tracing::info!("smart cut: {}: {reason}", source.path.display()),
+                Err(None) if self.cancel.is_cancelled() => return,
+                Err(None) => warnings.push(
+                    "smart cut not possible: the keyframes could not be read; cutting in accurate mode"
+                        .into(),
+                ),
+            }
+        }
         let mut notices = Vec::new();
         let (spec, scratch) = match (gif, up) {
             (Some(g), _) => {
@@ -775,7 +802,10 @@ impl Planner<'_> {
                     Err((code, msg)) => return self.error(origin, code, msg),
                 }
             }
-            (None, None) => (JobSpec::Clip(Box::new(cut)), None),
+            (None, None) => {
+                let scratch = cut.smart.is_some().then(|| scratch_path(&output, &self.run_id, id));
+                (JobSpec::Clip(Box::new(cut)), scratch)
+            }
             (None, Some((u, preset, tier))) => {
                 let plan = self.upscale_plan(origin, u, preset, tier, media, &cut, whole, &mut warnings);
                 let scratch = scratch_path(&output, &self.run_id, id);
@@ -795,6 +825,28 @@ impl Planner<'_> {
             notices,
             spec,
         });
+    }
+
+    /// A smart job's plan (feature 004, research R2): the source checks, then the keyframe index
+    /// of the range and the range checks. `Err(None)`: the index could not be read.
+    async fn smart_plan(
+        &self,
+        media: &MediaInfo,
+        cut: &ClipSpec,
+        to_end: bool,
+    ) -> Result<crate::smart::SmartPlan, Option<crate::smart::FallbackReason>> {
+        let x264 = self.caps.encoders.contains("libx264");
+        crate::smart::check_source(media, x264, cut.container)?;
+        // Past the end, so a keyframe on the end and the packets after it (the open-GOP rule) are
+        // read too.
+        let window = crate::event::Span { start: cut.requested.start, end: cut.requested.end + INDEX_RUNOUT };
+        let index =
+            crate::smart::keyframes(self.tools, media, Some(window), self.cancel).await.map_err(|e| {
+                tracing::warn!("smart cut: keyframe index of {}: {e}", media.path.display());
+                None
+            })?;
+        let range = crate::smart::Range { span: cut.requested, to_end };
+        Ok(crate::smart::check(media, &index, range, x264, cut.container)?)
     }
 
     /// Upscale checks that need no output path: the preset exists, HDR can be kept, the tier can

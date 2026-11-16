@@ -1,0 +1,62 @@
+---
+source: crates/rmedia-cli/tests/contract_clip_json.rs
+expression: kept
+---
+[
+  {
+    "job_id": 1,
+    "outcome": {
+      "actual": {
+        "end": 8.72,
+        "start": 3.32
+      },
+      "adjusted": false,
+      "measure": "clip",
+      "output": "[DIR]/out/in_001_00-00-03.320_00-00-08.720.mp4",
+      "smart": {
+        "copied_frames": 100,
+        "copied_share": 0.7407,
+        "fallback": null,
+        "mode_used": "smart",
+        "reencoded_frames": 35
+      },
+      "status": "succeeded"
+    },
+    "schema": 1,
+    "type": "job_finished"
+  },
+  {
+    "cancelled": 0,
+    "exit_code": 0,
+    "failed": 0,
+    "jobs": [
+      {
+        "actual": {
+          "end": 8.72,
+          "start": 3.32
+        },
+        "adjusted": false,
+        "id": 1,
+        "measure": "clip",
+        "output": "[DIR]/out/in_001_00-00-03.320_00-00-08.720.mp4",
+        "requested": {
+          "end": 8.72,
+          "start": 3.32
+        },
+        "smart": {
+          "copied_frames": 100,
+          "copied_share": 0.7407,
+          "fallback": null,
+          "mode_used": "smart",
+          "reencoded_frames": 35
+        },
+        "source": "[DIR]/in.mp4",
+        "status": "succeeded"
+      }
+    ],
+    "schema": 1,
+    "skipped": 0,
+    "succeeded": 1,
+    "type": "summary"
+  }
+]

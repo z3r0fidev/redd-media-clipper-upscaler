@@ -38,6 +38,10 @@ pub struct ClipSpec {
     #[serde(skip)]
     pub encode: Option<EncodeProfile>,
     pub streams: StreamPlan,
+    /// Smart mode (feature 004): how the video is cut. `Some` only when the job is smart-cut;
+    /// the rest of the spec is the accurate-mode clip, used for the other streams and for a
+    /// fallback.
+    pub smart: Option<crate::smart::SmartPlan>,
 }
 
 /// Absolute source timestamps for filter-based cutting.
@@ -118,17 +122,20 @@ pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
 
     match (spec.mode, spec.encode) {
         (Mode::Accurate, Some(p)) => {
-            push(&["-fps_mode", "passthrough", "-c:v", p.video_encoder]);
-            let vf: Vec<String> = spec
-                .trim
-                .map(|t| format!("trim={},setpts=PTS-STARTPTS", t.params()))
-                .into_iter()
-                .chain(p.video_filter.map(str::to_owned))
-                .collect();
-            if !vf.is_empty() {
-                push(&["-vf", &vf.join(",")]);
+            // A smart job's audio step maps no video (feature 004).
+            if has(spec, StreamKind::Video) {
+                push(&["-fps_mode", "passthrough", "-c:v", p.video_encoder]);
+                let vf: Vec<String> = spec
+                    .trim
+                    .map(|t| format!("trim={},setpts=PTS-STARTPTS", t.params()))
+                    .into_iter()
+                    .chain(p.video_filter.map(str::to_owned))
+                    .collect();
+                if !vf.is_empty() {
+                    push(&["-vf", &vf.join(",")]);
+                }
+                push(p.video_args);
             }
-            push(p.video_args);
             if has(spec, StreamKind::Audio) {
                 push(&["-c:a", p.audio_encoder]);
                 if let Some(t) = spec.trim {
