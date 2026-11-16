@@ -88,6 +88,10 @@ only.
   or invalid UTF-8, so a hostile name cannot inject entries into `clip --inputs-from -`.
 - **Engine executable.** Explicit engine paths are canonicalized. In the desktop app, only a
   native file picker in Rust can change them; `set_settings` ignores engine paths from the page.
+  An ffmpeg or ffprobe found on PATH inside the current directory is refused (a planted binary),
+  as gifsicle and gifski are. The version and capability checks (`tools::probe`) run with a
+  cleared environment in the temp folder. Jobs still run ffmpeg with the user's environment,
+  which hardware encoders and GPU drivers need.
 
 ### Inputs Are Sacred: Output Safety (T3, T4)
 

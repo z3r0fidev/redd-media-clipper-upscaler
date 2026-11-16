@@ -228,19 +228,7 @@ pub async fn locate(
     }
 }
 
-/// The first of `dirs` that contains `path` (both canonicalised where possible).
-fn refused_by(path: &Path, dirs: &[PathBuf]) -> Option<PathBuf> {
-    let path = crate::paths::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    dirs.iter()
-        .map(|d| crate::paths::canonicalize(d).unwrap_or_else(|_| d.clone()))
-        .find(|d| path.starts_with(d))
-}
-
-/// The environment the engines run with: nothing but what the OS needs (research R7).
-pub(crate) fn engine_env() -> Vec<(OsString, OsString)> {
-    let keep: &[&str] = if cfg!(windows) { &["SystemRoot", "TEMP", "TMP", "LANG"] } else { &["LANG"] };
-    keep.iter().filter_map(|k| std::env::var_os(k).map(|v| (OsString::from(k), v))).collect()
-}
+pub(crate) use crate::tools::{clean_env as engine_env, refused_by};
 
 /// Runs `path --version` with a cleared environment, returning at most 4 KiB of its stdout.
 async fn banner(path: &Path, timeout: Duration) -> Result<String, String> {

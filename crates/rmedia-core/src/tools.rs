@@ -1,4 +1,6 @@
-//! Locating ffmpeg/ffprobe: explicit path → env → bundled beside the executable → PATH.
+//! Locating ffmpeg/ffprobe: explicit path → env → bundled beside the executable → PATH. A copy
+//! found on PATH inside the current directory is refused (a planted binary), and every look at
+//! ffmpeg runs with a cleared environment in a neutral folder, as for the GIF engines (L1).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -84,14 +86,20 @@ pub async fn locate(opts: &LocateOptions) -> Result<Tools> {
         .bundled_dir
         .clone()
         .or_else(|| std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)));
-    let ffmpeg =
-        find_tool(opts.ffmpeg.as_deref(), "RMEDIA_FFMPEG", BUNDLED_FFMPEG, "ffmpeg", bundled_dir.as_deref())?;
-    let ffprobe = find_tool(
-        opts.ffprobe.as_deref(),
-        "RMEDIA_FFPROBE",
-        BUNDLED_FFPROBE,
-        "ffprobe",
-        bundled_dir.as_deref(),
+    let cwd: Vec<PathBuf> = std::env::current_dir().into_iter().collect();
+    let ffmpeg = trusted(
+        find_tool(opts.ffmpeg.as_deref(), "RMEDIA_FFMPEG", BUNDLED_FFMPEG, "ffmpeg", bundled_dir.as_deref())?,
+        &cwd,
+    )?;
+    let ffprobe = trusted(
+        find_tool(
+            opts.ffprobe.as_deref(),
+            "RMEDIA_FFPROBE",
+            BUNDLED_FFPROBE,
+            "ffprobe",
+            bundled_dir.as_deref(),
+        )?,
+        &cwd,
     )?;
     let stdout = probe(&ffmpeg.path, &["-hide_banner", "-version"]).await?;
     let text = String::from_utf8_lossy(&stdout);
@@ -128,6 +136,34 @@ fn find_tool(
                  (use --{path_name} PATH)"
         ))
     })
+}
+
+/// Refuses a tool found on PATH inside one of `dirs` (the current directory: a planted binary).
+/// A configured or bundled path is the user's choice and is kept.
+fn trusted(tool: Tool, dirs: &[PathBuf]) -> Result<Tool> {
+    match refused_by(&tool.path, dirs) {
+        Some(dir) if tool.source == ToolSource::Path => Err(Error::EngineMissing(format!(
+            "{} was found on PATH inside {}, which is not trusted (use --ffmpeg/--ffprobe PATH)",
+            tool.path.display(),
+            dir.display()
+        ))),
+        _ => Ok(tool),
+    }
+}
+
+/// The first of `dirs` that contains `path` (both canonicalised where possible).
+pub(crate) fn refused_by(path: &Path, dirs: &[PathBuf]) -> Option<PathBuf> {
+    let path = crate::paths::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    dirs.iter()
+        .map(|d| crate::paths::canonicalize(d).unwrap_or_else(|_| d.clone()))
+        .find(|d| path.starts_with(d))
+}
+
+/// The environment external tools are checked (and the GIF engines run) with: nothing but what
+/// the OS needs (003 research R7).
+pub(crate) fn clean_env() -> Vec<(OsString, OsString)> {
+    let keep: &[&str] = if cfg!(windows) { &["SystemRoot", "TEMP", "TMP", "LANG"] } else { &["LANG"] };
+    keep.iter().filter_map(|k| std::env::var_os(k).map(|v| (OsString::from(k), v))).collect()
 }
 
 /// The bundled copy beside rmedia, else `path_name` on PATH (only when nothing is bundled).
@@ -194,16 +230,26 @@ pub fn parse_version(output: &str) -> Option<Version> {
 const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs ffmpeg with `args` and returns its stdout (bounded in time and size; the process tree
-/// is killed on timeout).
+/// is killed on timeout). It runs with a cleared environment in the temp folder, so neither the
+/// caller's variables (such as `FFREPORT`) nor its working directory reach it (L1).
 pub(crate) async fn probe(ffmpeg: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let args: Vec<OsString> = args.iter().map(OsString::from).collect();
     let cancel = tokio_util::sync::CancellationToken::new();
-    crate::exec::process::run_probe(ffmpeg, &args, None, None, PROBE_MAX_BYTES, PROBE_TIMEOUT, &cancel)
-        .await
-        .map_err(|e| match e {
-            Error::EngineMissing(_) => e,
-            e => Error::EngineMissing(format!("cannot run {}: {e}", ffmpeg.display())),
-        })
+    let (cwd, env) = (std::env::temp_dir(), clean_env());
+    crate::exec::process::run_probe(
+        ffmpeg,
+        &args,
+        Some(&cwd),
+        Some(&env),
+        PROBE_MAX_BYTES,
+        PROBE_TIMEOUT,
+        &cancel,
+    )
+    .await
+    .map_err(|e| match e {
+        Error::EngineMissing(_) => e,
+        e => Error::EngineMissing(format!("cannot run {}: {e}", ffmpeg.display())),
+    })
 }
 
 /// ffmpeg's longest list (`-filters`) is well under 1 MiB.
@@ -255,5 +301,44 @@ mod tests {
             find_tool(None, "RMEDIA_TEST_UNSET_VAR", BUNDLED_FFMPEG, "ffmpeg", Some(dir.path())).unwrap();
         assert_eq!(tool.source, ToolSource::Bundled);
         assert_eq!(tool.path, bundled);
+    }
+
+    /// L1: an ffmpeg or ffprobe found on PATH inside the current directory is refused (a planted
+    /// binary); a configured or bundled one there is the user's choice and is kept.
+    #[test]
+    fn path_results_inside_the_current_directory_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("sub").join("ffmpeg");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, b"").unwrap();
+        let cwd = [dir.path().to_path_buf()];
+        let found = |source| Tool { path: exe.clone(), source };
+        let err = trusted(found(ToolSource::Path), &cwd).unwrap_err().to_string();
+        assert!(err.contains("not trusted"), "{err}");
+        assert!(trusted(found(ToolSource::Bundled), &cwd).is_ok());
+        assert!(trusted(found(ToolSource::Config), &cwd).is_ok());
+        assert!(trusted(found(ToolSource::Path), &[dir.path().join("other")]).is_ok());
+    }
+
+    #[cfg(unix)]
+    mod fake {
+        use super::super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        /// L1: the version check runs ffmpeg with a cleared environment, in a neutral folder.
+        #[tokio::test]
+        async fn the_version_check_runs_with_a_cleared_environment() {
+            let dir = tempfile::tempdir().unwrap();
+            let p = dir.path().join("ffmpeg");
+            std::fs::write(&p, "#!/bin/sh\necho 'ffmpeg version 7.1 Copyright'\nenv\npwd\n").unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let text = String::from_utf8(probe(&p, &["-version"]).await.unwrap()).unwrap();
+            for line in text.lines().skip(1).filter(|l| l.contains('=')) {
+                let key = line.split('=').next().unwrap();
+                assert!(["LANG", "PWD", "SHLVL", "_"].contains(&key), "leaked {key}: {text}");
+            }
+            let cwd = crate::paths::canonicalize(&std::env::temp_dir()).unwrap();
+            assert_eq!(text.lines().last().map(PathBuf::from).as_deref(), Some(cwd.as_path()), "{text}");
+        }
     }
 }

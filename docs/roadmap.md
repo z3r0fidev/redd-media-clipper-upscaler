@@ -206,7 +206,7 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; item 1's releases (0.1.0–0.3.0) and
 004's tasks, Phases 1–2 and US1 (T001–T030) were done on 2026-11-15, and US2 and US3 (T031–T042)
-on 2026-11-16; the next work is item 8 (L1), then 004 US4 (T043–T046, item 22).
+on 2026-11-16; item 8 (L1) was done the same day; the next work is 004 US4 (T043–T046, item 22).
 
 **Owner actions**
 
@@ -239,8 +239,11 @@ on 2026-11-16; the next work is item 8 (L1), then 004 US4 (T043–T046, item 22)
 7. **Done 2026-11-14 (M3).** Was: `.github/workflows/dependabot-notices.yml`: check out `head.sha`, not `head.ref`, and
    use the same SHA for the scope check; set `persist-credentials: false` on the PR checkout and
    give the token only to the push step.
-8. **L1.** `crates/rmedia-core/src/tools.rs`: the ffmpeg and ffprobe PATH lookup lacks the
-   refuse-cwd guard and the clean environment the GIF engines have.
+8. **Done 2026-11-16 (L1).** `tools::locate` refuses an ffmpeg or ffprobe found on PATH inside
+   the current directory, and `tools::probe` (the version and capability checks) runs with the
+   GIF engines' cleared environment in the temp folder. Jobs keep the user's environment
+   (hardware encoders and GPU drivers read it). Was: the ffmpeg and ffprobe PATH lookup lacked
+   the refuse-cwd guard and the clean environment the GIF engines have.
 9. **L2.** `release.yml`: packages are unsigned and have no `SHA256SUMS`, SBOM or provenance
    attestation; `npm ci` runs install scripts; rust-cache is used on tag builds.
 10. **L3.** `set_engine_path` has no `-version` banner check for ffmpeg (the GIF engines have one).
@@ -276,7 +279,7 @@ on 2026-11-16; the next work is item 8 (L1), then 004 US4 (T043–T046, item 22)
 
 22. **004 Smart cut** (next; specified and planned in `specs/004-smart-cut/` on 2026-11-14; tasks
     T001–T059 on 2026-11-15; Phases 1–2 and US1 (T001–T030) done on 2026-11-15, US2 and US3 (T031–T042)
-    on 2026-11-16; next US4, T043–T046, after item 8). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+    on 2026-11-16; next US4, T043–T046). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
     and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
     source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
     accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,
