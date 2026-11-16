@@ -228,7 +228,10 @@ async fn decode(
         ["-frames:v", &frames.to_string(), "-noautoscale", "-f", "framemd5", "-"].iter().map(OsString::from),
     );
     let out = run_capture(&ctx.tools.ffmpeg.path, &a, ctx.cancel).await?;
-    if !out.status.success() || !out.stderr_tail.trim().is_empty() {
+    // Decoding the source after a coarse seek can report frames before the window whose
+    // references were not read ("co located POCs unavailable"); that is not about the clip, and
+    // the source's frames are compared by MD5 anyway. Only the joined clip must decode silently.
+    if !out.status.success() || (!source && !out.stderr_tail.trim().is_empty()) {
         tracing::warn!("smart cut: decode check: {}", out.stderr_tail.trim());
         return Ok(None);
     }

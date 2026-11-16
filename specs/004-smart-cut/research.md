@@ -224,6 +224,11 @@ needs priming and padding handling at each seam, for very little saving.
 2. **Seam windows** (ffmpeg `-v error -noautoscale -f framemd5`): around each seam, decode up to
    one GOP before and one after (an exact input seek; MPEG-TS outputs seek on the output side).
    - Any error line, or a window with too few frames: `seam_check`.
+   - Error lines count for the joined clip only. Decoding the source after a coarse seek
+     (MPEG-TS) can report "co located POCs unavailable" for B-frames before the window; CI's
+     x264 (more threads, other frame-type choices) made such sources, and every smart cut of
+     them fell back until the source decode's messages were ignored. Its frames are compared
+     by MD5.
    - A frame whose decoded size is not the stream's (`-noautoscale` keeps a size change
      visible): `params_changed`.
    - The window's copied frames must have the same MD5s as the same frames decoded from the
