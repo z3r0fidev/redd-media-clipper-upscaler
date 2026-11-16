@@ -318,6 +318,32 @@ pub fn cancel_estimate(state: State<'_, AppState>, estimate_id: String) {
     state.cancel_estimate(&estimate_id);
 }
 
+/// The whole-file keyframe index of an opened source (feature 004), for the timeline markers.
+#[tauri::command]
+pub async fn keyframes(
+    state: State<'_, AppState>,
+    request_id: String,
+    path: PathBuf,
+) -> OpResult<rmedia_core::smart::KeyframeIndex> {
+    state.keyframes(request_id, &path).await
+}
+
+#[tauri::command]
+pub fn cancel_keyframes(state: State<'_, AppState>, request_id: String) {
+    state.cancel_keyframes(&request_id);
+}
+
+/// What smart mode would do for one range (feature 004); a newer call cancels the older one.
+#[tauri::command]
+pub async fn smart_plan(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    span: RangeArg,
+    options: rmedia_core::request::PartialOptions,
+) -> OpResult<crate::ops::SmartPlanResult> {
+    state.smart_plan(&path, span, &options).await
+}
+
 /// A finished output of this app's run, for playback in the GIF view.
 #[tauri::command]
 pub async fn open_output(

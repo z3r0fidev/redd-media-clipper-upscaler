@@ -2,6 +2,7 @@
   import { api } from "../api";
   import { app } from "../stores/app.svelte";
   import { statusLabel, upscaleDetail, type JobView } from "../stores/run";
+  import { smartOutcomeLabel } from "../stores/smart";
   import { baseName } from "../time";
 
   const run = $derived(app.run);
@@ -22,7 +23,7 @@
       if (Math.abs(o.actual.start - j.requestedStart) > 0.05) return `Starts on the keyframe at ${o.actual.start.toFixed(3)} s`;
       return `Ends at ${o.actual.end.toFixed(3)} s`;
     }
-    return [upscaleDetail(o), ...j.warnings].filter(Boolean).join(" · ");
+    return [smartOutcomeLabel(o), upscaleDetail(o), ...j.warnings].filter(Boolean).join(" · ");
   }
 </script>
 

@@ -85,3 +85,33 @@ only when asked).
 
 Reviews: self-review of the diff; the senior-code-reviewer pass was not run (agents are spawned
 only when asked).
+
+## US5 checkpoint (T047–T053, 2026-11-16, private Xvfb display :99, never the real display)
+
+Debug desktop build (`tauri build --debug --no-bundle`), isolated XDG config, cache, data and
+state, the bundled FFmpeg n9.0.2. Sources: the testkit's `SmartMp4` (`src.mp4`, 30 s, 2 s GOPs)
+and `OpenGop` (`open.mp4`), passed on the command line.
+
+| Step (quickstart › Desktop) | Result |
+|---|---|
+| 1. Ticks | `src.mp4`: 15 ticks every 2 s on the timeline, shown with the view (loaded in the background) |
+| 2. Smart, 3.32–20.72 s | Smart chosen in the video's queue options (or as the default in Settings). The bands: head 3.32–4, copy 4–20, tail 20–20.72; the line "Smart: 92% copied · 0.68 s re-encoded at the start · 0.72 s at the end" |
+| 3. Run | "Finished · 1 succeeded"; the run panel says "Smart · 92% copied". The file: h264, 435 frames, 17.400 s, decodes with no errors |
+| 4. `open.mp4` | "Smart cut not possible: the video has open GOPs (frames that depend on the previous GOP); cutting in accurate mode", in the warning colour, no bands |
+| Settings | "Smart cut: available (libx264)"; Smart saved as the default mode and used for a newly opened source |
+| SC-007 markers | A 10-minute source (320x180, 25 fps, 2 s GOPs): all 300 ticks were on screen in the first screenshot, 1.5 s after the click. Core: `bench_sc007_keyframes_of_a_10_minute_source` 126 ms |
+| SC-007 interactions | With Smart as the default mode: (1) mark the range (I, O), (2) Add clip, (3) Run, which is 3, counted as in 002 (select, choose, run). Choosing Smart for one video in the queue instead adds one |
+
+Found and fixed: the colour legend and the status text were one flex line and wrapped in the
+middle of the legend; the text now comes first and the legend wraps as one unit.
+
+Automated: `bridge::keyframes_index_cache_and_cancel` and `bridge::smart_plan_matches_the_cli`
+(the summary equals `rmedia clip --mode smart --dry-run --json`'s for `SmartMp4` 3.32–20.72 and
+`OpenGop` 1.32–6.72; a newer call cancels the older), vitest `smart.test.ts` and
+`smart.svelte.test.ts`, svelte-check 0 errors.
+
+Reviews: self-review of the diff; the senior-code-reviewer and security-auditor passes were not
+run (agents are spawned only when asked). Security notes from the self-review: both commands
+check `require_allowed` first; the cache key is the canonicalised path with its size and mtime,
+so a replaced file is indexed again; the cache keeps 32 indexes, and a request's entry is
+removed when its scan ends (the page cancels the previous scan when the source changes).

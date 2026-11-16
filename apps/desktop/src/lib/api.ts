@@ -18,6 +18,9 @@ import type { UpscaleOptions } from "./bindings/UpscaleOptions";
 import type { GifOptions } from "./bindings/GifOptions";
 import type { GifTarget } from "./bindings/GifTarget";
 import type { Notice } from "./bindings/Notice";
+import type { KeyframeIndex } from "./bindings/KeyframeIndex";
+import type { PartialOptions } from "./bindings/PartialOptions";
+import type { SmartSummary } from "./bindings/SmartSummary";
 import type { Manifest } from "./manifest";
 
 export interface PreviewInfo {
@@ -88,6 +91,12 @@ export interface OutputInfo {
   bytes: number;
   width: number;
   height: number;
+}
+
+/** `smart_plan`'s result: no summary when smart does not apply; the notices say why. */
+export interface SmartPlanResult {
+  summary: SmartSummary | null;
+  notices: Notice[];
 }
 
 export type EngineKind = "ffmpeg" | "gifsicle" | "gifski";
@@ -161,6 +170,12 @@ export const api = {
   },
   cancelEstimate: (estimateId: string) => invoke<void>("cancel_estimate", { estimateId }),
   openOutput: (runId: string, jobId: number) => invoke<OutputInfo>("open_output", { runId, jobId }),
+  /** The whole-file keyframe index (feature 004), cached per file by the app. */
+  keyframes: (requestId: string, path: string) => invoke<KeyframeIndex>("keyframes", { requestId, path }),
+  cancelKeyframes: (requestId: string) => invoke<void>("cancel_keyframes", { requestId }),
+  /** What smart mode would do for one range; a newer call cancels the older. */
+  smartPlan: (path: string, span: RangeArg, options: PartialOptions) =>
+    invoke<SmartPlanResult>("smart_plan", { path, span, options }),
   onDropped: (f: (paths: string[]) => void): Promise<UnlistenFn> =>
     listen<string[]>("rmedia://dropped", (e) => f(e.payload)),
 };

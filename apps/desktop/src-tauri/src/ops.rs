@@ -25,6 +25,7 @@ use rmedia_core::preview::{self, PreviewCache, ProxyCodec};
 use rmedia_core::probe::{self, MediaInfo};
 use rmedia_core::request::{BatchRequest, Options, PartialOptions};
 use rmedia_core::settings::Settings;
+use rmedia_core::smart::KeyframeIndex;
 use rmedia_core::tools::{LocateOptions, Tools};
 use rmedia_core::upscale::capability::CheckMode;
 use rmedia_core::upscale::preview::{self as still, PreviewRequest};
@@ -137,6 +138,13 @@ pub struct AppState {
     preview: Mutex<Option<CancellationToken>>,
     /// Preview stills registered with the media server, oldest first (capped).
     preview_files: Mutex<VecDeque<PathBuf>>,
+    /// Whole-file keyframe indexes in flight, by request id (feature 004).
+    keyframe_requests: Mutex<HashMap<String, CancellationToken>>,
+    /// Finished keyframe indexes, most recent last, keyed by canonical path, size and
+    /// modification time (a changed file is read again). Capped at `MAX_KEYFRAME_INDEXES`.
+    keyframe_cache: Mutex<VecDeque<(KeyframeKey, Arc<KeyframeIndex>)>>,
+    /// The smart plan being made (a new one cancels it: only the latest range is shown).
+    smart_plan: Mutex<Option<CancellationToken>>,
     /// Held across read-modify-save of the settings, so concurrent saves never lose a field.
     settings_save: Mutex<()>,
     cache_dir: PathBuf,
@@ -177,6 +185,9 @@ impl AppState {
             output_files: Mutex::new(VecDeque::new()),
             preview: Mutex::new(None),
             preview_files: Mutex::new(VecDeque::new()),
+            keyframe_requests: Mutex::new(HashMap::new()),
+            keyframe_cache: Mutex::new(VecDeque::new()),
+            smart_plan: Mutex::new(None),
             settings_save: Mutex::new(()),
             cache_dir,
             opened: Mutex::new(Vec::new()),
@@ -759,6 +770,121 @@ impl AppState {
         result
     }
 
+    /// The whole-file keyframe index of an opened source (feature 004, research R1), for the
+    /// timeline's markers. Served from the cache while the file's size and modification time are
+    /// unchanged; capped by the core (`truncated`).
+    pub async fn keyframes(&self, request_id: String, path: &Path) -> OpResult<KeyframeIndex> {
+        if request_id.is_empty() || request_id.len() > 64 {
+            return Err("invalid request id".into());
+        }
+        let path = self.require_allowed(path)?;
+        let meta = std::fs::metadata(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let key = KeyframeKey { path: path.clone(), len: meta.len(), modified: meta.modified().ok() };
+        if let Some((_, index)) = lock(&self.keyframe_cache).iter().find(|(k, _)| *k == key) {
+            return Ok((**index).clone());
+        }
+        let cancel = CancellationToken::new();
+        {
+            let mut running = lock(&self.keyframe_requests);
+            if running.contains_key(&request_id) {
+                return Err("this request is already running".into());
+            }
+            running.insert(request_id.clone(), cancel.clone());
+        }
+        let result = async {
+            let (tools, _) = self.engine().await?;
+            let media = probe::probe(&tools, &path, &cancel).await.map_err(|e| e.to_string())?;
+            rmedia_core::smart::keyframes(&tools, &media, None, &cancel).await.map_err(|e| e.to_string())
+        }
+        .await;
+        lock(&self.keyframe_requests).remove(&request_id);
+        if cancel.is_cancelled() {
+            return Err("the keyframe index was cancelled".into());
+        }
+        let index = Arc::new(result?);
+        let mut cache = lock(&self.keyframe_cache);
+        cache.retain(|(k, _)| k.path != key.path);
+        cache.push_back((key, index.clone()));
+        while cache.len() > MAX_KEYFRAME_INDEXES {
+            cache.pop_front();
+        }
+        Ok((*index).clone())
+    }
+
+    pub fn cancel_keyframes(&self, request_id: &str) {
+        if let Some(c) = lock(&self.keyframe_requests).get(request_id) {
+            c.cancel();
+        }
+    }
+
+    /// What smart mode would do for one range of an opened source: the core's plan, as
+    /// `rmedia clip --mode smart --dry-run` makes it (feature 004), with the job's notices (the
+    /// fallback or "does not apply" message). No summary: smart does not apply (the options
+    /// upscale or make a GIF). With `smart_fallback: false` a reason is an error. Nothing is
+    /// written. A newer call cancels this one.
+    pub async fn smart_plan(
+        &self,
+        path: &Path,
+        span: RangeArg,
+        options: &PartialOptions,
+    ) -> OpResult<SmartPlanResult> {
+        let (start, end) = span.span()?;
+        let path = self.require_allowed(path)?;
+        let cancel = CancellationToken::new();
+        if let Some(older) = lock(&self.smart_plan).replace(cancel.clone()) {
+            older.cancel();
+        }
+        let result = async {
+            use rmedia_core::request::{ClipRequest, Mode, OnExists, Origin, SourceRequest};
+            let (tools, caps) = self.engine().await?;
+            // The page's options over the Settings defaults (the core re-checks them), in smart
+            // mode. Nothing is written: an existing output must not make the plan skip the job.
+            let defaults = lock(&self.settings).defaults.apply(&Options::default());
+            let req = BatchRequest {
+                defaults: Options {
+                    mode: Mode::Smart,
+                    on_exists: OnExists::Overwrite,
+                    output_dir: Some(self.cache_dir.join(SMART_PLANS)),
+                    ..options.apply(&defaults)
+                },
+                sources: vec![SourceRequest {
+                    path,
+                    clips: vec![ClipRequest {
+                        start,
+                        end,
+                        name: None,
+                        overrides: PartialOptions::default(),
+                        origin: Origin::Gui,
+                    }],
+                    overrides: PartialOptions::default(),
+                    origin: Origin::Gui,
+                }],
+            };
+            let mut p = plan::plan(&req, &tools, &caps, &cancel).await;
+            if cancel.is_cancelled() {
+                return Err("cancelled: a newer smart plan replaced this one".to_owned());
+            }
+            let errors: Vec<String> = p
+                .issues
+                .iter()
+                .filter(|i| i.severity == rmedia_core::plan::Severity::Error)
+                .map(|i| i.message.clone())
+                .collect();
+            if !errors.is_empty() {
+                return Err(errors.join("; "));
+            }
+            let job = p.jobs.pop().ok_or("nothing to plan")?;
+            Ok(SmartPlanResult { summary: job.smart, notices: job.notices })
+        }
+        .await;
+        // Clear the slot unless a newer call already took it.
+        let mut current = lock(&self.smart_plan);
+        if current.as_ref() == Some(&cancel) {
+            *current = None;
+        }
+        result
+    }
+
     pub fn cancel_estimate(&self, estimate_id: &str) {
         if let Some(c) = lock(&self.estimates).get(estimate_id) {
             c.cancel();
@@ -988,10 +1114,29 @@ fn seconds(t: f64) -> OpResult<Ts> {
 
 /// The app-cache folder GIF estimates sample in.
 const GIF_ESTIMATES: &str = "gif-estimates";
+/// The output folder smart plans are named in (nothing is written there).
+const SMART_PLANS: &str = "smart-plans";
+/// Keyframe indexes kept (one per source; the oldest is dropped first).
+const MAX_KEYFRAME_INDEXES: usize = 32;
+
+/// What a cached keyframe index was read from: a file with another size or time is read again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct KeyframeKey {
+    path: PathBuf,
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+}
 /// A run's id and its committed outputs by job id.
 type RunOutputs = (String, Vec<(u32, PathBuf)>);
 /// How many runs' outputs `open_output` remembers.
 const MAX_RUNS_KEPT: usize = 16;
+
+/// `smart_plan`'s result (contracts/tauri-commands.md, feature 004).
+#[derive(Debug, Clone, Serialize)]
+pub struct SmartPlanResult {
+    pub summary: Option<rmedia_core::plan::SmartSummary>,
+    pub notices: Vec<rmedia_core::plan::Notice>,
+}
 
 /// `gif_estimate`'s result (contracts/tauri-commands.md).
 #[derive(Debug, Clone, Serialize)]

@@ -11,7 +11,8 @@ quickstart.md
 
 **Status (2026-11-16)**: T001–T046 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
 phone and Reddit rows are owner checks), US1, the MVP, US2 (fallbacks and strict mode), US3
-(the dry run) and US4 (manifests and parity). Next: US5 (T047–). Roadmap:
+(the dry run), US4 (manifests and parity) and US5 (the desktop app). Next: Phase 8 (T054–).
+Roadmap:
 `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
@@ -401,34 +402,46 @@ markers match the keyframes, the bands show the spans, and the run report matche
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T047 [P] [US5] `apps/desktop/src-tauri/tests/bridge.rs` › `keyframes_*`: the `keyframes`
+- [X] T047 [P] [US5] `apps/desktop/src-tauri/tests/bridge.rs` › `keyframes_*`: the `keyframes`
   command returns the index for `SmartMp4` (2 s ticks), serves a second request from the cache,
   invalidates on a changed mtime, refuses a path that is not an allowed source, and
   `cancel_keyframes` stops a running scan.
-- [ ] T048 [P] [US5] `bridge.rs` › `smart_plan_*`: `smart_plan` returns the same `SmartSummary`
+  Done: `bridge::keyframes_index_cache_and_cancel` (a refused path, 2 s ticks, a cache hit,
+  invalidation on mtime, cancel).
+- [X] T048 [P] [US5] `bridge.rs` › `smart_plan_*`: `smart_plan` returns the same `SmartSummary`
   as `rmedia clip --mode smart --dry-run --json` for the same range; a newer call cancels the
   older one; a fallback source returns its reason.
-- [ ] T049 [P] [US5] Component tests (`npm test`, the existing vitest setup) for
+  Done: `bridge::smart_plan_matches_the_cli`. It returns `{summary, notices}` so the page can
+  show the fallback notice's message.
+- [X] T049 [P] [US5] Component tests (`npm test`, the existing vitest setup) for
   `ui/components/Player.svelte` (ticks at the index times; head/copy/tail bands and the share
   under the timeline; the fallback message), `Queue.svelte` (Smart label, "Only smart (no
   fallback)"), `RunPanel.svelte` ("Smart · 92% copied", "Accurate (smart fallback: …)") and
   `Settings.svelte` (Smart default, doctor line).
+  Done: the layout and labels are pure functions in `src/lib/stores/smart.ts`, and the state
+  lives in `smart.svelte.ts` (`smart.test.ts`, `smart.svelte.test.ts`). The vitest setup runs in
+  node without a component DOM, so the components themselves are checked by the Xvfb checkpoint.
 
 ### Implementation for User Story 5
 
-- [ ] T050 [US5] `keyframes` and `cancel_keyframes` in `desk/commands.rs`, with the per-source
+- [X] T050 [US5] `keyframes` and `cancel_keyframes` in `desk/commands.rs`, with the per-source
   cache (key: path, size, mtime) and request cancellation in `desk/ops.rs`, calling
   `smart::keyframes` (R11); register them in `desk/lib.rs` and the capability file.
-- [ ] T051 [US5] `smart_plan` in `desk/commands.rs` and `desk/ops.rs`, calling the core planning
+  Done: app commands need no capability entry.
+- [X] T051 [US5] `smart_plan` in `desk/commands.rs` and `desk/ops.rs`, calling the core planning
   for one range (no media logic in the desktop crate; Principle I); newer-call cancellation as
   `gif_estimate` does.
-- [ ] T052 [US5] Regenerate bindings (`cargo xtask gen-bindings`) for `KeyframeIndex`,
+  Done: it takes `span: RangeArg` (the type the page already uses) and returns
+  `SmartPlanResult {summary, notices}`.
+- [X] T052 [US5] Regenerate bindings (`cargo xtask gen-bindings`) for `KeyframeIndex`,
   `KeyframeEntry`, `SmartSummary`, `SmartOutcome`, `FallbackReason` and the new `Mode` value;
   commit `ui/bindings`.
-- [ ] T053 [US5] UI: Player ticks (loaded without blocking the view, scenario 1) and bands
+  Done: no change; the bindings were generated with US1–US3.
+- [X] T053 [US5] UI: Player ticks (loaded without blocking the view, scenario 1) and bands
   (`ui/components/Player.svelte`); Smart in the mode choice and the strict option
   (`Queue.svelte`); the result labels (`RunPanel.svelte`); the default mode and the doctor line
   (`Settings.svelte`). T047–T049 pass.
+  Done: the per-clip strict option is a "Smart" / "Smart only" pill on the clip row.
 
 **Checkpoint**: run `quickstart.md` › Desktop under Xvfb; check SC-007 (3 interactions, markers
 ≤ 2 s on a 10-minute source). npm check and test, the desktop tests, senior-code-reviewer and

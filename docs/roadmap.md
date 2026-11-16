@@ -13,7 +13,7 @@ Last updated: 2026-11-14.
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
-| 004 Smart cut | In progress: 46 of 59 tasks (MVP, fallbacks, dry run and manifests; `specs/004-smart-cut/`, 2026-11-16); version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
+| 004 Smart cut | In progress: 53 of 59 tasks (MVP, fallbacks, dry run, manifests and the desktop app; `specs/004-smart-cut/`, 2026-11-16); version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
 | 005 Budgeted Reddit video | Planned after 004; no version yet | MP4 with audio under Reddit size and length caps, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -206,8 +206,8 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 
 Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; item 1's releases (0.1.0–0.3.0) and
 004's tasks, Phases 1–2 and US1 (T001–T030) were done on 2026-11-15, and US2 and US3 (T031–T042)
-on 2026-11-16; item 8 (L1) and 004 US4 (T043–T046) were done the same day; the next work is 004 US5
-(T047–T053, item 22).
+on 2026-11-16; item 8 (L1) and 004 US4 and US5 (T043–T053) were done the same day; the next work is 004
+Phase 8, polish (T054–T059, item 22), then the 0.4.0 release.
 
 **Owner actions**
 
@@ -279,8 +279,8 @@ on 2026-11-16; item 8 (L1) and 004 US4 (T043–T046) were done the same day; the
 **Planned features** (a version follows the feature number: 004 becomes 0.4.0)
 
 22. **004 Smart cut** (next; specified and planned in `specs/004-smart-cut/` on 2026-11-14; tasks
-    T001–T059 on 2026-11-15; Phases 1–2 and US1 (T001–T030) done on 2026-11-15, US2 to US4 (T031–T046)
-    on 2026-11-16; next US5, T047–T053). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+    T001–T059 on 2026-11-15; Phases 1–2 and US1 (T001–T030) done on 2026-11-15, US2 to US5 (T031–T053)
+    on 2026-11-16; next Phase 8, T054–T059). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
     and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
     source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
     accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,

@@ -81,6 +81,7 @@
           <select bind:value={draft.defaults.mode}>
             <option value={undefined}>Fast (no re-encode)</option>
             <option value="accurate">Frame-accurate</option>
+            <option value="smart">Smart (frame-exact, copies most of the video)</option>
           </select>
         </label>
         <label>Output folder
@@ -120,6 +121,7 @@
           {#if app.engine.ffmpeg?.source === "config"}<button class="ghost small" onclick={() => chooseEngine(true)}>Use automatic</button>{/if}
         </span>
         <p class="small">Version {app.engine.version ?? "?"} · accurate mode writes {app.engine.accurate_containers.join(", ") || "nothing"}</p>
+        <p class="small" class:bad={!app.engine.smart.available}>Smart cut: {app.engine.smart.available ? "available (libx264)" : `unavailable — ${app.engine.smart.reason ?? "unknown"}`}</p>
         {#each app.engine.problems as p, i (i)}<p class="small bad">{p}</p>{/each}
       {/if}
     </fieldset>

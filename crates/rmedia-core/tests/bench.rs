@@ -194,3 +194,38 @@ async fn bench_sc005_smart_vs_accurate() {
     );
     assert!(smart.as_secs_f64() <= accurate.as_secs_f64() / 3.0, "SC-005 violated");
 }
+
+/// Feature 004, SC-007's marker half: the whole-file keyframe index of a 10-minute H.264 source
+/// (15,000 frames, a keyframe every 2 s) is ready in at most 2 s. The index reads packets, never
+/// pixels, so a small frame size times it as well as a large one.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "benchmark"]
+async fn bench_sc007_keyframes_of_a_10_minute_source() {
+    rmedia_testkit::require_engine!("libx264");
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("ten.mp4");
+    let st = std::process::Command::new(rmedia_testkit::ffmpeg())
+        .args(["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=600"])
+        .args([
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-x264-params",
+            "keyint=50:min-keyint=50:scenecut=0",
+        ])
+        .args(["-pix_fmt", "yuv420p"])
+        .arg(&src)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    let (tools, _) = engine();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let t0 = Instant::now();
+    let media = rmedia_core::probe::probe(&tools, &src, &cancel).await.unwrap();
+    let index = rmedia_core::smart::keyframes(&tools, &media, None, &cancel).await.unwrap();
+    let elapsed = t0.elapsed();
+    eprintln!("10 min source: {} keyframes in {elapsed:?}", index.keyframes.len());
+    assert_eq!((index.keyframes.len(), index.truncated), (300, false));
+    assert!(elapsed < Duration::from_secs(2), "SC-007 violated: {elapsed:?}");
+}

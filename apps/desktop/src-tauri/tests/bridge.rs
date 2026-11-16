@@ -631,3 +631,116 @@ async fn smart_parity() {
         }
     }
 }
+
+/// Feature 004, T047 (contracts/tauri-commands.md): the whole-file keyframe index, cached per
+/// source by path, size and modification time; only opened sources; cancellable.
+#[tokio::test(flavor = "multi_thread")]
+async fn keyframes_index_cache_and_cancel() {
+    if !rmedia_testkit::require_engine(&["libx264"]) {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("match.mp4");
+    std::fs::copy(fixture(Fixture::SmartMp4), &src).unwrap();
+    let st = state(d.path()).await;
+
+    let err = st.keyframes("k0".into(), &src).await.unwrap_err();
+    assert!(err.contains("was not opened"), "{err}");
+    st.allow(std::slice::from_ref(&src));
+
+    let index = st.keyframes("k1".into(), &src).await.unwrap();
+    let ticks: Vec<f64> = index.keyframes.iter().map(|k| k.at.as_secs_f64()).collect();
+    assert_eq!(ticks, (0..15).map(|i| f64::from(i) * 2.0).collect::<Vec<_>>(), "2 s GOPs");
+    assert!(!index.truncated && index.window.is_none());
+
+    // Same path, size and time: served from the cache (the bytes are not read again).
+    let (len, mtime) = {
+        let m = std::fs::metadata(&src).unwrap();
+        (m.len(), m.modified().unwrap())
+    };
+    let set_mtime = |t: std::time::SystemTime| {
+        std::fs::File::options().write(true).open(&src).unwrap().set_modified(t).unwrap();
+    };
+    std::fs::write(&src, vec![0u8; len as usize]).unwrap();
+    set_mtime(mtime);
+    assert_eq!(st.keyframes("k2".into(), &src).await.unwrap(), index);
+    // A new modification time invalidates it: the (now unreadable) file is read again.
+    set_mtime(mtime + std::time::Duration::from_secs(5));
+    assert!(st.keyframes("k3".into(), &src).await.is_err());
+
+    // Cancelled while it runs.
+    std::fs::copy(fixture(Fixture::SmartMp4), &src).unwrap();
+    let st = Arc::new(st);
+    let task = tokio::spawn({
+        let st = st.clone();
+        let src = src.clone();
+        async move { st.keyframes("k4".into(), &src).await }
+    });
+    while !task.is_finished() {
+        st.cancel_keyframes("k4");
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    }
+    let err = task.await.unwrap().unwrap_err();
+    assert!(err.contains("cancelled"), "{err}");
+}
+
+/// Feature 004, T048: `smart_plan` gives the CLI dry run's `smart` block for the same range; a
+/// fallback source gives its reason; a newer call cancels the older one.
+#[tokio::test(flavor = "multi_thread")]
+async fn smart_plan_matches_the_cli() {
+    if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
+        return;
+    }
+    if !cli_bin().is_file() {
+        panic!("build the CLI first (cargo build -p rmedia-cli) or set RMEDIA_CLI_BIN");
+    }
+    let d = tempfile::tempdir().unwrap();
+    let (src, open_gop) = (d.path().join("match.mp4"), d.path().join("open.mp4"));
+    std::fs::copy(fixture(Fixture::SmartMp4), &src).unwrap();
+    std::fs::copy(fixture(Fixture::OpenGop), &open_gop).unwrap();
+    let st = state(d.path()).await;
+    st.allow(&[src.clone(), open_gop.clone()]);
+    let range = |start, end| RangeArg { start, end: Some(end) };
+    let none = rmedia_core::request::PartialOptions::default();
+
+    for (path, start, end) in [(&src, 3.32, 20.72), (&open_gop, 1.32, 6.72)] {
+        let summary =
+            st.smart_plan(path, range(start, end), &none).await.unwrap().summary.expect("a summary");
+        let o = Command::new(cli_bin())
+            .args([
+                "clip",
+                "--mode",
+                "smart",
+                "--dry-run",
+                "--json",
+                "-s",
+                &start.to_string(),
+                "-e",
+                &end.to_string(),
+            ])
+            .arg(path)
+            .env("RMEDIA_STATE_DIR", d.path())
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+        let doc: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+        assert_eq!(serde_json::to_value(&summary).unwrap(), doc["jobs"][0]["smart"], "{}", path.display());
+    }
+    let fallback = st.smart_plan(&open_gop, range(1.32, 6.72), &none).await.unwrap();
+    assert_eq!(fallback.summary.unwrap().fallback, Some(rmedia_core::smart::FallbackReason::OpenGop));
+    let [notice] = fallback.notices.as_slice() else { panic!("{:?}", fallback.notices) };
+    assert!(notice.message.contains("open GOPs"), "{}", notice.message);
+
+    // Strict: the reason is an error.
+    let strict = rmedia_core::request::PartialOptions { smart_fallback: Some(false), ..Default::default() };
+    let err = st.smart_plan(&open_gop, range(1.32, 6.72), &strict).await.unwrap_err();
+    assert!(err.contains("open GOPs"), "{err}");
+
+    // A newer call cancels the older one.
+    let (older, newer) = tokio::join!(
+        st.smart_plan(&src, range(3.32, 20.72), &none),
+        st.smart_plan(&src, range(4.0, 20.0), &none)
+    );
+    assert!(older.unwrap_err().contains("cancelled"));
+    assert_eq!(newer.unwrap().summary.unwrap().copy.map(|p| p.frames), Some(400));
+}

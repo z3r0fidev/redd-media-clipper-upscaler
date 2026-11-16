@@ -11,6 +11,8 @@
   import UpscaleView from "./UpscaleView.svelte";
   import GifView from "./GifView.svelte";
   import { gif, initGif, stopEstimate, syncEstimate } from "../stores/gif.svelte";
+  import { bands, effectiveMode, planOptions, smartLine, tickPositions } from "../stores/smart";
+  import { loadKeyframes, smart, stopPlan, syncPlan } from "../stores/smart.svelte";
 
   type Mode = "empty" | "loading" | "direct" | "proxy-h264" | "proxy-vp8" | "still" | "error";
 
@@ -99,6 +101,29 @@
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
+  });
+
+  // Clip view (feature 004): keyframe ticks, loaded in the background per source; with Smart
+  // selected, the marked range is drawn as re-encoded head and tail around the copied GOPs.
+  const clipping = $derived(app.view === "clip" && !!path && mode !== "empty" && mode !== "error");
+  const smartMode = $derived(
+    clipping && !!path && effectiveMode(app.queue, app.settings?.defaults, path) === "smart",
+  );
+  const ticks = $derived(clipping ? tickPositions(smart.index, duration) : []);
+  const smartBands = $derived(smartMode && inPt != null ? bands(smart.summary, duration) : []);
+  $effect(() => {
+    const p = clipping ? path : null;
+    untrack(() => void loadKeyframes(p));
+  });
+  $effect(() => {
+    if (!smartMode || !path || inPt == null || mode === "loading" || !(duration > 0)) {
+      untrack(() => stopPlan());
+      return;
+    }
+    const p = path;
+    const r = { start: inPt, end: outPt };
+    const o = planOptions(app.queue, p);
+    untrack(() => syncPlan(p, r, o));
   });
 
   // Only a change of source reloads: load() reads and writes state, which must not become
@@ -420,6 +445,12 @@
         <div class="dim" style="left: {pct(outPt ?? duration)}%; right: 0"></div>
         <div class="range" class:open={outPt == null} style="left: {pct(inPt)}%; width: {pct(outPt ?? duration) - pct(inPt)}%"></div>
       {/if}
+      {#each ticks as x, i (i)}
+        <div class="tick" style="left: {x}%" aria-hidden="true"></div>
+      {/each}
+      {#each smartBands as b (b.kind)}
+        <div class="band {b.kind}" style="left: {b.left}%; width: {b.width}%" title={b.title}></div>
+      {/each}
       {#each segments as g, i (i)}
         <div class="fallback" style="left: {g.left}%; width: {g.width}%" title="Blurred background (no single subject fits)"></div>
       {/each}
@@ -435,6 +466,21 @@
     {:else if gifing && path}
       <GifView {path} {range} />
     {:else}
+    {#if smartMode}
+      <p class="smart-line" role="status" class:bad={!!smart.planError || (!!smart.summary && !smart.summary.copy)}>
+        {#if inPt == null}
+          <span class="faint">Smart: mark a range to see what is copied and what is re-encoded</span>
+        {:else if smart.planError}
+          {smart.planError}
+        {:else if smart.summary || smart.notices.length}
+          <span>{smartLine(smart.summary, smart.notices)}</span>
+          {#if smartBands.length}<span class="keys faint"><span class="key copy" aria-hidden="true"></span>copied<span class="key head" aria-hidden="true"></span>re-encoded</span>{/if}
+        {:else}
+          <span class="faint">Smart: planning…</span>
+        {/if}
+      </p>
+    {/if}
+    {#if smart.index?.truncated && clipping}<p class="faint note">Keyframe markers stop early: this file has too many to show.</p>{/if}
     <div class="clipbar">
       <input type="text" placeholder="Clip name (optional)" bind:value={clipName} onkeydown={(e) => e.key === "Enter" && addCurrentClip()} />
       <button class="primary" disabled={!canAdd} onclick={addCurrentClip}>Add clip <kbd>↵</kbd></button>
@@ -476,6 +522,16 @@
   .tabs { display: flex; padding: 2px; gap: 2px; border-radius: var(--radius-m); background: var(--surface-2); border: 1px solid var(--border); flex-shrink: 0; }
   .tabs button { height: 26px; padding: 0 10px; font-size: 12.5px; border: 0; background: transparent; color: var(--text-2); }
   .tabs button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 600; }
+  .tick { position: absolute; top: 0; width: 1px; height: 9px; background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); pointer-events: none; z-index: 1; }
+  .band { position: absolute; bottom: 0; height: 6px; pointer-events: none; z-index: 1; }
+  .band.copy { background: var(--ok); }
+  .band.head, .band.tail { background: var(--warn); }
+  .smart-line { margin: 0; font-size: 12.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .keys { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .smart-line.bad { color: var(--warn); }
+  .key { display: inline-block; width: 12px; height: 6px; border-radius: 2px; }
+  .key.copy { background: var(--ok); }
+  .key.head { background: var(--warn); margin-left: 4px; }
   .dim { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.45); }
   .range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 22%, transparent); border-left: 3px solid var(--accent); border-right: 3px solid var(--accent); }
   .range.open { border-right-style: dashed; }

@@ -8,6 +8,7 @@
   import { audioSummary, clipCount, merge, removeClip, removeSource, runnable, setSourceOptions, toggleAudioTrack, updateClip } from "../stores/queue";
   import { canRun, runManifest, runner } from "../stores/runner.svelte";
   import { isUpscale } from "../stores/upscale";
+  import { effectiveMode } from "../stores/smart";
   import { baseName, fmt } from "../time";
 
   let invalid = $state<Record<string, string>>({});
@@ -30,7 +31,14 @@
   }
 
   function optionsSummary(v: VideoEntry): string {
-    const mode = v.options?.mode === "accurate" ? "Frame-accurate" : v.options?.mode === "fast" ? "Fast" : "Default mode";
+    const mode =
+      v.options?.mode === "accurate"
+        ? "Frame-accurate"
+        : v.options?.mode === "fast"
+          ? "Fast"
+          : v.options?.mode === "smart"
+            ? v.options.smart_fallback === false ? "Smart only" : "Smart"
+            : "Default mode";
     const audio = audioSummary(v.options?.audio);
     const subs = v.options?.subtitles === "none" ? "no subtitles" : "subtitles";
     return `${mode} · ${audio} · ${subs}`;
@@ -121,6 +129,18 @@
     void runManifest(runnable(app.queue));
   }
 
+  /** Smart is chosen for this video (its own mode, or the default). */
+  const isSmart = (v: VideoEntry) => effectiveMode(app.queue, app.settings?.defaults, v.input) === "smart";
+
+  /** A clip's "Only smart (no fallback)" choice: its own, else the video's. */
+  const smartOnly = (v: VideoEntry, c: ClipEntry) => (c.options?.smart_fallback ?? v.options?.smart_fallback) === false;
+
+  function setClipSmartOnly(v: VideoEntry, i: number, c: ClipEntry, on: boolean) {
+    // Matching the video's choice drops the clip's own, so the video's checkbox governs it again.
+    const own = on === (v.options?.smart_fallback === false) ? undefined : !on;
+    app.queue = updateClip(app.queue, v.input, i, { options: { ...c.options, smart_fallback: own } });
+  }
+
   function upscaleLabel(c: ClipEntry): string {
     const u = c.options?.upscale;
     return u ? `${u.preset ?? "phone-fill"} · ${u.reframe ?? "smart"}` : "";
@@ -150,7 +170,14 @@
             <option value="">Default mode</option>
             <option value="fast">Fast (no re-encode)</option>
             <option value="accurate">Frame-accurate</option>
+            <option value="smart">Smart (frame-exact, copies most of the video)</option>
           </select>
+          {#if isSmart(v)}
+            <label class="strict" title="Fail the clip instead of cutting it in accurate mode when smart cut is not possible">
+              <input type="checkbox" checked={v.options?.smart_fallback === false} onchange={(e) => setOption(v, { smart_fallback: e.currentTarget.checked ? false : undefined })} />
+              Only smart (no fallback)
+            </label>
+          {/if}
           <select aria-label="Audio for {baseName(v.input)}" value={audioValue(v)} onchange={(e) => setAudio(v, e.currentTarget.value)}>
             {#each audioOptions(v) as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
           </select>
@@ -197,6 +224,15 @@
               aria-label="End"
             />
             <span class="len mono faint">{lengthOf(c, v.input)}</span>
+            {#if isSmart(v) && !isUpscale(c)}
+              <button
+                class="pill smart"
+                class:on={smartOnly(v, c)}
+                aria-pressed={smartOnly(v, c)}
+                title={smartOnly(v, c) ? "Only smart: fails instead of cutting in accurate mode (click to allow the fallback)" : "Smart, or accurate when smart cut is not possible (click for only smart)"}
+                onclick={() => setClipSmartOnly(v, i, c, !smartOnly(v, c))}
+              >{smartOnly(v, c) ? "Smart only" : "Smart"}</button>
+            {/if}
             {#if isUpscale(c)}<span class="pill up" title="Upscaled for phones: {upscaleLabel(c)}" aria-label="Upscale: {upscaleLabel(c)}"><span aria-hidden="true">↑</span> {upscaleLabel(c)}</span>{/if}
             <input type="text" class="n" placeholder="name" value={c.name ?? ""} onchange={(e) => (app.queue = updateClip(app.queue, v.input, i, { name: e.currentTarget.value }))} aria-label="Clip name" />
             <button class="icon ghost" aria-label="Remove clip" onclick={() => (app.queue = removeClip(app.queue, v.input, i))}>×</button>
@@ -239,6 +275,9 @@
   .opts-wrap[open] summary { margin-bottom: var(--space-2); }
   .row { flex-wrap: wrap; row-gap: 4px; }
   .len { font-size: 11.5px; min-width: 44px; }
+  .pill.smart { font-size: 11px; cursor: pointer; }
+  .pill.smart.on { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+  .strict { display: inline-flex; align-items: center; gap: var(--space-1); font-size: 12px; flex-basis: 100%; }
   .pill.up { font-size: 11px; color: var(--accent); background: var(--accent-soft); border-color: transparent; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card-head { justify-content: space-between; }
   .name { font-weight: 650; padding: 0 var(--space-1); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }
