@@ -328,6 +328,25 @@ fn x264_profile(name: Option<&str>) -> Option<&'static str> {
     }
 }
 
+/// Test-only: smart jobs cut from one of these sources join their parts in reverse order, so
+/// the seam check must catch the mismatch and the job fall back (feature 004, T032).
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_hooks {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    static REVERSED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+    /// Joins smart jobs cut from `source` in the wrong order from now on.
+    pub fn reverse_parts_of(source: &Path) {
+        REVERSED.lock().unwrap().push(source.to_path_buf());
+    }
+
+    pub(crate) fn reverses(source: &Path) -> bool {
+        REVERSED.lock().unwrap().iter().any(|p| p == source)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,5 +389,139 @@ mod tests {
         }
         let late: Vec<_> = FallbackReason::ALL.into_iter().filter(|r| !r.known_before_encoding()).collect();
         assert_eq!(late, [FallbackReason::ParamsChanged, FallbackReason::SeamCheck]);
+    }
+
+    use crate::probe::parse_probe_json;
+    use crate::smart::keyframes::RawPacket;
+    use std::path::Path;
+
+    /// An eligible source as ffprobe reports it, with `fields` (`,"key":value…`) overriding its
+    /// video stream's, in the given demuxer format.
+    fn media(fields: &str, format: &str) -> MediaInfo {
+        let mut stream = serde_json::json!({"index":0,"codec_type":"video","codec_name":"h264",
+            "profile":"High","level":31,"pix_fmt":"yuv420p","width":1280,"height":720,"has_b_frames":2,
+            "field_order":"progressive","r_frame_rate":"25/1","avg_frame_rate":"25/1"});
+        let extra: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&format!("{{{}}}", fields.trim_start_matches(','))).unwrap();
+        stream.as_object_mut().unwrap().extend(extra);
+        let json = serde_json::json!({"streams":[stream],"format":{"format_name":format,"duration":"10.0"}});
+        parse_probe_json(Path::new("x.mp4"), 1, &json.to_string()).unwrap()
+    }
+
+    fn mp4(fields: &str) -> MediaInfo {
+        media(fields, "mov,mp4,m4a,3gp,3g2,mj2")
+    }
+
+    /// 10 s at 25 fps, a keyframe every 2 s, decode order = presentation order, except that
+    /// `leading` moves the frame before that keyframe after it in decode order (an open GOP).
+    fn index(leading: Option<usize>, step_us: impl Fn(u32) -> i64) -> KeyframeIndex {
+        let mut raw = Vec::new();
+        let mut t = 0;
+        for n in 0..250 {
+            let at = Some(Ts::from_micros(t));
+            raw.push(RawPacket { pts: at, dts: at, key: n % 50 == 0 });
+            t += step_us(n);
+        }
+        if let Some(k) = leading {
+            raw.swap(k - 1, k);
+        }
+        KeyframeIndex::from_packets(&raw, Ts::ZERO, None, true)
+    }
+
+    fn cfr() -> KeyframeIndex {
+        index(None, |_| 40_000)
+    }
+
+    fn range(a: f64, z: f64) -> Range {
+        let s = |v: f64| Ts::from_micros((v * 1e6).round() as i64);
+        Range { span: Span { start: s(a), end: s(z) }, to_end: false }
+    }
+
+    fn reason(
+        media: &MediaInfo,
+        index: &KeyframeIndex,
+        r: Range,
+        x264: bool,
+        out: Container,
+    ) -> FallbackReason {
+        check(media, index, r, x264, out).expect_err("should fall back")
+    }
+
+    #[test]
+    fn an_eligible_source_is_planned_in_three_parts() {
+        let p = check(&mp4(""), &cfr(), range(1.32, 6.72), true, Container::Mp4).unwrap();
+        let frames = |p: Option<Part>| p.map(|p| p.frames);
+        assert_eq!((frames(p.head), p.copy.frames, frames(p.tail)), (Some(17), 100, Some(18)));
+        assert_eq!((p.encode.profile, p.encode.level.as_deref(), p.encode.bframes), ("high", Some("3.1"), 3));
+        assert_eq!(p.sample_entry, Some("avc1"));
+        assert!(
+            check(&mp4(""), &cfr(), range(1.32, 6.72), true, Container::MpegTs)
+                .unwrap()
+                .sample_entry
+                .is_none()
+        );
+    }
+
+    /// One case per probe rule, each in the documented order (research R2): a source with
+    /// several problems reports the first.
+    #[test]
+    fn source_rules_in_order() {
+        use FallbackReason as R;
+        let r = range(1.32, 6.72);
+        let ok = |m: &MediaInfo, x264: bool, out: Container| reason(m, &cfr(), r, x264, out);
+        let hevc_interlaced = mp4(r#","codec_name":"hevc","field_order":"tt""#);
+        assert_eq!(ok(&hevc_interlaced, false, Container::Mp4), R::EncoderMissing);
+        assert_eq!(ok(&hevc_interlaced, true, Container::Mp4), R::Codec);
+        assert_eq!(ok(&media("", "avi"), true, Container::Mp4), R::Container);
+        assert_eq!(ok(&mp4(""), true, Container::Webm), R::Container);
+        assert_eq!(ok(&mp4(""), true, Container::Avi), R::Container);
+        assert_eq!(
+            ok(&mp4(r#","profile":"High 10","pix_fmt":"yuv420p10le""#), true, Container::Mp4),
+            R::Profile
+        );
+        assert_eq!(ok(&mp4(r#","profile":"High 4:2:2""#), true, Container::Mp4), R::Profile);
+        assert_eq!(ok(&mp4(r#","pix_fmt":"yuv422p""#), true, Container::Mp4), R::PixelFormat);
+        assert_eq!(
+            ok(&mp4(r#","field_order":"bb","avg_frame_rate":"24/1""#), true, Container::Mp4),
+            R::Interlaced
+        );
+        assert_eq!(ok(&mp4(r#","avg_frame_rate":"24/1""#), true, Container::Mp4), R::Vfr);
+        let rotated = mp4(r#","side_data_list":[{"rotation":-90}]"#);
+        assert_eq!(ok(&rotated, true, Container::MpegTs), R::Rotation);
+        let p = check(&rotated, &cfr(), r, true, Container::Mp4).unwrap();
+        assert_eq!(p.rotation, Some(-90), "other containers keep the rotation");
+        assert!(check_source(&media("", "matroska,webm"), true, Container::Mkv).is_ok());
+        assert!(check_source(&media("", "mpegts"), true, Container::MpegTs).is_ok());
+        assert!(
+            check_source(&mp4(r#","profile":"Constrained Baseline","has_b_frames":0"#), true, Container::Mp4)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn index_rules() {
+        use FallbackReason as R;
+        let m = mp4("");
+        // Uneven packet spacing although the probe saw a constant rate.
+        let uneven = index(None, |n| if n % 7 == 0 { 60_000 } else { 40_000 });
+        assert_eq!(reason(&m, &uneven, range(1.32, 6.72), true, Container::Mp4), R::Vfr);
+        // Inside one GOP, and across one keyframe only.
+        assert_eq!(reason(&m, &cfr(), range(2.2, 3.8), true, Container::Mp4), R::NoFullGop);
+        assert_eq!(reason(&m, &cfr(), range(1.0, 3.0), true, Container::Mp4), R::NoFullGop);
+        // Open GOPs at either copy boundary; one elsewhere does not matter.
+        assert_eq!(
+            reason(&m, &index(Some(50), |_| 40_000), range(1.32, 6.72), true, Container::Mp4),
+            R::OpenGop
+        );
+        assert_eq!(
+            reason(&m, &index(Some(150), |_| 40_000), range(1.32, 6.72), true, Container::Mp4),
+            R::OpenGop
+        );
+        assert!(check(&m, &index(Some(100), |_| 40_000), range(1.32, 6.72), true, Container::Mp4).is_ok());
+        // x264 cannot encode an odd-sized 4:2:0 picture.
+        assert_eq!(
+            reason(&mp4(r#","width":1281"#), &cfr(), range(1.32, 6.72), true, Container::Mp4),
+            R::ParamsChanged
+        );
     }
 }

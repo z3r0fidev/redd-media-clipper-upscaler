@@ -439,6 +439,7 @@ impl AppState {
                             "{} is outside the folders you chose; pick the output folder in Settings",
                             job.output.display()
                         ),
+                        detail: None,
                     });
                 }
             }

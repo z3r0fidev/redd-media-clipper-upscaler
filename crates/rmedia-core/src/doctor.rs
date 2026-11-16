@@ -139,6 +139,28 @@ pub struct DoctorReport {
     pub preset_problems: Vec<String>,
     /// GIF export (feature 003): what the engine can make and the optional engines found.
     pub gif: GifReport,
+    /// Smart cut (feature 004): whether `--mode smart` can cut here. Never changes `ok`.
+    pub smart: SmartReport,
+}
+
+/// The doctor report's `smart` block (feature 004, contracts/cli.md › doctor).
+#[derive(Debug, Clone, Default, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct SmartReport {
+    pub available: bool,
+    /// Why smart cut is unavailable (`None` when it is available).
+    pub reason: Option<String>,
+}
+
+impl SmartReport {
+    pub fn of(caps: &Caps) -> SmartReport {
+        if caps.encoders.contains("libx264") {
+            SmartReport { available: true, reason: None }
+        } else {
+            let reason = crate::smart::FallbackReason::EncoderMissing.message().to_owned();
+            SmartReport { available: false, reason: Some(reason) }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -169,6 +191,7 @@ pub async fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) 
         capability: None,
         preset_problems: Vec::new(),
         gif: GifReport::default(),
+        smart: SmartReport::default(),
     };
     let tools = match tools::locate(opts).await {
         Ok(t) => t,
@@ -231,6 +254,7 @@ pub async fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) 
         presets.problems().iter().map(|p| format!("{}: {}", p.file.display(), p.message)).collect();
     let targets = crate::gif::target::GifTargetRegistry::load(crate::settings::config_dir().as_deref());
     report.gif = GifReport::of(&caps, &targets);
+    report.smart = SmartReport::of(&caps);
     report.ok = true;
     (report, Some((tools, caps)))
 }
@@ -386,6 +410,17 @@ mod tests {
         let all = GifReport::of(&caps, &targets);
         assert!(all.gif && all.mp4 && all.missing.is_empty());
         assert!(all.target_problems.is_empty());
+    }
+
+    #[test]
+    fn the_smart_block_needs_libx264() {
+        let mut caps = Caps::default();
+        let none = SmartReport::of(&caps);
+        assert!(!none.available);
+        assert_eq!(none.reason.as_deref(), Some(crate::smart::FallbackReason::EncoderMissing.message()));
+        caps.encoders.insert("libx264".into());
+        let ok = SmartReport::of(&caps);
+        assert!(ok.available && ok.reason.is_none());
     }
 
     #[test]

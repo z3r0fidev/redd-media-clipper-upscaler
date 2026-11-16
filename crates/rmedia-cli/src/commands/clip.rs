@@ -69,6 +69,7 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     };
 
     let mut defaults = options(&args.common, args.mode.into(), inputs.len() > 1);
+    defaults.smart_fallback = !args.no_smart_fallback;
     if args.upscale {
         defaults.upscale = Some(args.up.options());
     }

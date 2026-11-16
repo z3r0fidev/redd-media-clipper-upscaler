@@ -409,7 +409,7 @@ pub fn plan_gif(
     let mut notes = Vec::new();
     let mut notice = |warnings: &mut Vec<String>, code, message: String| {
         warnings.push(message.clone());
-        notices.push(Notice { code, message });
+        notices.push(Notice { code, message, detail: None });
     };
 
     // --- engine -------------------------------------------------------------------------------

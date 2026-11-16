@@ -75,6 +75,13 @@ pub async fn run(cli: &Cli, args: &DoctorArgs) -> u8 {
             println!("accurate mode can write: {}", report.accurate_containers.join(", "));
         }
         gif_lines(&report.gif);
+        match (&report.smart.available, &report.smart.reason) {
+            (true, _) => println!("smart cut: available (libx264)"),
+            (false, reason) => println!(
+                "smart cut: unavailable — {}",
+                crate::render::clean(reason.as_deref().unwrap_or("unknown"))
+            ),
+        }
         for p in &report.problems {
             eprintln!("problem:  {p}");
         }

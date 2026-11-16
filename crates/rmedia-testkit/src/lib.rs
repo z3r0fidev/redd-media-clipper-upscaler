@@ -1122,6 +1122,66 @@ pub fn fixture(kind: Fixture) -> PathBuf {
     target
 }
 
+/// The two halves of [`res_change`]: (size, file).
+const RES_CHANGE_PARTS: [(&str, &str); 2] = [("1280x720", "a.ts"), ("960x540", "b.ts")];
+
+/// 25 fps H.264, 8 s, 2 s closed GOPs, no audio, whose picture changes from 1280x720 to 960x540
+/// at 4 s (feature 004, T032): two encodes joined with the concat demuxer in MPEG-TS, then
+/// remuxed to MP4. Built in steps, so it is not a [`Fixture`]. (With audio, the join would leave
+/// a gap in the video where the first half's audio runs longer.)
+pub fn res_change() -> PathBuf {
+    let parts: Vec<Vec<&'static str>> = RES_CHANGE_PARTS
+        .iter()
+        .map(|(size, _)| smart_args(size, 4, "veryfast", "bframes=3", false))
+        .collect();
+    let mut h = Sha256::new();
+    h.update("res-change.mp4");
+    for a in parts.iter().flatten() {
+        h.update(a);
+        h.update([0]);
+    }
+    let dir = fixtures_root().join(&hex(&h.finalize())[..16]);
+    let target = dir.join("res-change.mp4");
+    if target.exists() {
+        return target;
+    }
+    std::fs::create_dir_all(&dir).expect("create fixture dir");
+    let run = |args: &[&str], out: &Path| {
+        let o = Command::new(ffmpeg())
+            .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"])
+            .args(args)
+            .arg(out)
+            .output()
+            .expect("run ffmpeg for fixture");
+        assert!(o.status.success(), "res_change fixture failed: {}", String::from_utf8_lossy(&o.stderr));
+    };
+    let tag = format!("{}", std::process::id());
+    let mut list = String::new();
+    for ((_, name), args) in RES_CHANGE_PARTS.iter().zip(&parts) {
+        let mut a = args.clone();
+        let fmt = a.len() - 1;
+        a[fmt] = "mpegts";
+        let part = dir.join(format!("{tag}-{name}"));
+        run(&a, &part);
+        list.push_str(&format!("file '{}'\n", part.file_name().unwrap().to_string_lossy()));
+    }
+    let list_path = dir.join(format!("{tag}-list.txt"));
+    std::fs::write(&list_path, list).expect("write concat list");
+    let tmp = dir.join(format!(".res-change.mp4.{tag}.tmp"));
+    let list_s = list_path.to_string_lossy().into_owned();
+    run(&["-f", "concat", "-safe", "0", "-i", &list_s, "-map", "0", "-c", "copy", "-f", "mp4"], &tmp);
+    for (_, name) in RES_CHANGE_PARTS {
+        let _ = std::fs::remove_file(dir.join(format!("{tag}-{name}")));
+    }
+    let _ = std::fs::remove_file(&list_path);
+    // Another test may have finished first; either copy is identical.
+    if std::fs::rename(&tmp, &target).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        assert!(target.exists(), "fixture res_change could not be created");
+    }
+    target
+}
+
 /// A video packet of the first video stream (seconds, as ffprobe reports them).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Packet {

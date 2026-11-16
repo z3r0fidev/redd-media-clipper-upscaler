@@ -18,6 +18,9 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
     if let Some(m) = args.mode {
         defaults.mode = m.into();
     }
+    if args.no_smart_fallback {
+        defaults.smart_fallback = false;
+    }
     if let Some(o) = &args.output_dir {
         defaults.output_dir = Some(absolute(o));
     }

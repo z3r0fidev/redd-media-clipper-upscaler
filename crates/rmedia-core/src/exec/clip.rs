@@ -40,9 +40,10 @@ pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<Job
     if plan.strict {
         return Err(Error::SmartUnavailable(reason));
     }
-    ctx.warn_code(
+    ctx.warn_detail(
         IssueCode::SmartFallback,
         format!("smart cut not possible: {}; cutting in accurate mode", reason.message()),
+        Some(crate::error::ErrorDetail { reason: Some(reason), ..Default::default() }),
     );
     let accurate = ClipSpec { mode: Mode::Accurate, smart: None, ..spec.clone() };
     encode(&accurate, ctx).await?;
@@ -116,6 +117,20 @@ async fn measure(spec: &ClipSpec, ctx: &mut JobCtx<'_>, smart: Option<SmartOutco
         Mode::Accurate | Mode::Smart => info.duration.unwrap_or(produced),
     };
     let actual = Span { start, end: start + produced };
+    // A fallback found while planning: every frame was re-encoded.
+    let smart = smart.or_else(|| {
+        let frames = info
+            .frame_duration()
+            .filter(|f| *f > Ts::ZERO)
+            .map_or(0, |f| (produced.as_micros() as f64 / f.as_micros() as f64).round() as u32);
+        spec.smart_fallback.map(|reason| SmartOutcome {
+            mode_used: Mode::Accurate,
+            copied_frames: 0,
+            reencoded_frames: frames,
+            copied_share: 0.0,
+            fallback: Some(reason),
+        })
+    });
     Ok(JobMeasure::Clip { actual, adjusted: adjusted(requested, actual), smart })
 }
 

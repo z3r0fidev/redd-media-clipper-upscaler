@@ -460,6 +460,7 @@ fn issue(file: &Path, line: usize, message: String) -> Issue {
         code: crate::error::IssueCode::InvalidInput,
         origin: Origin::Line { file: file.to_path_buf(), line },
         message,
+        detail: None,
     }
 }
 

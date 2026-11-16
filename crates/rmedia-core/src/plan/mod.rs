@@ -69,13 +69,17 @@ pub enum Severity {
     Warning,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Issue {
     pub severity: Severity,
     pub code: IssueCode,
     pub origin: Origin,
     pub message: String,
+    /// Structured facts about the issue (`SMART_UNAVAILABLE`: `reason`, feature 004).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub detail: Option<crate::error::ErrorDetail>,
 }
 
 impl std::fmt::Display for Issue {
@@ -111,11 +115,15 @@ pub enum Resource {
 
 /// A warning or note with a code (feature 003). Every notice's message is also in
 /// `PlannedJob.warnings`, so 001/002 consumers keep reading plain strings (research R16).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Notice {
     pub code: IssueCode,
     pub message: String,
+    /// Structured facts about the notice (`SMART_FALLBACK`: `reason`, feature 004).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub detail: Option<crate::error::ErrorDetail>,
 }
 
 /// The program a [`JobCommand`] runs.
@@ -409,6 +417,7 @@ impl Planner<'_> {
             code,
             origin: origin.clone(),
             message: message.into(),
+            detail: None,
         });
     }
 
@@ -491,6 +500,15 @@ impl Planner<'_> {
         // Upscaling and GIF export always re-encode, so they cut like accurate mode (and `mode`
         // is ignored).
         let mode = if up.is_some() || gif.is_some() { Mode::Accurate } else { opts.mode };
+        let mut notices = Vec::new();
+        let mut notice = |warnings: &mut Vec<String>, code, message: String, detail| {
+            warnings.push(message.clone());
+            notices.push(Notice { code, message, detail });
+        };
+        if opts.mode == Mode::Smart && mode == Mode::Accurate {
+            let message = "smart cut does not apply: the clip is re-encoded for upscaling/GIF".to_owned();
+            notice(&mut warnings, IssueCode::SmartNotApplied, message, None);
+        }
         // A smart job is planned as an accurate one first (its other streams, and the fallback,
         // are cut exactly as accurate mode cuts them); the smart plan is added below (004).
         let smart_requested = mode == Mode::Smart;
@@ -756,23 +774,40 @@ impl Planner<'_> {
             encode,
             streams: stream_plan,
             smart: None,
+            smart_fallback: None,
         };
         if smart_requested {
-            match self.smart_plan(media, &cut, end.is_none()).await {
+            let strict = !opts.smart_fallback;
+            let reason = match self.smart_plan(media, &cut, end.is_none()).await {
                 Ok(mut p) => {
-                    p.strict = !opts.smart_fallback;
+                    p.strict = strict;
                     cut.mode = Mode::Smart;
                     cut.smart = Some(p);
+                    None
                 }
-                Err(Some(reason)) => tracing::info!("smart cut: {}: {reason}", source.path.display()),
                 Err(None) if self.cancel.is_cancelled() => return,
-                Err(None) => warnings.push(
-                    "smart cut not possible: the keyframes could not be read; cutting in accurate mode"
-                        .into(),
-                ),
+                Err(reason) => Some(reason),
+            };
+            if let Some(reason) = reason {
+                // `None`: the keyframes could not be read.
+                let why = reason.map_or("the keyframes could not be read", |r| r.message());
+                let detail =
+                    reason.map(|r| crate::error::ErrorDetail { reason: Some(r), ..Default::default() });
+                if strict {
+                    self.issues.push(Issue {
+                        severity: Severity::Error,
+                        code: IssueCode::SmartUnavailable,
+                        origin: origin.clone(),
+                        message: format!("smart cut not possible: {why}"),
+                        detail,
+                    });
+                    return;
+                }
+                let message = format!("smart cut not possible: {why}; cutting in accurate mode");
+                notice(&mut warnings, IssueCode::SmartFallback, message, detail);
+                cut.smart_fallback = reason;
             }
         }
-        let mut notices = Vec::new();
         let (spec, scratch) = match (gif, up) {
             (Some(g), _) => {
                 let scratch = scratch_path(&output, &self.run_id, id);
@@ -793,7 +828,7 @@ impl Planner<'_> {
                 ) {
                     Ok(p) => {
                         warnings.extend(p.warnings);
-                        notices = p.notices;
+                        notices.extend(p.notices);
                         (
                             JobSpec::Gif(Box::new(crate::gif::GifSpec { cut, frame: p.frame, gif: p.gif })),
                             Some(scratch),
@@ -1077,6 +1112,7 @@ impl Planner<'_> {
                 code: IssueCode::LimitExceeded,
                 origin: origin.clone(),
                 message: w.clone(),
+                detail: None,
             });
         }
         let threads = std::thread::available_parallelism().map_or(4, |n| n.get() as u32).clamp(2, 8);
@@ -1129,6 +1165,7 @@ impl Planner<'_> {
                 code: IssueCode::DiskFull,
                 origin: Origin::Cli,
                 message,
+                detail: None,
             });
         }
     }

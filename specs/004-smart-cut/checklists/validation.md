@@ -45,3 +45,17 @@ Found and fixed on the way (research R3, R7):
 Reviews: self-review of the diff (a pure copy now also gets its first GOP compared with the
 source). The senior-code-reviewer / security-auditor passes the checkpoint lists were not run in
 this session (agents are spawned only when asked).
+
+## US2 checkpoint (T031–T039, 2026-11-16)
+
+| Criterion | Result |
+|---|---|
+| SC-004 every risky source falls back with a code | `smart_us2::risky_sources_fall_back`: `encoder_missing`, `container`, `profile` (High 10), `interlaced`, `vfr`, `rotation` (to `.ts`), `no_full_gop`, `open_gop` and `codec` (HEVC) each give a frame-exact accurate clip, `copied_frames: 0`, the reason in the outcome, the `SMART_FALLBACK` notice with `detail.reason`, and the same warning as an event |
+| Run-time fallbacks (scenario 3) | `run_time_fallback`: a resolution change inside the copied GOPs → `params_changed`; parts joined in the wrong order (test hook) → `seam_check`; the joined file is discarded and the clip redone in accurate mode (85 / 435 frames), no `.part` left |
+| Strict mode (FR-009) | `strict_mode`: `SMART_UNAVAILABLE` planning issue with `detail.reason` and no job; at run time the job fails with `SMART_UNAVAILABLE` and nothing is written. CLI `no_smart_fallback_exit_codes`: 0 / 3 (open GOP) and 0 / 1 (resolution change) |
+| FR-013 not applied | `not_applied_with_upscale_or_gif`: `SMART_NOT_APPLIED` notice, and the same commands and other warnings as accurate mode |
+| Rule order (R2) | `smart::tests`: one unit case per rule, a source with several problems reports the first |
+| Doctor (FR-017) | `smart cut: available (libx264)`; JSON `"smart": {"available": true, "reason": null}` |
+
+Reviews: self-review of the diff. The senior-code-reviewer pass the checkpoint lists was not run
+(agents are spawned only when asked). The quickstart's dry-run line for a fallback comes with US3.

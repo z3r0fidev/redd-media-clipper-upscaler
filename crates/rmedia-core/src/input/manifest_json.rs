@@ -65,6 +65,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
             code: crate::error::IssueCode::InvalidInput,
             origin: Origin::Line { file: path.to_path_buf(), line: e.line() },
             message: format!("{e}"),
+            detail: None,
         }]
     })?;
     let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -238,6 +239,7 @@ fn issue(file: &Path, jpath: &str, message: String) -> Issue {
         code: crate::error::IssueCode::InvalidInput,
         origin: Origin::JsonPath { file: file.to_path_buf(), path: jpath.to_owned() },
         message,
+        detail: None,
     }
 }
 

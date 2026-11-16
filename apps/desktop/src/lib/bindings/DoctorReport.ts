@@ -2,6 +2,7 @@
 import type { CapabilitySummary } from "./CapabilitySummary";
 import type { GifReport } from "./GifReport";
 import type { GpuDevice } from "./GpuDevice";
+import type { SmartReport } from "./SmartReport";
 import type { TierStatus } from "./TierStatus";
 import type { Tool } from "./Tool";
 
@@ -29,4 +30,8 @@ preset_problems: Array<string>,
 /**
  * GIF export (feature 003): what the engine can make and the optional engines found.
  */
-gif: GifReport, };
+gif: GifReport, 
+/**
+ * Smart cut (feature 004): whether `--mode smart` can cut here. Never changes `ok`.
+ */
+smart: SmartReport, };

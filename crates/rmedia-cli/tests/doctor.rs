@@ -53,7 +53,13 @@ fn doctor_json_reports_tiers_and_caches_the_check() {
 
     let text = rmedia(d.path(), true).arg("doctor").output().unwrap();
     let text = String::from_utf8_lossy(&text.stdout);
-    for line in ["tier:     cpu  yes", "tier:     gpu  no (no Vulkan device)", "checked:"] {
+    assert_eq!(doc["smart"], serde_json::json!({"available": true, "reason": null}), "feature 004");
+    for line in [
+        "tier:     cpu  yes",
+        "tier:     gpu  no (no Vulkan device)",
+        "checked:",
+        "smart cut: available (libx264)",
+    ] {
         assert!(text.contains(line), "missing {line:?} in:\n{text}");
     }
 }

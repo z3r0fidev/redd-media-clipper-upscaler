@@ -114,6 +114,10 @@ pub struct ClipArgs {
     /// mkv or ts; other sources are cut in accurate mode).
     #[arg(long, value_enum, default_value_t = ModeArg::Fast)]
     pub mode: ModeArg,
+    /// With --mode smart: fail a job that cannot be smart-cut instead of cutting it in accurate
+    /// mode.
+    #[arg(long)]
+    pub no_smart_fallback: bool,
     /// Also upscale every clip for phones, in the same pass (feature 002; see `rmedia upscale`).
     #[arg(long)]
     pub upscale: bool,
@@ -591,6 +595,10 @@ pub struct BatchArgs {
     /// Default mode for clips the manifest does not specify.
     #[arg(long, value_enum)]
     pub mode: Option<ModeArg>,
+    /// With smart mode: fail a job that cannot be smart-cut instead of cutting it in accurate
+    /// mode (unless the manifest says otherwise).
+    #[arg(long)]
+    pub no_smart_fallback: bool,
     /// Default output folder for clips the manifest does not specify.
     #[arg(short = 'o', long, value_name = "DIR")]
     pub output_dir: Option<PathBuf>,

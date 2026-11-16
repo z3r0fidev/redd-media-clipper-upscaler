@@ -42,6 +42,10 @@ pub struct ClipSpec {
     /// the rest of the spec is the accurate-mode clip, used for the other streams and for a
     /// fallback.
     pub smart: Option<crate::smart::SmartPlan>,
+    /// Smart mode was requested but the clip is cut in accurate mode for this reason, found
+    /// while planning (feature 004). Reported in the outcome.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smart_fallback: Option<crate::smart::FallbackReason>,
 }
 
 /// Absolute source timestamps for filter-based cutting.

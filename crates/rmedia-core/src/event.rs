@@ -40,6 +40,10 @@ pub enum Event {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts", ts(optional))]
         code: Option<IssueCode>,
+        /// Structured facts (`SMART_FALLBACK`: `reason`, feature 004).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        detail: Option<crate::error::ErrorDetail>,
     },
     /// A multi-stage job (e.g. upscale: analyze → render → verify) entered stage `index` of `of`.
     /// `job_progress.fraction` always covers the whole job, weighted across stages.
@@ -217,13 +221,17 @@ mod tests {
 
     #[test]
     fn job_warnings_without_a_code_serialise_as_before() {
-        let plain = Event::JobWarning { job_id: 3, message: "careful".into(), code: None };
+        let plain = Event::JobWarning { job_id: 3, message: "careful".into(), code: None, detail: None };
         assert_eq!(
             serde_json::to_value(&plain).unwrap(),
             json!({"type": "job_warning", "job_id": 3, "message": "careful"})
         );
-        let coded =
-            Event::JobWarning { job_id: 3, message: "careful".into(), code: Some(IssueCode::EngineFallback) };
+        let coded = Event::JobWarning {
+            job_id: 3,
+            message: "careful".into(),
+            code: Some(IssueCode::EngineFallback),
+            detail: None,
+        };
         assert_eq!(serde_json::to_value(&coded).unwrap()["code"], "ENGINE_FALLBACK");
     }
 

@@ -9,8 +9,9 @@ description: "Task list for 004 Smart Cut"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R11), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-15)**: T001–T030 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
-phone and Reddit rows are owner checks) and US1, the MVP. Next: US2 (T031–). Roadmap:
+**Status (2026-11-16)**: T001–T039 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
+phone and Reddit rows are owner checks), US1, the MVP, and US2 (fallbacks and strict mode).
+Next: US3 (T040–). Roadmap:
 `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
@@ -269,7 +270,7 @@ with its distinct reason.
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T031 [P] [US2] `core-tests/smart_us2.rs` › `risky_sources_fall_back` (SC-004): one case per
+- [X] T031 [P] [US2] `core-tests/smart_us2.rs` › `risky_sources_fall_back` (SC-004): one case per
   reason known before encoding, with its fixture: `HevcMp4` → `codec`, a `.webm`/`.avi` source or
   output → `container`, a High 4:2:2 or `High10` profile → `profile`/`pixel_format` (whichever
   rule R2 reaches first; assert the documented one), the interlaced fixture → `interlaced`,
@@ -278,37 +279,59 @@ with its distinct reason.
   `OpenGop` → `open_gop`, an engine without libx264 (fake caps) → `encoder_missing`. Each job
   succeeds, is frame-exact, has `mode_used: accurate`, `copied_frames: 0`, the reason, and the
   `SMART_FALLBACK` notice with `detail.reason`.
-- [ ] T032 [P] [US2] `smart_us2.rs` › `run_time_fallback` (scenario 3): `ResChange` across the
+
+  Done. `container` and `encoder_missing` use a `.webm` output: accurate mode cannot write
+  `.avi` and writes `.mp4` instead (which smart cut handles), and without libx264 accurate mode
+  cannot write H.264 either. `High10` reaches `profile` first. The HEVC case runs when the
+  engine has libx265.
+- [X] T032 [P] [US2] `smart_us2.rs` › `run_time_fallback` (scenario 3): `ResChange` across the
   resolution change → `params_changed`; a test-only hook that corrupts the joined part →
   `seam_check`. The `.part` file is discarded, the clip is redone in accurate mode, and a
   `JobWarning` `SMART_FALLBACK` event is sent.
-- [ ] T033 [P] [US2] `smart_us2.rs` › `strict_mode` (scenario 4, FR-009): with
+
+  Done. `rmedia_testkit::res_change()` builds the fixture in steps (video only: with audio the
+  join leaves a gap where the first half's audio runs longer). The hook,
+  `smart::test_hooks::reverse_parts_of` (feature `test-support`), joins the parts in reverse
+  order for one source path.
+- [X] T033 [P] [US2] `smart_us2.rs` › `strict_mode` (scenario 4, FR-009): with
   `smart_fallback=false`, a plan-time reason gives the planning issue `SMART_UNAVAILABLE` and
   nothing runs; a run-time reason fails the job with `SMART_UNAVAILABLE` and nothing is written.
   `cli-tests/clip_single.rs` › `no_smart_fallback_exit_codes`: exit 3 at plan time, 1 at run
   time, 0 for fallbacks without the flag.
-- [ ] T034 [P] [US2] `smart_us2.rs` › `not_applied_with_upscale_or_gif` (FR-013): `--upscale` or
+
+  Done; the CLI's run-time case uses `res_change()`, since the test hook does not reach the
+  binary.
+- [X] T034 [P] [US2] `smart_us2.rs` › `not_applied_with_upscale_or_gif` (FR-013): `--upscale` or
   `--gif` with `--mode smart` runs as accurate with the `SMART_NOT_APPLIED` notice; upscale and
   GIF snapshots unchanged.
 
 ### Implementation for User Story 2
 
-- [ ] T035 [US2] Complete `smart::check` in `core/smart/mod.rs` with every R2 rule in the
+- [X] T035 [US2] Complete `smart::check` in `core/smart/mod.rs` with every R2 rule in the
   documented order (cheap probe rules first, then index rules), including the window packet
   spacing check for `vfr` and both copy boundaries for `open_gop`. Unit tests per rule on
   synthetic `MediaInfo` and indexes.
-- [ ] T036 [US2] In `core/plan/mod.rs`: on a reason, add the `SMART_FALLBACK` notice and the
+
+  Done: the rules were in from T024; `smart::tests` adds one case per rule and the order.
+- [X] T036 [US2] In `core/plan/mod.rs`: on a reason, add the `SMART_FALLBACK` notice and the
   warning text from contracts/json-output.md, or, under strict mode, the `SMART_UNAVAILABLE`
   planning issue (job not runnable); `SMART_NOT_APPLIED` when the clip also upscales or makes a
   GIF or Reddit MP4.
-- [ ] T037 [US2] Run-time fallback in `core/exec/smart.rs`: after a failed verification, re-run
+
+  Done. `Notice` and `Issue` gain `detail` (`ErrorDetail`, so `reason`); `ClipSpec.smart_fallback`
+  carries a plan-time reason to the outcome (`reencoded_frames` from the output's length). A
+  keyframe index that cannot be read falls back too (a `SMART_FALLBACK` notice without a
+  reason; under strict mode `SMART_UNAVAILABLE`).
+- [X] T037 [US2] Run-time fallback in `core/exec/smart.rs`: after a failed verification, re-run
   the job as accurate (the accurate `ClipSpec` is kept in the plan for this), emit the
   `SMART_FALLBACK` `JobWarning`, and set `SmartOutcome.fallback`; under strict mode fail the job
   with `SMART_UNAVAILABLE`.
-- [ ] T038 [US2] CLI: `--no-smart-fallback` in `cli/commands/{clip,batch}.rs`; the result line
+
+  Done in `exec/clip.rs` (US1); `JobWarning` gains `detail` for the reason.
+- [X] T038 [US2] CLI: `--no-smart-fallback` in `cli/commands/{clip,batch}.rs`; the result line
   `accurate (smart fallback: <reason>)`; the strict exit codes in `cli/main.rs`'s existing
   mapping (3 for planning issues, 1 for failed jobs).
-- [ ] T039 [US2] `doctor` (FR-017): `core/doctor.rs` reports `smart: {available, reason}` from
+- [X] T039 [US2] `doctor` (FR-017): `core/doctor.rs` reports `smart: {available, reason}` from
   `Caps.encoders`; `cli/commands/doctor.rs` prints `smart cut: available (libx264)` or
   `smart cut: unavailable — <reason>`; `cli-tests/doctor.rs` case and JSON snapshot.
 

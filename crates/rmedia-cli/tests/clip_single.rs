@@ -250,3 +250,37 @@ fn smart_mode_clip() {
     let clip = out.join("in_001_00-00-03.320_00-00-28.720.mp4");
     assert_eq!(rmedia_testkit::frame_count(&clip), 635);
 }
+
+/// Feature 004, T033 (contracts/cli.md › Exit codes): a fallback is a success; with
+/// `--no-smart-fallback` a reason found while planning is invalid input (3), and one found while
+/// running fails the job (1).
+#[test]
+fn no_smart_fallback_exit_codes() {
+    if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let open_gop = copy_fixture(Fixture::OpenGop, d.path(), "open.mp4");
+    let res_change = d.path().join("res.mp4");
+    std::fs::copy(rmedia_testkit::res_change(), &res_change).unwrap();
+    for (src, end, strict, code, says) in [
+        (&open_gop, "6.72", false, 0, "(accurate (smart fallback: open_gop))"),
+        (&open_gop, "6.72", true, 3, "smart cut not possible: the video has open GOPs"),
+        (&res_change, "6.72", false, 0, "(accurate (smart fallback: params_changed))"),
+        (&res_change, "6.72", true, 1, "smart cut not possible: the video's size or pixel format changes"),
+    ] {
+        let out = d.path().join(format!("out-{code}-{strict}"));
+        let mut cmd = rmedia(d.path());
+        cmd.args(["clip", "-s", "1.32", "-e", end, "--mode", "smart", "-o"]).arg(&out).arg(src);
+        if strict {
+            cmd.arg("--no-smart-fallback");
+        }
+        let o = cmd.output().unwrap();
+        let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+        assert_eq!(o.status.code(), Some(code), "{}: {text}", src.display());
+        assert!(text.contains(says), "{}: {text}", src.display());
+        if code != 0 {
+            assert!(files_in(&out).is_empty(), "{:?}", files_in(&out));
+        }
+    }
+}

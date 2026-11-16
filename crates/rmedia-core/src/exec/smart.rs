@@ -87,6 +87,10 @@ pub(super) async fn execute(
         let total = r.requested.end.saturating_sub(r.requested.start);
         run(ctx, &dir, &clip_args(r, &rest_path), total).await?;
     }
+    #[cfg(any(test, feature = "test-support"))]
+    if crate::smart::test_hooks::reverses(&spec.input) {
+        parts.reverse();
+    }
     let names: Vec<&str> = parts.iter().map(String::as_str).collect();
     tokio::fs::write(dir.join(LIST), args::concat_list(&names)).await?;
     stages.enter(ctx);

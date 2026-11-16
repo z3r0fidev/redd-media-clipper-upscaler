@@ -59,6 +59,7 @@ fn issue(path: &Path, line: usize, message: String) -> Issue {
         code: crate::error::IssueCode::InvalidInput,
         origin: Origin::Line { file: path.to_path_buf(), line },
         message,
+        detail: None,
     }
 }
 
