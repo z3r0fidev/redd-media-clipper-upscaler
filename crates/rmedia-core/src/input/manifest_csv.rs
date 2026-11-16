@@ -51,6 +51,8 @@ const GIF_COLUMNS: usize = CLIP_COLUMNS + 6;
 /// Where the `gif_*` columns end (`smart_fallback`, feature 004, follows them).
 const GIF_END: usize = GIF_COLUMNS + 16;
 const _: () = assert!(GIF_END + 1 == COLUMNS.len());
+/// `mode`'s place among the clip columns.
+const MODE_COLUMN: usize = 5;
 
 pub fn load(path: &Path, cli: &Options) -> Result<BatchRequest, Vec<Issue>> {
     match std::fs::read(path) {
@@ -481,7 +483,12 @@ pub fn write(req: &BatchRequest) -> String {
         |f: &dyn Fn(&Options) -> bool| req.sources.iter().any(|s| s.clips.iter().any(|c| f(&resolved(s, c))));
     let upscaled = any(&|o| o.upscale.is_some());
     let gifs = any(&|o| o.gif.is_some());
+    // Feature 004: only when some row is strict, right after `mode` (plain exports unchanged).
+    let strict = any(&|o| !o.smart_fallback);
     let mut columns: Vec<&str> = COLUMNS[..CLIP_COLUMNS].to_vec();
+    if strict {
+        columns.insert(MODE_COLUMN + 1, COLUMNS[GIF_END]);
+    }
     if upscaled {
         columns.extend(&COLUMNS[CLIP_COLUMNS..GIF_COLUMNS]);
     }
@@ -514,8 +521,11 @@ pub fn write(req: &BatchRequest) -> String {
                 dur,
                 c.name.clone().unwrap_or_default(),
                 mode.to_owned(),
-                o.output_dir.as_deref().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
             ];
+            if strict {
+                row.push(o.smart_fallback.to_string());
+            }
+            row.push(o.output_dir.as_deref().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default());
             if upscaled {
                 match &o.upscale {
                     // Written in full so the row does not depend on the defaults it is read with

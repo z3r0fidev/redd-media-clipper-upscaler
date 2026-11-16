@@ -571,3 +571,63 @@ async fn gif_queue_and_exported_manifest_give_identical_outputs() {
         assert_eq!(sha256(output), sha256(&twin), "{} differs between app and CLI", output.display());
     }
 }
+
+/// Feature 004, T045 (FR-019): a desktop queue with smart clips, one of them strict, exported as
+/// JSON and as CSV and run by `rmedia batch`, gives byte-identical outputs to the app's run.
+#[tokio::test(flavor = "multi_thread")]
+async fn smart_parity() {
+    if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
+        return;
+    }
+    if !cli_bin().is_file() {
+        panic!("build the CLI first (cargo build -p rmedia-cli) or set RMEDIA_CLI_BIN");
+    }
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("match.mp4");
+    std::fs::copy(fixture(Fixture::SmartMp4), &src).unwrap();
+    let st = state(d.path()).await;
+    st.allow(std::slice::from_ref(&src));
+    let gui_out = d.path().join("gui");
+    let manifest = json!({"version":1,"defaults":{"output_dir": gui_out, "mode":"smart"},"videos":[{"input": src, "clips":[
+        {"start":3.32,"end":20.72},
+        {"start":21.32,"end":26.72,"options":{"smart_fallback":false}},
+        {"start":1,"end":3,"options":{"mode":"accurate"}}]}]});
+    let plan = st.plan(&manifest).await.unwrap();
+    assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+    let smart: Vec<_> = plan.jobs.iter().map(|j| j.smart.as_ref().map(|s| (s.mode, s.strict))).collect();
+    use rmedia_core::request::Mode;
+    assert_eq!(smart, [Some((Mode::Smart, false)), Some((Mode::Smart, true)), None]);
+    let summary = st.run(&plan.run_id, Arc::new(Collect::default())).await.unwrap();
+    assert_eq!(summary.succeeded, 3, "{summary:?}");
+
+    for name in ["queue.json", "queue.csv"] {
+        let export = d.path().join(name);
+        st.allowed.lock().unwrap().allow_save(&export);
+        st.export_manifest(&manifest, &export).unwrap();
+        let cli_out = d.path().join(format!("cli-{name}"));
+        let text = std::fs::read_to_string(&export).unwrap();
+        if name.ends_with("csv") {
+            assert!(text.starts_with("input,start,end,duration,name,mode,smart_fallback,output\n"), "{text}");
+        }
+        std::fs::write(&export, text.replace(&*gui_out.to_string_lossy(), &cli_out.to_string_lossy()))
+            .unwrap();
+        let o = Command::new(cli_bin())
+            .arg("batch")
+            .arg(&export)
+            .arg("-q")
+            .env("RMEDIA_STATE_DIR", d.path())
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(0), "{name}: {}", String::from_utf8_lossy(&o.stderr));
+        for job in &summary.jobs {
+            let JobOutcome::Succeeded { output, .. } = &job.outcome else { panic!() };
+            let twin = cli_out.join(output.file_name().unwrap());
+            assert_eq!(
+                sha256(output),
+                sha256(&twin),
+                "{name}: {} differs between app and CLI",
+                output.display()
+            );
+        }
+    }
+}

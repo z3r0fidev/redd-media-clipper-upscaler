@@ -14,8 +14,12 @@ use rmedia_testkit::{Fixture, duration, fixture, require_ffmpeg};
 
 /// Three source videos next to the manifest (hard links: cheap and identical).
 fn workspace(n: usize) -> tempfile::TempDir {
+    workspace_of(Fixture::Gop50Mp4, n)
+}
+
+fn workspace_of(kind: Fixture, n: usize) -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
-    let src = fixture(Fixture::Gop50Mp4);
+    let src = fixture(kind);
     for i in 1..=n {
         std::fs::hard_link(&src, d.path().join(format!("v{i}.mp4")))
             .or_else(|_| std::fs::copy(&src, d.path().join(format!("v{i}.mp4"))).map(|_| ()))
@@ -116,4 +120,97 @@ async fn sc004_hundred_clips_one_failure() {
     let failed = summary.jobs.iter().find(|j| matches!(j.outcome, JobOutcome::Failed { .. })).unwrap();
     assert!(failed.output.starts_with(d.path().join("blocked")));
     assert!(partials(Path::new(d.path())).is_empty());
+}
+
+/// Plans and runs a manifest; returns each job's mode, strictness and output file's hash, by
+/// output name.
+async fn run_manifest(
+    req: &rmedia_core::request::BatchRequest,
+    state: &Path,
+) -> Vec<(String, String, bool, String)> {
+    let (tools, caps) = engine();
+    let plan = make_plan(req, &tools, &caps).await;
+    assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+    let modes: Vec<_> = plan
+        .jobs
+        .iter()
+        .map(|j| (format!("{:?}", j.mode().unwrap()), j.smart.as_ref().is_some_and(|s| s.strict)))
+        .collect();
+    let (summary, _) = run_plan(plan, tools, state).await;
+    assert_eq!(summary.failed, 0, "{summary:?}");
+    summary
+        .jobs
+        .iter()
+        .zip(modes)
+        .map(|(j, (mode, strict))| {
+            let JobOutcome::Succeeded { output, .. } = &j.outcome else { panic!("{j:?}") };
+            (
+                output.file_name().unwrap().to_string_lossy().into_owned(),
+                mode,
+                strict,
+                rmedia_testkit::sha256(output),
+            )
+        })
+        .collect()
+}
+
+/// Feature 004, T043 (contracts/manifest-smart.md): equivalent JSON and CSV manifests with smart
+/// at run, video and clip level give identical outputs, and the most specific level wins.
+#[tokio::test(flavor = "multi_thread")]
+async fn smart_json_and_csv_manifests_give_identical_outputs() {
+    if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
+        return;
+    }
+    let d = workspace_of(Fixture::SmartMp4, 2);
+    let (json, csv) = (d.path().join("m.json"), d.path().join("m.csv"));
+    std::fs::write(
+        &json,
+        r#"{"version":1,"defaults":{"mode":"smart","output_dir":"a"},"videos":[
+            {"input":"v1.mp4","clips":[{"start":"3.32","end":"20.72"},
+                {"start":"21.32","end":"26.72","options":{"smart_fallback":false}}]},
+            {"input":"v2.mp4","options":{"mode":"accurate"},"clips":[{"start":0,"end":5},
+                {"start":"1.32","end":"5.72","options":{"mode":"smart"}}]}]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        &csv,
+        "input,start,end,duration,name,mode,smart_fallback,output\n\
+         v1.mp4,3.32,20.72,,,smart,,b\nv1.mp4,21.32,26.72,,,smart,false,b\n\
+         v2.mp4,0,5,,,accurate,,b\nv2.mp4,1.32,5.72,,,SMART,,b\n",
+    )
+    .unwrap();
+    let a = run_manifest(&manifest_json::load(&json, &Options::default()).unwrap(), d.path()).await;
+    let b = run_manifest(&manifest_csv::load(&csv, &Options::default()).unwrap(), d.path()).await;
+    let modes: Vec<(&str, bool)> = a.iter().map(|(_, m, s, _)| (m.as_str(), *s)).collect();
+    assert_eq!(modes, [("Smart", false), ("Smart", true), ("Accurate", false), ("Smart", false)]);
+    assert_eq!(a, b);
+}
+
+/// Feature 004, T043 (SC-009): a 0.3.0 manifest plans no smart fields, and its JSON and CSV forms
+/// give identical outputs (the commands themselves are pinned by the unchanged 0.3.0 snapshots).
+#[tokio::test(flavor = "multi_thread")]
+async fn smart_absent_from_0_3_0_manifests() {
+    require_ffmpeg!();
+    let d = workspace(1);
+    let (json, csv) = (d.path().join("m.json"), d.path().join("m.csv"));
+    std::fs::write(
+        &json,
+        r#"{"version":1,"defaults":{"output_dir":"a"},"videos":[{"input":"v1.mp4","clips":[
+            {"start":1,"end":3},{"start":4,"end":6,"options":{"mode":"accurate"}}]}]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        &csv,
+        "input,start,end,duration,name,mode,output\nv1.mp4,1,3,,,,b\nv1.mp4,4,6,,,accurate,b\n",
+    )
+    .unwrap();
+    let req = manifest_json::load(&json, &Options::default()).unwrap();
+    let (tools, caps) = engine();
+    let plan = make_plan(&req, &tools, &caps).await;
+    assert!(plan.smart.is_none() && plan.jobs.iter().all(|j| j.smart.is_none()));
+    let doc = serde_json::to_string(&plan).unwrap();
+    assert!(!doc.contains("smart"), "{doc}");
+    let a = run_manifest(&req, d.path()).await;
+    let b = run_manifest(&manifest_csv::load(&csv, &Options::default()).unwrap(), d.path()).await;
+    assert_eq!(a, b);
 }

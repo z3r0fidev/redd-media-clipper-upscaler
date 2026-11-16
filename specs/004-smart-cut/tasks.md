@@ -9,9 +9,9 @@ description: "Task list for 004 Smart Cut"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R11), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-16)**: T001–T042 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
-phone and Reddit rows are owner checks), US1, the MVP, US2 (fallbacks and strict mode) and US3
-(the dry run). Next: US4 (T043–). Roadmap:
+**Status (2026-11-16)**: T001–T046 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
+phone and Reddit rows are owner checks), US1, the MVP, US2 (fallbacks and strict mode), US3
+(the dry run) and US4 (manifests and parity). Next: US5 (T047–). Roadmap:
 `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
@@ -371,18 +371,22 @@ spans, shares and reasons, and writes nothing.
 **Independent Test**: equivalent JSON and CSV manifests with `mode: smart` at different levels
 give identical outputs from the CLI and the desktop app; an export round-trips the mode.
 
-- [ ] T043 [P] [US4] Tests first in `core-tests/us3_batch.rs` › `smart_*`: JSON and CSV manifests
+- [X] T043 [P] [US4] Tests first in `core-tests/us3_batch.rs` › `smart_*`: JSON and CSV manifests
   with smart at run, video and clip level (contracts/manifest-smart.md example) give identical
   outputs; the most specific level wins; 0.3.0 manifests give byte-identical outputs to the
-  T001 baseline (SC-009).
-- [ ] T044 [P] [US4] Tests first in `core-tests/smart_us4.rs` › `csv_writer_round_trip`: the
+  T001 baseline (SC-009). Done: `us3_batch::smart_json_and_csv_manifests_give_identical_outputs`
+  and `smart_absent_from_0_3_0_manifests` (no smart fields in a 0.3.0 plan; the 0.3.0 commands are
+  pinned by snapshots unchanged since the baseline commit `f286b44`, only new ones added).
+- [X] T044 [P] [US4] Tests first in `core-tests/smart_us4.rs` › `csv_writer_round_trip`: the
   writer emits `smart_fallback` after `mode` only when a row sets it; the existing header
   snapshot is unchanged; write → read gives the same `Options`.
-- [ ] T045 [P] [US4] Tests first in `apps/desktop/src-tauri/tests/bridge.rs` › `smart_parity`
+- [X] T045 [P] [US4] Tests first in `apps/desktop/src-tauri/tests/bridge.rs` › `smart_parity`
   (FR-019): an exported desktop queue with smart clips run by `rmedia batch` gives outputs
-  identical to the app's run.
-- [ ] T046 [US4] CSV writer change in `core/input/manifest_csv.rs` (T044) and `export_manifest`
-  keeping `mode` and `smart_fallback` per clip (`desk/ops.rs`). T043–T045 pass.
+  identical to the app's run. Done for both the JSON and the CSV export.
+- [X] T046 [US4] CSV writer change in `core/input/manifest_csv.rs` (T044) and `export_manifest`
+  keeping `mode` and `smart_fallback` per clip (`desk/ops.rs`). T043–T045 pass. Done: only the
+  CSV writer changed; `export_manifest` already kept both (JSON passes the queue through, CSV
+  uses the writer).
 
 **Checkpoint**: T043–T045 green; `quickstart.md` › Automated checks › Manifests and parity.
 

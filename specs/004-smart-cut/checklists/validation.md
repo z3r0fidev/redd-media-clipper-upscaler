@@ -73,3 +73,15 @@ Reviews: self-review of the diff. The senior-code-reviewer pass the checkpoint l
 
 Reviews: self-review of the diff; the senior-code-reviewer pass was not run (agents are spawned
 only when asked).
+
+## US4 checkpoint (T043–T046, 2026-11-16)
+
+| Criterion | Result |
+|---|---|
+| JSON = CSV, levels | `us3_batch::smart_json_and_csv_manifests_give_identical_outputs`: smart in `defaults`, `accurate` on a video, `smart` on one of its clips and `smart_fallback: false` on another; both forms plan smart, strict smart, accurate, smart (clip beats video beats defaults) and give byte-identical outputs |
+| SC-009 0.3.0 manifests | `smart_absent_from_0_3_0_manifests`: no `smart` field anywhere in the plan; JSON and CSV outputs identical. The 0.3.0 command snapshots are unchanged since the baseline commit `f286b44` (only smart snapshots were added) |
+| CSV writer | `smart_us4::csv_writer_round_trip`: `smart_fallback` follows `mode` only when a row is strict; smart-only and 0.3.0 exports keep the 0.3.0 header; write → read gives the same options |
+| Desktop parity (FR-019) | `bridge::smart_parity`: the app's run of a smart queue (one strict clip, one accurate) and `rmedia batch` of its JSON and CSV exports give byte-identical files |
+
+Reviews: self-review of the diff; the senior-code-reviewer pass was not run (agents are spawned
+only when asked).

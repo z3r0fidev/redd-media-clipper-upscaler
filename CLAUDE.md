@@ -17,11 +17,12 @@ for Reddit (003). Spec-driven via Spec Kit.
   Pending list and review findings: `docs/roadmap.md`.
 - Next feature: **004 Smart cut** (`--mode smart`; spec, plan and tasks in
   `specs/004-smart-cut/`, 59 tasks), then 005 budgeted Reddit video.
-- 004 progress: T001–T042 done (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
+- 004 progress: T001–T046 done (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and
-  reasons; `research.md` R3/R5/R7 record what changed). Security L1 is done too. Next:
-  004 US4 (T043–T046, manifests). Run tests with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to
+  reasons, and US4: smart mode in JSON/CSV manifests and desktop exports, with CLI = desktop
+  outputs; `research.md` R3/R5/R7 record what changed). Security L1 is done too. Next: 004 US5
+  (T047–T053, the desktop app's Smart mode and keyframe markers). Run tests with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to
   `binaries/rmedia-ff*-x86_64-unknown-linux-gnu` (the system ffmpeg lacks libvmaf).
 - Session close: follow `docs/operations/session-close.md`.
 - The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and `fetch-models` for its GPU
