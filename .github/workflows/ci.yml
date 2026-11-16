@@ -81,7 +81,7 @@ jobs:
           RMEDIA_REQUIRE_GIF_TOOLS: "1"
         run: |
           cargo test --workspace --no-fail-fast
-          cargo test --workspace --release -- --ignored bench
+          cargo test --workspace --release -- --ignored bench --nocapture
       # The Windows binaries link the C runtime statically (.cargo/config.toml, ncnn-static.yml):
       # none may need a Visual C++ runtime DLL (msvcp_win.dll is part of Windows).
       - name: No Visual C++ runtime DLL needed
