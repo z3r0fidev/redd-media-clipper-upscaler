@@ -292,6 +292,18 @@ Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; item 1's re
     chapter or EDL import.
 25. Deferred: animated WebP and AVIF, captions, generative outpaint.
 
+**Bugs**
+
+26. **Folder scans don't skip `gifs/`** ([#37](https://github.com/z3r0fidev/redd-media-clipper-upscaler/issues/37),
+    filed 2026-11-15, reproduced on 0.2.0). `DEFAULT_OUTPUT_DIRS` in
+    `crates/rmedia-cli/src/commands/scan.rs` (line 122) lists `clips` and `upscaled` but not
+    `gifs`, the default GIF output folder (`commands/gif.rs` line 37). A Reddit MP4
+    (`gif --format mp4`) in `gifs/` is picked up as a source on the next folder scan:
+    `clip --dry-run src` found 2 videos and planned `src/gifs/clips/…`. Fix: add `"gifs"`, add a
+    test next to the `clips`/`upscaled` exclusion coverage, and check the desktop folder scan
+    uses the same list. Small; can go before or alongside 004 US2. Found by astdownloader's
+    `astready`, which collects `clips/` and `gifs/` output for upload.
+
 ## Release and Project Housekeeping
 
 - [x] Tag `v0.1.0` (`bd1eef8`, the 0.1.0 notes' last commit) and `v0.2.0` (`b6385a1`, 002

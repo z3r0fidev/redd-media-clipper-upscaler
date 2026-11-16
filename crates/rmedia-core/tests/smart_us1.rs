@@ -66,7 +66,9 @@ async fn frame_exact_ends() {
         assert_eq!(frame_count(&output), frames, "{kind:?}");
         assert_eq!((smart.copied_frames + smart.reencoded_frames) as u64, frames, "{kind:?}");
         assert!((actual.start.as_secs_f64() - 3.32).abs() < 0.001, "{kind:?}: {actual:?}");
-        assert!((actual.end.as_secs_f64() - end).abs() < 0.041, "{kind:?}: {actual:?}");
+        // The frame count above is the exact check; the reported end is the container's duration,
+        // which the audio's last AAC frame can extend (Matroska with FFmpeg 6.1: +61 ms).
+        assert!((actual.end.as_secs_f64() - end).abs() < 0.1, "{kind:?}: {actual:?}");
         let on = rmedia_testkit::first_frame_psnr(&output, &src, 3.32);
         let before = rmedia_testkit::first_frame_psnr(&output, &src, 3.28);
         let after = rmedia_testkit::first_frame_psnr(&output, &src, 3.36);
