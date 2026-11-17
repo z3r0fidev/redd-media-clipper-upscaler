@@ -13,7 +13,7 @@ Last updated: 2026-11-14.
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
-| 004 Smart cut | In progress: 58 of 59 tasks (everything but T059's agent reviews; docs and validation done; `specs/004-smart-cut/`, 2026-11-16); version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
+| 004 Smart cut | Done: 59 of 59 tasks (T059's reviews: no high, the three mediums fixed; `specs/004-smart-cut/`, 2026-11-16); version 0.4.0 when done | Hybrid frame-exact clip mode, see Pending item 22 |
 | 005 Budgeted Reddit video | Planned after 004; no version yet | MP4 with audio under Reddit size and length caps, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -207,7 +207,8 @@ before release: confirm Reddit's GIF size limits in its Help Center.
 Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; item 1's releases (0.1.0–0.3.0) and
 004's tasks, Phases 1–2 and US1 (T001–T030) were done on 2026-11-15, and US2 and US3 (T031–T042)
 on 2026-11-16; item 8 (L1), 004 US4 and US5 (T043–T053) and Phase 8's docs and validation (T054–T058) were
-done the same day; the next work is T059's review passes (item 22), then the 0.4.0 release.
+done the same day, and so were T059's reviews and item 26 (#37); the next work is the 0.4.0 tag
+and its owner checks (item 22, [runbook](operations/smart-cut-owner-checks.md)).
 
 **Owner actions**
 
@@ -279,8 +280,9 @@ done the same day; the next work is T059's review passes (item 22), then the 0.4
 **Planned features** (a version follows the feature number: 004 becomes 0.4.0)
 
 22. **004 Smart cut** (next; specified and planned in `specs/004-smart-cut/` on 2026-11-14; tasks
-    T001–T059 on 2026-11-15; Phases 1–2 and US1 (T001–T030) done on 2026-11-15, US2 to US5 and T054–T058
-    on 2026-11-16; next T059's agent reviews, then 0.4.0). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+    T001–T059 on 2026-11-15; Phases 1–2 and US1 (T001–T030) done on 2026-11-15, US2 to US5 and Phase 8
+    (T031–T059) on 2026-11-16, 59/59; next the 0.4.0 tag and the owner checks in
+    `docs/operations/smart-cut-owner-checks.md`). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
     and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
     source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
     accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,
@@ -298,7 +300,7 @@ done the same day; the next work is T059's review passes (item 22), then the 0.4
 
 **Bugs**
 
-26. **Folder scans don't skip `gifs/`** ([#37](https://github.com/z3r0fidev/redd-media-clipper-upscaler/issues/37),
+26. **Done 2026-11-16.** **Folder scans don't skip `gifs/`** ([#37](https://github.com/z3r0fidev/redd-media-clipper-upscaler/issues/37),
     filed 2026-11-15, reproduced on 0.2.0). `DEFAULT_OUTPUT_DIRS` in
     `crates/rmedia-cli/src/commands/scan.rs` (line 122) lists `clips` and `upscaled` but not
     `gifs`, the default GIF output folder (`commands/gif.rs` line 37). A Reddit MP4
@@ -306,7 +308,14 @@ done the same day; the next work is T059's review passes (item 22), then the 0.4
     `clip --dry-run src` found 2 videos and planned `src/gifs/clips/…`. Fix: add `"gifs"`, add a
     test next to the `clips`/`upscaled` exclusion coverage, and check the desktop folder scan
     uses the same list. Small; can go before or alongside 004 US2. Found by astdownloader's
-    `astready`, which collects `clips/` and `gifs/` output for upload.
+    `astready`, which collects `clips/` and `gifs/` output for upload. Fixed: the list moved to
+    `rmedia_core::discover::DEFAULT_OUTPUT_DIRS` with `gifs`, and the desktop folder scan, which
+    skipped none of the three, now adds them on the Rust side; tests in `scan.rs` and `bridge.rs`.
+27. **004 review lows, not fixed** (T059, `specs/004-smart-cut/checklists/validation.md`):
+    `planOptions` can mask a queue default with an explicit `mode: undefined`; progress sits in the
+    verify slice while a run-time fallback re-encodes; a keyframe scan restarts when the player's
+    mode flickers from error to ok; no free-space check for a smart job's ~2× scratch; no cap on
+    concurrent uncached keyframe scans; the 16 MiB packet-scan limit on multi-hour clips. Small.
 
 ## Release and Project Housekeeping
 

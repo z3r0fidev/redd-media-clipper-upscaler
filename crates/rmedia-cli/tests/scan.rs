@@ -94,6 +94,42 @@ fn clip_a_folder_twice_never_clips_its_own_outputs() {
     assert!(String::from_utf8_lossy(&second.stdout).contains("0 succeeded, 2 skipped"));
 }
 
+/// Issue #37: a folder scan skips every default output folder, `gifs/` included (a Reddit MP4
+/// there is an `.mp4` and would otherwise be clipped again).
+#[test]
+fn folder_scans_skip_every_default_output_folder() {
+    require_ffmpeg!();
+    let d = library();
+    for dir in ["clips", "upscaled", "gifs", "GIFs/deeper"] {
+        std::fs::create_dir_all(d.path().join("lib").join(dir)).unwrap();
+        std::fs::copy(fixture(Fixture::Gop50Mp4), d.path().join("lib").join(dir).join("out.mp4")).unwrap();
+    }
+    let o = rmedia(d.path())
+        .args(["clip", "--dry-run", "--json", "-s", "0", "-d", "1"])
+        .arg(d.path().join("lib"))
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let doc: Value = serde_json::from_slice(&o.stdout).unwrap();
+    let mut sources: Vec<String> = doc["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|j| {
+            Path::new(j["source"].as_str().unwrap()).strip_prefix(d.path()).unwrap().display().to_string()
+        })
+        .collect();
+    sources.sort();
+    assert_eq!(sources, ["lib/ep2.mp4", "lib/season 1/ep10.mp4"], "no output folder is scanned");
+    let o = rmedia(d.path())
+        .args(["clip", "--dry-run", "-s", "0", "-d", "1"])
+        .arg(d.path().join("lib"))
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains(r#"named "clips" or "upscaled" or "gifs""#), "{err}");
+}
+
 #[test]
 fn scan_errors() {
     let d = tempfile::tempdir().unwrap();

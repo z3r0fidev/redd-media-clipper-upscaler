@@ -70,15 +70,29 @@ pub(super) async fn execute(
     let mut parts: Vec<String> = Vec::new();
     if let Some(head) = plan.head {
         stages.enter(ctx);
-        run(ctx, &dir, &args::part_args(spec, plan, head, &dir.join(HEAD)), secs(head.frames)).await?;
+        let r = run(ctx, &dir, &args::part_args(spec, plan, head, &dir.join(HEAD)), secs(head.frames)).await;
+        if let Err(reason) = fall_back_on(r, "head")? {
+            return Ok(Err(reason));
+        }
         parts.push(HEAD.to_owned());
     }
     stages.enter(ctx);
-    run(ctx, &dir, &args::copy_args(spec, plan, &dir.join(COPY)), secs(plan.copy.frames)).await?;
+    #[allow(unused_mut)]
+    let mut copy = args::copy_args(spec, plan, &dir.join(COPY));
+    #[cfg(any(test, feature = "test-support"))]
+    if crate::smart::test_hooks::fails_copy(&spec.input) {
+        copy.insert(0, "-no-such-option".into());
+    }
+    if let Err(reason) = fall_back_on(run(ctx, &dir, &copy, secs(plan.copy.frames)).await, "copy")? {
+        return Ok(Err(reason));
+    }
     parts.push(COPY.to_owned());
     if let Some(tail) = plan.tail {
         stages.enter(ctx);
-        run(ctx, &dir, &args::part_args(spec, plan, tail, &dir.join(TAIL)), secs(tail.frames)).await?;
+        let r = run(ctx, &dir, &args::part_args(spec, plan, tail, &dir.join(TAIL)), secs(tail.frames)).await;
+        if let Err(reason) = fall_back_on(r, "tail")? {
+            return Ok(Err(reason));
+        }
         parts.push(TAIL.to_owned());
     }
     let rest_path = dir.join(REST);
@@ -95,9 +109,26 @@ pub(super) async fn execute(
     tokio::fs::write(dir.join(LIST), args::concat_list(&names)).await?;
     stages.enter(ctx);
     let join = args::join_args(spec, plan, rest.is_some().then_some(rest_path.as_path()), ctx.temp);
-    run(ctx, &dir, &join, secs(plan.total_frames())).await?;
+    if let Err(reason) = fall_back_on(run(ctx, &dir, &join, secs(plan.total_frames())).await, "join")? {
+        return Ok(Err(reason));
+    }
     stages.enter(ctx);
     verify(ctx, spec, plan).await
+}
+
+/// A video step that ffmpeg could not do is a reason to fall back (FR-008: a source accurate mode
+/// can cut never fails in smart mode). A cancel, a full disk or an unwritable output stays the
+/// job's error: accurate mode would meet it too. The audio step uses accurate mode's own
+/// settings, so its failure stays an error as well.
+fn fall_back_on(r: Result<()>, step: &str) -> Result<std::result::Result<(), FallbackReason>> {
+    match r {
+        Ok(()) => Ok(Ok(())),
+        Err(Error::EngineFailed { message, .. }) => {
+            tracing::warn!("smart cut: the {step} step failed ({message}); cutting in accurate mode");
+            Ok(Err(FallbackReason::SeamCheck))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Runs one ffmpeg step in the scratch folder; a failure is the job's error.
@@ -146,7 +177,14 @@ async fn verify(
         let from = plan.copy.span.end - Ts::from_micros(step * i64::from(before));
         seams.push((at - before, before, after, false, from));
     }
-    let frame_bytes = plan.encode.width as usize * plan.encode.height as usize * 3 / 2;
+    // A crafted size could overflow the product: then nothing matches and the job falls back.
+    let Some(frame_bytes) = (plan.encode.width as usize)
+        .checked_mul(plan.encode.height as usize)
+        .and_then(|n| n.checked_mul(3))
+        .map(|n| n / 2)
+    else {
+        return Ok(Err(FallbackReason::ParamsChanged));
+    };
     for (i, (first, before, after, copied_after, source_from)) in seams.into_iter().enumerate() {
         let at = Ts::from_micros(step * i64::from(first));
         let Some(window) = decode(ctx, ctx.temp, false, at, before + after, output_precise, plan).await?
@@ -185,6 +223,8 @@ async fn packet_times(ctx: &JobCtx<'_>, file: &Path) -> Result<Vec<i64>> {
     Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(|l| l.trim().trim_end_matches(',').parse::<f64>().ok())
+        // Within ±1e12 s, so the differences below cannot overflow (T059 review).
+        .filter(|s| s.is_finite() && s.abs() < 1e12)
         .map(|s| (s * 1e6).round() as i64)
         .collect())
 }

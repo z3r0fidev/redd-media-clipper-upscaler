@@ -74,7 +74,7 @@ impl KeyframeIndex {
         window: Option<Span>,
         keep_packets: bool,
     ) -> KeyframeIndex {
-        let user = |t: Ts| Ts::from_micros(t.as_micros() - zero.as_micros());
+        let user = |t: Ts| t - zero;
         // A read that starts with a seek can begin inside a GOP (MPEG-TS): the packets before the
         // first keyframe belong to a GOP whose start was not read, so they are left out.
         let packets: Vec<Packet> = raw
@@ -146,7 +146,9 @@ pub fn parse_packets(csv: &str) -> Vec<RawPacket> {
 /// Signed seconds (`-0.080000`, `N/A` → `None`).
 fn secs(v: &str) -> Option<Ts> {
     let f: f64 = v.parse().ok()?;
-    f.is_finite().then(|| Ts::from_micros((f * 1e6).round() as i64))
+    // Within ±1e12 s (about 30,000 years): a hostile file's absurd time cannot overflow later
+    // arithmetic.
+    (f.is_finite() && f.abs() < 1e12).then(|| Ts::from_micros((f * 1e6).round() as i64))
 }
 
 /// Reads the index of the first video stream. `window` (user time) limits the read to its end,
@@ -236,7 +238,11 @@ pub async fn keyframes_in_chunks(
     for n in 0.. {
         let to = from + chunk;
         let start = (n > 0).then(|| from.saturating_sub(OVERLAP));
-        let part = KeyframeIndex::from_packets(&read(start, to).await?, zero, None, false);
+        let raw = read(start, to).await?;
+        // Without a duration, read until a chunk holds nothing at or after its start (the end of
+        // the file); the time and count caps still apply (T059 review).
+        let past_end = raw.iter().all(|p| p.pts.or(p.dts).is_none_or(|t| t < from));
+        let part = KeyframeIndex::from_packets(&raw, zero, None, false);
         index.frame_duration = match n {
             0 => part.frame_duration,
             _ => index.frame_duration.filter(|d| part.frame_duration.is_none_or(|p| p == *d)),
@@ -247,8 +253,10 @@ pub async fn keyframes_in_chunks(
             index.truncated = true;
             break;
         }
-        if end.is_none_or(|e| to >= e) {
-            break;
+        match end {
+            Some(e) if to >= e => break,
+            None if past_end => break,
+            _ => {}
         }
         from = to;
     }

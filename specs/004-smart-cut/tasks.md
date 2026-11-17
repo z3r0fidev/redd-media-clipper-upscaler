@@ -9,10 +9,11 @@ description: "Task list for 004 Smart Cut"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R11), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-16)**: T001–T058 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
+**Status (2026-11-16)**: T001–T059 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
 phone and Reddit rows are owner checks), US1, the MVP, US2 (fallbacks and strict mode), US3
 (the dry run), US4 (manifests and parity), US5 (the desktop app) and Phase 8's docs and
-validation (T054–T058). Open: T059's agent review passes, then the 0.4.0 release. Roadmap:
+validation (T054–T058). T059's reviews done. Next: the 0.4.0 tag and the owner checks
+(`docs/operations/smart-cut-owner-checks.md`). Roadmap:
 `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
@@ -481,15 +482,14 @@ security-auditor (new IPC commands, the cache keyed by path).
   (S1 rows) and a Reddit upload.
   Done 2026-11-16: `checklists/validation.md` › T058 (Linux, and Windows from CI run
   43922704270).
-- [ ] T059 Final senior-code-reviewer and security-auditor passes over all 004 changes, fixing
+- [X] T059 Final senior-code-reviewer and security-auditor passes over all 004 changes, fixing
   the high and medium findings. Then:
   - mark the tasks `[X]`;
   - write `specs/004-smart-cut/progress.md`;
   - update `docs/roadmap.md` and the `CLAUDE.md` active feature.
 
-  Open: the self-review was done on 2026-11-16 (`checklists/validation.md` › T059); the
-  senior-code-reviewer and security-auditor passes were not run, because agents run only when the
-  owner asks. Tick this task after those passes.
+  Done 2026-11-16: self-review, then both agents. No high; the three mediums and eight lows
+  fixed with tests (`checklists/validation.md` › T059); the remaining lows are roadmap item 27.
 
   Stop for review. The version bump to 0.4.0 and the tag follow
   `docs/operations/build-and-release.md` › Cut a Release.

@@ -254,7 +254,9 @@ carries the reason as a warning, a `SMART_FALLBACK` notice and `smart.fallback`:
 The plan document gains `"smart":{"smart":2,"fallback":{"open_gop":1},"not_applied":0}`:
 `smart` counts the jobs that will be smart-cut, `fallback` the jobs that will run in accurate
 mode, by reason, and `not_applied` the smart jobs that upscale or make a GIF (they are
-re-encoded anyway; `SMART_NOT_APPLIED` notice).
+re-encoded anyway; `SMART_NOT_APPLIED` notice). `unreadable` (absent when 0) counts jobs cut in
+accurate mode because their keyframes could not be read, which have no reason code; their dry-run
+line reads `smart → accurate: the keyframes could not be read`.
 
 With `--no-smart-fallback`, a reason found while planning is an error issue and nothing runs
 (exit 3):

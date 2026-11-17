@@ -393,6 +393,13 @@ fn last_keyframe_at_or_before(json: &[u8], target: Ts) -> Option<(Ts, Option<Ts>
 /// URLs cannot make ffmpeg/ffprobe fetch anything.
 pub const INPUT_PROTOCOLS: &str = "file,pipe";
 
+/// A playlist or stream description (`.m3u8`, `.m3u`, `.ffconcat`, `.sdp`): FFmpeg would follow
+/// it to other files, so it is never read as a source.
+pub fn is_playlist(path: &Path) -> bool {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "m3u8" | "m3u" | "ffconcat" | "sdp")
+}
+
 /// Paths are passed with the `file:` protocol so names like `-x.mp4` or `a:b.mp4` are never
 /// interpreted as options or protocols.
 pub fn file_arg(path: &Path) -> OsString {

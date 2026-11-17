@@ -220,6 +220,15 @@ pub struct SmartTotals {
     pub fallback: std::collections::BTreeMap<crate::smart::FallbackReason, usize>,
     /// Jobs that upscale or make a GIF, so smart does not apply.
     pub not_applied: usize,
+    /// Jobs cut in accurate mode because their keyframes could not be read (no reason code).
+    /// Absent when zero.
+    #[serde(skip_serializing_if = "is_zero")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<usize>", optional))]
+    pub unreadable: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl SmartTotals {
@@ -236,7 +245,7 @@ impl SmartTotals {
             match (s.mode, s.fallback) {
                 (Mode::Smart, _) => t.smart += 1,
                 (_, Some(r)) => *t.fallback.entry(r).or_default() += 1,
-                (_, None) => {}
+                (_, None) => t.unreadable += 1,
             }
         }
         any.then_some(t)
@@ -529,9 +538,7 @@ impl Planner<'_> {
     }
 
     async fn plan_source(&mut self, req: &BatchRequest, source: &SourceRequest) {
-        let ext =
-            source.path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-        if matches!(ext.as_str(), "m3u8" | "m3u" | "ffconcat" | "sdp") {
+        if probe::is_playlist(&source.path) {
             return self.error(
                 &source.origin,
                 IssueCode::InvalidInput,

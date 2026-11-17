@@ -334,10 +334,12 @@ impl AppState {
         &self,
         scan_id: String,
         roots: Vec<PathBuf>,
-        opts: ScanOptions,
+        mut opts: ScanOptions,
         on_event: &(dyn Fn(ScanEvent) + Send + Sync),
     ) -> OpResult<ScanResult> {
         let roots = roots.iter().map(|r| self.require_allowed(r)).collect::<OpResult<Vec<_>>>()?;
+        // rmedia's own output folders are never sources, whatever the page sends (issue #37).
+        opts.exclude_dir_names.extend(discover::DEFAULT_OUTPUT_DIRS.iter().map(|d| (*d).to_owned()));
         let (tools, _) = self.engine().await?;
         let cancel = CancellationToken::new();
         lock(&self.scans).insert(scan_id.clone(), cancel.clone());
@@ -778,6 +780,9 @@ impl AppState {
             return Err("invalid request id".into());
         }
         let path = self.require_allowed(path)?;
+        if probe::is_playlist(&path) {
+            return Err(format!("{} is a playlist/stream description, not a video file", path.display()));
+        }
         let meta = std::fs::metadata(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let key = KeyframeKey { path: path.clone(), len: meta.len(), modified: meta.modified().ok() };
         if let Some((_, index)) = lock(&self.keyframe_cache).iter().find(|(k, _)| *k == key) {
@@ -791,13 +796,21 @@ impl AppState {
             }
             running.insert(request_id.clone(), cancel.clone());
         }
+        // Removes the entry however this ends, also when the command's future is dropped.
+        struct Registered<'a>(&'a Mutex<HashMap<String, CancellationToken>>, &'a str);
+        impl Drop for Registered<'_> {
+            fn drop(&mut self) {
+                lock(self.0).remove(self.1);
+            }
+        }
+        let registered = Registered(&self.keyframe_requests, &request_id);
         let result = async {
             let (tools, _) = self.engine().await?;
             let media = probe::probe(&tools, &path, &cancel).await.map_err(|e| e.to_string())?;
             rmedia_core::smart::keyframes(&tools, &media, None, &cancel).await.map_err(|e| e.to_string())
         }
         .await;
-        lock(&self.keyframe_requests).remove(&request_id);
+        drop(registered);
         if cancel.is_cancelled() {
             return Err("the keyframe index was cancelled".into());
         }

@@ -76,6 +76,38 @@ async fn frame_exact_ends() {
     }
 }
 
+/// T059 review: a start or end a fraction of a millisecond after a frame time picks the same
+/// frames as accurate mode (frames at or after the start, before the end), not the frame just
+/// before it.
+#[tokio::test(flavor = "multi_thread")]
+async fn ends_just_after_a_frame_pick_the_same_frames_as_accurate() {
+    if !engine_ok() {
+        return;
+    }
+    let src = fixture(Fixture::SmartMp4);
+    let out = tempfile::tempdir().unwrap();
+    // (start, end) → (head frames, tail frames); 25 fps, keyframes every 2 s.
+    for (start, end, head, tail) in [
+        (3.32, 20.72, 17, 18),     // on frames: 3.32–3.96 and 20.00–20.68
+        (3.3196, 20.7196, 17, 18), // just before: the same frames
+        (3.3204, 20.7204, 16, 19), // just after: 3.36–3.96 and 20.00–20.72
+    ] {
+        let plan = plan_smart(&src, start, EndSpec::At(secs(end)), out.path()).await;
+        let p = smart_plan(&plan);
+        assert_eq!(
+            (p.head.map(|h| h.frames), p.tail.map(|t| t.frames), p.copy.frames),
+            (Some(head), Some(tail), 400),
+            "{start}–{end}"
+        );
+    }
+    let (output, _, smart) = cut(&src, 3.3204, EndSpec::At(secs(20.7204)), out.path()).await;
+    assert_eq!(smart.mode_used, Mode::Smart);
+    assert_eq!(frame_count(&output), 435);
+    let on = rmedia_testkit::first_frame_psnr(&output, &src, 3.36);
+    let before = rmedia_testkit::first_frame_psnr(&output, &src, 3.32);
+    assert!(on > 35.0 && on > before + 5.0, "starts on 3.36, not 3.32: {before} {on}");
+}
+
 /// T016 (US1 scenario 2, edge cases): ends on keyframes skip the head or tail; the end of the
 /// video needs no tail; a range ending after the last keyframe has a tail from it.
 #[tokio::test(flavor = "multi_thread")]

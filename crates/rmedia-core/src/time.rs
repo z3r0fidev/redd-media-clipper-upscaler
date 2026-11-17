@@ -53,7 +53,7 @@ impl Ts {
     }
 
     pub fn saturating_sub(self, other: Ts) -> Ts {
-        Ts((self.0 - other.0).max(0))
+        Ts(self.0.saturating_sub(other.0).max(0))
     }
 
     /// `HH:MM:SS.mmm` (rounded to milliseconds).
@@ -83,15 +83,16 @@ impl Ts {
 
 impl std::ops::Add for Ts {
     type Output = Ts;
+    // Saturating: times read from a hostile file can be absurd, and must not wrap (T059 review).
     fn add(self, rhs: Ts) -> Ts {
-        Ts(self.0 + rhs.0)
+        Ts(self.0.saturating_add(rhs.0))
     }
 }
 
 impl std::ops::Sub for Ts {
     type Output = Ts;
     fn sub(self, rhs: Ts) -> Ts {
-        Ts(self.0 - rhs.0)
+        Ts(self.0.saturating_sub(rhs.0))
     }
 }
 

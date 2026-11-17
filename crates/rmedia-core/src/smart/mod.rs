@@ -14,8 +14,10 @@ use crate::upscale::encode::ColourTags;
 
 pub use keyframes::{KeyframeEntry, KeyframeIndex, keyframes};
 
-/// Packet times within this of a cut point count as on it (ffprobe prints microseconds).
-const SLACK: Ts = Ts::from_micros(500);
+/// Packet times within this of a cut point count as on it: ffprobe prints microseconds, so a
+/// frame time may be off by its rounding. Any wider and a start a fraction of a millisecond after
+/// a frame would take that frame, which accurate mode drops (T059 review).
+const SLACK: Ts = Ts::from_micros(2);
 
 /// Why a smart job runs in accurate mode instead (research R2). The serialized values are stable
 /// once released (FR-007).
@@ -336,6 +338,16 @@ pub mod test_hooks {
     use std::sync::Mutex;
 
     static REVERSED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    static FAILING: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+    /// Makes the copy step of smart jobs cut from `source` fail from now on.
+    pub fn fail_copy_of(source: &Path) {
+        FAILING.lock().unwrap().push(source.to_path_buf());
+    }
+
+    pub(crate) fn fails_copy(source: &Path) -> bool {
+        FAILING.lock().unwrap().iter().any(|p| p == source)
+    }
 
     /// Joins smart jobs cut from `source` in the wrong order from now on.
     pub fn reverse_parts_of(source: &Path) {

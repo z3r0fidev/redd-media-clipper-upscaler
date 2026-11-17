@@ -93,5 +93,20 @@ async fn chunked_reads_find_every_keyframe_once() {
                 .unwrap();
         assert_eq!(chunked.keyframes, whole.keyframes, "{kind:?}");
         assert_eq!(chunked.frame_duration, whole.frame_duration, "{kind:?}");
+        // T059 review: a file without a duration (some ts and mkv) is read to its end, not just
+        // its first chunk.
+        let mut no_duration = media.clone();
+        no_duration.duration = None;
+        let chunked = rmedia_core::smart::keyframes::keyframes_in_chunks(
+            &tools,
+            &no_duration,
+            None,
+            secs(7.0),
+            &cancel,
+        )
+        .await
+        .unwrap();
+        assert_eq!(chunked.keyframes, whole.keyframes, "{kind:?} without a duration");
+        assert!(!chunked.truncated);
     }
 }

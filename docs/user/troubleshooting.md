@@ -441,7 +441,7 @@ panel show.
 | the range holds no complete group of pictures (it is too short) | `no_full_gop` | The clip is shorter than the distance between two keyframes, so there is nothing to copy. Make the range longer, or let it be cut in accurate mode (it is short, so this is quick) |
 | the video has open GOPs (frames that depend on the previous GOP) | `open_gop` | Some encoders (x264 with `open-gop`, many broadcast recordings) write these. Moving the start or the end to another keyframe can avoid the open one; otherwise accurate mode is used |
 | the video's size or pixel format changes at a cut point | `params_changed` | Found after the ends were encoded; the job is redone in accurate mode |
-| the joined clip failed the seam check | `seam_check` | Found after the join: rmedia checks the joined file and redoes the job in accurate mode rather than keep a clip that may not play. If this happens with an ordinary H.264 file, please report it |
+| the joined clip failed the seam check | `seam_check` | Found after the join, or when one of the steps that make the parts fails: rmedia redoes the job in accurate mode rather than keep a clip that may not play. The log (`-v`, or `logs/desktop.log`) says which step. If this happens with an ordinary H.264 file, please report it |
 
 #### Resolution
 
@@ -703,9 +703,9 @@ The folders you gave to `rmedia clip` contain no videos that rmedia accepts. Pos
 * `--include`, `--exclude`, `--no-recursive` or `--max-depth` filtered them out.
 * The files are hidden (add `--hidden`), symbolic links (add `--follow-symlinks`), or partial
   downloads.
-* The videos are in a folder named `clips`, which `clip` skips when you do not use `-o`. rmedia
-  prints a `note: skipped … folder(s) named "clips"` message in that case. Pass that folder
-  directly to use its videos.
+* The videos are in a folder named `clips`, `upscaled` or `gifs`, rmedia's own output folders,
+  which every folder scan skips. rmedia prints a `note: skipped … folder(s) named …` message in
+  that case. Pass that folder directly to use its videos.
 
 #### Resolution
 

@@ -45,6 +45,7 @@ clips that copy most of the video; see the [Roadmap](roadmap.md). Start with the
 | [Build and release](operations/build-and-release.md) | CI, packaging, pinned FFmpeg, releasing |
 | [Windows owner checks](operations/windows-owner-checks.md) | Runbook: Windows hardware QA and SC-009 (gifsicle's quality cost) on real footage |
 | [Windows checks over SSH](operations/windows-owner-checks-ssh.md) | The same runbook for an SSH session into the Windows machine, and the checks that need the screen |
+| [Smart cut owner checks](operations/smart-cut-owner-checks.md) | Runbook for 0.4.0 on every platform: Linux, Windows and WebView2, Android, iPhone, a Reddit upload, real footage |
 | [Closing a session](operations/session-close.md) | Checklist for ending a development session: green CI, docs, numbering, Obsidian notes, push, handoff |
 | [Roadmap](roadmap.md) | What is done, next and planned; owner validation items |
 | [Release notes 0.1.0](releases/0.1.0.md) | What feature 001 delivers; known issues |

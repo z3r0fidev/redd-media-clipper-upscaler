@@ -19,17 +19,17 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 | 5 US3 Dry run | T040–T042 | 3/3 | done 2026-11-16 | self-review |
 | 6 US4 Manifests and parity | T043–T046 | 4/4 | done 2026-11-16 | self-review |
 | 7 US5 Desktop Smart mode and keyframe markers | T047–T053 | 7/7 | done 2026-11-16 | self-review; Xvfb checkpoint |
-| 8 Polish | T054–T059 | 5/6 | T059 open | self-review, no high or medium findings |
-| **Total** | | **58/59** | | |
+| 8 Polish | T054–T059 | 6/6 | done 2026-11-16 | self-review, senior-code-reviewer and security-auditor: no high; 3 mediums fixed |
+| **Total** | | **59/59** | | |
 
 ## Open
 
-- T059: the senior-code-reviewer and security-auditor passes over all 004 changes. Every
-  checkpoint so far was self-reviewed only, because agents run only when the owner asks.
+- T059 is done: both agent passes ran over all 004 changes at the end (the earlier checkpoints
+  were self-reviewed). Lows left: roadmap item 27.
 - The release: the version bump to 0.4.0 and the tag, following
   `docs/operations/build-and-release.md` › Cut a Release.
-- Owner checks (spike S1): smart mp4 playback in WebView2, on an Android phone and an iPhone,
-  and a Reddit upload. The desktop app's smart mode has not been run by hand on Windows.
+- Owner checks, all platforms: `docs/operations/smart-cut-owner-checks.md` (Linux and Windows
+  packages and desktop app, WebView2, Android, iPhone, a Reddit upload, real footage).
 
 ## Measured
 

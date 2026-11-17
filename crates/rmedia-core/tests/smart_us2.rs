@@ -139,11 +139,16 @@ async fn run_time_fallback() {
     let dir = tempfile::tempdir().unwrap();
     let reversed = private_copy(Fixture::SmartMp4, dir.path());
     rmedia_core::smart::test_hooks::reverse_parts_of(&reversed);
+    let failing = dir.path().join("failing.mp4");
+    std::fs::copy(fixture(Fixture::SmartMp4), &failing).unwrap();
+    rmedia_core::smart::test_hooks::fail_copy_of(&failing);
     for (src, end, reason, frames) in [
         // The picture shrinks at 4 s, inside the copied GOPs; the tail is the smaller size.
         (rmedia_testkit::res_change(), 6.72, FallbackReason::ParamsChanged, 85),
         // The parts joined in the wrong order.
         (reversed, 20.72, FallbackReason::SeamCheck, 435),
+        // T059 review: an ffmpeg step that fails (here the copy) falls back too, as FR-008 asks.
+        (failing, 20.72, FallbackReason::SeamCheck, 435),
     ] {
         let out = tempfile::tempdir().unwrap();
         let plan = plan_with_caps(&src, 3.32, end, smart_opts(out.path(), |_| {}), &caps).await;

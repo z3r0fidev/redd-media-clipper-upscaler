@@ -142,18 +142,34 @@ Owner checks still open: smart mp4 playback in WebView2, on an Android phone and
 a Reddit upload (spike S1 rows). The desktop app on Windows has not been run by hand with smart
 mode.
 
-## T059 self-review (2026-11-16)
+## T059 reviews (2026-11-16)
 
-A self-review of the 004 changes (`f286b44..HEAD`, 80 files in `crates/` and `apps/`), focused
-on process handling, files and the new IPC. The senior-code-reviewer and security-auditor passes
-were not run (agents run only when the owner asks); T059 stays open until they are.
+Three passes over the 004 changes (`f286b44..HEAD`, `crates/` and `apps/`): a self-review, then
+the senior-code-reviewer and security-auditor agents (asked for by the owner). No high findings.
+Every medium is fixed, with a test that failed first.
 
-| Area | Finding |
-|---|---|
-| Processes | Every smart step (head, copy, tail, audio, join, the seam decodes and the packet scan) is ffmpeg or ffprobe through `exec::process`, with the job's cancel token, argv only and `file:` paths. No new process kind |
-| Files | Parts and the concat list live in the job's journaled scratch folder under fixed names (`head`, `copy`, `tail`, `rest.av`, `list.txt`); no source name reaches the concat list. A failed seam check removes the temp file before the accurate redo; the output goes through the usual verify and no-clobber commit |
-| Desktop IPC | `keyframes` and `smart_plan` check `require_allowed` first; the request id is 1–64 chars; the cache key is the canonical path with size and mtime; a cancelled scan is not cached; `smart_plan` writes nothing |
-| Low | No cap on concurrent uncached `keyframes` scans: the page runs one at a time and cancels the previous, but a misbehaving page could start several whole-file ffprobe scans. Bounded by the page being the app's own |
-| Low | The seam check's packet scan uses `run_capture`'s 16 MiB limit, about 1.4 million packets: a smart clip longer than roughly 6.5 hours at 60 fps would fail with "tool output exceeded 16 MiB" instead of falling back. Far beyond the clips this tool targets |
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| R1 | A start or end up to 0.5 ms after a frame time took that frame, which accurate mode drops: 3.3204 s gave 135 frames where accurate gives 134 | Medium | `SLACK` 500 µs → 2 µs (ffprobe's rounding). `smart_us1::ends_just_after_a_frame_pick_the_same_frames_as_accurate` |
+| R2 | A head, copy, tail or join step that ffmpeg could not do failed the job instead of falling back (FR-008) | Medium | `exec/smart.rs` › `fall_back_on`: `ENGINE_FAILED` from a video step falls back with `seam_check` (strict mode: `SMART_UNAVAILABLE`); cancel, disk full and unwritable outputs stay errors. Test hook `fail_copy_of`, `smart_us2::run_time_fallback` |
+| R3 | The whole-file keyframe index stopped after its first 10-minute chunk when the file had no duration, without `truncated` | Medium | Reads on until a chunk holds nothing past its start. `smart_keyframes::chunked_reads_find_every_keyframe_once` (no-duration case) |
+| R4 | The previous range's bands stayed on screen while a new plan was pending | Low | `syncPlan` clears the summary when the range changes |
+| R5 | After a stop and a restart of the same range, the old call's "cancelled" showed as an error | Low | A sequence number per change replaces the key comparison. Two new vitest cases |
+| R6 | The CLI dry-run line parsed the notice's message text | Low | Uses `SmartSummary.fallback` |
+| R7 | Jobs whose keyframes could not be read were in the line's fallback count but not in `SmartTotals` | Low | `SmartTotals.unreadable` (absent when 0); the line lists `keyframes unreadable N` |
+| S1 | `keyframes` skipped the planner's playlist refusal (`.m3u8`, `.ffconcat`, …) | Low | `probe::is_playlist`, used by the planner and `keyframes` |
+| S2 | Unchecked time arithmetic on absurd times from a hostile file (wraps in release) | Low | `Ts` `+`, `-` and `saturating_sub` saturate; parsed times are limited to ±1e12 s |
+| S3 | The seam check's frame size product could overflow on a crafted size | Low | `checked_mul`; an overflow falls back with `params_changed` |
+| S4 | A `keyframes` request's entry stayed registered if the command's future was dropped | Low | A drop guard removes it |
+| — | `planOptions` spread can mask a queue default with an explicit `mode: undefined`; progress sits in the verify slice during a run-time fallback re-encode; a keyframe scan restarts when the player's mode flickers from error to ok; no free-space check for a smart job's ~2× scratch; no cap on concurrent uncached scans; the 16 MiB packet-scan limit on multi-hour clips | Low | Recorded, not fixed: `docs/roadmap.md` › Pending |
 
-No high or medium findings.
+Checked and holding (both agents): argv only with `file:` paths and the protocol whitelist on
+every input; the concat list holds only fixed part names; the scratch folder is private,
+journaled and removed on every path; `smart_plan` cannot redirect writes (output folder forced,
+templates validated); manifests accept only the documented values; the earlier fixes `ac69d46`,
+`8b111a8` and `abc204c` hold.
+
+Issue [#37](https://github.com/z3r0fidev/redd-media-clipper-upscaler/issues/37) was fixed in the
+same change: folder scans skip `gifs/` (CLI), and the desktop scan now skips all three output
+folders (it skipped none). Tests: `scan::folder_scans_skip_every_default_output_folder`,
+`bridge::folder_scans_skip_the_output_folders`; both failed first.

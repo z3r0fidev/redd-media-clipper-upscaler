@@ -31,7 +31,7 @@ redone in accurate mode.
 | `no_full_gop` | the range holds no complete group of pictures (it is too short) | planning |
 | `open_gop` | the video has open GOPs (frames that depend on the previous GOP) | planning |
 | `params_changed` | the video's size or pixel format changes at a cut point | after the join |
-| `seam_check` | the joined clip failed the seam check | after the join |
+| `seam_check` | the joined clip failed the seam check | after the join, or when a head, copy, tail or join step fails |
 
 What to do about each one: [Troubleshooting › Smart cut](../user/troubleshooting.md#smart-cut).
 The JSON shapes: [JSON Output › Smart cut](../api/json-output.md#smart-cut).

@@ -47,6 +47,11 @@ pub struct ScanOptions {
     pub exclude_dir_names: Vec<String>,
 }
 
+/// The folders rmedia writes to by default: `clip` → `clips/`, `upscale` → `upscaled/`, `gif` →
+/// `gifs/` (a Reddit MP4 there is an `.mp4`). Folder scans in the CLI and the desktop app never
+/// descend into them, so no command picks up another's outputs (issue #37).
+pub const DEFAULT_OUTPUT_DIRS: [&str; 3] = ["clips", "upscaled", "gifs"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]

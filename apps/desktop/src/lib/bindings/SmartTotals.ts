@@ -16,4 +16,9 @@ fallback: { [key in FallbackReason]?: number },
 /**
  * Jobs that upscale or make a GIF, so smart does not apply.
  */
-not_applied: number, };
+not_applied: number, 
+/**
+ * Jobs cut in accurate mode because their keyframes could not be read (no reason code).
+ * Absent when zero.
+ */
+unreadable?: number, };

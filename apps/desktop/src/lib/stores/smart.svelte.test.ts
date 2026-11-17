@@ -84,6 +84,30 @@ describe("plan", () => {
     expect(smart.planError).toBe("");
   });
 
+  it("drops the old range's parts as soon as the range changes (T059 review)", async () => {
+    syncPlan("/v/a.mp4", { start: 4, end: 8 }, {});
+    await vi.advanceTimersByTimeAsync(300);
+    calls.plans[0]!.resolve({ summary: summary(100), notices: [] });
+    await vi.runAllTimersAsync();
+    expect(smart.summary?.copy?.frames).toBe(100);
+    syncPlan("/v/a.mp4", { start: 4, end: 9 }, {});
+    expect(smart.summary).toBeNull();
+  });
+
+  it("ignores the old plan's cancel after a stop and a restart of the same range", async () => {
+    syncPlan("/v/a.mp4", { start: 4, end: 8 }, {});
+    await vi.advanceTimersByTimeAsync(300);
+    stopPlan();
+    syncPlan("/v/a.mp4", { start: 4, end: 8 }, {});
+    await vi.advanceTimersByTimeAsync(300);
+    calls.plans[0]!.reject("cancelled: a newer smart plan replaced this one");
+    await vi.runAllTimersAsync();
+    expect(smart.planError).toBe("");
+    calls.plans[1]!.resolve({ summary: summary(125), notices: [] });
+    await vi.runAllTimersAsync();
+    expect(smart.summary?.copy?.frames).toBe(125);
+  });
+
   it("shows an error from the newest plan, and stopping clears it", async () => {
     syncPlan("/v/a.mp4", { start: 1, end: 3 }, { smart_fallback: false });
     await vi.advanceTimersByTimeAsync(300);

@@ -156,7 +156,7 @@ re-encodes) and outputs are always `.mp4`.
   `-o` and several sources: `{source}/{source}_{index:03}_{name-or-range}_{preset}.mp4`.
 - A clip from 0 to the end of the video is a whole-video upscale: `{source}_{preset}.mp4` in
   `upscaled/`.
-- Folder scans skip both `clips/` and `upscaled/` (or the `-o` folder).
+- Folder scans skip `clips/`, `upscaled/` and `gifs/` (or the `-o` folder).
 
 ```bash
 rmedia clip land.mp4 -s 0 -e 4 --upscale --preset reddit-feed-45
@@ -199,9 +199,10 @@ Implemented in `commands/scan.rs` › `expand_inputs`:
 - rmedia's own outputs are excluded from folder scans so re-runs never clip earlier clips:
   - With `-o DIR`, that folder is excluded by real path. If `-o` is one of the scanned folders,
     the command fails with exit 3.
-  - Every folder named `clips` or `upscaled` (rmedia's default output folders, case-insensitive)
-    is skipped, with or without `-o`, and a note is printed. Pass such a folder directly to use
-    its videos.
+  - Every folder named `clips`, `upscaled` or `gifs` (rmedia's default output folders,
+    case-insensitive; `gifs` from 0.4.0, issue #37) is skipped, with or without `-o`, and a note
+    is printed: `note: skipped N folder(s) named "clips" or "upscaled" or "gifs" …`. Pass such a
+    folder directly to use its videos.
 - A video reached twice (as a file and through a folder, for example) is clipped once.
 - If no inputs remain: `error: no input videos (folders contained no videos)`, exit 3.
 

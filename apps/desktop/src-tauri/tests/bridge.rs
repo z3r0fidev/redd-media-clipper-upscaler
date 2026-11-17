@@ -744,3 +744,22 @@ async fn smart_plan_matches_the_cli() {
     assert!(older.unwrap_err().contains("cancelled"));
     assert_eq!(newer.unwrap().summary.unwrap().copy.map(|p| p.frames), Some(400));
 }
+
+/// Issue #37: the app's folder scan never offers rmedia's own output folders (`clips/`,
+/// `upscaled/`, `gifs/`) as sources, whatever the page sends.
+#[tokio::test]
+async fn folder_scans_skip_the_output_folders() {
+    require_ffmpeg!();
+    let d = tempfile::tempdir().unwrap();
+    let lib = d.path().join("lib");
+    for dir in ["", "clips", "upscaled", "gifs", "Gifs/deeper"] {
+        std::fs::create_dir_all(lib.join(dir)).unwrap();
+        std::fs::copy(fixture(Fixture::Gop50Mp4), lib.join(dir).join("v.mp4")).unwrap();
+    }
+    let s = state(d.path()).await;
+    s.allow(std::slice::from_ref(&lib));
+    let r = s.scan("s1".into(), vec![lib.clone()], Default::default(), &|_| {}).await.unwrap();
+    let found: Vec<_> = r.videos.iter().map(|v| v.path.strip_prefix(&lib).unwrap().to_path_buf()).collect();
+    assert_eq!(found, [PathBuf::from("v.mp4")]);
+    assert_eq!(r.excluded_named.len(), 4, "{:?}", r.excluded_named);
+}

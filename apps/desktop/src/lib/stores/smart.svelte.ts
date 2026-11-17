@@ -48,40 +48,49 @@ export async function loadKeyframes(path: string | null): Promise<void> {
 
 let planKey = "";
 let planTimer: ReturnType<typeof setTimeout> | undefined;
+/** Bumped by every change and stop: an answer from an older call is never shown. */
+let planSeq = 0;
 
 /** Keeps the smart plan in step with the source, range and options (250 ms debounce). */
 export function syncPlan(path: string, range: RangeArg, options: PartialOptions): void {
   const key = JSON.stringify([path, range, options]);
   if (key === planKey) return;
   planKey = key;
+  planSeq++;
+  // The old range's parts would be drawn over the new range until the answer comes.
+  smart.summary = null;
+  smart.notices = [];
+  smart.planError = "";
   clearTimeout(planTimer);
-  planTimer = setTimeout(() => void plan(path, range, options, key), 250);
+  planTimer = setTimeout(() => void plan(path, range, options), 250);
 }
 
 /** Stops following the range (smart not selected, no range, or another view). */
 export function stopPlan(): void {
   clearTimeout(planTimer);
   planKey = "";
+  planSeq++;
   smart.summary = null;
   smart.notices = [];
   smart.planning = false;
   smart.planError = "";
 }
 
-async function plan(path: string, range: RangeArg, options: PartialOptions, key: string): Promise<void> {
+async function plan(path: string, range: RangeArg, options: PartialOptions): Promise<void> {
+  const seq = planSeq;
   smart.planning = true;
   try {
     const r = await api.smartPlan(path, range, options);
-    if (planKey !== key) return;
+    if (seq !== planSeq) return;
     smart.summary = r.summary;
     smart.notices = r.notices;
     smart.planError = "";
   } catch (e) {
-    if (planKey !== key) return;
+    if (seq !== planSeq) return;
     smart.summary = null;
     smart.notices = [];
     smart.planError = errorText(e);
   } finally {
-    if (planKey === key) smart.planning = false;
+    if (seq === planSeq) smart.planning = false;
   }
 }

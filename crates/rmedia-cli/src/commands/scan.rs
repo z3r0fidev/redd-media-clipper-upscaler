@@ -118,8 +118,7 @@ async fn scan_with_options(
     }
 }
 
-/// The folders rmedia writes to by default (`clip` → `clips/`, `upscale` → `upscaled/`).
-pub const DEFAULT_OUTPUT_DIRS: [&str; 2] = ["clips", "upscaled"];
+pub use rmedia_core::discover::DEFAULT_OUTPUT_DIRS;
 
 /// Expands `clip` inputs: files as given, folders scanned, plus `--inputs-from` (file or stdin).
 pub async fn expand_inputs(

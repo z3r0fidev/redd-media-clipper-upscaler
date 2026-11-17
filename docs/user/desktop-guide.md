@@ -58,6 +58,8 @@ The search skips:
 * partial downloads and temporary files (such as `.part`, `.crdownload`, `.tmp`);
 * system, trash and thumbnail folders (for example `$RECYCLE.BIN`, `.Trashes`, `@eaDir`);
 * symbolic links;
+* rmedia's own output folders, `clips`, `upscaled` and `gifs` (from 0.4.0), so a second search
+  never adds your clips, upscales or Reddit MP4s as new sources;
 * on Windows, online-only cloud files (such as OneDrive files that are not downloaded), because
   reading them would download them.
 

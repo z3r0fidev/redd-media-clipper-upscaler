@@ -136,7 +136,7 @@ impl Output {
                 gif_lines(&g.gif);
             }
             if let Some(s) = &j.smart {
-                println!("     {}", smart_line(s, &j.notices));
+                println!("     {}", smart_line(s));
             }
             // A smart fallback is shown by the line above.
             let fallback = |w: &String| {
@@ -167,7 +167,7 @@ impl Output {
         if let Some(t) = &plan.smart
             && plan.jobs.len() > 1
         {
-            println!("{}", smart_totals_line(t, &plan.jobs));
+            println!("{}", smart_totals_line(t));
         }
         let skipped = plan.jobs.iter().filter(|j| j.disposition != Disposition::Run).count();
         let noun = if plan.jobs.iter().all(|j| j.kind() == "clip") { "clip(s)" } else { "job(s)" };
@@ -479,14 +479,9 @@ fn job_doc(j: &PlannedJob) -> Value {
 
 /// `smart: head 0.680 s (17 fr) re-encoded · copy 16.000 s (400 fr) · … · 92% copied`, or
 /// `smart → accurate: <reason>` (contracts/cli.md).
-fn smart_line(s: &rmedia_core::plan::SmartSummary, notices: &[rmedia_core::plan::Notice]) -> String {
+fn smart_line(s: &rmedia_core::plan::SmartSummary) -> String {
     let Some(copy) = s.copy else {
-        let why = notices
-            .iter()
-            .find(|n| n.code == rmedia_core::error::IssueCode::SmartFallback)
-            .and_then(|n| n.message.strip_prefix("smart cut not possible: "))
-            .and_then(|m| m.strip_suffix("; cutting in accurate mode"))
-            .unwrap_or("smart cut not possible");
+        let why = s.fallback.map_or("the keyframes could not be read", |r| r.message());
         return format!("smart → accurate: {why}");
     };
     let part = |p: rmedia_core::smart::Part| {
@@ -505,9 +500,12 @@ fn smart_line(s: &rmedia_core::plan::SmartSummary, notices: &[rmedia_core::plan:
 }
 
 /// `smart: 3 jobs; fallback: 2 (open_gop 1, vfr 1)` (contracts/cli.md).
-fn smart_totals_line(t: &rmedia_core::plan::SmartTotals, jobs: &[PlannedJob]) -> String {
-    let fallback = jobs.iter().filter(|j| j.smart.as_ref().is_some_and(|s| s.copy.is_none())).count();
+fn smart_totals_line(t: &rmedia_core::plan::SmartTotals) -> String {
+    let fallback = t.fallback.values().sum::<usize>() + t.unreadable;
     let mut reasons: Vec<String> = t.fallback.iter().map(|(r, n)| format!("{r} {n}")).collect();
+    if t.unreadable > 0 {
+        reasons.push(format!("keyframes unreadable {}", t.unreadable));
+    }
     reasons.sort();
     let mut line = format!("smart: {} jobs; fallback: {fallback}", t.smart);
     if !reasons.is_empty() {
