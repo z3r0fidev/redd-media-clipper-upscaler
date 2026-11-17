@@ -116,7 +116,12 @@ fn folder_scans_skip_every_default_output_folder() {
         .unwrap()
         .iter()
         .map(|j| {
-            Path::new(j["source"].as_str().unwrap()).strip_prefix(d.path()).unwrap().display().to_string()
+            // `/` on every OS, so one expected list works on Windows too.
+            let rel = Path::new(j["source"].as_str().unwrap()).strip_prefix(d.path()).unwrap().to_path_buf();
+            rel.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
         })
         .collect();
     sources.sort();
