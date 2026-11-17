@@ -138,6 +138,10 @@ green: `smart_keyframes` 4, `smart_us1` 6, `smart_us2` 4, `smart_us4` 4 passed, 
 passed; benches SC-005 25% (accurate 53.6 s, smart 13.4 s) and SC-007 981 ms. The Linux CI job
 measured SC-005 25% (62.8 s / 15.6 s) and SC-007 400 ms.
 
+CI run 44027402281 (commit `4d5d783`): the Windows job's SC-007 took 2.14 s (SC-005 18%), over
+the 2 s bar, while Linux took 412 ms. Like SC-003's scan, SC-007 is now reported but not
+asserted on the Windows CI runners; the bar stays asserted everywhere else.
+
 Owner checks still open: smart mp4 playback in WebView2, on an Android phone and an iPhone, and
 a Reddit upload (spike S1 rows). The desktop app on Windows has not been run by hand with smart
 mode.

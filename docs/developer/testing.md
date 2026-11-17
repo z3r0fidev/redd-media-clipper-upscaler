@@ -90,7 +90,7 @@ directly with the source's) and `stream_starts`.
 | `crates/rmedia-core/tests/cancel.rs` (`cancelling_a_smart_job_*`) | Cancel at each stage stops within 2 s with no temp files or processes left (SC-008) |
 | `crates/rmedia-core/tests/snapshots_ffargs.rs` (`smart_*`) | The head, copy, tail, audio and join argv, pinned with insta, including a TS source and colour, SAR and rotation |
 | `crates/rmedia-cli/tests/clip_single.rs`, `batch.rs`, `contract_clip_json.rs` (`smart_*`) | The human result and dry-run lines, the exit codes with `--no-smart-fallback`, and the JSON plan contract |
-| `crates/rmedia-core/tests/bench.rs` | `bench_sc005_smart_vs_accurate` (speed against accurate mode) and `bench_sc007_keyframes_of_a_10_minute_source` (the desktop markers' index under 2 s; 126 ms measured) |
+| `crates/rmedia-core/tests/bench.rs` | `bench_sc005_smart_vs_accurate` (speed against accurate mode) and `bench_sc007_keyframes_of_a_10_minute_source` (the desktop markers' index under 2 s; 126 ms measured; reported, not asserted, on the Windows CI runners, which took 0.5–2.1 s) |
 | `apps/desktop/src-tauri/tests/bridge.rs` (`keyframes_*`, `smart_plan_*`, `smart_parity`) | The keyframe cache and cancel, `smart_plan` equal to the CLI's dry run, desktop/CLI parity of a smart queue |
 | `apps/desktop/src/lib/stores/smart.test.ts`, `smart.svelte.test.ts` | Timeline ticks and bands, the status line, the mode a source runs in, the run panel label; the keyframe and plan state with stale answers dropped |
 
