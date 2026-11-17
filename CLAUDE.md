@@ -23,7 +23,7 @@ for Reddit (003). Spec-driven via Spec Kit.
   reasons, and US4: smart mode in JSON/CSV manifests and desktop exports, with CLI = desktop
   outputs, and US5: the desktop app's Smart mode, keyframe ticks and head/copy/tail bands; `research.md` R3/R5/R7 record what changed). Security L1 is done too. Phase 8 is done:
   docs, validation and T059's reviews (no high; mediums fixed; `specs/004-smart-cut/progress.md`).
-  Next: the 0.4.0 tag build, then the owner checks in `docs/operations/smart-cut-owner-checks.md`
+  Tag v0.4.0 is on 092171f (release.yml run 44075993817, unsigned, not published). Next: the owner checks in `docs/operations/smart-cut-owner-checks.md`
   (all platforms) before publishing the release (`docs/releases/0.4.0.md`). Run tests with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to
   `binaries/rmedia-ff*-x86_64-unknown-linux-gnu` (the system ffmpeg lacks libvmaf).
 - Session close: follow `docs/operations/session-close.md`.

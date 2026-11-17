@@ -29,9 +29,14 @@ Use the artifacts of the `release.yml` run for the tag `v0.4.0`:
 | Linux | `rmedia-x86_64-unknown-linux-gnu` | `.deb`, `.AppImage`, `rmedia-cli-v0.4.0-x86_64-unknown-linux-gnu.tar.gz` |
 | Windows | `rmedia-x86_64-pc-windows-msvc` | NSIS `…_x64-setup.exe`, `.msi`, `rmedia-cli-v0.4.0-x86_64-pc-windows-msvc.zip` |
 
-The run id, artifact ids and digests are recorded in
-[`docs/releases/0.4.0.md`](../releases/0.4.0.md) once the tag build has finished. Check the
-digest after downloading (step 2).
+Tag build: `release.yml` run
+[44075993817](https://github.com/z3r0fidev/redd-media-clipper-upscaler/actions/runs/44075993817)
+(tag `v0.4.0` on `092171f`). Check the digest after downloading (step 2):
+
+| Artifact | Id | sha256 of the artifact zip |
+|---|---|---|
+| `rmedia-x86_64-unknown-linux-gnu` | 14326876150 | `c946dd4442552930e3d9ddc1fb3184d53f00c1deb16eed215efa952205ec5a85` |
+| `rmedia-x86_64-pc-windows-msvc` | 14327605545 | `cb0e1975a75fdfbd1dc67c75fef41cee223e90f41b58d8939d376b3323519359` |
 
 ## 1. The Seam Checks in Brief
 
