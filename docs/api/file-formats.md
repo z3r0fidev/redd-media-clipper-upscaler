@@ -127,7 +127,8 @@ A clip with neither `end` nor `duration` runs to the end of the video.
 
 | Key | Values | Notes |
 |---|---|---|
-| `mode` | `"fast"` \| `"accurate"` | |
+| `mode` | `"fast"` \| `"accurate"` \| `"smart"` | `smart` added in 0.4.0 ([Smart cut in manifests](#smart-cut-in-manifests)) |
+| `smart_fallback` | boolean | 0.4.0. Default `true`: a smart job that cannot be smart-cut runs in accurate mode. `false` makes that an error (strict mode) |
 | `output_dir` | string | Relative folders resolve against the manifest's folder |
 | `name_template` | string | See [Name templates](#name-templates) |
 | `container` | string | Output extension; a leading `.` is ignored |
@@ -199,6 +200,26 @@ search; `soft` alone sets `hard` too). A video without `clips` and GIF on is one
 job. `container` is ignored for GIF jobs (`format` decides). `gif` with `upscale` is one GIF job;
 the upscale is skipped with a note.
 
+### Smart Cut in Manifests
+
+Added in 0.4.0 (feature 004). `mode: "smart"` and `smart_fallback` work at all three levels
+(`defaults`, a video's `options`, a clip's `options`), layered like every other option: the clip
+beats the video, which beats the defaults.
+
+```json
+{"version":1,
+ "defaults":{"mode":"smart","output_dir":"clips"},
+ "videos":[
+   {"input":"match.mp4","clips":[
+     {"start":"3.32","end":"20.72"},
+     {"start":"61","end":"+30","options":{"smart_fallback":false}}]},
+   {"input":"phone.mp4","options":{"mode":"accurate"},"clips":[{"start":0,"end":5}]}]}
+```
+
+- A job that also upscales or makes a GIF is re-encoded anyway: it runs as accurate with a
+  `SMART_NOT_APPLIED` notice.
+- Manifests written for 0.3.0 read exactly as before; nothing about them changes.
+
 ### Strictness and Errors
 
 - Unknown fields are rejected at every level (`deny_unknown_fields`), for example
@@ -247,7 +268,8 @@ match13.mp4,12:00,end,,,accurate,
 | `end` | No | Time, `end`, or `+DURATION` |
 | `duration` | No | Time; a leading `+` is optional; not together with `end` |
 | `name` | No | Clip name |
-| `mode` | No | `fast` \| `accurate` (case-insensitive) |
+| `mode` | No | `fast` \| `accurate` \| `smart` (case-insensitive; `smart` added in 0.4.0) |
+| `smart_fallback` | No | `true` \| `false` (case-insensitive), or empty for the default (`true`). 0.4.0 |
 | `output` | No | Output folder for this clip (relative → manifest's folder) |
 | `upscale_preset` | No | Preset id, or `off` to turn upscaling off for the row (feature 002) |
 | `upscale_reframe`, `upscale_tier`, `upscale_hdr`, `upscale_motion` | No | Same words as the JSON `upscale` object (case-insensitive) |
@@ -270,11 +292,14 @@ match13.mp4,12:00,end,,,accurate,
 - Errors are reported as `<file>:<line>: <reason>`, all rows at once. Messages include
   `unknown column "x" (allowed: …)`, `column "x" appears more than once`,
   `missing required column "start"`, `input is empty`, `start: invalid time …`,
-  `give either end or duration, not both`, `mode must be fast or accurate, not "slow"`, and
+  `give either end or duration, not both`, `mode must be fast, accurate or smart, not "slow"`,
+`smart_fallback must be true or false, not "maybe"`, and
   `malformed row: …`.
 
 **CSV export** from the desktop app resolves each clip's options (defaults < video < clip) and
-writes `mode` and `output` on every row. When some row is upscaled, the six `upscale_*` columns are
+writes `mode` and `output` on every row. When some row is strict (`smart_fallback: false`), a
+`smart_fallback` column follows `mode`, filled on every row; otherwise it is left out, so 0.3.0
+exports keep their header. When some row is upscaled, the six `upscale_*` columns are
 added and filled in full (`off` for plain rows), so the file reads the same with any CLI defaults.
 Other options are not written.
 
@@ -404,7 +429,7 @@ built-in defaults  <  CLI flags  <  manifest "defaults"  <  videos[].options  < 
   audio `all`, subtitles `all`.
 - `rmedia batch` uses only the flags that were actually given as defaults; the manifest's own
   values win (unit test `cli_options_are_defaults_below_the_manifest`).
-- For CSV, CLI flags are the defaults and each row may set `mode` and `output`.
+- For CSV, CLI flags are the defaults and each row may set `mode`, `smart_fallback` and `output`.
 - In the desktop app, **Settings** defaults sit where CLI flags do, below the queue's manifest
   `defaults` (`ops::queue_request`). A `.json` export writes the same merged `defaults`, so
   `rmedia batch` resolves identical options.

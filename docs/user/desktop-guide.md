@@ -156,6 +156,28 @@ are cleared. This lets you cut a video into back-to-back clips quickly.
 
 **Add clip** is unavailable until an In point is set.
 
+### Smart mode
+
+Added in 0.4.0. When the clip view is open, small ticks along the top of the timeline mark the video's
+keyframes. They load in the background, and you can work while they do; a video with too many to
+show says so under the timeline.
+
+When the video's mode is **Smart** (in its queue options, or as the default in Settings), the
+range you mark is drawn on the timeline in two colours: green for the part that is copied
+unchanged, and orange for the short parts at each end that are encoded again. The line under the
+timeline says, for example:
+
+```text
+Smart: 92% copied · 0.68 s re-encoded at the start · 0.72 s at the end
+```
+
+If the video cannot be smart-cut, the line says why in orange, for example **Smart cut not
+possible: the video has open GOPs (frames that depend on the previous GOP); cutting in accurate
+mode**, and the clip will be cut in accurate mode. See
+[Smart cut not possible](troubleshooting.md#smart-cut-not-possible-reason-cutting-in-accurate-mode).
+
+Tip: an In or Out point on a keyframe tick needs no re-encoding at that end.
+
 ## Work With the Queue
 
 The queue lists each video that has clips, with one row per clip. The header shows the total
@@ -188,11 +210,15 @@ Select it to show three lists:
 
 | Option | Choices | Notes |
 |---|---|---|
-| Mode | **Default mode**, **Fast (no re-encode)**, **Frame-accurate** | **Default mode** uses the mode set in [Settings](#change-settings). See [Fast mode and accurate mode](getting-started.md#fast-mode-and-accurate-mode). |
+| Mode | **Default mode**, **Fast (no re-encode)**, **Frame-accurate**, **Smart (frame-exact, copies most of the video)** | **Default mode** uses the mode set in [Settings](#change-settings). See [Fast mode and accurate mode](getting-started.md#fast-mode-and-accurate-mode) and [Smart mode](#smart-mode). With Smart, a tick box **Only smart (no fallback)** appears. |
 | Audio | **All audio**, **No audio**, or one track, for example **Track 2 (eng) · aac**. When the video has two or more audio tracks, a tick box per track is shown under the list, so you can keep several, for example tracks 1 and 3 (the list then reads **Tracks 1, 3**). | Keep only the tracks you want, such as the main mix and a commentary track. Ticking every track is the same as **All audio**, and unticking them all is **No audio**. The command line's `--audio 1,3` and a manifest's `"audio": [1, 3]` do the same. |
 | Subtitles | **Keep subtitles**, **No subtitles** | Some output formats cannot store some subtitle types. rmedia warns you when subtitles are dropped. |
 
-These options apply to every clip of that video. Select **×** next to the video name to remove the
+These options apply to every clip of that video. With Smart, each clip row also has a **Smart**
+button: select it to make it **Smart only** for that clip (the clip fails instead of being cut in
+accurate mode), and again to go back.
+
+Select **×** next to the video name to remove the
 video and all its clips from the queue.
 
 ### Import a clip list
@@ -254,6 +280,8 @@ When the run ends, the panel shows **Finished** and a summary such as **3 succee
 Next to each clip it shows:
 
 * **Starts on the keyframe at … s** for a fast-mode clip that starts earlier than the time you chose;
+* **Smart · 92% copied** for a smart clip, or **Accurate (smart fallback: open_gop)** when it was
+  cut in accurate mode instead;
 * the reason for a skipped clip, for example `output already exists`;
 * the error for a failed clip;
 * any warnings, for example a dropped subtitle stream.
@@ -419,7 +447,7 @@ override them.
 
 | Setting | Choices | Default |
 |---|---|---|
-| **Mode** | **Fast (no re-encode)**, **Frame-accurate** | Fast |
+| **Mode** | **Fast (no re-encode)**, **Frame-accurate**, **Smart (frame-exact, copies most of the video)** | Fast |
 | **Output folder** | Select **Choose…** to pick a folder. Select **Reset** to go back to the default. | **“clips” next to each video** |
 | **If the file exists** | **Skip it**, **Add a number** (save as `name_1`, `name_2`, …), **Replace it** | Skip it |
 | **File names** | A naming pattern. Leave it empty for the default. | `{source}_{index:03}_{name-or-range}.{ext}` |
@@ -434,7 +462,8 @@ override them.
 ### Video engine
 
 This section shows the FFmpeg program in use, where it came from (`bundled`, `config` or `path`),
-its version, and which formats accurate mode can write. Any problems are listed as text messages,
+its version, which formats accurate mode can write, and whether smart cut is available, for
+example **Smart cut: available (libx264)**. Any problems are listed as text messages,
 shown in red.
 
 * **Choose ffmpeg…** lets you choose a different FFmpeg program. The matching `ffprobe` program must

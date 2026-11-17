@@ -74,6 +74,7 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
 | `models` | object | Model file name → `ok` or `missing` |
 | `capability` | object, absent without the check | `checked_at` (RFC 3339 UTC), `fingerprint`, `demoted[]` (`{tier, error, at}`: tiers that failed after an automatic choice) |
 | `preset_problems` | string[] | User preset files that could not be used (`file: message`) |
+| `smart` | object | Added in 0.4.0: `{"available": true, "reason": null}`. `available` is `false` (with a `reason`) when the engine has no `libx264`; smart jobs then fall back to accurate mode. It does not change `ok`. |
 | `gif` | object | Added in 0.3.0: `gif` and `mp4` (booleans: the built-in GIF engine and the Reddit MP4 can run), `missing` (filters, muxers or encoders either lacks), `engines` (`[{name, path, source, version, ok, reason}]` for gifsicle and gifski) and `target_problems` (user GIF target files that could not be used). None of it changes `ok`. |
 
 ## `scan`
@@ -130,15 +131,16 @@ Real dry run (one fast clip, `argv` shown in full):
 | `id` | integer | 1-based, stable within the plan |
 | `source`, `output` | string | Absolute paths |
 | `status` | `"planned"` \| `"skip"` | `skip` adds `skip_reason` (for example `"output already exists"`) |
-| `mode` | `"fast"` \| `"accurate"` | |
+| `mode` | `"fast"` \| `"accurate"` \| `"smart"` | The mode the job will run in: a smart job that falls back while planning says `accurate` |
 | `requested` | `{start, end}` | `end` is resolved: an end past the video, or `end`, becomes the duration |
 | `predicted` | `{start, end}` | Fast mode only: the keyframe the clip will start on |
 | `warnings` | string[] | For example `end 00:00:40.000 is past the end of the video; clip ends at 00:00:30.000`, `accurate mode cannot write .avi; writing .mp4 instead (choose --container to override)` |
 | `argv` | string[] | The exact ffmpeg arguments, excluding the program; the last item is the temp file |
 | `kind` | `"upscale"` | Upscale jobs only (0.2.0). Clip jobs have no `kind` key and keep the shape above |
 | `upscale` | object | Upscale jobs only; see [Upscale jobs](#upscale-jobs) |
-| `cwd` | string | Upscale jobs only: the job's scratch folder. Upscale jobs omit `mode` and `predicted` |
-| `pipeline` | string[][] | AI-tier upscale jobs only: the three argvs of the pipeline, in order: ffmpeg #1 (decode and frame, raw RGB to stdout), `rmedia-sr` (the AI worker), ffmpeg #2 (raw frames on stdin, compose and encode). `argv` is the third |
+| `cwd` | string | Upscale jobs and smart clip jobs: the job's scratch folder. Upscale jobs omit `mode` and `predicted` |
+| `smart` | object | Clip jobs that asked for smart mode (0.4.0); see [Smart cut](#smart-cut) |
+| `pipeline` | string[][] | Smart clip jobs (0.4.0): the five argvs, head, copy, tail, audio and join (no audio step without audio). AI-tier upscale jobs: the three argvs of the pipeline, in order: ffmpeg #1 (decode and frame, raw RGB to stdout), `rmedia-sr` (the AI worker), ffmpeg #2 (raw frames on stdin, compose and encode). `argv` is the third |
 
 ### Upscale jobs
 
@@ -208,6 +210,60 @@ abridged (`argv`, `pipeline` omitted):
 | `estimate` | `from`: `search` (the budget search's prediction), `sample` (one sample, no budget) or `pending` (not sampled: `--no-sample`, `batch`). `bytes`, `lowered` (in ladder order), the predicted `settings`, and `mp4_bytes` (the "MP4 would be smaller" hint, targets with it) |
 | `notes` | Plain notes ("kept source width 1080", "--colors is ignored by gifski") |
 
+### Smart cut
+
+Added in 0.4.0. Every field is additive: a job that did not ask for smart mode has no `smart`
+key, and a plan with no such job has no `smart` totals. A smart clip job has `cwd` (its scratch
+folder; the join step reads `list.txt` from it), `pipeline` (head, copy, tail, audio and join, in
+order; `argv` is the join) and a `smart` block. Real dry run, abridged (`argv` and `pipeline`
+omitted):
+
+```json
+{"id":1,"source":"/work/src.mp4","output":"/work/clips/src_001_00-00-03.320_00-00-20.720.mp4",
+ "status":"planned","mode":"smart","requested":{"start":3.32,"end":20.72},"warnings":[],
+ "cwd":"/work/clips/.src_001_00-00-03.320_00-00-20.720.rmedia-6ba646246d79a2b7-1.d",
+ "smart":{"requested":true,"mode":"smart","strict":false,
+   "head":{"span":{"start":3.32,"end":4.0},"frames":17},
+   "copy":{"span":{"start":4.0,"end":20.0},"frames":400},
+   "tail":{"span":{"start":20.0,"end":20.72},"frames":18},
+   "copied_share":0.9195,"fallback":null}}
+```
+
+A fallback found while planning: the job runs as `accurate`, has no `cwd` or `pipeline`, and
+carries the reason as a warning, a `SMART_FALLBACK` notice and `smart.fallback`:
+
+```json
+{"id":1,"mode":"accurate","…":"…",
+ "warnings":["smart cut not possible: the video has open GOPs (frames that depend on the previous GOP); cutting in accurate mode"],
+ "notices":[{"code":"SMART_FALLBACK","detail":{"reason":"open_gop"},
+   "message":"smart cut not possible: the video has open GOPs (frames that depend on the previous GOP); cutting in accurate mode"}],
+ "smart":{"requested":true,"mode":"accurate","strict":false,"head":null,"copy":null,"tail":null,
+   "copied_share":null,"fallback":"open_gop"}}
+```
+
+| `smart` field | Notes |
+|---|---|
+| `requested` | Always `true` (the block is present only when smart was asked for) |
+| `mode` | `smart`, or `accurate` after a fallback |
+| `strict` | `true` with `--no-smart-fallback` or `smart_fallback: false` |
+| `head`, `tail` | `{span, frames}` re-encoded at each end, or `null` when the range starts or ends on a keyframe |
+| `copy` | `{span, frames}` stream-copied, or `null` after a fallback |
+| `copied_share` | Copied frames over all frames, 4 decimals; `null` after a fallback |
+| `fallback` | `null`, or one of `encoder_missing`, `codec`, `container`, `profile`, `pixel_format`, `interlaced`, `vfr`, `rotation`, `no_full_gop`, `open_gop`, `params_changed`, `seam_check` ([what each means](../user/troubleshooting.md#smart-cut-not-possible-reason-cutting-in-accurate-mode)) |
+
+The plan document gains `"smart":{"smart":2,"fallback":{"open_gop":1},"not_applied":0}`:
+`smart` counts the jobs that will be smart-cut, `fallback` the jobs that will run in accurate
+mode, by reason, and `not_applied` the smart jobs that upscale or make a GIF (they are
+re-encoded anyway; `SMART_NOT_APPLIED` notice).
+
+With `--no-smart-fallback`, a reason found while planning is an error issue and nothing runs
+(exit 3):
+
+```json
+{"severity":"error","code":"SMART_UNAVAILABLE","detail":{"reason":"open_gop"},
+ "message":"smart cut not possible: the video has open GOPs (frames that depend on the previous GOP)"}
+```
+
 ### `issues[]` and Errors
 
 When any issue has severity `error`, nothing runs (exit 3, or 4 when every error is
@@ -229,6 +285,7 @@ When any issue has severity `error`, nothing runs (exit 3, or 4 when every error
 | `code` | Error code (see [Error codes](#error-codes)) |
 | `file` + `line` | Clip lists, CSV manifests, JSON syntax errors |
 | `file` + `json_path` | JSON manifest semantic errors, for example `videos[0].clips[1]` |
+| `detail` | Structured facts, when the code has them: `SMART_UNAVAILABLE` has `{reason}` (0.4.0) |
 | (no location) | Requests from the command line, for example `end (00:00:10.000) is not after start (00:00:20.000)` or `source not found: /work/v/nope.mp4` (`SOURCE_MISSING`) |
 
 `run_id` is `""` when parsing failed before planning.
@@ -262,8 +319,8 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 | `run_started` | `run_id`, `total_jobs`, `total_media` | `total_media`: seconds of media to produce (jobs that will run) |
 | `job_started` | `job_id` | |
 | `job_progress` | `job_id`, `fraction` (0–1), `out_time`, `speed`?, `eta_ms`? | At most about 10 per second per job; the final block is always sent |
-| `job_warning` | `job_id`, `message`, `code`? | One per plan warning, at job start, and for warnings found while the job runs. `code` only for coded warnings (0.3.0: `OVER_RECOMMENDED`, `ENGINE_FALLBACK`, `TIMING_APPROXIMATE`, `LONG_RANGE`, `DISK_FULL`) |
-| `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs (0.2.0) and GIF jobs (0.3.0). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). GIF stages, in order and only those that apply: `analyze` (smart framing), `search` (with a budget), `palette`, `encode`, `optimise` (gifsicle), `verify`. `job_progress.fraction` covers the whole job, weighted across stages. Clip jobs emit none. |
+| `job_warning` | `job_id`, `message`, `code`? | One per plan warning, at job start, and for warnings found while the job runs. `code` only for coded warnings (0.3.0: `OVER_RECOMMENDED`, `ENGINE_FALLBACK`, `TIMING_APPROXIMATE`, `LONG_RANGE`, `DISK_FULL`; 0.4.0: `SMART_FALLBACK`, with `detail.reason`, also when a seam check or a parameter change turns a running smart job into an accurate one) |
+| `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs (0.2.0) and GIF jobs (0.3.0). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). GIF stages, in order and only those that apply: `analyze` (smart framing), `search` (with a budget), `palette`, `encode`, `optimise` (gifsicle), `verify`. `job_progress.fraction` covers the whole job, weighted across stages. Smart clip jobs (0.4.0): `head`, `copy`, `tail`, `audio`, `join`, `verify` (only those that apply); after a run-time fallback the job is redone in accurate mode. Other clip jobs emit none. |
 | `job_finished` | `job_id`, `outcome` | See below. Skipped jobs emit only this event. |
 | `run_progress` | `done`, `total`, `fraction`, `eta_ms`? | Weighted by media length. Throttled to about 4 per second, plus one after each finished job. `eta_ms` only when 2% < fraction < 100%. |
 | `summary` | `succeeded`, `skipped`, `failed`, `cancelled`, `exit_code`, `jobs[]` | **Always the last line**, also on cancel; a cancel before the run starts gives one with no jobs and `exit_code` 130 (0.3.0). This is the core's `run_finished` event, renamed by the CLI. |
@@ -274,13 +331,23 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 |---|---|
 | `succeeded` | `output` (path actually written; may differ under `rename`) and `measure` (`clip` or `upscale`, added in 0.2.0; `gif`, added in 0.3.0), plus the fields for that measure below |
 | `skipped` | `reason`: `output already exists`, or `output appeared while the clip was being made` |
-| `failed` | `error` `{code, message, stderr_tail?, detail?}` (`detail` only for `BUDGET_UNREACHABLE`, 0.3.0) |
+| `failed` | `error` `{code, message, stderr_tail?, detail?}` (`detail` only for `BUDGET_UNREACHABLE`, 0.3.0, and `SMART_UNAVAILABLE`, `{reason}`, 0.4.0) |
 | `cancelled` | — |
 
 `summary.jobs[]` items have `id`, `source`, `output`, `requested`, plus the outcome fields.
 
 **`measure: "clip"`** adds `actual` `{start,end}` and `adjusted` (true when start or end differ
-from the request by more than 50 ms). These two keys are unchanged from 0.1.0.
+from the request by more than 50 ms). These two keys are unchanged from 0.1.0. A job that asked
+for smart mode (0.4.0) also has `smart`:
+
+```json
+{"status":"succeeded","measure":"clip","actual":{"start":3.32,"end":20.72},"adjusted":false,
+ "smart":{"mode_used":"smart","copied_frames":400,"reencoded_frames":35,"copied_share":0.9195,
+          "fallback":null}}
+```
+
+After a fallback: `"mode_used":"accurate","copied_frames":0,"reencoded_frames":<all>,
+"copied_share":0.0` and `fallback` set to the reason.
 
 **`measure: "gif"`** (0.3.0) adds `span`, `format`, `bytes`, `width`, `height`, `fps`, `timing`,
 `colours`, `dither` and `lossy` (built-in engine only; otherwise the keys are absent), `engine`, `optimiser` (bool:
@@ -368,6 +435,11 @@ New in 0.3.0: `TARGET_UNKNOWN` (error, exit 3), `BUDGET_UNREACHABLE` (error: exi
 `{min_bytes}`), and the warnings `ENGINE_FALLBACK` (an optional engine is missing; the built-in
 one is used), `OVER_RECOMMENDED`, `TIMING_APPROXIMATE` and `LONG_RANGE`. `ENGINE_FAILED` errors
 name the tool (`gifsicle failed: …`). `job_warning` events carry the `code` when there is one.
+
+New in 0.4.0: `SMART_FALLBACK` (warning and notice: a smart job runs in accurate mode, with
+`detail.reason`), `SMART_UNAVAILABLE` (error with `--no-smart-fallback`: exit 3 at plan time, or
+a failed job when the seam check fails) and `SMART_NOT_APPLIED` (notice: smart was asked for an
+upscale or GIF job).
 
 ## `rmedia gif --list-targets --json`
 

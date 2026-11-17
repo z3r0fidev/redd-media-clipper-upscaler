@@ -7,6 +7,9 @@ Cut clips from videos on **Linux and Windows**, from the command line or a deskt
 - **Folders** are scanned for real videos (non-videos, cover art and partial downloads are skipped).
 - **Fast** mode cuts without re-encoding (instant, lossless, starts on the keyframe at or before
   your start time and tells you so). **Accurate** mode re-encodes and is frame-exact.
+  **Smart** mode (0.4.0, in development) is frame-exact too, but copies the middle of the clip
+  and re-encodes only the ends: about four times faster than accurate on long H.264 clips, with
+  the source's quality in between. Other videos fall back to accurate mode with a reason.
 - Source files are never modified; existing outputs are never overwritten unless you ask.
 
 **Phone-ready upscaling** (0.2.0, tag `v0.2.0`): `rmedia upscale` makes a video fill a phone
@@ -90,6 +93,10 @@ rmedia upscale --list-presets
 rmedia upscale talk.mp4 --preset reddit-916 --reframe smart --dry-run   # shots, crop, tier, estimates
 rmedia clip game.mkv -s 1:30 -d 20 --upscale   # cut and upscale in one pass
 rmedia doctor --recheck            # which tiers this machine can run (CPU, GPU, AI)
+
+# frame-exact and quick (0.4.0): copies the middle, re-encodes only the ends
+rmedia clip game.mp4 -s 1:30.12 -e 2:45.8 --mode smart
+rmedia clip game.mp4 -s 1:30.12 -e 2:45.8 --mode smart --dry-run   # how much is copied
 
 # GIFs for Reddit (0.3.0)
 rmedia gif clip.mp4                # writes gifs/clip_reddit-post.gif, under 8 MB

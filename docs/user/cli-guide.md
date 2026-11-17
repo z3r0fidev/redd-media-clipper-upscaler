@@ -76,8 +76,38 @@ If the end time is past the end of the video, rmedia cuts to the end and warns y
 warning: end 00:01:30.000 is past the end of the video; clip ends at 00:01:00.000
 ```
 
-Choose fast or accurate mode with `--mode fast` (default) or `--mode accurate`. See
+Choose the mode with `--mode fast` (default), `--mode accurate` or `--mode smart`. See
 [Fast mode and accurate mode](getting-started.md#fast-mode-and-accurate-mode).
+
+### Make an Exact Clip Quickly With Smart Mode
+
+`--mode smart` (0.4.0) cuts on the exact frames you chose but copies the middle of the clip, so
+it is much quicker than accurate mode on a long clip:
+
+```bash
+rmedia clip match.mp4 -s 3.32 -e 20.72 --mode smart --dry-run   # see what will be copied
+rmedia clip match.mp4 -s 3.32 -e 20.72 --mode smart
+```
+
+```text
+✓ /home/me/clips/match_001_00-00-03.320_00-00-20.720.mp4  (smart, 92% copied)
+```
+
+When a video cannot be smart-cut, rmedia warns you and cuts it in accurate mode, and the clip
+still succeeds:
+
+```text
+warning: open_001_00-00-01.320_00-00-06.720.mp4: smart cut not possible: the video has open GOPs (frames that depend on the previous GOP); cutting in accurate mode
+✓ /home/me/clips/open_001_00-00-01.320_00-00-06.720.mp4  (accurate (smart fallback: open_gop))
+```
+
+To stop instead, add `--no-smart-fallback`: a reason found before anything runs then stops the
+whole command (exit `3`), and a clip whose joins fail the final check is marked failed (exit
+`1`). In a manifest, use `"mode": "smart"` and `"smart_fallback": false`, or the CSV columns
+`mode` and `smart_fallback`. Smart mode does not apply to `--upscale` and `--gif`, which
+re-encode every frame anyway.
+
+What each reason means and what to do: [Smart cut not possible](troubleshooting.md#smart-cut-not-possible-reason-cutting-in-accurate-mode).
 
 ## Cut Many Clips From a Clip List
 
@@ -626,6 +656,7 @@ FFmpeg 6.0 or newer is required.
 | Exit code `4`, `… not found: not bundled with rmedia and not on PATH` | [Video engine missing or too old](troubleshooting.md#video-engine-missing-or-too-old) |
 | The clip starts before the time you chose | [The clip starts before the time I chose](troubleshooting.md#the-clip-starts-before-the-time-i-chose-fast-mode) |
 | `no keyframe found before …` | [No keyframe found](troubleshooting.md#no-keyframe-found-before--use---mode-accurate-for-this-clip) |
+| `smart cut not possible: …` | [Smart cut not possible](troubleshooting.md#smart-cut-not-possible-reason-cutting-in-accurate-mode) |
 | `skipped: output already exists` | [Output already exists](troubleshooting.md#skipped-output-already-exists) |
 | `no input videos (folders contained no videos)` | [No input videos](troubleshooting.md#no-input-videos-folders-contained-no-videos) |
 | `face model not found`, `the gpu tier is not available`, or other `rmedia upscale` messages | [Upscaling](troubleshooting.md#upscaling) |

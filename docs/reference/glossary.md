@@ -6,7 +6,7 @@ to avoid.
 
 | Term | Definition | Source | Do not use |
 |---|---|---|---|
-| **accurate mode** | Clipping mode that re-encodes (libx264/AAC, or libvpx-vp9/libopus for WebM) and is frame-exact. The output length is verified within 3 frames + 100 ms. CLI: `--mode accurate`. | `request::Mode::Accurate`, research.md R3/R4 | precise mode, re-encode mode |
+| **accurate mode** | Clipping mode that re-encodes every frame (libx264/AAC, or libvpx-vp9/libopus for WebM) and is frame-exact. The output length is verified within 3 frames + 100 ms. CLI: `--mode accurate`. | `request::Mode::Accurate`, research.md R3/R4 | precise mode, re-encode mode |
 | **actual span** | The start/end a finished clip really covers: the measured output duration, starting at the predicted keyframe in fast mode. Reported as `actual`. | `JobOutcome::Succeeded.actual` | real times |
 | **adjusted** | Flag set when the actual span differs from the requested span by more than 50 ms (FR-014) | `exec::ADJUST_TOLERANCE` | |
 | **batch / batch manifest** | See *manifest*. `rmedia batch` runs one. | `commands/batch.rs` | job file |
@@ -24,7 +24,8 @@ to avoid.
 | **indexed container / indexed seeking** | Formats whose demuxer seek is exact (ffprobe `format_name` `mov`, `mp4`, `matroska`, `webm`). Decides the seek strategy. | `MediaInfo::has_indexed_seeking` | |
 | **issue** | A planning or parsing problem (`severity` error/warning, `code`, `origin`, `message`). Any error-severity issue means nothing runs. | `plan::Issue` | |
 | **job** | One clip request resolved to a concrete output path, with state queued/running/succeeded/failed/cancelled/skipped | `plan::PlannedJob`, spec.md | task |
-| **job kind** | The work a job does: `JobSpec::Clip`, `JobSpec::Upscale` (0.2.0) or `JobSpec::Gif` (0.3.0) | `plan::JobSpec` | |
+| **GOP (group of pictures)** | A keyframe and the frames that follow it up to the next keyframe. Smart mode copies whole GOPs. A **closed GOP** decodes on its own; an **open GOP** has frames that refer to the previous GOP, so it cannot start a copied part | research 004 R1–R2 | segment |
+| **job kind** | The work a job does: `JobSpec::Clip`, `JobSpec::Upscale` (0.2.0) or `JobSpec::Gif` (0.3.0). Smart cut (0.4.0) is a mode of the clip job, not a kind | `plan::JobSpec` | |
 | **GIF target (target)** | A data file that describes a GIF output: widths, frame rate, colours, dither, engine, MP4 settings and an optional size budget. Four are built in (`reddit-post`, `reddit-comment`, `max-quality`, `flat-ui`); users add JSON files to `<config>/gif-targets/`. | `gif/target.rs` | GIF preset (a *preset* is an upscale target) |
 | **size budget (aim, hard limit)** | A target's recommended size (`soft`, the aim) and the size never written above (`hard`, the limit). `--budget`, `--hard-limit`. | `gif::target::Budget` | quota |
 | **sample (sample encode)** | Three 1 s windows spread across the range, encoded in one ffmpeg run; the size estimate and every search step extrapolate from it | `gif/estimate.rs` | probe (that is ffprobe) |
@@ -46,6 +47,8 @@ to avoid.
 | **AI worker (`rmedia-sr`)** | The bundled program that runs the AI model on the GPU, reading and writing raw frames through pipes between two ffmpeg processes | `crates/rmedia-sr` | |
 | **mirror (archive mirror)** | The project's own copy of a pinned third-party archive (a `mirror-<date>` release), tried before the upstream URL; the pinned SHA-256 decides what is accepted | `xtask/*.lock.json` `mirrors` | |
 | **journal (in-flight journal, crash journal)** | A per-run file under `<state dir>/inflight/` listing temp files, locked while the run lives. The next run deletes temp files of dead runs. | `exec/journal.rs` | lock file |
+| **keyframe** | A frame stored as a complete picture (an IDR frame for H.264), where decoding can start. Fast mode starts on one; smart mode copies from the first keyframe in the range to the last; the desktop timeline marks them with ticks | `smart::KeyframeIndex`, `probe::keyframe_at_or_before` | I-frame (not every I-frame is a keyframe) |
+| **keyframe index** | The list of a file's keyframes (time, and whether the GOP is clean/closed) from one ffprobe packet scan; for a range when planning, for the whole file in the desktop app (capped, `truncated`) | `smart/keyframes.rs` | |
 | **keyframe snap** | Fast mode starting at the last keyframe K ≤ requested start, found by scanning packets with ffprobe | `probe::keyframe_at_or_before` | |
 | **manifest** | A batch file listing videos and their clips with layered options, in JSON (versioned, strict) or CSV (one row per clip). The desktop queue is a v1 manifest. | `input/manifest_json.rs`, `input/manifest_csv.rs` | job list |
 | **media server** | The desktop app's loopback HTTP range server that feeds `<video>` | `media_server.rs` | asset server |
@@ -62,6 +65,10 @@ to avoid.
 | **run id** | 64-bit random hex identifying a plan/run; part of temp names and the journal name | `plan::new_run_id` | |
 | **scan** | Folder discovery: walk, filter by extension, confirm with ffprobe. `rmedia scan`. | `discover.rs` | crawl |
 | **sidecar** | A program bundled next to the app via Tauri `externalBin` (`rmedia-ffmpeg`, `rmedia-ffprobe`, `rmedia`), staged in `binaries/` with target-triple suffixes | `tauri.conf.json`, `xtask stage-cli` | |
+| **seam** | Where two joined parts of a smart clip meet: the end of the re-encoded head and the first copied frame, and the last copied frame and the re-encoded tail. The **seam check** decodes around each one after the join | `exec/smart.rs` › `verify` | splice |
+| **smart mode (smart cut)** | Frame-exact clipping mode that stream-copies every whole GOP in the range and re-encodes only the partial GOPs at each end (the **head** and **tail**), then joins and checks the seams. H.264 in mp4, mov, mkv or ts; anything else falls back to accurate mode with a **fallback reason**. CLI: `--mode smart`; strict: `--no-smart-fallback`. Added in 0.4.0 | `request::Mode::Smart`, `smart/` | hybrid mode, smart render |
+| **fallback reason** | Why a smart job runs in accurate mode: one of 12 stable codes such as `open_gop` or `vfr` ([list](smart-cut-codes.md)) | `smart::FallbackReason` | |
+| **copied share** | Copied frames over all frames of a smart clip, shown as `92% copied` | `SmartSummary.copied_share`, `SmartOutcome.copied_share` | |
 | **source (source video)** | An input video. Never modified (Principle V). | spec.md | input file (fine in CLI context) |
 | **still frames** | The last preview fallback: exact JPEG frames from `frame_at` instead of playback | `preview::frame_at` | |
 | **summary** | End-of-run totals (`succeeded`, `skipped`, `failed`, `cancelled`, `exit_code`, `jobs`); the final NDJSON line `type: "summary"` | `event::RunSummary` | report |

@@ -9,10 +9,10 @@ description: "Task list for 004 Smart Cut"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R11), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-16)**: T001–T046 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
+**Status (2026-11-16)**: T001–T058 done: Phases 1 and 2 (with the spikes S1–S3; S1's WebView2,
 phone and Reddit rows are owner checks), US1, the MVP, US2 (fallbacks and strict mode), US3
-(the dry run), US4 (manifests and parity) and US5 (the desktop app). Next: Phase 8 (T054–).
-Roadmap:
+(the dry run), US4 (manifests and parity), US5 (the desktop app) and Phase 8's docs and
+validation (T054–T058). Open: T059's agent review passes, then the 0.4.0 release. Roadmap:
 `docs/roadmap.md`.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
@@ -451,31 +451,45 @@ security-auditor (new IPC commands, the cache keyed by path).
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T054 [P] Update the docs:
+- [X] T054 [P] Update the docs:
   - `docs/api/cli-reference.md`: `--mode smart`, `--no-smart-fallback`, the dry-run and result
     lines, the doctor line, the exit codes;
   - `docs/api/json-output.md`: the `smart` blocks, totals, stages and outcome;
   - `docs/api/file-formats.md`: `mode: smart`, `smart_fallback` in JSON and CSV.
-- [ ] T055 [P] Update the docs:
+  Done 2026-11-16, from real CLI output.
+- [X] T055 [P] Update the docs:
   - `docs/user/{cli-guide,desktop-guide,troubleshooting}.md`: choosing a mode, what each
     fallback reason means and what to do about it;
   - `docs/api/desktop-ipc.md`: `keyframes`, `cancel_keyframes`, `smart_plan`;
   - `docs/administration/configuration.md`: `defaults.mode` and `defaults.smart_fallback`.
-- [ ] T056 [P] Update the docs:
+  Done 2026-11-16; also `docs/user/getting-started.md` (the mode section) and the reference
+  `docs/reference/smart-cut-codes.md`. The CLI never reads `defaults` from `settings.json`, so
+  the settings fields are documented for the desktop app only.
+- [X] T056 [P] Update the docs:
   - `docs/architecture/{overview,domains}.md`: the `smart/` module and the multi-stage clip job;
   - `docs/reference/`: the three issue codes and the 12 fallback reasons, with a glossary entry
     for GOP, keyframe, open GOP and seam;
   - `docs/developer/testing.md`: the new fixtures and helpers.
-- [ ] T057 Write the release notes `docs/releases/0.4.0.md` (status "in development"); update the
+  Done 2026-11-16: the three issue codes and 12 reasons are in
+  `docs/reference/smart-cut-codes.md`; the glossary has GOP, keyframe, keyframe index, seam,
+  smart mode, fallback reason and copied share.
+- [X] T057 Write the release notes `docs/releases/0.4.0.md` (status "in development"); update the
   `README.md` feature list, `docs/README.md` and `docs/roadmap.md`.
-- [ ] T058 Run all of `quickstart.md` on Linux; record the results, and the Windows results from
+  Done 2026-11-16 (`docs/releases/0.4.0.md`, "in development").
+- [X] T058 Run all of `quickstart.md` on Linux; record the results, and the Windows results from
   CI, in `checklists/validation.md`. Owner checks stay open: playback of a smart mp4 on phones
   (S1 rows) and a Reddit upload.
+  Done 2026-11-16: `checklists/validation.md` › T058 (Linux, and Windows from CI run
+  43922704270).
 - [ ] T059 Final senior-code-reviewer and security-auditor passes over all 004 changes, fixing
   the high and medium findings. Then:
   - mark the tasks `[X]`;
   - write `specs/004-smart-cut/progress.md`;
   - update `docs/roadmap.md` and the `CLAUDE.md` active feature.
+
+  Open: the self-review was done on 2026-11-16 (`checklists/validation.md` › T059); the
+  senior-code-reviewer and security-auditor passes were not run, because agents run only when the
+  owner asks. Tick this task after those passes.
 
   Stop for review. The version bump to 0.4.0 and the tag follow
   `docs/operations/build-and-release.md` › Cut a Release.

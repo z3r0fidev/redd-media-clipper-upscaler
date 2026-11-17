@@ -69,6 +69,31 @@ without them, which proves everything else holds without the optional engines (F
 | `apps/desktop/src-tauri/tests/bridge.rs` (GIF tests) | GIF commands, `open_output` confinement, desktop/CLI GIF parity |
 | `apps/desktop/src/lib/stores/gif.test.ts`, `gif.svelte.test.ts` | GIF options, estimate state and queue export |
 
+## Feature 004 Suites
+
+Added for smart cut (0.4.0). The fixtures are lavfi testsrc2 videos encoded with x264 at 25 fps
+with a closed 2 s GOP (`keyint=50`, no scene cuts) unless a fixture says otherwise
+(`rmedia-testkit` › `smart_args`): `SmartMp4` (30 s, 1280x720, 3 B-frames, AAC) and its MOV, MKV
+and TS remuxes, `SmartBaseline`, `SmartHd60` (the speed bench), and the fallback sources
+`OpenGop`, `High10`, `HevcMp4` and `OtherEncoder`; 002's `VfrMp4` covers `vfr`. The testkit's
+helpers check outputs: `video_packets`, `frame_count`, `decode_errors` (empty = a clean decode),
+`framemd5` (hashes of decoded frames without timestamps, so a smart clip's copied frames compare
+directly with the source's) and `stream_starts`.
+
+| Suite | What it proves |
+|---|---|
+| `crates/rmedia-core/tests/smart_keyframes.rs` | The keyframe index on real files: clean keyframes every 2 s, open GOPs marked unclean, windows and chunked reads |
+| `crates/rmedia-core/tests/smart_us1.rs` | US1: frame-exact ends (±1 frame) in every container, no head or tail on keyframe-aligned ends, ≥ 80% copied on long clips (SC-002), clean seams, re-encoded parts as good as accurate mode, the outcome's shares, deterministic output |
+| `crates/rmedia-core/tests/smart_us2.rs` | US2: every risky source falls back with its reason (SC-004), the run-time fallback after a failed seam check, strict mode, `SMART_NOT_APPLIED` with `--upscale` and `--gif` |
+| `crates/rmedia-core/tests/smart_us4.rs` | US4: `mode: smart` and `smart_fallback` at every manifest level, CSV errors, 0.3.0 inputs unchanged, the CSV writer's round trip |
+| `crates/rmedia-core/tests/us3_batch.rs` (`smart_*`) | JSON and CSV manifests give byte-identical smart outputs; 0.3.0 manifests have no `smart` fields |
+| `crates/rmedia-core/tests/cancel.rs` (`cancelling_a_smart_job_*`) | Cancel at each stage stops within 2 s with no temp files or processes left (SC-008) |
+| `crates/rmedia-core/tests/snapshots_ffargs.rs` (`smart_*`) | The head, copy, tail, audio and join argv, pinned with insta, including a TS source and colour, SAR and rotation |
+| `crates/rmedia-cli/tests/clip_single.rs`, `batch.rs`, `contract_clip_json.rs` (`smart_*`) | The human result and dry-run lines, the exit codes with `--no-smart-fallback`, and the JSON plan contract |
+| `crates/rmedia-core/tests/bench.rs` | `bench_sc005_smart_vs_accurate` (speed against accurate mode) and `bench_sc007_keyframes_of_a_10_minute_source` (the desktop markers' index under 2 s; 126 ms measured) |
+| `apps/desktop/src-tauri/tests/bridge.rs` (`keyframes_*`, `smart_plan_*`, `smart_parity`) | The keyframe cache and cancel, `smart_plan` equal to the CLI's dry run, desktop/CLI parity of a smart queue |
+| `apps/desktop/src/lib/stores/smart.test.ts`, `smart.svelte.test.ts` | Timeline ticks and bands, the status line, the mode a source runs in, the run panel label; the keyframe and plan state with stale answers dropped |
+
 ## Run the Tests
 
 ```bash

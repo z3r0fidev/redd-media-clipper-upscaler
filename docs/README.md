@@ -3,7 +3,8 @@
 rmedia cuts clips from videos on Linux and Windows, from the `rmedia` command line or the desktop
 app. `rmedia upscale` (feature 002, 0.2.0) makes videos
 phone-ready, and `rmedia gif` (feature 003, 0.3.0, tag `v0.3.0`) makes GIFs and silent MP4 loops
-that fit Reddit; see the [Roadmap](roadmap.md). Start with the page for your role.
+that fit Reddit. Smart cut (`--mode smart`, feature 004, 0.4.0 in development) makes frame-exact
+clips that copy most of the video; see the [Roadmap](roadmap.md). Start with the page for your role.
 
 ## Users
 
@@ -30,6 +31,7 @@ that fit Reddit; see the [Roadmap](roadmap.md). Start with the page for your rol
 | [JSON output](api/json-output.md) | `--json` documents and NDJSON run events |
 | [Desktop IPC](api/desktop-ipc.md) | Tauri commands, events, path policy, media server |
 | [Glossary](reference/glossary.md) | Terms used across the project |
+| [Smart cut codes](reference/smart-cut-codes.md) | The smart cut issue codes and the 12 fallback reasons |
 
 ## Developers and maintainers
 
@@ -48,6 +50,7 @@ that fit Reddit; see the [Roadmap](roadmap.md). Start with the page for your rol
 | [Release notes 0.1.0](releases/0.1.0.md) | What feature 001 delivers; known issues |
 | [Release notes 0.2.0](releases/0.2.0.md) | Phone upscaling (CPU, GPU and AI tiers), smart reframe, `clip --upscale`, manifests and the desktop upscale view |
 | [Release notes 0.3.0](releases/0.3.0.md) | GIF export for Reddit: `rmedia gif`, size budgets, the Reddit MP4, gifsicle and gifski, `clip --gif`, the desktop GIF view |
+| [Release notes 0.4.0](releases/0.4.0.md) | In development. Smart cut: `--mode smart`, fallbacks with reasons, strict mode, manifests, and the desktop Smart mode with keyframe markers |
 
 Specifications, plans and contracts live in [`specs/`](../specs/); research notes are in
 [`research/`](../research/).

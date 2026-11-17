@@ -16,6 +16,7 @@ clip in the run panel.
 * [Desktop app: files and folders](#desktop-app-files-and-folders)
 * [Desktop app: playback](#desktop-app-playback)
 * [Clip timing](#clip-timing)
+* [Smart cut](#smart-cut)
 * [Output files](#output-files)
 * [Warnings that do not stop the clip](#warnings-that-do-not-stop-the-clip)
 * [Input errors (nothing was cut)](#input-errors-nothing-was-cut)
@@ -402,6 +403,76 @@ re-encoding. Nothing is cut (exit code `3`).
 #### Resolution
 
 Cut this clip in accurate mode (`--mode accurate`, or **Frame-accurate** in the app).
+
+---
+
+## Smart Cut
+
+Smart mode (`--mode smart`, **Smart** in the app; added in 0.4.0) copies the middle of a clip and
+re-encodes only its ends. When it cannot do that safely, it cuts the clip in accurate mode
+instead, so you still get the exact clip you asked for; only the speed and the copied share
+change.
+
+### "smart cut not possible: <reason>; cutting in accurate mode"
+
+```text
+warning: match_001_00-00-03.320_00-00-20.720.mp4: smart cut not possible: the video has a variable frame rate; cutting in accurate mode
+✓ /home/me/clips/match_001_00-00-03.320_00-00-20.720.mp4  (accurate (smart fallback: vfr))
+```
+
+In the desktop app the same reason appears in orange under the timeline, and the run panel
+shows **Accurate (smart fallback: vfr)**.
+
+#### Cause
+
+The reason names what stopped smart cut. The code in brackets is what JSON output and the run
+panel show.
+
+| Reason | Code | What to do |
+|---|---|---|
+| the engine has no H.264 encoder (libx264) | `encoder_missing` | Use the bundled engine, or an FFmpeg built with libx264. `rmedia doctor` shows `smart cut: unavailable — …` |
+| the video is not H.264; smart cut handles H.264 only | `codec` | Nothing to fix: HEVC, AV1, VP9 and other codecs are cut in accurate mode. Use fast mode if a keyframe start is good enough |
+| smart cut handles mp4, mov, mkv and ts files only | `container` | The source or the output format is something else (for example WebM or AVI). Choose an mp4, mov, mkv or ts output with `--container` if the source is one of these |
+| the video's H.264 profile is not Baseline, Main or High | `profile` | High 10, High 4:2:2 and similar profiles cannot be matched; accurate mode is used |
+| the video is not 8-bit 4:2:0 (for example 10-bit or 4:2:2) | `pixel_format` | Accurate mode converts to 8-bit. Use fast mode to keep 10-bit or HDR |
+| the video is interlaced | `interlaced` | Accurate mode is used |
+| the video has a variable frame rate | `vfr` | Common in phone and screen recordings. Accurate mode is used |
+| the video's rotation cannot be kept in the output | `rotation` | The source has a rotation tag the output cannot carry. Accurate mode is used |
+| the range holds no complete group of pictures (it is too short) | `no_full_gop` | The clip is shorter than the distance between two keyframes, so there is nothing to copy. Make the range longer, or let it be cut in accurate mode (it is short, so this is quick) |
+| the video has open GOPs (frames that depend on the previous GOP) | `open_gop` | Some encoders (x264 with `open-gop`, many broadcast recordings) write these. Moving the start or the end to another keyframe can avoid the open one; otherwise accurate mode is used |
+| the video's size or pixel format changes at a cut point | `params_changed` | Found after the ends were encoded; the job is redone in accurate mode |
+| the joined clip failed the seam check | `seam_check` | Found after the join: rmedia checks the joined file and redoes the job in accurate mode rather than keep a clip that may not play. If this happens with an ordinary H.264 file, please report it |
+
+#### Resolution
+
+Nothing is required: the clip is correct. To know in advance, run the command with `--dry-run`
+(it prints `smart → accurate: <reason>`), or look at the line under the timeline in the app. If
+you would rather stop than wait for an accurate encode, use `--no-smart-fallback`, below.
+
+### "smart cut not possible: <reason>" (with `--no-smart-fallback`)
+
+```text
+error: command line: smart cut not possible: the video has open GOPs (frames that depend on the previous GOP)
+```
+
+#### Cause
+
+Strict smart mode (`--no-smart-fallback`, `"smart_fallback": false` in a manifest, or **Only
+smart (no fallback)** / **Smart only** in the app) does not fall back. A reason found while
+planning stops the whole run before anything is written (exit code `3`, `SMART_UNAVAILABLE`). A
+`params_changed` or `seam_check` found while cutting fails that clip (exit code `1`); the other
+clips still run.
+
+#### Resolution
+
+See the reason in the table above. Remove `--no-smart-fallback` (or untick the option) to let
+those clips be cut in accurate mode, or remove the clip from the run.
+
+### "smart cut does not apply: the clip is re-encoded for upscaling/GIF"
+
+This note appears when smart mode is chosen for a clip that is also upscaled (`--upscale`) or
+made into a GIF (`--gif`). Those re-encode every frame anyway, so the clip runs as accurate. It
+is not an error.
 
 ---
 

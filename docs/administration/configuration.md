@@ -82,13 +82,18 @@ fields are rejected.
 
 | Field | Values | Built-in default |
 |---|---|---|
-| `mode` | `"fast"` or `"accurate"` | `"fast"` |
+| `mode` | `"fast"`, `"accurate"` or `"smart"` (0.4.0) | `"fast"` |
+| `smart_fallback` | `true` or `false` (0.4.0) | not set (`true`): a smart clip that cannot be smart-cut is cut in accurate mode. `false` makes it fail instead |
 | `output_dir` | path | not set: a `clips` folder next to each source |
 | `name_template` | template string | `"{source}_{index:03}_{name-or-range}.{ext}"` |
 | `container` | extension, for example `"mp4"` | not set: same as the source |
 | `on_exists` | `"skip"`, `"overwrite"`, or `"rename"` | `"skip"` |
 | `audio` | `"all"`, `"none"`, or an array of 1-based track numbers | `"all"` |
 | `subtitles` | `"all"` or `"none"` | `"all"` |
+
+Settings files written by 0.3.0 load unchanged in 0.4.0. Going back the other way, 0.3.0
+ignores a whole file that has `"mode": "smart"` or `smart_fallback` in it (see
+[Load behaviour](#load-behaviour)); choose another mode in Settings before downgrading.
 
 Template placeholders (from `rmedia clip --help`): `{source}`, `{index}`, `{index:03}`, `{name}`,
 `{name-or-range}`, `{name-or-start}`, `{start}`, `{end}`, `{range}`, `{ext}`.

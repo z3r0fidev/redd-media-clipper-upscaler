@@ -8,7 +8,10 @@ unreleased, 0.2.0) is implemented and described under
 [Domain Breakdown](domains.md#upscaling-feature-002). Feature 003 (GIF export: `rmedia gif`,
 `clip --gif`, `batch --gif` and the desktop GIF view; 0.3.0 in development) is implemented and
 described under [Feature 003 GIF Export](#feature-003-gif-export-implemented-unreleased) and in the
-[Domain Breakdown](domains.md#gif-export-feature-003). See the [Roadmap](../roadmap.md).
+[Domain Breakdown](domains.md#gif-export-feature-003). Feature 004 (smart cut: `--mode smart`;
+0.4.0 in development) is implemented and described under
+[Feature 004 Smart Cut](#feature-004-smart-cut-implemented-unreleased) and in the
+[Domain Breakdown](domains.md#smart-cut-feature-004). See the [Roadmap](../roadmap.md).
 
 ## Overview
 
@@ -312,6 +315,17 @@ gifski pipe, or the MP4 encode), an optional gifsicle post-pass and a verify sta
 GIF targets are data (`gif/target.rs`, four built-ins plus `<config>/gif-targets/`). See
 [Domain Breakdown › GIF Export](domains.md#gif-export-feature-003) and the
 [0.3.0 release notes](../releases/0.3.0.md).
+
+## Feature 004 Smart Cut (Implemented, Unreleased)
+
+Smart cut adds no job kind: it is a mode of the clip job (`ClipSpec.smart: Option<SmartPlan>`).
+The planner reads a keyframe index of the range, runs the source and range checks
+(`smart/mod.rs`), and either attaches a `SmartPlan` or plans an accurate job with a typed
+`FallbackReason`. The executor (`exec/smart.rs`) runs six stages in the job's scratch folder:
+encode the head, copy the whole GOPs, encode the tail, write the other streams, join with the
+concat demuxer, then check the seams. A seam failure removes the temp file and the job is redone
+in accurate mode, so the output always goes through the same verify and commit as any clip. See
+[Domain Breakdown › Smart Cut](domains.md#smart-cut-feature-004).
 
 ## Job-Kind Refactors
 

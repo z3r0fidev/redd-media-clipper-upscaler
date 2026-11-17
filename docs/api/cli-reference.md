@@ -102,7 +102,8 @@ Options:
   -l, --list <FILE>            Clip list file: one clip per line, "START END|+DURATION [NAME]" (applied to every input)
   -e, --end <TIME>             Clip end (a time, or "end"). Defaults to the end of the video
   -d, --duration <DURATION>    Clip length instead of an end time: 15, +15, 1:00 …
-      --mode <MODE>            fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode [default: fast] [possible values: fast, accurate]
+      --mode <MODE>            fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode; smart = frame-exact, copying whole GOPs and re-encoding only the ends (H.264 in mp4, mov, mkv or ts; other sources are cut in accurate mode) [default: fast] [possible values: fast, accurate, smart]
+      --no-smart-fallback      With --mode smart: fail a job that cannot be smart-cut instead of cutting it in accurate mode
       --upscale                Also upscale every clip for phones, in the same pass (feature 002; see `rmedia upscale`)
       --preset <ID>            Device preset (see `upscale --list-presets`) [default: phone-fill]
       --reframe <REFRAME>      How to fill a screen of a different shape: follow the subject, crop the centre, or show the whole frame over a blurred background [default: smart] [possible values: smart, center, blur]
@@ -209,6 +210,7 @@ Implemented in `commands/scan.rs` › `expand_inputs`:
 | Option | Default |
 |---|---|
 | `--mode` | `fast` |
+| `--no-smart-fallback` | off: smart jobs that cannot be smart-cut run in accurate mode |
 | `-o` | `<source folder>/clips` |
 | `--name` | `{source}_{index:03}_{name-or-range}.{ext}`. With more than one source **and** `-o`: `{source}/{source}_{index:03}_{name-or-range}.{ext}` (one sub-folder per source). |
 | `--container` | Source extension. In accurate mode, containers without an encode profile fall back to `mp4` with a warning. |
@@ -247,6 +249,62 @@ A completed run prints one line per job: `✓ <output>`, with `(actual S → E, 
 when the produced span differs by more than 50 ms; `- <output> skipped: <reason>`;
 `✗ <output> failed: <message>`; or `✗ <output> cancelled`. A totals line follows.
 
+### Smart Mode
+
+Added in 0.4.0 (feature 004). `--mode smart` gives the same frames as `accurate` but re-encodes
+only the partial GOPs at each end of the range and stream-copies every whole GOP in between, so a
+long clip is fast to make and keeps the source's picture quality. The three parts are joined and
+the seams checked before the output is committed.
+
+- It handles H.264 (Baseline, Main or High, 8-bit 4:2:0, progressive, constant frame rate) in
+  mp4, mov, mkv or ts. Any other source is cut in accurate mode with the warning `smart cut not
+  possible: <reason>; cutting in accurate mode` (`SMART_FALLBACK`); the job still succeeds.
+  [Troubleshooting](../user/troubleshooting.md#smart-cut-not-possible-reason-cutting-in-accurate-mode)
+  lists the 12 reasons and what to do about each.
+- `--no-smart-fallback` makes the fallback an error. A reason found while planning is exit 3
+  (`SMART_UNAVAILABLE`, nothing runs); a seam-check or parameter failure while running fails the
+  job (exit 1).
+- With `--upscale` or `--gif` the clip is re-encoded anyway, so it runs as accurate and prints
+  the note `smart cut does not apply: the clip is re-encoded for upscaling/GIF`
+  (`SMART_NOT_APPLIED`).
+- Only the video is smart-cut. Audio is re-encoded once for the whole range with accurate
+  mode's settings, and the other streams (audio tracks, subtitles, attachments) are the same as
+  in accurate mode; text subtitles are cut by time.
+
+Real output (paths shortened; `src.mp4` is 30 s at 25 fps with a keyframe every 2 s):
+
+```text
+$ rmedia clip src.mp4 --start 3.32 --end 20.72 --mode smart --dry-run
+#1   would write: /work/clips/src_001_00-00-03.320_00-00-20.720.mp4
+     from /work/src.mp4  00:00:03.320 → 00:00:20.720  [smart]
+     smart: head 0.680 s (17 fr) re-encoded · copy 16.000 s (400 fr) · tail 0.720 s (18 fr) re-encoded · 92% copied
+1 clip(s) planned, 0 would be skipped. Nothing was written (dry run).
+
+$ rmedia clip src.mp4 --start 3.32 --end 20.72 --mode smart
+✓ /work/clips/src_001_00-00-03.320_00-00-20.720.mp4  (smart, 92% copied)
+1 succeeded, 0 skipped, 0 failed, 0 cancelled
+
+$ rmedia clip open.mp4 --start 1.32 --end 6.72 --mode smart --dry-run
+#1   would write: /work/clips/open_001_00-00-01.320_00-00-06.720.mp4
+     from /work/open.mp4  00:00:01.320 → 00:00:06.720  [accurate]
+     smart → accurate: the video has open GOPs (frames that depend on the previous GOP)
+1 clip(s) planned, 0 would be skipped. Nothing was written (dry run).
+
+$ rmedia clip open.mp4 --start 1.32 --end 6.72 --mode smart
+warning: open_001_00-00-01.320_00-00-06.720.mp4: smart cut not possible: the video has open GOPs (frames that depend on the previous GOP); cutting in accurate mode
+✓ /work/clips/open_001_00-00-01.320_00-00-06.720.mp4  (accurate (smart fallback: open_gop))
+1 succeeded, 0 skipped, 0 failed, 0 cancelled
+
+$ rmedia clip open.mp4 --start 1.32 --end 6.72 --mode smart --no-smart-fallback
+error: command line: smart cut not possible: the video has open GOPs (frames that depend on the previous GOP)
+$ echo $?
+3
+```
+
+A batch dry run with smart jobs ends with a totals line such as
+`smart: 3 jobs; fallback: 2 (open_gop 1, vfr 1)`. `--dry-run --json` shows each job's parts and
+its five commands ([JSON Output › Smart cut](json-output.md#smart-cut)).
+
 ### Cancellation
 
 `clip`, `upscale`, `gif` and `batch` catch Ctrl-C from the moment they start. The first Ctrl-C
@@ -276,7 +334,8 @@ Options:
       --continue-on-missing    Skip videos that do not exist instead of stopping before anything runs
       --ffmpeg <PATH>          Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
       --ffprobe <PATH>         Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
-      --mode <MODE>            Default mode for clips the manifest does not specify [possible values: fast, accurate]
+      --mode <MODE>            Default mode for clips the manifest does not specify [possible values: fast, accurate, smart]
+      --no-smart-fallback      With smart mode: fail a job that cannot be smart-cut instead of cutting it in accurate mode (unless the manifest says otherwise)
       --gifsicle <PATH>        Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
   -o, --output-dir <DIR>       Default output folder for clips the manifest does not specify
       --gifski <PATH>          Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
@@ -638,6 +697,11 @@ ones about 0.1 s. `--recheck` runs it again. `rmedia upscale` runs the same chec
 failed after being chosen automatically is listed as `demoted:` and is not chosen again until
 the next check. A missing GPU never changes `status` or the exit code.
 
+From 0.4.0, a line after the GIF lines reports smart cut: `smart cut: available (libx264)`,
+or `smart cut: unavailable — <reason>` when the engine has no `libx264`. It does not change
+`status` or the exit code (smart jobs fall back to accurate mode). `--json` adds
+`"smart": {"available": true, "reason": null}`.
+
 From 0.3.0, four lines after `accurate mode can write:` report GIF export
 (`crates/rmedia-cli/src/commands/doctor.rs` › `gif_lines`):
 
@@ -665,9 +729,9 @@ running the binary (see [JSON Output](json-output.md)).
 
 | Code | Meaning | Typical causes |
 |---|---|---|
-| `0` | Every job succeeded or was skipped; a dry run that planned without errors; `scan`/`doctor` succeeded; `--help`/`--version` | — |
-| `1` | At least one job failed, or a single job was cancelled while the run continued | `ENGINE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_UNWRITABLE`, `INTERNAL`; for GIF jobs, `BUDGET_UNREACHABLE` at run time |
+| `0` | Every job succeeded or was skipped (smart jobs that fell back to accurate mode included); a dry run that planned without errors; `scan`/`doctor` succeeded; `--help`/`--version` | — |
+| `1` | At least one job failed, or a single job was cancelled while the run continued | `ENGINE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_UNWRITABLE`, `INTERNAL`; for GIF jobs, `BUDGET_UNREACHABLE` at run time; with `--no-smart-fallback`, a smart job whose seam check failed |
 | `2` | Usage error (clap, or a flag combination the command refuses) | Unknown flag, `-e` together with `-d`, missing required argument; a GIF flag without `--gif` on `clip`, `--fps` above 50 for a GIF, `--hard-limit` with `--budget none` |
-| `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing; for `upscale`: unknown preset, `--hdr keep` with a preset that cannot keep HDR, a forced `--tier gpu` or `ai`; for GIF export: unknown target (`TARGET_UNKNOWN`), a size limit under 64 KiB without `--allow-trim` |
+| `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing; for `upscale`: unknown preset, `--hdr keep` with a preset that cannot keep HDR, a forced `--tier gpu` or `ai`; for GIF export: unknown target (`TARGET_UNKNOWN`), a size limit under 64 KiB without `--allow-trim`; with `--no-smart-fallback`, a source that cannot be smart-cut (`SMART_UNAVAILABLE`) |
 | `4` | Engine missing, too old, or a required encoder or filter absent | `ENGINE_MISSING` (plans whose only errors are engine errors also return 4); for `upscale` also a missing `libx265`/`libx264` or upscaling filter; for GIF export, with `--strict-engine`, a missing gifski (or a missing gifsicle when a lossy level is set) |
 | `130` | Cancelled (Ctrl-C) | First Ctrl-C after the summary (also before the run starts), or immediately on the second |

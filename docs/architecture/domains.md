@@ -349,6 +349,37 @@ desktop GIF view. Code is in `crates/rmedia-core/src/gif/` and `exec/gif.rs`. Ad
 - `clip --gif --upscale` is one job with no intermediate file; the upscale step is skipped
   (a GIF is never enlarged) and the plan says so.
 
+## Smart Cut (feature 004)
+
+**Responsibility:** frame-exact clips that stream-copy every whole GOP in the range and
+re-encode only the partial GOPs at each end, with a typed fallback to accurate mode. From
+`--mode smart` on `clip` and `batch`, manifest `mode: smart` / `smart_fallback`, and the desktop
+app's Smart mode. Code is in `crates/rmedia-core/src/smart/` and `exec/smart.rs`. Added in 0.4.0;
+design in `specs/004-smart-cut/` (research R1–R11).
+
+| Item | Location |
+|---|---|
+| `FallbackReason` (12 stable codes and their messages), `SmartPlan` (head, copy and tail `Part`s, the copied share, the GOP sizes at the seams, `PartEncode`: the source's profile, level, B-frames, pixel format, colour tags and SAR), `check_source` (the probe-only checks) and `check` (frame spacing, a whole GOP in the range, closed GOPs at both copy boundaries) | `smart/mod.rs` |
+| Keyframe index: one ffprobe packet scan (a window, or the whole file for the desktop markers), clean/open flags, capped and marked `truncated` | `smart/keyframes.rs` |
+| The five argvs: head and tail encodes (libx264 CRF 18 with the source's profile, B-frames and pixel format, `open-gop=0:stitchable=1`), the copy (`-c copy` of the whole GOPs); all three written as MPEG-TS parts; the other streams (`rest_spec`, accurate mode's settings); and the concat join, with the output's sample entry (`-tag:v`) | `smart/args.rs` |
+| Planning: `Planner::smart_plan` runs the checks; a reason found here becomes a `SMART_FALLBACK` notice (or a `SMART_UNAVAILABLE` error in strict mode) and an accurate job; `SmartSummary` per job and `SmartTotals` per plan for dry runs and the desktop | `plan/mod.rs` |
+| Executor: the stages head, copy, tail, audio, join and verify in the job's scratch folder, weighted for progress (research R9) | `exec/smart.rs` |
+| Seam check (research R7): the joined file's packet count and even frame steps, then decodes around each seam: no decode errors, every frame the source's size (else `params_changed`), and the copied frames' hashes equal to the source's (else `seam_check`). A failure removes the temp file and redoes the job in accurate mode, or fails it in strict mode | `exec/smart.rs` › `verify`, `exec/clip.rs` |
+| Desktop: `keyframes` / `cancel_keyframes` (cached per canonical path, size and mtime) and `smart_plan` (one at a time); the timeline ticks and bands are drawn from `src/lib/stores/smart.ts` | `apps/desktop/src-tauri/src/ops.rs` |
+
+**Invariants**
+
+- A smart clip has the same frames as an accurate clip of the same range: start and end within
+  one frame of the request, verified after the join.
+- Copied frames are byte-identical to the source's; only the head and tail are encoded.
+- Every source or range that smart cut cannot handle safely gets a typed reason, a warning and an
+  accurate job, never an unchecked join. Strict mode turns that into an error, never a silent
+  fallback.
+- No new process kind: every step is an ffmpeg or ffprobe run through `exec::process`, with
+  `file:` paths and generated names inside the scratch folder.
+- `--upscale` and `--gif` jobs are re-encoded anyway; smart mode does not apply to them
+  (`SMART_NOT_APPLIED`).
+
 ## Tooling (`xtask`)
 
 | Command | Effect |

@@ -181,7 +181,8 @@ For more command-line tasks, see the [Command-Line Guide](cli-guide.md).
 
 ## Fast Mode and Accurate Mode
 
-Every clip uses one of two modes. **Fast** is the default.
+Every clip uses one of three modes: **fast** (the default), **accurate**, and, from 0.4.0,
+**smart**, which is exact like accurate but copies most of the video like fast.
 
 ### Why two modes?
 
@@ -215,18 +216,44 @@ without it.
 * Converts 10-bit and other high-bit-depth video, including HDR, to standard 8-bit video. rmedia
   warns you when this happens. Use fast mode to keep HDR.
 
+### Smart mode
+
+Added in 0.4.0.
+
+* Starts and ends on the exact frames you chose, like accurate mode.
+* Copies everything between the first and the last keyframe inside your range without
+  re-encoding it, like fast mode. Only the short pieces before the first keyframe and after the
+  last one are encoded again, so a long clip is quick and keeps the source's quality.
+* Shows how much was copied. A dry run prints, for example:
+
+  ```text
+  smart: head 0.680 s (17 fr) re-encoded · copy 16.000 s (400 fr) · tail 0.720 s (18 fr) re-encoded · 92% copied
+  ```
+
+  and the result reads `(smart, 92% copied)`. The desktop app shows the copied and re-encoded
+  parts on the timeline.
+* Works with H.264 video in MP4, MOV, MKV and TS files, which is what most cameras, phones and
+  screen recorders produce. For any other video, or one it cannot join safely, rmedia cuts the
+  clip in accurate mode instead and says why, for example `smart cut not possible: the video has
+  a variable frame rate; cutting in accurate mode`. The clip is still made. See
+  [Smart cut not possible](troubleshooting.md#smart-cut-not-possible-reason-cutting-in-accurate-mode).
+* The audio is encoded again, as in accurate mode.
+
 ### Which mode should I use?
 
 | If you want… | Use |
 |---|---|
 | The quickest result, with no quality loss | **Fast** |
-| A clip that starts on an exact frame (for example, a reaction that must start on cue) | **Accurate** |
+| A clip that starts on an exact frame (for example, a reaction that must start on cue) | **Smart** (it falls back to accurate by itself when it has to) |
+| An exact long clip from an H.264 video, made quickly and without quality loss in the middle | **Smart** |
+| An exact clip that is re-encoded in full with the same settings everywhere | **Accurate** |
 | To keep HDR or 10-bit video | **Fast** |
 | To change the format of an AVI, WMV, FLV or similar file | **Accurate** (it writes MP4) |
 
 To choose a mode:
 
-* **Command line:** `--mode fast` or `--mode accurate`.
+* **Command line:** `--mode fast`, `--mode accurate` or `--mode smart`. Add
+  `--no-smart-fallback` to make a clip fail instead of falling back to accurate mode.
 * **Desktop app:** pick the default under **Settings › New clips › Mode**, or choose a mode for one
   video in its queue options.
 

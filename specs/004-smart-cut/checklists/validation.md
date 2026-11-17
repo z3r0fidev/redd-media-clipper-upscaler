@@ -115,3 +115,45 @@ run (agents are spawned only when asked). Security notes from the self-review: b
 check `require_allowed` first; the cache key is the canonicalised path with its size and mtime,
 so a replaced file is indexed again; the cache keeps 32 indexes, and a request's entry is
 removed when its scan ends (the page cancels the previous scan when the source changes).
+
+## T058 quickstart on Linux, and Windows from CI (2026-11-16)
+
+Linux, the reference machine, bundled FFmpeg n9.0.2, `RMEDIA_REQUIRE_FFMPEG=1`:
+
+| Quickstart check | Result |
+|---|---|
+| `smart_us1` (SC-001, SC-002, SC-003, SC-006) | 6 passed |
+| `smart_us2` (SC-004) | 4 passed |
+| `cancel smart` (SC-008) | 1 passed |
+| `us3_batch smart` and desktop `bridge smart` (SC-009) | 2 and 2 passed (the bridge filter also ran `smart_plan_matches_the_cli`) |
+| Bench SC-005 (release) | 60 s of 1080p: accurate 16.7 s, smart 5.1 s (31%; target ≤ 33%). Run with other builds idle but not alone; the US1 run measured 26% |
+| Bench SC-007 (release) | 300 keyframes of a 10-minute source in 261 ms (bar 2 s) |
+| Manual run | Exactly the quickstart's lines: `smart: head 0.680 s (17 fr) re-encoded · copy 16.000 s (400 fr) · tail 0.720 s (18 fr) re-encoded · 92% copied`; outcome `{"copied_frames":400,"copied_share":0.9195,"fallback":null,"mode_used":"smart","reencoded_frames":35}`; 435 frames; a silent decode |
+| The fallback | `smart → accurate: the video has open GOPs (frames that depend on the previous GOP)`; with `--no-smart-fallback` the error and exit 3 |
+| Desktop | The US5 checkpoint above (Xvfb :99, all four steps) |
+
+Windows, from CI run 43922704270 (commit `364bd74`, `windows-latest`, bundled engine), all
+green: `smart_keyframes` 4, `smart_us1` 6, `smart_us2` 4, `smart_us4` 4 passed, the smart
+`cancel`, `us3_batch`, `clip_single`, `batch` and `contract_clip_json` tests and the snapshots
+passed; benches SC-005 25% (accurate 53.6 s, smart 13.4 s) and SC-007 981 ms. The Linux CI job
+measured SC-005 25% (62.8 s / 15.6 s) and SC-007 400 ms.
+
+Owner checks still open: smart mp4 playback in WebView2, on an Android phone and an iPhone, and
+a Reddit upload (spike S1 rows). The desktop app on Windows has not been run by hand with smart
+mode.
+
+## T059 self-review (2026-11-16)
+
+A self-review of the 004 changes (`f286b44..HEAD`, 80 files in `crates/` and `apps/`), focused
+on process handling, files and the new IPC. The senior-code-reviewer and security-auditor passes
+were not run (agents run only when the owner asks); T059 stays open until they are.
+
+| Area | Finding |
+|---|---|
+| Processes | Every smart step (head, copy, tail, audio, join, the seam decodes and the packet scan) is ffmpeg or ffprobe through `exec::process`, with the job's cancel token, argv only and `file:` paths. No new process kind |
+| Files | Parts and the concat list live in the job's journaled scratch folder under fixed names (`head`, `copy`, `tail`, `rest.av`, `list.txt`); no source name reaches the concat list. A failed seam check removes the temp file before the accurate redo; the output goes through the usual verify and no-clobber commit |
+| Desktop IPC | `keyframes` and `smart_plan` check `require_allowed` first; the request id is 1–64 chars; the cache key is the canonical path with size and mtime; a cancelled scan is not cached; `smart_plan` writes nothing |
+| Low | No cap on concurrent uncached `keyframes` scans: the page runs one at a time and cancels the previous, but a misbehaving page could start several whole-file ffprobe scans. Bounded by the page being the app's own |
+| Low | The seam check's packet scan uses `run_capture`'s 16 MiB limit, about 1.4 million packets: a smart clip longer than roughly 6.5 hours at 60 fps would fail with "tool output exceeded 16 MiB" instead of falling back. Far beyond the clips this tool targets |
+
+No high or medium findings.
