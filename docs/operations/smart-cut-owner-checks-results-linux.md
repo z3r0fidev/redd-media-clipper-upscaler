@@ -9,12 +9,13 @@ rmedia 0.4.0 smart cut owner checks — date: 2026-11-18  build (release.yml run
 
 LINUX  distro/version: Ubuntu 24.04.5 LTS  desktop X11/Wayland: X11 (Cinnamon)
        CPU/GPU: Intel Core i7-1355U (13th gen) / Intel UHD Graphics (Raptor Lake-P), Dell Latitude 5440
-  3.1 digest matches skipped (not in the output; the CLI archive rmedia-cli-v0.4.0-x86_64-unknown-linux-gnu was used)
+  3.1 digest matches ok (reported by the owner)
   3.2 version 0.4.0 ok / doctor bundled + smart available ok / 92% line ok
-      open GOP fallback line ok / strict exit 3 skipped (not run) / 435 frames all files ok / clean decodes ok
-      cancel: returned in __ s (not timed), nothing left ok
-  3.3 D1 ticks skipped D2 skipped D3 bands + line skipped D4 skipped D5 seams skipped D6 skipped D7 skipped
-      D8 ticks in __ s skipped D9 cmp identical skipped
+      open GOP fallback line ok / 435 frames all files ok / clean decodes ok
+      strict: error line ok exit 3 ok nothing written ok SMART_UNAVAILABLE/open_gop ok
+      cancel: elapsed 3.05 s (minus 3 s = 0.05 s to stop), nothing left ok
+  3.3 D1 ticks ok D2 ok D3 bands + line ok D4 ok D5 seams ok D6 ok D7 ok
+      D8 ticks in __ s (within 2 s; exact time not given) ok D9 cmp identical ok
 
 Notes:
 - Test files (step 2.1) made with the bundled rmedia-ffmpeg: src.mp4, other.mp4, open.mp4.
@@ -33,8 +34,18 @@ Notes:
 - Decodes: "clean" for all six files.
 - Cancel: long.mp4 (10 min, 1080p), smart 3.3–590.7 s; Ctrl+C at 13% (126x, "4s left"). The
   job reported "cancelled" (0 succeeded, 1 cancelled); cancel/ was empty (no .part, no scratch
-  folder) and pgrep found no rmedia or ffmpeg process. The time to return was not measured.
+  folder) and pgrep found no rmedia or ffmpeg process. The time to return was not measured (timed below).
+- Desktop app (section 3.3): the owner reported all steps D1–D9 passed.
+- Strict mode and the timed cancel were run by Claude on the same machine, in ~/rmedia-004 with
+  the same release binary, following the runbook steps added on 2026-11-18:
+  strict: "error: command line: smart cut not possible: the video has open GOPs (frames that
+  depend on the previous GOP)", exit 3, strict/ empty, JSON "code":"SMART_UNAVAILABLE",
+  "detail":{"reason":"open_gop"}.
+  timed cancel: timeout -s INT 3 (SIGINT, as Ctrl+C) → "cancelled", summary "1 cancelled",
+  elapsed 3.05 s (stopped 0.05 s after the signal), cancel/ empty, no rmedia or ffmpeg process.
 
-Still to do on Linux: 3.1 digest, the strict exit 3 line, a timed cancel, and the desktop app
-steps D1–D9 (section 3.3).
+Linux: all checks passed.
+
+The Windows artifact's digest also matched (reported by the owner); it goes in the Windows
+results.
 ```

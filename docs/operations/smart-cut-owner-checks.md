@@ -134,22 +134,43 @@ $B/rmedia clip src.mp4 -s 3.32 -e 20.72 --mode smart --dry-run | grep smart
 #   smart: head 0.680 s (17 fr) re-encoded · copy 16.000 s (400 fr) · tail 0.720 s (18 fr) re-encoded · 92% copied
 $B/rmedia clip open.mp4 -s 1.3 -e 8.7 --mode smart --dry-run | grep smart
 #   smart → accurate: the video has open GOPs (frames that depend on the previous GOP)
-$B/rmedia clip open.mp4 -s 1.3 -e 8.7 --mode smart --no-smart-fallback; echo "exit $?"
-#   error: … smart cut not possible: the video has open GOPs …   exit 3
 for f in out/*; do printf '%s: ' $f; $B/rmedia-ffprobe -v error -count_frames -select_streams v:0 \
   -show_entries stream=nb_read_frames -of csv=p=0 "file:$f"; done      # 435 for every file (twice for .ts)
 for f in out/*; do $B/rmedia-ffmpeg -v error -i "file:$f" -f null - && echo "$f clean"; done
 ```
 
+**Strict mode (`--no-smart-fallback`):** with this flag, a video that smart cut cannot handle
+must fail instead of being cut in accurate mode. `open.mp4` has open GOPs, so:
+
+```bash
+mkdir -p strict
+$B/rmedia clip open.mp4 -s 1.3 -e 8.7 --mode smart --no-smart-fallback -o strict; echo "exit $?"
+#   error: command line: smart cut not possible: the video has open GOPs (frames that depend on the previous GOP)
+#   exit 3
+ls -a strict                                                          # only . and ..: nothing written
+$B/rmedia clip open.mp4 -s 1.3 -e 8.7 --mode smart --no-smart-fallback --json -o strict | grep -o '"code":"[A-Z_]*","detail":{"reason":"[a-z_]*"}'
+#   "code":"SMART_UNAVAILABLE","detail":{"reason":"open_gop"}
+```
+
+Pass: the error line names the open GOPs, the exit code is 3 (not 0), `strict` stays empty and
+the JSON code is `SMART_UNAVAILABLE` with the reason `open_gop`. Without the flag the same clip
+succeeds in accurate mode (the dry-run line above).
+
 **Cancel (SC-008):** start a long smart clip and press Ctrl+C during it, then check nothing is
-left:
+left. To time it, let `timeout` send the same signal as Ctrl+C (SIGINT) after exactly 3 s; the
+time to stop is the elapsed time minus 3 s:
 
 ```bash
 $B/rmedia-ffmpeg -v error -f lavfi -i testsrc2=s=1920x1080:r=25:d=600 -c:v libx264 -preset ultrafast \
   -x264-params keyint=50:min-keyint=50:scenecut=0 -pix_fmt yuv420p long.mp4
-$B/rmedia clip long.mp4 -s 3.3 -e 590.7 --mode smart -o cancel      # press Ctrl+C after ~2 s
+t0=$(date +%s.%N); timeout -s INT 3 $B/rmedia clip long.mp4 -s 3.3 -e 590.7 --mode smart -o cancel
+echo "elapsed $(echo "$(date +%s.%N) - $t0" | bc) s"                 # e.g. 3.05 s: stopped 0.05 s after the signal
 ls -a cancel; pgrep -a 'rmedia|ffmpeg'                                # no .part, no folders, no processes
 ```
+
+The clip line says `cancelled` and the summary `1 cancelled`. Pass: elapsed under 5 s (stopped
+within 2 s of the signal), `cancel` holds only `.` and `..`, and `pgrep` prints nothing. You can
+also press Ctrl+C by hand during the same command without `timeout`; the result must be the same.
 
 ### 3.3 Desktop App
 
@@ -182,12 +203,26 @@ Set-Location "$HOME\rmedia-004"
 & "$B\rmedia.exe" --version
 & "$B\rmedia.exe" doctor | Select-String 'ffmpeg:|smart cut|status'
 & "$B\rmedia.exe" clip src.mp4 -s 3.32 -e 20.72 --mode smart --dry-run | Select-String smart
-& "$B\rmedia.exe" clip open.mp4 -s 1.3 -e 8.7 --mode smart --no-smart-fallback; "exit $LASTEXITCODE"   # 3
 Get-ChildItem out | ForEach-Object { "$($_.Name): " + (& "$B\rmedia-ffprobe.exe" -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "file:$($_.FullName)") }
 ```
 
-Expected as in 3.2: `0.4.0`, `bundled`, `smart cut: available (libx264)`, the 92% line, exit 3,
-and 435 frames for every file.
+Expected as in 3.2: `0.4.0`, `bundled`, `smart cut: available (libx264)`, the 92% line and 435
+frames for every file.
+
+**Strict mode (`--no-smart-fallback`):** as in 3.2, `open.mp4` must fail instead of falling back:
+
+```powershell
+New-Item -ItemType Directory -Force strict | Out-Null
+& "$B\rmedia.exe" clip open.mp4 -s 1.3 -e 8.7 --mode smart --no-smart-fallback -o strict; "exit $LASTEXITCODE"
+#   error: command line: smart cut not possible: the video has open GOPs (frames that depend on the previous GOP)
+#   exit 3
+Get-ChildItem -Force strict                                          # nothing listed
+& "$B\rmedia.exe" clip open.mp4 -s 1.3 -e 8.7 --mode smart --no-smart-fallback --json -o strict | Select-String -Pattern '"code":"[A-Z_]*","detail":\{"reason":"[a-z_]*"\}' -AllMatches | ForEach-Object { $_.Matches.Value }
+#   "code":"SMART_UNAVAILABLE","detail":{"reason":"open_gop"}
+```
+
+Pass: the error line names the open GOPs, exit 3, `strict` empty, `SMART_UNAVAILABLE` with
+`open_gop`.
 
 **Cancel:** run section 3.5 (a) and (c) of the [Windows runbook](windows-owner-checks.md#35-cancel-and-cleanup-001-sc-007-003-sc-008)
 with a smart job instead of a GIF:
@@ -285,13 +320,15 @@ rmedia 0.4.0 smart cut owner checks — date: ____  build (release.yml run): ___
 LINUX  distro/version: ____  desktop X11/Wayland: ____  CPU/GPU: ____
   3.1 digest matches ____
   3.2 version 0.4.0 / doctor bundled + smart available ____ / 92% line ____
-      open GOP fallback line ____ / strict exit 3 ____ / 435 frames all files ____ / clean decodes ____
-      cancel: returned in __ s, nothing left ____
+      open GOP fallback line ____ / 435 frames all files ____ / clean decodes ____
+      strict: error line ____ exit 3 ____ nothing written ____ SMART_UNAVAILABLE/open_gop ____
+      cancel: elapsed __ s (minus 3 s = __ s to stop), nothing left ____
   3.3 D1 ticks ____ D2 ____ D3 bands + line ____ D4 ____ D5 seams ____ D6 ____ D7 ____
       D8 ticks in __ s ____ D9 cmp identical ____
 
 WINDOWS  version: ____  CPU/GPU: ____  WebView2 version: ____
-  4.1 version/doctor ____ / 92% line ____ / exit 3 ____ / 435 frames ____
+  4.1 version/doctor ____ / 92% line ____ / 435 frames ____
+      strict: error line ____ exit 3 ____ nothing written ____ SMART_UNAVAILABLE/open_gop ____
       cancel (a) Ctrl+C __ s ____ (c) kill parent ____
   4.2 D1–D9: ____________________________________________
       W1 src_smart ____ other_smart ____  W2 seeks ____  W3 Edge ____  W4 ____
