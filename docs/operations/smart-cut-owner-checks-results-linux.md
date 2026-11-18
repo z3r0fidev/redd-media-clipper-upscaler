@@ -45,7 +45,4 @@ Notes:
   elapsed 3.05 s (stopped 0.05 s after the signal), cancel/ empty, no rmedia or ffmpeg process.
 
 Linux: all checks passed.
-
-The Windows artifact's digest also matched (reported by the owner); it goes in the Windows
-results.
 ```

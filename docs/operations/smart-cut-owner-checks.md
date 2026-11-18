@@ -224,11 +224,39 @@ Get-ChildItem -Force strict                                          # nothing l
 Pass: the error line names the open GOPs, exit 3, `strict` empty, `SMART_UNAVAILABLE` with
 `open_gop`.
 
-**Cancel:** run section 3.5 (a) and (c) of the [Windows runbook](windows-owner-checks.md#35-cancel-and-cleanup-001-sc-007-003-sc-008)
-with a smart job instead of a GIF:
-`& "$B\rmedia.exe" clip long.mp4 -s 3.3 -e 590.7 --mode smart -o cancel` (make `long.mp4` with
-the command from 3.2, using `& $FF`). Expected: back within 2 s, no `.part`, no hidden
-`.…rmedia-…d` folder, no `rmedia-ffmpeg` process.
+**Cancel (SC-008):** these follow section 3.5 (a) and (c) of the
+[Windows runbook](windows-owner-checks.md#35-cancel-and-cleanup-001-sc-007-003-sc-008) with a
+smart job instead of a GIF. Close the desktop app first: (c) ends every process named `rmedia`.
+First make `long.mp4` (10 minutes of 1080p; this takes a minute or two) and a helper that lists
+what is left:
+
+```powershell
+& $FF -v error -f lavfi -i testsrc2=s=1920x1080:r=25:d=600 -c:v libx264 -preset ultrafast -x264-params keyint=50:min-keyint=50:scenecut=0 -pix_fmt yuv420p long.mp4
+Get-Item long.mp4                      # about 10 minutes of video; the clip below needs it
+function Show-Left { Get-Process | Where-Object Name -like 'rmedia*' | Select-Object Name, Id
+                     Get-ChildItem -Force -Recurse cancel, cancel3 -ErrorAction SilentlyContinue }
+```
+
+The smart job is fast (only the ends are re-encoded; the Linux run was 13% done after about
+2 s), so be ready to stop it as soon as its progress bar appears.
+
+```powershell
+# a) Ctrl+C: press it as soon as the progress bar shows; count how long it takes to return
+#    (by eye or with a stopwatch). Ctrl+C also stops the rest of the line, so run Show-Left after.
+& "$B\rmedia.exe" clip long.mp4 -s 3.3 -e 590.7 --mode smart -o cancel
+Show-Left      # expect nothing
+
+# c) Kill the parent. One line: it starts the job, ends only rmedia.exe 1 s later, then checks.
+#    Press nothing until Show-Left prints.
+Start-Process "$B\rmedia.exe" -ArgumentList 'clip', 'long.mp4', '-s', '3.3', '-e', '590.7', '--mode', 'smart', '-o', 'cancel3'; Start-Sleep 1; Stop-Process -Name rmedia -Force; Start-Sleep 2; Show-Left
+```
+
+Pass for (a): the clip line says `cancelled` and the summary `1 cancelled` within 2 s of
+Ctrl+C. Pass for both: `Show-Left` prints nothing: no `rmedia-ffmpeg` process, no `.part` and no
+hidden `.…rmedia-…d` folder. In (c), `Stop-Process` must not say `Cannot find a process with the
+name "rmedia"`: that means the job had already ended and nothing was killed. Delete `cancel3`
+and run the line again with a shorter sleep (`Start-Sleep -Milliseconds 500`). If (c) leaves an
+empty `cancel3` folder, that is fine; a `.part` file or a hidden folder inside it is not.
 
 ### 4.2 Desktop App and WebView2
 
