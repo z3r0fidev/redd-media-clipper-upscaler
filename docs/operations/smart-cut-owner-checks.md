@@ -3,14 +3,14 @@
 This runbook covers the 0.4.0 (feature 004, smart cut) checks that CI cannot run. They need real
 machines, phones, the desktop app's screen and a Reddit account:
 
-| Part | Platform | What it proves | Open item |
-|---|---|---|---|
-| [3](#3-linux) | Linux | The packaged CLI and desktop app, end to end | Packages from the tag build |
-| [4](#4-windows) | Windows 10/11 | The CLI archive, the installers, and the desktop app's Smart mode in WebView2 | Spike S1's WebView2 row; desktop smart mode on Windows |
-| [5](#5-android-phone) | Android | Smart mp4 files play cleanly across the seams | S1's Android row |
-| [6](#6-iphone) | iPhone | The same, in the iOS players | S1's iPhone row |
-| [7](#7-reddit-upload) | Reddit | A smart mp4 is accepted, processed and plays on Reddit | S1's Reddit row |
-| [8](#8-real-footage) | Any | Smart cut on your own camera and phone footage | Behaviour outside the test patterns |
+| Part                  | Platform      | What it proves                                                                | Open item                                              |
+| --------------------- | ------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------ |
+| [3](#3-linux)         | Linux         | The packaged CLI and desktop app, end to end                                  | Packages from the tag build                            |
+| [4](#4-windows)       | Windows 10/11 | The CLI archive, the installers, and the desktop app's Smart mode in WebView2 | Spike S1's WebView2 row; desktop smart mode on Windows |
+| [5](#5-android-phone) | Android       | Smart mp4 files play cleanly across the seams                                 | S1's Android row                                       |
+| [6](#6-iphone)        | iPhone        | The same, in the iOS players                                                  | S1's iPhone row                                        |
+| [7](#7-reddit-upload) | Reddit        | A smart mp4 is accepted, processed and plays on Reddit                        | S1's Reddit row                                        |
+| [8](#8-real-footage)  | Any           | Smart cut on your own camera and phone footage                                | Behaviour outside the test patterns                    |
 
 Plan on about 2 hours in total; the phone and Reddit parts take 15–20 minutes each. Parts 3 and
 4 can be done in either order, and parts 5–7 need only the files made in part 2. Record the
@@ -204,10 +204,12 @@ Set-Location "$HOME\rmedia-004"
 & "$B\rmedia.exe" doctor | Select-String 'ffmpeg:|smart cut|status'
 & "$B\rmedia.exe" clip src.mp4 -s 3.32 -e 20.72 --mode smart --dry-run | Select-String smart
 Get-ChildItem out | ForEach-Object { "$($_.Name): " + (& "$B\rmedia-ffprobe.exe" -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "file:$($_.FullName)") }
+Get-ChildItem out | ForEach-Object { & "$B\rmedia-ffmpeg.exe" -v error -i "file:$($_.FullName)" -f null -; if ($LASTEXITCODE -eq 0) { "$($_.Name) clean" } }
 ```
 
-Expected as in 3.2: `0.4.0`, `bundled`, `smart cut: available (libx264)`, the 92% line and 435
-frames for every file.
+Expected as in 3.2: `0.4.0`, `bundled`, `smart cut: available (libx264)`, the 92% line, 435
+frames for every file, and `<name> clean` for all six files with no error lines between them (a
+decode error prints a line from FFmpeg, and a failed decode leaves out that file's `clean`).
 
 **Strict mode (`--no-smart-fallback`):** as in 3.2, `open.mp4` must fail instead of falling back:
 
@@ -249,14 +251,24 @@ Show-Left      # expect nothing
 # c) Kill the parent. One line: it starts the job, ends only rmedia.exe 1 s later, then checks.
 #    Press nothing until Show-Left prints.
 Start-Process "$B\rmedia.exe" -ArgumentList 'clip', 'long.mp4', '-s', '3.3', '-e', '590.7', '--mode', 'smart', '-o', 'cancel3'; Start-Sleep 1; Stop-Process -Name rmedia -Force; Start-Sleep 2; Show-Left
+
+# c, cleanup) A killed process cannot delete its own temp files; the next rmedia run does.
+#    Run any short job, then look again:
+& "$B\rmedia.exe" clip src.mp4 -s 1 -e 2 --mode fast -o next | Out-Null; Show-Left
 ```
 
 Pass for (a): the clip line says `cancelled` and the summary `1 cancelled` within 2 s of
-Ctrl+C. Pass for both: `Show-Left` prints nothing: no `rmedia-ffmpeg` process, no `.part` and no
-hidden `.…rmedia-…d` folder. In (c), `Stop-Process` must not say `Cannot find a process with the
-name "rmedia"`: that means the job had already ended and nothing was killed. Delete `cancel3`
-and run the line again with a shorter sleep (`Start-Sleep -Milliseconds 500`). If (c) leaves an
-empty `cancel3` folder, that is fine; a `.part` file or a hidden folder inside it is not.
+Ctrl+C, and `Show-Left` prints nothing: no `rmedia-ffmpeg` process, no `.part` and no hidden
+`.…rmedia-…d` folder.
+
+Pass for (c): right after the kill, `Show-Left` lists no process (Job Objects ended
+`rmedia-ffmpeg` with its parent). A hidden `cancel3\.long_…rmedia-<run>-1.d` folder with
+`head.ts` (and maybe `copy.ts`) may still be there: the killed process could not delete it. After
+the cleanup line, `Show-Left` must print nothing: the next run deletes the temp files of runs that
+died (the in-flight journal). `Stop-Process` must not say `Cannot find a process with the name
+"rmedia"`: that means the job had already ended and nothing was killed. Delete `cancel3` and run
+the line again with a shorter sleep (`Start-Sleep -Milliseconds 500`). An empty `cancel3` folder
+is fine.
 
 ### 4.2 Desktop App and WebView2
 
@@ -355,9 +367,9 @@ LINUX  distro/version: ____  desktop X11/Wayland: ____  CPU/GPU: ____
       D8 ticks in __ s ____ D9 cmp identical ____
 
 WINDOWS  version: ____  CPU/GPU: ____  WebView2 version: ____
-  4.1 version/doctor ____ / 92% line ____ / 435 frames ____
+  4.1 version/doctor ____ / 92% line ____ / 435 frames ____ / clean decodes ____
       strict: error line ____ exit 3 ____ nothing written ____ SMART_UNAVAILABLE/open_gop ____
-      cancel (a) Ctrl+C __ s ____ (c) kill parent ____
+      cancel (a) Ctrl+C __ s ____ (c) kill parent: no process ____ cleaned by the next run ____
   4.2 D1–D9: ____________________________________________
       W1 src_smart ____ other_smart ____  W2 seeks ____  W3 Edge ____  W4 ____
 
