@@ -221,7 +221,10 @@ security and code-review lows, then 005.
 2. Code signing: create the Azure Artifact Signing account and pass identity validation; then a
    signing step, `SHA256SUMS` and an attestation go into `release.yml`.
 3. Reddit: confirm the current limits in its Help Center and do a real upload (post GIF, comment
-   GIF, `reddit-916` and `reddit-feed-45` outputs).
+   GIF, `reddit-916` and `reddit-feed-45` outputs). Limits as of 2026-11-13 recorded on
+   2026-11-19 in `research/10-reddit-limits-2026-11-13.md` (from allplatforms.io, which cites
+   Reddit Help): video 1 GB / 15 min, MP4 or MOV, H.264; images and GIFs 20 MB, 4000 × 4000 px.
+   Comment GIF limits are still unstated. Left: read Reddit Help itself, and the real uploads.
 4. 002 owner checks: two-phone gallery test (SC-001) and +3 VMAF on real footage (SC-002).
    Optional: AI speed on a faster Windows GPU; the Wayland check of the GIF view; the
    `VK_LOADER_LAYERS_DISABLE=~implicit~` `vulkaninfo` test; Linux NVIDIA VM diagnostics for the
@@ -270,18 +273,44 @@ security and code-review lows, then 005.
     `crates/rmedia-core/src/exec/commit.rs` (50–58): the no-clobber fallback (when hard
     links are unavailable) can leave a zero-byte file at the target if the rename fails. Add a
     test.
-17. Medium: `exec/gif.rs` (482–500) `SizeWatch` polls every 250 ms and the overshoot bound is
-    untested; `exec/gif.rs` (766 lines, 3 unit tests) and `gif/plan.rs` (660 lines, no tests)
-    need tests.
-18. Low: `apps/desktop/src-tauri/src/ops.rs` `AppState` (1099 lines, about 12 `Mutex<HashMap>`):
-    a generic `Registry<T>` and a split per feature.
-19. Low: `#[allow(unsafe_code)]` in `upscale/capability.rs` (356) contradicts "unsafe only in
-    `rmedia-sr` `ffi.rs`": document the exception or move the code.
-20. Low: `expect()` on locks in `crates/rmedia-cli/src/render.rs` (a poisoned lock panics).
-21. Tech debt: (every spawn now goes through `exec::process`, done 2026-11-14) split the large modules (`ops.rs`, `exec/gif.rs`,
-    `upscale/capability.rs` 1373 lines, `plan/mod.rs` 1189, `xtask/gif_tools.rs` 1487, testkit
-    `lib.rs` 1467); stop core calling `Settings::load()` inside doctor and capability code; run
-    the GIF tests in the distro-ffmpeg CI job.
+17. Done 2026-11-19. The watchdog polls every `SIZE_POLL` (250 ms). The overshoot bound (at most
+    one poll's writing past the limit) is tested under paused time, as are the limit itself and a
+    missing file. `exec/gif/` has 9 unit tests (was 3): stage weights, retry names, engine messages
+    and the deadline. `gif/plan.rs` has 13 (was 0): every refusal, engine fallback, never-enlarge,
+    even MP4 sizes, the rate cap, notes and trimming. Was: Medium: `SizeWatch` polls every 250 ms
+    and the overshoot bound is untested; `exec/gif.rs` and `gif/plan.rs` need tests.
+18. Done 2026-11-19. `apps/desktop/src-tauri/src/ops/` replaces `ops.rs`. `registry.rs` holds
+    `Registry<T>` and `Tasks`, whose drop guard removes an entry however the work ends; scans,
+    analyses and estimates used to leak an entry if their command's future was dropped. There is
+    one module per feature: `queue`, `previews`, `gif`, `smart`, `upscale`, `allowed`. Cancelling
+    everything on window close now also cancels keyframe scans. Was: Low: `AppState` (about 12
+    `Mutex<HashMap>`): a generic `Registry<T>` and a split per feature.
+19. Done 2026-11-19 (documented). The Windows registry read
+    (`upscale::capability::drivers::windows_manifests`) is listed as an `unsafe` exception in
+    `docs/security/security-model.md`, with the other two, and linked from the development guide
+    and CLAUDE.md. Was: Low: `#[allow(unsafe_code)]` in `upscale/capability.rs` contradicts
+    "unsafe only in `rmedia-sr` `ffi.rs`".
+20. Done 2026-11-19. The progress bars' lock in `crates/rmedia-cli/src/render.rs` uses the
+    poisoned map instead of panicking (test). Was: Low: `expect()` on locks.
+21. Done 2026-11-19.
+    - **Split:**
+      - `exec/gif/` (`limits.rs`, `external.rs`);
+      - `upscale/capability/` (`drivers.rs`, `store.rs`, `ai_check.rs`);
+      - `plan/` (`model.rs`, `planner.rs`);
+      - `xtask/src/gif_tools/` (`gates.rs`, `pin.rs`);
+      - testkit (`fixtures.rs`, `engine.rs`, `inspect.rs`, `quality.rs`, `gif_tools.rs`);
+      - the desktop `ops/` (item 18).
+
+      Public paths are unchanged (re-exports).
+    - **Settings:** `doctor::run(opts, settings)` and `doctor::caps(tools, settings)` take the
+      caller's settings. The core no longer reads the settings file: the CLI loads it, and the
+      desktop app passes the ones it holds.
+    - **GIF tests:** they already run in the distro-ffmpeg job (CI run 44444526648: `gif_us1`–`us5`,
+      `gif_estimate`, `gif_verify` ran against ffmpeg 6.1). gifsicle and gifski stay unstaged
+      there on purpose (FR-024).
+
+    Was: Tech debt: split the large modules; stop core calling `Settings::load()`; run the GIF
+    tests in the distro-ffmpeg CI job.
 
 **Planned features** (a version follows the feature number: 004 becomes 0.4.0)
 
@@ -298,7 +327,10 @@ security and code-review lows, then 005.
     input. Suggested criteria: ±1 frame; at least 80% copied on long clips; no seam decode errors;
     every risky source falls back with a code. Research: `research/01-clipping-discovery.md` §1.4.
 23. **005 Budgeted Reddit video**: an MP4 with audio, with size and length caps as data targets.
-    Start after the Reddit limits check (item 3).
+    Start after the Reddit limits check (item 3; limits recorded 2026-11-19 in `research/10`).
+    Specified on 2026-11-19: [spec](../specs/005-budgeted-reddit-video/spec.md), 5 stories
+    (fit the cap with sound; length and resolution limits; the dry run; presets and batches;
+    the desktop app), version 0.5.0.
 24. Later candidates (no number yet): a desktop crop-path editor for smart reframe
     (`research/08`); audio-only export with loudness normalisation; frame and timecode input and
     chapter or EDL import.

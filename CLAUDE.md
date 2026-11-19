@@ -6,7 +6,8 @@ for Reddit (003). Spec-driven via Spec Kit.
 ## Where things are
 - Constitution: `.specify/memory/constitution.md` (read before planning or reviewing).
 - Research outlines: `research/` (01 clipping/discovery, 02 upscaling, 03 mobile displays,
-  04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002). Items marked [K]/[verify]/[unverified] are not yet confirmed.
+  04 stack/packaging, 05 GIF export, 06–09 verified device/upscaler/reframe research for 002,
+  10 Reddit post limits as of 2026-11-13). Items marked [K]/[verify]/[unverified] are not yet confirmed.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
 - Done and released: 001 (`specs/001-video-clipping/`, 0.1.0, tag v0.1.0), 002
@@ -17,7 +18,8 @@ for Reddit (003). Spec-driven via Spec Kit.
   44075993817, unsigned, after the owner checks on every platform passed). rmedia is AGPL-3.0-or-later; releases bundle gifski.
   Owner checks left: Reddit's limits and a real upload, the 002 two-phone test and +3 VMAF.
   Pending list and review findings: `docs/roadmap.md`.
-- Next feature: **005 budgeted Reddit video** (not specified yet; after the Reddit limits check).
+- Next feature: **005 budgeted Reddit video** (specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
+  limits as of 2026-11-13 in `research/10`; next: plan).
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and
@@ -25,7 +27,7 @@ for Reddit (003). Spec-driven via Spec Kit.
   outputs, and US5: the desktop app's Smart mode, keyframe ticks and head/copy/tail bands; `research.md` R3/R5/R7 record what changed). Security L1 is done too. Phase 8 is done:
   docs, validation and T059's reviews (no high; mediums fixed; `specs/004-smart-cut/progress.md`).
   Released as v0.4.0 on 2026-11-18 (owner checks: `docs/operations/smart-cut-owner-checks-results-*.md`;
-  notes: `docs/releases/0.4.0.md`). Lows left: roadmap item 27. Run tests with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to
+  notes: `docs/releases/0.4.0.md`). Lows: roadmap item 27 done; review items 17–21 done 2026-11-19. Run tests with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to
   `binaries/rmedia-ff*-x86_64-unknown-linux-gnu` (the system ffmpeg lacks libvmaf).
 - Session close: follow `docs/operations/session-close.md`.
 - The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and `fetch-models` for its GPU
@@ -37,8 +39,8 @@ for Reddit (003). Spec-driven via Spec Kit.
 
 ## Stack
 - Rust 1.94 workspace: `crates/rmedia-core` (ALL media logic), `crates/rmedia-cli` (bin `rmedia`),
-  `crates/rmedia-testkit` (lavfi fixtures), `crates/rmedia-sr` (AI worker over ncnn; `unsafe` only
-  in its `ffi.rs`), `apps/desktop` (Tauri 2.x + Svelte 5 + TS), `xtask`.
+  `crates/rmedia-testkit` (lavfi fixtures), `crates/rmedia-sr` (AI worker over ncnn; `unsafe` in its `ffi.rs`,
+  plus three one-function OS exceptions in core listed in `docs/security/security-model.md`), `apps/desktop` (Tauri 2.x + Svelte 5 + TS), `xtask`.
 - FFmpeg/ffprobe are subprocesses only (never linked); bundled as `rmedia-ffmpeg`/`rmedia-ffprobe`.
 
 ## Rules
