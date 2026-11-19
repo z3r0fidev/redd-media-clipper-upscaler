@@ -102,7 +102,7 @@ What the run measured (spec › Fit result):
 | `PartialOptions` / `Options` (`request.rs`) | `fit: Option<PartialFit>` / `Option<FitOptions>` |
 | `PlannedJob` JSON | a `fit` block (dry run) ([contract](./contracts/json-output.md)) |
 | `JobOutcome::Succeeded` JSON | `fit` (the `FitOutcome`) |
-| `IssueCode` | new: `RANGE_TOO_LONG` (error, exit 3), `FIT_LOWERED` and `FIT_TRIMMED` (notices), `FIT_REENCODES` (notice: `--mode fast` with `--fit`), `FIT_FAILED` (run-time, exit 1). Reused: `TARGET_UNKNOWN`, `BUDGET_UNREACHABLE`, `SMART_NOT_APPLIED` |
+| `IssueCode` | new: `RANGE_TOO_LONG` (error, exit 3), `FIT_LOWERED` and `FIT_TRIMMED` (notices), `FIT_FAILED` (run-time, exit 1). Reused: `TARGET_UNKNOWN`, `BUDGET_UNREACHABLE`, `SMART_NOT_APPLIED` |
 | `Error` | `FitFailed { cap, attempts }` → `FIT_FAILED` |
 | `DoctorReport` | `fit: {targets: [...], problems: [...]}` |
 | `Caps` | `video_targets: VideoTargetRegistry`, loaded by the caller like the GIF targets |

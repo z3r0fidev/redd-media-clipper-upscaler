@@ -74,7 +74,7 @@ video target's size cap and length limit. Targets are data, like GIF targets; th
 | Goal | Target |
 |---|---|
 | Plan and prediction | instant (arithmetic; no sample encode) |
-| Budget-mode encode | about 2× a single pass at the same bitrate (measured: pass 1 ≈ pass 2, R1) |
+| Budget-mode encode | about 2× a single pass at the same bitrate (R1), and 1.6× more for repeatable output (R13) |
 | Retries | ≤ 5% of jobs (SC-004), each costs one pass 2 |
 | Cancel | ≤ 2 s at any pass (existing kill-tree) |
 
@@ -188,3 +188,4 @@ No violations. These choices were weighed and kept simple:
 |---|---|---|
 | Two encoder passes in budget mode | the only measured mode that stays under the cap and above 95% (R1) | One pass with a size check passed the cap (capped CRF, 1.009×) or wasted budget (0.80×) |
 | A shared `data_files` loader | GIF and video targets share their rules (R10) | Copying the GIF loader would let the two drift apart |
+| Pass 1 on one thread, pass 2 with sliced threads | x264's VBV with frame threads differs between runs; this keeps output identical (Principle II, R13) | Frame threads are about 1.6× faster but not repeatable, which breaks a MUST |

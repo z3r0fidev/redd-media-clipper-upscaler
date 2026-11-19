@@ -173,6 +173,11 @@ impl BudgetSpec {
 /// Parses a size such as `3MB`, `2.5MiB`, `800k` or `65536`: decimal units (`k`, `MB`, `G`)
 /// unless binary (`KiB`, `MiB`, `GiB`). It must be positive and at most 1 GiB.
 pub fn parse_size(text: &str) -> Result<u64, String> {
+    parse_size_within(text, target::MAX_BUDGET, "1 GiB")
+}
+
+/// [`parse_size`] with another upper bound (`max_label` names it in the message).
+pub(crate) fn parse_size_within(text: &str, max: u64, max_label: &str) -> Result<u64, String> {
     let t = text.trim();
     let split = t.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(t.len());
     let (number, unit) = t.split_at(split);
@@ -189,8 +194,8 @@ pub fn parse_size(text: &str) -> Result<u64, String> {
         _ => return Err(bad()),
     };
     let bytes = (n * scale).round();
-    if !(1.0..=target::MAX_BUDGET as f64).contains(&bytes) {
-        return Err(format!("size {text:?} must be more than 0 and at most 1 GiB"));
+    if !(1.0..=max as f64).contains(&bytes) {
+        return Err(format!("size {text:?} must be more than 0 and at most {max_label}"));
     }
     Ok(bytes as u64)
 }
@@ -252,7 +257,7 @@ impl Default for GifOptions {
 }
 
 /// Keeps an explicit `null` apart from a missing field (`#[serde(default)]` covers the latter).
-fn some_or_null<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+pub(crate) fn some_or_null<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     d: D,
 ) -> Result<Option<Option<T>>, D::Error> {
     Option::<T>::deserialize(d).map(Some)

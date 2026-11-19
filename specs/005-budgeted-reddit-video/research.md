@@ -237,14 +237,47 @@ the executor:
   `list_fit_targets` command.
 - **Conflicts:**
   - `--fit` with `--gif` is a usage error (exit 2): a GIF has its own targets;
-  - `--fit` with `--mode fast` or `smart` cuts accurate, with a notice (`SMART_NOT_APPLIED` for
-    smart, the new `FIT_REENCODES` for fast);
+  - `--fit` with `--mode fast` or `smart` cuts accurate. Smart gets the `SMART_NOT_APPLIED`
+    notice. Fast gets no notice: it is the default mode, so the planner can't tell an explicit
+    `--mode fast` from the default, and upscale and GIF jobs already ignore it silently (decided
+    in T017; a planned `FIT_REENCODES` code was dropped);
   - `--fit` with a container other than mp4 is refused (exit 3).
 
 ## R12. Determinism and parity (Principle II, SC-007)
 
 - The CLI and the desktop app call the same core plan and executor, so their settings are
   identical (checked by a bridge test).
-- Output bytes are deterministic per machine, as for accurate mode. Two-pass x264 with the same
-  thread count should repeat its output [K]; a test checks it, as 004's R10 did for accurate
-  mode.
+- Output bytes are deterministic per machine, as for accurate mode. This holds only with R13's
+  threading; frame-threaded VBV encodes are not repeatable (measured).
+
+## R13. Determinism of the VBV encodes (found in T014, 2026-11-19)
+
+**Finding.** R12 assumed x264 repeats its output. With a VBV ceiling it doesn't: two runs of
+the same command gave different stats and different frames (`framemd5`):
+- two-pass at 2,485 kb/s, run concurrently and run one after the other;
+- a one-pass capped CRF (`-crf 20 -maxrate -bufsize`), run one after the other.
+
+The cause is frame threads: a single-threaded encode repeats exactly. Accurate mode is
+unaffected, because CRF without VBV is deterministic with frame threads (004 R10).
+
+**Measured** on a 6 s, 1080p30 noisy source with 18 threads:
+
+| Encode | Repeats? | Time (pass 1 + pass 2) |
+|---|---|---|
+| frame threads (x264 default) | no | 2.1 + 2.5 s |
+| `sliced-threads=1` in both passes | no (pass 1's stats differ) | 3.4 + 3.5 s |
+| **pass 1 `-threads 1`, pass 2 `sliced-threads=1`** | **yes, byte-identical** | 3.7 + 3.6 s |
+| quality pass with `sliced-threads=1` | yes | — |
+
+**Decision.**
+- Pass 1 runs with `-threads 1`. Its "fast first pass" settings run at about 49 fps at 1080p.
+- Pass 2 and the quality pass use `-x264-params sliced-threads=1`.
+- The output is identical for identical inputs on one machine (Principle II), as for accurate
+  mode. The thread count still follows the CPU.
+
+**Cost.** About 1.6× the frame-threaded time in this test. Sliced threads compress slightly less
+well, but the bitrate is fixed by the budget, so the size is the same (1.97 MB against
+1.92 MB here, both under the cap).
+
+**Alternative rejected.** Frame threads, with determinism documented as an exception. That
+breaks a MUST in the constitution for a speed gain under 2×.

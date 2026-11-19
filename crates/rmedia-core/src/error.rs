@@ -94,8 +94,6 @@ pub enum IssueCode {
     FitLowered,
     /// Notice: a fit shortened the range (length limit or budget; trimming allowed) (005).
     FitTrimmed,
-    /// Notice: `--mode fast` with a fit; the clip is cut in accurate mode (005).
-    FitReencodes,
     /// A fit job stayed over its cap after the last retry (005).
     FitFailed,
 }
@@ -130,7 +128,6 @@ impl IssueCode {
             IssueCode::RangeTooLong => "RANGE_TOO_LONG",
             IssueCode::FitLowered => "FIT_LOWERED",
             IssueCode::FitTrimmed => "FIT_TRIMMED",
-            IssueCode::FitReencodes => "FIT_REENCODES",
             IssueCode::FitFailed => "FIT_FAILED",
         }
     }
@@ -324,7 +321,6 @@ mod tests {
             (IssueCode::RangeTooLong, "RANGE_TOO_LONG"),
             (IssueCode::FitLowered, "FIT_LOWERED"),
             (IssueCode::FitTrimmed, "FIT_TRIMMED"),
-            (IssueCode::FitReencodes, "FIT_REENCODES"),
             (IssueCode::FitFailed, "FIT_FAILED"),
         ] {
             assert_eq!(code.as_str(), name);

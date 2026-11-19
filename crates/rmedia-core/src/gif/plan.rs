@@ -700,6 +700,7 @@ mod tests {
             streams: StreamPlan { maps: Vec::new(), subtitle_codec: None, warnings: Vec::new() },
             smart: None,
             smart_fallback: None,
+            fit: None,
         }
     }
 

@@ -61,7 +61,6 @@ A retry restarts `pass2` within its share (003's `restart_stage`). A quality-mod
 | `RANGE_TOO_LONG` | error (exit 3) | the range is longer than the target allows, with no `allow_trim`; `detail: {len, max_length}` |
 | `FIT_LOWERED` | notice | the size or the audio bitrate was lowered to fit; the message names from → to |
 | `FIT_TRIMMED` | notice | the range was shortened (length limit or budget); `detail: {from, to}` |
-| `FIT_REENCODES` | notice | `--mode fast` with `--fit`: cut in accurate mode |
 | `FIT_FAILED` | job error (exit 1) | still over the cap after 3 retries; `detail: {cap, attempts}` |
 
 These existing codes also apply to fits:

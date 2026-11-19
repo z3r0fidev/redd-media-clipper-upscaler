@@ -100,19 +100,52 @@ impl Planner<'_> {
             }
             (_, up) => up,
         };
+        // --- fit (feature 005): an MP4 with audio within a video target's caps -----------------
+        let fit = match &opts.fit {
+            Some(_) if gif.is_some() => {
+                return self.error(
+                    origin,
+                    IssueCode::InvalidInput,
+                    "a clip cannot be both fitted to a video target and made a GIF (use --fit or --gif)",
+                );
+            }
+            Some(_) if up.is_some() => {
+                return self.error(
+                    origin,
+                    IssueCode::InvalidInput,
+                    "--fit with upscaling is not supported yet",
+                );
+            }
+            Some(f) => match self.caps.video_targets.get(&f.target) {
+                Some(t) => Some((f, t.clone())),
+                None => {
+                    let known = self.caps.video_targets.ids().join(", ");
+                    return self.error(
+                        origin,
+                        IssueCode::TargetUnknown,
+                        format!("unknown video target {:?} (known: {known})", f.target),
+                    );
+                }
+            },
+            None => None,
+        };
         let whole = clip.start == Ts::ZERO && clip.end == EndSpec::EndOfMedia;
         // Named like a whole-video upscale unless the user named the clip (names stay distinct).
         let whole_video = whole && clip.name.is_none();
         // Upscaling and GIF export always re-encode, so they cut like accurate mode (and `mode`
         // is ignored).
-        let mode = if up.is_some() || gif.is_some() { Mode::Accurate } else { opts.mode };
+        let mode = if up.is_some() || gif.is_some() || fit.is_some() { Mode::Accurate } else { opts.mode };
         let mut notices = Vec::new();
         let mut notice = |warnings: &mut Vec<String>, code, message: String, detail| {
             warnings.push(message.clone());
             notices.push(Notice { code, message, detail });
         };
         if opts.mode == Mode::Smart && mode == Mode::Accurate {
-            let message = "smart cut does not apply: the clip is re-encoded for upscaling/GIF".to_owned();
+            let message = if fit.is_some() {
+                "smart cut does not apply: the clip is re-encoded to fit its target".to_owned()
+            } else {
+                "smart cut does not apply: the clip is re-encoded for upscaling/GIF".to_owned()
+            };
             notice(&mut warnings, IssueCode::SmartNotApplied, message, None);
         }
         // A smart job is planned as an accurate one first (its other streams, and the fallback,
@@ -172,7 +205,18 @@ impl Planner<'_> {
             .clone()
             .map(|c| c.trim_start_matches('.').to_ascii_lowercase())
             .unwrap_or_else(|| media.container.clone());
+        if fit.is_some()
+            && let Some(c) = opts.container.as_deref().map(|c| c.trim_start_matches('.'))
+            && !c.eq_ignore_ascii_case("mp4")
+        {
+            return self.error(
+                origin,
+                IssueCode::InvalidInput,
+                format!("a fitted clip is always .mp4 (container .{c} was asked for)"),
+            );
+        }
         let ext = match (&up, &opts.container) {
+            (None, _) if fit.is_some() => "mp4".to_owned(),
             (None, _) => ext,
             (Some(_), Some(c)) if !c.trim_start_matches('.').eq_ignore_ascii_case("mp4") => {
                 warnings.push(format!("upscaled outputs are always .mp4 (ignoring container .{ext})"));
@@ -218,6 +262,7 @@ impl Planner<'_> {
             }
             encode = Some(profile);
             if let Some(fmt) = media.first_video().and_then(|v| v.pix_fmt.as_deref())
+                && fit.is_none()
                 && ["10", "12", "16"].iter().any(|d| fmt.contains(d))
             {
                 warnings.push(format!(
@@ -237,6 +282,27 @@ impl Planner<'_> {
             Err(msg) => return self.error(origin, IssueCode::InvalidInput, msg),
         };
         warnings.extend(stream_plan.warnings.iter().cloned());
+        if fit.is_some() {
+            // An MP4 for Reddit: the first video and the first audio track, nothing else (R6).
+            let audio = stream_plan.maps.iter().filter(|m| m.kind == crate::probe::StreamKind::Audio).count();
+            let mut kept = (false, false);
+            stream_plan.maps.retain(|m| match m.kind {
+                crate::probe::StreamKind::Video if !kept.0 => {
+                    kept.0 = true;
+                    true
+                }
+                crate::probe::StreamKind::Audio if !kept.1 => {
+                    kept.1 = true;
+                    true
+                }
+                _ => false,
+            });
+            stream_plan.subtitle_codec = None;
+            if audio > 1 {
+                warnings
+                    .push(format!("only the first of {audio} audio tracks is kept (a Reddit video has one)"));
+            }
+        }
 
         // --- output path ---------------------------------------------------------------------
         // Absolute paths: upscale jobs run ffmpeg inside their scratch directory.
@@ -381,7 +447,15 @@ impl Planner<'_> {
             streams: stream_plan,
             smart: None,
             smart_fallback: None,
+            fit: None,
         };
+        if let Some((f, target)) = &fit {
+            let Some(found) = self.plan_fit(origin, media, &mut cut, f, target) else { return };
+            for (code, message, detail) in found {
+                notice(&mut warnings, code, message, detail);
+            }
+        }
+        let requested = cut.requested;
         let mut smart = None;
         if smart_requested {
             let strict = !opts.smart_fallback;
@@ -446,7 +520,8 @@ impl Planner<'_> {
                 }
             }
             (None, None) => {
-                let scratch = cut.smart.is_some().then(|| scratch_path(&output, &self.run_id, id));
+                let scratch = (cut.smart.is_some() || cut.fit.is_some())
+                    .then(|| scratch_path(&output, &self.run_id, id));
                 (JobSpec::Clip(Box::new(cut)), scratch)
             }
             (None, Some((u, preset, tier))) => {
@@ -469,6 +544,104 @@ impl Planner<'_> {
             smart,
             spec,
         });
+    }
+
+    /// Plans `cut`'s fit to `target` (feature 005, research R2–R5): refusals become issues; a
+    /// trim shortens `cut`. Returns the notices (lowered settings, trims); `None`: refused.
+    pub(super) fn plan_fit(
+        &mut self,
+        origin: &Origin,
+        media: &MediaInfo,
+        cut: &mut ClipSpec,
+        opts: &crate::fit::FitOptions,
+        target: &crate::fit::target::VideoTarget,
+    ) -> Option<Vec<(IssueCode, String, Option<crate::error::ErrorDetail>)>> {
+        use crate::fit::plan::{Refusal, Source, plan_fit};
+        let Some(v) = media.first_video() else {
+            self.error(origin, IssueCode::InvalidInput, "a fit needs a video stream");
+            return None;
+        };
+        let Some(size) = v.display_size() else {
+            self.error(origin, IssueCode::InvalidInput, "the source's picture size is unknown");
+            return None;
+        };
+        let fps = if v.is_vfr() { v.r_frame_rate.or(v.frame_rate) } else { v.frame_rate.or(v.r_frame_rate) };
+        let audio = cut
+            .streams
+            .maps
+            .iter()
+            .find(|m| m.kind == crate::probe::StreamKind::Audio)
+            .and_then(|m| media.streams.iter().find(|s| s.index == m.index));
+        let src = Source {
+            len: cut.requested.end.saturating_sub(cut.requested.start).as_secs_f64(),
+            size,
+            fps: fps.unwrap_or((30, 1)),
+            has_audio: audio.is_some(),
+        };
+        let mut plan = match plan_fit(target, opts, src) {
+            Ok(p) => p,
+            Err(r) => {
+                let (code, detail) = match &r {
+                    Refusal::TooLong { len, max_length } => (
+                        IssueCode::RangeTooLong,
+                        Some(crate::error::ErrorDetail {
+                            len: Some(*len),
+                            max_length: Some(*max_length),
+                            ..Default::default()
+                        }),
+                    ),
+                    Refusal::Unreachable { min_cap, .. } => (
+                        IssueCode::BudgetUnreachable,
+                        Some(crate::error::ErrorDetail { min_cap: Some(*min_cap), ..Default::default() }),
+                    ),
+                    Refusal::AboveTarget(_) => (IssueCode::InvalidInput, None),
+                };
+                self.issues.push(Issue {
+                    severity: Severity::Error,
+                    code,
+                    origin: origin.clone(),
+                    message: r.message(&target.id),
+                    detail,
+                });
+                return None;
+            }
+        };
+        plan.downmix = audio.and_then(|a| a.channels).is_some_and(|c| c > 2);
+        let mut found = Vec::new();
+        let mut notice = |code, message: String, detail| found.push((code, message, detail));
+        for l in &plan.lowered {
+            let what = if l.setting == "size" { "size" } else { "audio bitrate (kb/s)" };
+            notice(
+                IssueCode::FitLowered,
+                format!("{what} lowered {} → {} to fit {}", l.from, l.to, target.id),
+                None,
+            );
+        }
+        if let Some(from) = plan.trimmed_from {
+            let d = Ts::from_secs_f64(plan.len);
+            cut.requested.end = cut.requested.start + d;
+            match &mut cut.trim {
+                Some(t) => t.end = Some(t.start + d),
+                None => cut.duration = Some(d),
+            }
+            if let Some((_, tolerance)) = cut.verify_video {
+                cut.verify_video = Some((d, tolerance));
+            }
+            notice(
+                IssueCode::FitTrimmed,
+                format!(
+                    "the range was shortened from {:.1} s to {:.1} s to fit {}",
+                    from, plan.len, target.id
+                ),
+                Some(crate::error::ErrorDetail {
+                    len: Some(from),
+                    max_length: Some(plan.len),
+                    ..Default::default()
+                }),
+            );
+        }
+        cut.fit = Some(plan);
+        Some(found)
     }
 
     /// A smart job's plan (feature 004, research R2): the source checks, then the keyframe index

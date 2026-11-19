@@ -18,13 +18,12 @@ changes meaning, and without `--fit` every command behaves as before (FR-022).
 - The `--fit-*` flags require `--fit` (exit 2 otherwise). `--fit` together with `--gif` is a
   usage error (exit 2). A size or length above the target's limit is refused (exit 2): an
   override may only lower a limit.
-- `--fit` with `-c`/`--container` other than `mp4` is refused (exit 3). Without `-c`, the
+- `--fit` with `--container` other than `mp4` is refused (exit 3). Without `--container`, the
   output is `.mp4` whatever the source container is.
 - **Modes:**
   - `--fit` with `--mode smart` prints the note "smart cut does not apply: the clip is
     re-encoded to fit its target" (`SMART_NOT_APPLIED`);
-  - with `--mode fast`, it prints "fast mode does not apply: the clip is re-encoded to fit its
-    target" (`FIT_REENCODES`);
+  - `--mode fast` (the default) is ignored without a note, as for upscale and GIF jobs;
   - in both cases the cut is accurate.
 - **With `upscale` or `clip --upscale`:** the preset sets the shape, size and reframing, and the
   target sets the caps. The preset's own `limits` are not used (FR-015).

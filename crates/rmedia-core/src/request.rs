@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::fit::{FitOptions, PartialFit};
 use crate::gif::{GifOptions, PartialGif};
 use crate::time::{EndSpec, Ts};
 use crate::upscale::{PartialUpscale, UpscaleOptions};
@@ -112,6 +113,10 @@ pub struct Options {
     #[serde(skip)]
     #[cfg_attr(feature = "ts", ts(skip))]
     pub gif_fill: Option<GifOptions>,
+    /// Fit each job to a video target's size cap and length limit (feature 005); `None` = no fit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub fit: Option<FitOptions>,
 }
 
 impl Default for Options {
@@ -128,6 +133,7 @@ impl Default for Options {
             upscale_fill: None,
             gif: None,
             gif_fill: None,
+            fit: None,
         }
     }
 }
@@ -169,6 +175,10 @@ pub struct PartialOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub gif: Option<PartialGif>,
+    /// Present = a fit at this layer (unless `enabled: false`); absent = inherited (feature 005).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub fit: Option<PartialFit>,
 }
 
 impl PartialOptions {
@@ -200,6 +210,7 @@ impl PartialOptions {
                     .or_else(|| Some(PartialGif::default())),
                 _ => PartialGif::diff(opts.gif.as_ref(), base.gif.as_ref()),
             },
+            fit: PartialFit::diff(opts.fit.as_ref(), base.fit.as_ref()),
         }
     }
 
@@ -225,6 +236,10 @@ impl PartialOptions {
                 Some(p) => p.apply(base.gif.as_ref().or(base.gif_fill.as_ref())),
             },
             gif_fill: base.gif_fill.clone(),
+            fit: match &self.fit {
+                None => base.fit.clone(),
+                Some(p) => p.apply(base.fit.as_ref()),
+            },
         }
     }
 }
@@ -387,6 +402,74 @@ mod tests {
         let cleared =
             resolve(r#"{"gif":{"fps":12,"dither":"none"}}"#, "{}", r#"{"gif":{"fps":null}}"#).unwrap();
         assert_eq!((cleared.fps, cleared.dither), (None, Some(Dither::None)));
+    }
+
+    /// Feature 005: `fit` layers like `gif` (contracts/manifest-fit.md).
+    #[test]
+    fn fit_layers_in_order_defaults_source_clip() {
+        use crate::fit::FitOptions;
+        let resolve = |d: &str, v: &str, c: &str| {
+            let defaults = layer(d).apply(&Options::default());
+            layer(c).apply(&layer(v).apply(&defaults)).fit
+        };
+        assert_eq!(resolve("{}", "{}", "{}"), None, "off unless a layer turns it on");
+        let on = resolve(r#"{"fit":{}}"#, "{}", "{}").unwrap();
+        assert_eq!(on, FitOptions::default());
+        assert_eq!(
+            (on.target.as_str(), on.max_size, on.max_length, on.allow_trim),
+            ("reddit-video", None, None, false)
+        );
+        let set = resolve(
+            r#"{"fit":{"target":"sub-50mb"}}"#,
+            r#"{"fit":{"max_size":"40MB"}}"#,
+            r#"{"fit":{"max_length":"2:30","allow_trim":true}}"#,
+        )
+        .unwrap();
+        assert_eq!(set.target, "sub-50mb");
+        assert_eq!(set.max_size, Some(40_000_000));
+        assert_eq!(set.max_length, Some(Ts::from_secs_f64(150.0)));
+        assert!(set.allow_trim);
+        assert_eq!(
+            resolve(r#"{"fit":{}}"#, r#"{"fit":{"max_size":1234567}}"#, "{}").unwrap().max_size,
+            Some(1_234_567)
+        );
+        // Off at a layer, on again above it; `null` clears an override below.
+        assert_eq!(resolve(r#"{"fit":{}}"#, r#"{"fit":{"enabled":false}}"#, "{}"), None);
+        assert!(resolve(r#"{"fit":{}}"#, r#"{"fit":{"enabled":false}}"#, r#"{"fit":{}}"#).is_some());
+        let cleared =
+            resolve(r#"{"fit":{"max_size":"40MB"}}"#, "{}", r#"{"fit":{"max_size":null}}"#).unwrap();
+        assert_eq!(cleared.max_size, None);
+    }
+
+    #[test]
+    fn fit_diff_inverts_apply_and_writes_only_changes() {
+        let base = layer(r#"{"fit":{"target":"sub-50mb"}}"#).apply(&Options::default());
+        for top in [
+            r#"{"fit":{"max_size":"40MB","allow_trim":true}}"#,
+            r#"{"fit":{"enabled":false}}"#,
+            r#"{"fit":{"max_length":90}}"#,
+            "{}",
+        ] {
+            let opts = layer(top).apply(&base);
+            let d = PartialOptions::diff(&opts, &base);
+            assert_eq!(d.apply(&base), opts, "{top}");
+        }
+        let d = PartialOptions::diff(&layer(r#"{"fit":{"max_size":"40MB"}}"#).apply(&base), &base);
+        assert_eq!(serde_json::to_value(&d).unwrap(), serde_json::json!({"fit":{"max_size":40000000}}));
+    }
+
+    #[test]
+    fn fit_layers_reject_unknown_keys_and_bad_values() {
+        for bad in [
+            r#"{"fit":{"bogus":1}}"#,
+            r#"{"fit":{"max_size":"0"}}"#,
+            r#"{"fit":{"max_size":"5GiB"}}"#,
+            r#"{"fit":{"max_size":-1}}"#,
+            r#"{"fit":{"max_length":"soon"}}"#,
+            r#"{"fit":{"allow_trim":"yes"}}"#,
+        ] {
+            assert!(serde_json::from_str::<PartialOptions>(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

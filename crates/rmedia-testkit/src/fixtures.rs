@@ -95,6 +95,16 @@ pub enum Fixture {
     /// 1280x720 @ 25 fps, 20 s H.264 made with other encoder settings (preset slow, 4 references,
     /// 5 B-frames, 2 s GOPs) + AAC: smart cut's re-encoded parts cannot copy its parameter sets.
     OtherEncoder,
+    // --- 005 (budgeted Reddit video) ---------------------------------------------------------
+    /// 1920x1080 @ 30 fps, 30 s, testsrc2 with temporal noise (a budget really binds), stereo
+    /// AAC.
+    FitBusy,
+    /// `FitBusy` without audio.
+    FitNoAudio,
+    /// `FitBusy` with 5.1 audio, 10 s.
+    FitSurround,
+    /// `FitBusy`, 2 s.
+    FitShort,
 }
 
 impl Fixture {
@@ -142,6 +152,10 @@ impl Fixture {
             Fixture::High10 => "high10.mp4",
             Fixture::HevcMp4 => "hevc.mp4",
             Fixture::OtherEncoder => "other-encoder.mp4",
+            Fixture::FitBusy => "fit-busy.mp4",
+            Fixture::FitNoAudio => "fit-noaudio.mp4",
+            Fixture::FitSurround => "fit-surround.mp4",
+            Fixture::FitShort => "fit-short.mp4",
         }
     }
 
@@ -158,6 +172,10 @@ impl Fixture {
     /// ffmpeg arguments (before the output path). `{dir}` is replaced with the fixture dir.
     pub(super) fn args(self) -> Vec<&'static str> {
         match self {
+            Fixture::FitBusy => fit_args(30, Some(2)),
+            Fixture::FitNoAudio => fit_args(30, None),
+            Fixture::FitSurround => fit_args(10, Some(6)),
+            Fixture::FitShort => fit_args(2, Some(2)),
             Fixture::Gop50Mp4 => vec![
                 "-f",
                 "lavfi",
@@ -963,3 +981,24 @@ pub(super) const CHAPTERS: &str = ";FFMETADATA1\ntitle=rmedia chapters fixture\n
 
 pub(super) const SRT: &str =
     "1\n00:00:01,000 --> 00:00:04,000\nHello\n\n2\n00:00:10,000 --> 00:00:14,000\nWorld\n";
+
+/// Arguments for the fit fixtures (feature 005): busy 1080p30 H.264 (testsrc2 with temporal
+/// noise, so a size budget really binds), with an AAC track of `channels` channels, as mp4.
+pub(super) fn fit_args(secs: u32, channels: Option<u32>) -> Vec<&'static str> {
+    let leak = |s: String| -> &'static str { Box::leak(s.into_boxed_str()) };
+    let mut a = vec![
+        "-f",
+        "lavfi",
+        "-i",
+        leak(format!("testsrc2=size=1920x1080:rate=30:duration={secs},noise=alls=12:allf=t+u")),
+    ];
+    if channels.is_some() {
+        a.extend(["-f", "lavfi", "-i", leak(format!("sine=frequency=440:duration={secs}"))]);
+    }
+    a.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-g", "60", "-pix_fmt", "yuv420p"]);
+    if let Some(c) = channels {
+        a.extend(["-c:a", "aac", "-b:a", "192k", "-ac", leak(c.to_string()), "-shortest"]);
+    }
+    a.extend(["-f", "mp4"]);
+    a
+}

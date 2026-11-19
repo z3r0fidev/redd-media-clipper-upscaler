@@ -9,8 +9,18 @@ description: "Task list for 005 Budgeted Reddit Video"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R12), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-19)**: T001–T004 done (baseline, scaffold, issue codes, the shared `data_files`
-loader).
+**Status (2026-11-19)**: T001–T022 done: Phases 1–2 and US1, the MVP. `clip --fit` makes an MP4
+with audio at or under the cap, frame-exact, repeatable, with bounded retries. Changes found while
+implementing:
+- T014 found that x264's VBV with frame threads isn't repeatable, so pass 1 runs on one thread and
+  the outputs use sliced threads (research R13).
+- T012 found that quality mode can pass `rate × length` by its VBV buffer, so it needs `B·len ≥
+  C·(len + 2 s)` (`VBV_SECS`).
+- T013 found that a retry must stop at the target's minimum bitrate (x264 refuses very low
+  two-pass rates).
+- T017 dropped `FIT_REENCODES`: fast is the default mode and is ignored silently, as for upscale
+  and GIF.
+- `--fit` with upscaling is refused until T037.
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.
@@ -57,7 +67,7 @@ loader).
 
   Test files are created with their stories' first tests, so no empty test binaries are built.
 - [X] T003 [P] Add the new issue codes to `core/error.rs`, with `as_str` tests:
-  - `RangeTooLong` (`RANGE_TOO_LONG`), `FitLowered`, `FitTrimmed`, `FitReencodes`, `FitFailed`;
+  - `RangeTooLong` (`RANGE_TOO_LONG`), `FitLowered`, `FitTrimmed`, `FitFailed`;
   - `Error::FitFailed { cap, attempts }`, mapped to exit 1.
 
   Document them in `docs/api/json-output.md` (codes table only; the rest comes in US3).
@@ -78,7 +88,7 @@ loader).
   Then extract `data_files::load<T: DataFile>(dir_name, builtins)` from
   `GifTargetRegistry::load` and switch the GIF registry to it. Every existing GIF target test
   passes unchanged (R10).
-- [ ] T005 [P] Test first, then write `core/fit/target.rs`:
+- [X] T005 [P] Test first, then write `core/fit/target.rs`:
   - `VideoTarget` (schema 1) with `from_json`;
   - validation exactly as data-model.md › VideoTarget: ranges, even `long_side`,
     `min_bpp < max_bpp`, `floor_kbps ≤ kbps`, unknown fields refused, printable text;
@@ -87,11 +97,11 @@ loader).
   - `core/fit/builtin/reddit-video.json` from contracts/video-target.md (`verified: false`).
 
   The tests are table-driven: one bad value per rule, and the built-in parses.
-- [ ] T006 [P] Test first, then write the size and length parser in `core/fit/mod.rs`:
+- [X] T006 [P] Test first, then write the size and length parser in `core/fit/mod.rs`:
   `parse_size("50MB" | "8MiB" | "1GB" | "123")`, decimal and binary units, refusing 0,
   negatives, overflow and junk. Lengths reuse `core/time.rs`'s duration parser. The tests are
   table-driven (Principle III, malformed input).
-- [ ] T007 Test first, then add `FitOptions`/`PartialFit` in `core/fit/mod.rs`, layered through
+- [X] T007 Test first, then add `FitOptions`/`PartialFit` in `core/fit/mod.rs`, layered through
   `PartialOptions.fit`/`Options.fit` in `core/request.rs`:
   - `apply` and `diff`, as `PartialGif`;
   - `enabled: false` turns an inherited fit off;
@@ -100,7 +110,7 @@ loader).
     since the target isn't known while layering.
 
   Tests go next to the `gif_layers_*` tests in `core/request.rs`.
-- [ ] T008 Test first, then write the pure planner `core/fit/plan.rs`:
+- [X] T008 Test first, then write the pure planner `core/fit/plan.rs`:
   `plan_fit(target, opts, len, source_size, display_aspect, fps, has_audio) ->
   Result<FitPlan, Problem>`, in data-model.md's planning order. Unit tables cover:
   - budget against quality mode at the ceiling `C` boundary (R3);
@@ -113,7 +123,7 @@ loader).
   - an override above the target refused;
   - a property check over a grid of caps, lengths and sizes: `predicted_bytes ≤ cap × 0.98`
     for every accepted plan.
-- [ ] T009 [P] Add the testkit fixtures in `kit/fixtures.rs`:
+- [X] T009 [P] Add the testkit fixtures in `kit/fixtures.rs`:
   - `FitBusy` (1920×1080 30 fps, 60 s, `testsrc2` plus `noise=alls=20:allf=t+u`, stereo sine,
     libx264 `-crf 12` mp4);
   - `FitNoAudio` (as `FitBusy`, with no audio);
@@ -124,7 +134,7 @@ loader).
   `kit/inspect.rs` helpers:
   - `moov_before_mdat(path)`, from the top-level boxes;
   - `audio_start_offset(path) -> f64` (the audio start minus the video start).
-- [ ] T010 Add `video_targets: VideoTargetRegistry` to `Caps` (`core/plan/model.rs`). Load it
+- [X] T010 Add `video_targets: VideoTargetRegistry` to `Caps` (`core/plan/model.rs`). Load it
   where the callers load the GIF targets: CLI commands, the desktop `ops/mod.rs` engine cache,
   and `core-tests/common/mod.rs`. The core never reads the settings itself.
 
@@ -142,7 +152,7 @@ small cap.
 
 ### Tests for User Story 1 (write first; they must fail)
 
-- [ ] T011 [P] [US1] `core-tests/fit_us1.rs`: `FitBusy` 0:05–0:50 with a 20 MB cap. Check:
+- [X] T011 [P] [US1] `core-tests/fit_us1.rs`: `FitBusy` 0:05–0:50 with a 20 MB cap. Check:
   - `bytes ≤ cap` and `≥ 0.9 × cap`;
   - `mode = budget`;
   - ffprobe shows h264 High yuv420p and aac LC with 2 channels;
@@ -151,24 +161,24 @@ small cap.
   - duration 45 s ± 1 frame;
   - `audio_start_offset` within 21.3 ms;
   - a `-v error` decode is clean.
-- [ ] T012 [P] [US1] `core-tests/fit_us1.rs`: `FitShort` with `reddit-video`, so `mode =
+- [X] T012 [P] [US1] `core-tests/fit_us1.rs`: `FitShort` with `reddit-video`, so `mode =
   quality`, one attempt, and the size well under `C × len` (FR-007). `FitNoAudio` gives an
   output with no audio stream that uses the whole budget for the video.
-- [ ] T013 [P] [US1] `core-tests/fit_us1.rs`: the retry path. Under the `test-support` feature,
+- [X] T013 [P] [US1] `core-tests/fit_us1.rs`: the retry path. Under the `test-support` feature,
   a hook `fit::force_overshoot(n)` makes the first `n` measurements report `cap + 1`. Check:
   - one forced overshoot gives two attempts, the second at a lower `video_kbps` (R2's formula);
   - pass 1 runs once (its stats are reused) [K → verified here];
   - four forced overshoots give `FIT_FAILED` (exit 1), no output file, and no `.part` or scratch
     files left.
-- [ ] T014 [P] [US1] `core-tests/fit_us1.rs`: the same job run twice gives identical bytes (R12).
+- [X] T014 [P] [US1] `core-tests/fit_us1.rs`: the same job run twice gives identical bytes (R12).
   Cancelling during pass 1 and during pass 2 removes the scratch and the `.part` (the existing
   cancel helpers).
-- [ ] T015 [P] [US1] `core-tests/snapshots_fit_args.rs`: insta snapshots of the argv for pass 1
+- [X] T015 [P] [US1] `core-tests/snapshots_fit_args.rs`: insta snapshots of the argv for pass 1
   (`-pass 1 -passlogfile fit -an -f null -`), pass 2 (`-b:v`, `-maxrate`, `-bufsize`,
   `-c:a aac -b:a`, `-ac 2`, `-movflags +faststart`, `-tag:v avc1`, `-pix_fmt yuv420p`), and the
   quality pass (`-crf 20 -maxrate C -bufsize 2C`). Every path is `file:`; the stats file is a
   relative name.
-- [ ] T016 [P] [US1] `cli-tests/fit.rs`:
+- [X] T016 [P] [US1] `cli-tests/fit.rs`:
   - `rmedia clip src --fit reddit-video --fit-max-size 20MB` exits 0, with the result line
     `… MB of 20 MB (…%) · … · 2 passes`;
   - `--json` carries `fit` in `job_finished`;
@@ -178,22 +188,22 @@ small cap.
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] `core/plan/planner.rs`: resolve a fit in `plan_clip`:
-  - the mode becomes accurate, with the `SMART_NOT_APPLIED` or `FIT_REENCODES` notice
-    (contracts/cli.md);
+- [X] T017 [US1] `core/plan/planner.rs`: resolve a fit in `plan_clip`:
+  - the mode becomes accurate, with the `SMART_NOT_APPLIED` notice for an explicit smart mode
+    (contracts/cli.md; fast, the default, is ignored silently);
   - the container becomes mp4, and `-c` with another container is refused (exit 3);
   - the first default audio track is kept, with a notice for dropped extra tracks (R6);
   - call `fit::plan::plan_fit`, then store `ClipSpec.fit`;
   - give the job a scratch folder, as GIF jobs have;
   - `space_needs` (`core/plan/model.rs`) counts the cap twice (scratch stats plus `.part`).
-- [ ] T018 [US1] `core/plan/ffargs.rs`:
+- [X] T018 [US1] `core/plan/ffargs.rs`:
   - `fit_pass1_args` and `fit_pass2_args(spec, kbps)`, plus the quality-pass args, built on
     `clip_args`'s input and stream parts;
   - a lanczos scale when the plan's size differs from the source, otherwise the existing
     even-crop;
   - AAC with `-ac 2` for more than 2 channels;
   - the R8 flags.
-- [ ] T019 [US1] `core/exec/fit.rs`: `encode(ctx, spec_args, plan) -> FitOutcome`:
+- [X] T019 [US1] `core/exec/fit.rs`: `encode(ctx, spec_args, plan) -> FitOutcome`:
   - **Budget mode:** stages `pass1`, `pass2`, `verify`; pass 1 runs with cwd = scratch.
   - **Quality mode:** one pass.
   - **Measuring:** the `.part` size is checked after each attempt, with the R2 retry formula, at
@@ -201,16 +211,16 @@ small cap.
   - **Progress:** from both passes (`restart_stage` on a retry).
   - **Spawning:** every process goes through `exec::process`.
   - **Test hook:** the `test-support` overshoot hook for T013.
-- [ ] T020 [US1] `core/exec/clip.rs`: when `spec.fit` is set, call `exec::fit::encode` instead
+- [X] T020 [US1] `core/exec/clip.rs`: when `spec.fit` is set, call `exec::fit::encode` instead
   of the single encode, then the existing verification plus R9's audio-offset check. Attach
   `FitOutcome` to `JobOutcome::Succeeded` (`fit`, skipped when `None`) in `core/event.rs`.
-- [ ] T021 [US1] `cli/main.rs`:
+- [X] T021 [US1] `cli/main.rs`:
   - a `FitFlags` group (`--fit`, `--fit-max-size`, `--fit-max-length`, `--fit-allow-trim`),
     flattened into `clip`, with the exit-2 rules from contracts/cli.md;
   - `to_partial()` into `PartialOptions.fit`.
 
   `cli/render.rs` prints the result line.
-- [ ] T022 [US1] Make T011–T016 pass. Record the measured SC-001, SC-002 and SC-004 numbers in
+- [X] T022 [US1] Make T011–T016 pass. Record the measured SC-001, SC-002 and SC-004 numbers in
   `checklists/validation.md`.
 
 **Checkpoint**: MVP. `clip --fit` is guaranteed under the cap, with sound.

@@ -38,6 +38,7 @@ fn args(m: &MediaInfo, mode: Mode, container: Container, sel: StreamSelection, s
         streams,
         smart: None,
         smart_fallback: None,
+        fit: None,
     };
     let mut v = display_args(&clip_args(&spec, Path::new("OUT.part")));
     v.extend(spec.streams.warnings.iter().map(|w| format!("# warning: {w}")));
@@ -87,6 +88,7 @@ fn ts_accurate_copyts_trim() {
         streams,
         smart: None,
         smart_fallback: None,
+        fit: None,
     };
     insta::assert_json_snapshot!(display_args(&clip_args(&spec, Path::new("OUT.part"))));
 }
@@ -204,6 +206,7 @@ fn smart_args(
         streams,
         smart: None,
         smart_fallback: None,
+        fit: None,
     };
     let mut out = Vec::new();
     let mut add = |name: &str, args: Vec<std::ffi::OsString>| {

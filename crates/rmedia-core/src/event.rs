@@ -124,6 +124,10 @@ pub enum JobMeasure {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "ts", ts(optional))]
         smart: Option<SmartOutcome>,
+        /// What a fit job measured (feature 005); absent unless the clip was fitted.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        fit: Option<crate::fit::FitOutcome>,
     },
     Upscale {
         span: Span,

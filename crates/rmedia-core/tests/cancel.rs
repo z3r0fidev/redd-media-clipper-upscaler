@@ -310,3 +310,45 @@ async fn cancelling_a_smart_job_at_each_stage_is_fast_and_clean() {
         assert!(child_engines().is_empty(), "{stage}: orphaned engine processes: {:?}", child_engines());
     }
 }
+
+/// Feature 005, T014: cancelling a fit job in either pass stops it within 2 s and leaves no
+/// `.part`, no scratch folder (with the pass-1 stats) and no engine process.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_fit_in_either_pass_is_fast_and_clean() {
+    let _serial = SERIAL.lock().await;
+    rmedia_testkit::require_engine!("libx264", "aac");
+    let src = fixture(Fixture::FitBusy);
+    let (tools, caps) = engine();
+    for stage in ["pass1", "pass2"] {
+        let out = tempfile::tempdir().unwrap();
+        let o = rmedia_core::request::Options {
+            fit: Some(rmedia_core::fit::FitOptions { max_size: Some(8_000_000), ..Default::default() }),
+            ..opts(out.path(), Mode::Fast)
+        };
+        let plan = make_plan(&request(&src, vec![clip(0.0, EndSpec::EndOfMedia)], o), &tools, &caps).await;
+        assert!(!plan.has_errors(), "{:?}", plan.issues);
+        let scratch = plan.jobs[0].scratch.clone().expect("fit jobs have a scratch folder");
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let cfg = RunConfig { jobs: 1, state_dir: Some(out.path().join("state")) };
+        let handle = exec::start(plan, tools.clone(), cfg, Arc::new(Notify(tx)));
+        loop {
+            match tokio::time::timeout(Duration::from_secs(90), rx.recv()).await {
+                Ok(Some(Event::JobStage { stage: s, .. })) if s == stage => break,
+                Ok(Some(_)) => continue,
+                other => panic!("{stage}: the stage never started: {other:?}"),
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!child_engines().is_empty(), "{stage}: ffmpeg should be running");
+        let t0 = Instant::now();
+        handle.cancel();
+        let summary = handle.wait().await;
+        let elapsed = t0.elapsed();
+        assert!(elapsed < Duration::from_secs(2), "{stage}: cancel took {elapsed:?}");
+        assert!(matches!(summary.jobs[0].outcome, JobOutcome::Cancelled), "{stage}: {summary:?}");
+        assert!(partials(out.path()).is_empty(), "{stage}: partial files left: {:?}", partials(out.path()));
+        assert!(!scratch.exists(), "{stage}: scratch folder left");
+        assert!(child_engines().is_empty(), "{stage}: orphaned engine processes: {:?}", child_engines());
+    }
+}

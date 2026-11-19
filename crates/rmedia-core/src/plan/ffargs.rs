@@ -46,6 +46,10 @@ pub struct ClipSpec {
     /// while planning (feature 004). Reported in the outcome.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub smart_fallback: Option<crate::smart::FallbackReason>,
+    /// Fit the clip to a video target (feature 005): MP4 with audio, at most `fit.cap` bytes.
+    /// Set only in accurate mode.
+    #[serde(skip)]
+    pub fit: Option<crate::fit::plan::FitPlan>,
 }
 
 /// Absolute source timestamps for filter-based cutting.
@@ -167,6 +171,84 @@ pub fn clip_args(spec: &ClipSpec, output: &Path) -> Vec<OsString> {
         push(&["-movflags", "+faststart"]);
     }
     push(&["-f", spec.container.muxer()]);
+    a.push(file_arg(output));
+    a
+}
+
+/// Which encode of a fit job (research R1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FitPass {
+    /// Budget mode's analysis pass: video only, to the null muxer, stats to `fit-0.log`.
+    First,
+    /// Budget mode's output pass at `video_kbps` (lower on a retry), reading pass 1's stats.
+    Second { video_kbps: u32 },
+    /// Quality mode's single pass: the target's CRF under the quality ceiling.
+    Quality,
+}
+
+/// The pass-1 stats name, relative to the job's scratch folder (the cwd of both passes).
+pub const FIT_PASSLOG: &str = "fit";
+
+/// A fit job's ffmpeg argv for `pass` (research R1, R6, R8): H.264 High 4:2:0 at the planned
+/// size and rate control, AAC audio, fast-start MP4. Every path is `file:`; the stats file is a
+/// relative name, so both passes run with the scratch folder as cwd.
+pub fn fit_args(spec: &ClipSpec, pass: FitPass, output: &Path) -> Vec<OsString> {
+    let fit = spec.fit.as_ref().expect("fit_args needs a fit job");
+    let mut a = common_args();
+    if pass == FitPass::First {
+        // The null output is not a file; `-n` would not apply.
+        a.retain(|x| x != "-n");
+        a.insert(2, "-y".into());
+    }
+    a.extend(input_args(spec));
+    let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
+    let audio = pass != FitPass::First && fit.audio_kbps.is_some();
+    for m in &spec.streams.maps {
+        if m.kind == StreamKind::Video || (audio && m.kind == StreamKind::Audio) {
+            push(&["-map", &format!("0:{}", m.index)]);
+        }
+    }
+    push(&["-map_metadata", "0", "-map_chapters", "-1"]);
+    let mut vf: Vec<String> =
+        spec.trim.map(|t| format!("trim={},setpts=PTS-STARTPTS", t.params())).into_iter().collect();
+    if fit.resample_fps {
+        vf.push(format!("fps={}/{}", fit.fps.0, fit.fps.1));
+    }
+    vf.push(format!("scale={}:{}:flags=lanczos,setsar=1", fit.size.0, fit.size.1));
+    vf.push("format=yuv420p".into());
+    let fps_mode = if fit.resample_fps { "cfr" } else { "passthrough" };
+    push(&["-fps_mode", fps_mode, "-vf", &vf.join(",")]);
+    push(&["-c:v", "libx264", "-preset", "medium", "-profile:v", "high", "-pix_fmt", "yuv420p"]);
+    let kbps = |k: u32| format!("{k}k");
+    match pass {
+        // Determinism (research R13): x264's VBV with frame threads differs from run to run, so
+        // pass 1 runs on one thread and the outputs use sliced threads.
+        FitPass::First => {
+            let k = fit.video_kbps;
+            push(&["-b:v", &kbps(k), "-maxrate", &kbps(k), "-bufsize", &kbps(k * 2), "-threads", "1"]);
+            push(&["-pass", "1", "-passlogfile", FIT_PASSLOG, "-an", "-f", "null", "-"]);
+            return a;
+        }
+        FitPass::Second { video_kbps: k } => {
+            push(&["-b:v", &kbps(k), "-maxrate", &kbps(k), "-bufsize", &kbps(k * 2)]);
+            push(&["-x264-params", "sliced-threads=1", "-pass", "2", "-passlogfile", FIT_PASSLOG]);
+        }
+        FitPass::Quality => {
+            let (crf, c) = (fit.crf.unwrap_or(fit.target.quality.crf), fit.video_kbps);
+            push(&["-crf", &crf.to_string(), "-maxrate", &kbps(c), "-bufsize", &kbps(c * 2)]);
+            push(&["-x264-params", "sliced-threads=1"]);
+        }
+    }
+    if let (true, Some(k)) = (audio, fit.audio_kbps) {
+        push(&["-c:a", "aac", "-b:a", &kbps(k), "-ar", "48000"]);
+        if fit.downmix {
+            push(&["-ac", "2"]);
+        }
+        if let Some(t) = spec.trim {
+            push(&["-af", &format!("atrim={},asetpts=PTS-STARTPTS", t.params())]);
+        }
+    }
+    push(&["-tag:v", "avc1", "-movflags", "+faststart", "-f", "mp4"]);
     a.push(file_arg(output));
     a
 }

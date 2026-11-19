@@ -16,6 +16,27 @@ use crate::time::Ts;
 const ADJUST_TOLERANCE: Ts = Ts::from_micros(50_000);
 
 pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<JobMeasure> {
+    if let Some(fit) = &spec.fit {
+        let attempts = super::fit::encode(spec, ctx).await?;
+        let of = if fit.mode == crate::fit::plan::Mode::Budget { 3 } else { 2 };
+        ctx.stage("verify", of, of, 0.1);
+        let JobMeasure::Clip { actual, adjusted, smart, .. } = measure(spec, ctx, None).await? else {
+            unreachable!("a clip job measures a clip")
+        };
+        let last = *attempts.last().expect("at least one encode");
+        let outcome = crate::fit::FitOutcome {
+            bytes: last.bytes,
+            cap: fit.cap,
+            mode: fit.mode,
+            video_kbps: last.video_kbps,
+            audio_kbps: fit.audio_kbps,
+            attempts,
+            trimmed: fit.trimmed_from.is_some(),
+            size: fit.size,
+            fps: f64::from(fit.fps.0) / f64::from(fit.fps.1),
+        };
+        return Ok(JobMeasure::Clip { actual, adjusted, smart, fit: Some(outcome) });
+    }
     let Some(plan) = &spec.smart else {
         encode(spec, ctx).await?;
         return measure(spec, ctx, None).await;
@@ -132,7 +153,22 @@ async fn measure(spec: &ClipSpec, ctx: &mut JobCtx<'_>, smart: Option<SmartOutco
             fallback: Some(reason),
         })
     });
-    Ok(JobMeasure::Clip { actual, adjusted: adjusted(requested, actual), smart })
+    // A fit's audio must start with its picture (research R6, R9): two AAC frames at most.
+    if spec.fit.is_some()
+        && let (Some(v), Some(a)) = (
+            info.first_video().and_then(|s| s.start_time),
+            info.streams
+                .iter()
+                .find(|s| s.kind == crate::probe::StreamKind::Audio)
+                .and_then(|s| s.start_time),
+        )
+    {
+        let off = (a.as_secs_f64() - v.as_secs_f64()).abs();
+        if off > 2048.0 / 48_000.0 {
+            return Err(Error::VerifyFailed(format!("the audio starts {off:.3} s away from the picture")));
+        }
+    }
+    Ok(JobMeasure::Clip { actual, adjusted: adjusted(requested, actual), smart, fit: None })
 }
 
 fn adjusted(requested: Span, actual: Span) -> bool {

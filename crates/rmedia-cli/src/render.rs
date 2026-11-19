@@ -183,7 +183,10 @@ impl Output {
         }
         for j in &s.jobs {
             match &j.outcome {
-                JobOutcome::Succeeded { output, measure: JobMeasure::Clip { actual, adjusted, smart } } => {
+                JobOutcome::Succeeded {
+                    output,
+                    measure: JobMeasure::Clip { actual, adjusted, smart, fit },
+                } => {
                     let mut note = if *adjusted {
                         format!(
                             "  (actual {} → {}, requested {} → {})",
@@ -202,6 +205,9 @@ impl Output {
                             note.push_str(&format!("  (accurate (smart fallback: {reason}))"));
                         }
                         None => {}
+                    }
+                    if let Some(f) = fit {
+                        note.push_str(&format!("  {}", fit_note(f)));
                     }
                     println!("✓ {}{note}", output.display());
                 }
@@ -590,6 +596,29 @@ fn plan_doc(plan: &Plan) -> Value {
         doc["smart"] = json!(t);
     }
     doc
+}
+
+/// A fit job's result (feature 005, contracts/cli.md): its size against the cap, the size and
+/// how it was encoded.
+pub fn fit_note(f: &rmedia_core::fit::FitOutcome) -> String {
+    use rmedia_core::fit::plan::Mode;
+    let human = rmedia_core::upscale::estimate::human_bytes;
+    let share = (f.bytes as f64 / f.cap as f64 * 100.0).floor();
+    let passes = match (f.mode, f.attempts.len()) {
+        (Mode::Quality, 1) => "1 pass".to_owned(),
+        (Mode::Quality, n) => format!("1 pass, then 2 passes ({} retries)", n - 1),
+        (Mode::Budget, 1) => "2 passes".to_owned(),
+        (Mode::Budget, 2) => "2 passes, 1 retry".to_owned(),
+        (Mode::Budget, n) => format!("2 passes, {} retries", n - 1),
+    };
+    let trimmed = if f.trimmed { " · trimmed" } else { "" };
+    format!(
+        "{} of {} ({share:.0}%) · {}x{}{trimmed} · {passes}",
+        human(f.bytes),
+        human(f.cap),
+        f.size.0,
+        f.size.1
+    )
 }
 
 /// Event sink for a run.

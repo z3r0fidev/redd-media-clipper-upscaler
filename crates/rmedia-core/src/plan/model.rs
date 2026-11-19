@@ -20,6 +20,8 @@ pub struct Caps {
     pub reframe_cache: Option<PathBuf>,
     /// The AI tier's worker and models (`None`: not installed; the AI tier cannot run).
     pub ai: Option<crate::upscale::ai::AiEngine>,
+    /// The video targets a fit can name (feature 005): the built-ins plus the user's files.
+    pub video_targets: crate::fit::target::VideoTargetRegistry,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -386,8 +388,11 @@ pub fn space_needs(jobs: &[PlannedJob]) -> std::collections::BTreeMap<PathBuf, u
             JobSpec::Gif(g) => crate::gif::plan::rough_bytes(&g.gif),
             // A smart clip holds its parts and the joined file at once (item 27). Other clips are
             // left out: a re-encode's size is not predictable from the source.
-            JobSpec::Clip(c) => match &c.smart {
-                Some(s) if s.bytes > 0 => s.bytes.saturating_mul(2),
+            JobSpec::Clip(c) => match (&c.fit, &c.smart) {
+                // A fit's size is known: at most its prediction (feature 005). A retry replaces
+                // the temp file, so one copy is needed at a time.
+                (Some(f), _) => f.predicted_bytes,
+                (None, Some(s)) if s.bytes > 0 => s.bytes.saturating_mul(2),
                 _ => continue,
             },
         };

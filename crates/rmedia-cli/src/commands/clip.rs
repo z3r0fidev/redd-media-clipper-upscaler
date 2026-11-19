@@ -44,6 +44,10 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
         eprintln!("error: {msg}");
         return exit::USAGE;
     }
+    if let Some(msg) = args.fit.usage_error(args.gif) {
+        eprintln!("error: {msg}");
+        return exit::USAGE;
+    }
     if args.gifo.crop_path.is_some() {
         eprintln!("error: --crop-path is for `rmedia gif` (one video) or `rmedia upscale`");
         return exit::USAGE;
@@ -76,6 +80,7 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     if args.gif {
         defaults.gif = Some(args.gifo.options());
     }
+    defaults.fit = args.fit.options();
     let req = BatchRequest {
         defaults,
         sources: inputs

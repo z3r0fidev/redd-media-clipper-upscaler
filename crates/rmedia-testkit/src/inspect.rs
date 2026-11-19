@@ -86,6 +86,13 @@ pub fn stream_starts(path: &Path) -> (f64, f64) {
     (start("video"), start("audio"))
 }
 
+/// The first audio stream's start minus the first video stream's, in seconds (feature 005: in
+/// sync within one AAC frame, 1024 samples).
+pub fn audio_start_offset(path: &Path) -> f64 {
+    let (video, audio) = stream_starts(path);
+    audio - video
+}
+
 /// Runs ffprobe and returns its JSON (`-show_format -show_streams`).
 pub fn probe_json(path: &Path) -> serde_json::Value {
     let out = Command::new(ffprobe())

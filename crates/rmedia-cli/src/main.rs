@@ -129,6 +129,8 @@ pub struct ClipArgs {
     #[command(flatten)]
     pub gifo: GifFlags,
     #[command(flatten)]
+    pub fit: FitFlags,
+    #[command(flatten)]
     pub common: CommonArgs,
 }
 
@@ -351,6 +353,61 @@ pub struct GifArgs {
     pub gif: GifFlags,
     #[command(flatten)]
     pub common: CommonArgs,
+}
+
+/// Fit options (feature 005, contracts/cli.md): an MP4 with audio within a video target's caps.
+#[derive(Debug, Args, Clone, Default)]
+pub struct FitFlags {
+    /// Make each output an MP4 with audio that fits TARGET's size cap and length limit
+    /// (re-encodes; accurate cut).
+    #[arg(long, value_name = "TARGET")]
+    pub fit: Option<String>,
+    /// Lower the target's size cap for this run: 50MB, 8MiB, 1GB, or bytes.
+    #[arg(long, value_name = "SIZE", value_parser = rmedia_core::fit::parse_size)]
+    pub fit_max_size: Option<u64>,
+    /// Lower the target's length limit (same syntax as -d).
+    #[arg(long, value_name = "DURATION", value_parser = parse_ts)]
+    pub fit_max_length: Option<rmedia_core::Ts>,
+    /// Shorten a range that is too long, or that cannot fit the cap even at the target's
+    /// smallest size, instead of refusing it.
+    #[arg(long)]
+    pub fit_allow_trim: bool,
+}
+
+fn parse_ts(s: &str) -> Result<rmedia_core::Ts, String> {
+    rmedia_core::Ts::parse(s).map_err(|e| e.to_string())
+}
+
+impl FitFlags {
+    /// The fit options, when `--fit` was given.
+    pub fn options(&self) -> Option<rmedia_core::fit::FitOptions> {
+        self.fit.as_ref().map(|target| rmedia_core::fit::FitOptions {
+            target: target.clone(),
+            max_size: self.fit_max_size,
+            max_length: self.fit_max_length,
+            allow_trim: self.fit_allow_trim,
+        })
+    }
+
+    /// A usage error: a `--fit-*` flag without `--fit`, or `--fit` with `--gif`.
+    pub fn usage_error(&self, gif: bool) -> Option<String> {
+        let given: Vec<&str> = [
+            ("--fit-max-size", self.fit_max_size.is_some()),
+            ("--fit-max-length", self.fit_max_length.is_some()),
+            ("--fit-allow-trim", self.fit_allow_trim),
+        ]
+        .into_iter()
+        .filter_map(|(n, set)| set.then_some(n))
+        .collect();
+        match (&self.fit, gif) {
+            (None, _) if !given.is_empty() => {
+                let verb = if given.len() == 1 { "needs" } else { "need" };
+                Some(format!("{} {verb} --fit", given.join(", ")))
+            }
+            (Some(_), true) => Some("--fit cannot be combined with --gif (a GIF has its own targets)".into()),
+            _ => None,
+        }
+    }
 }
 
 /// GIF options (`rmedia gif`). Unset flags come from the target.

@@ -58,6 +58,10 @@ pub struct StreamInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub codec_tag: Option<String>,
+    /// Audio channels (a fit downmixes more than 2, feature 005). Not in the JSON output.
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub channels: Option<u32>,
     /// Display-matrix rotation in degrees (players rotate by this before showing the picture).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -278,6 +282,7 @@ pub fn parse_probe_json(path: &Path, size: u64, json: &str) -> Result<MediaInfo>
                     s.tags.as_ref().and_then(|t| t.duration.as_deref()).and_then(parse_clock_tag)
                 }),
                 codec_tag: s.codec_tag_string.filter(|t| !t.is_empty() && !t.starts_with('[')),
+                channels: s.channels.filter(|c| *c > 0),
                 rotation: s
                     .side_data_list
                     .iter()
@@ -457,6 +462,7 @@ struct RawProbe {
 #[derive(Deserialize)]
 struct RawStream {
     index: u32,
+    channels: Option<u32>,
     codec_type: Option<String>,
     codec_name: Option<String>,
     width: Option<u32>,

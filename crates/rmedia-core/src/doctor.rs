@@ -303,6 +303,9 @@ pub async fn caps(tools: &Tools, settings: &Settings) -> Result<Caps> {
         models,
         reframe_cache: crate::settings::cache_root().map(|c| c.join("reframe")),
         ai: crate::upscale::ai::AiEngine::discover(settings),
+        video_targets: crate::fit::target::VideoTargetRegistry::load(
+            crate::settings::config_dir().as_deref(),
+        ),
         ..Caps::default()
     })
 }
