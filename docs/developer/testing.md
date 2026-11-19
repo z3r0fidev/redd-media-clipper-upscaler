@@ -109,6 +109,24 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml   # desktop backend
 cd apps/desktop && npm ci && npm test && npm run check   # vitest + svelte-check
 ```
 
+### Windows type-check from Linux
+
+CI's `windows-check-gnu` job type-checks the Windows code paths (`#[cfg(windows)]` code, and
+tests or imports that are only used on one platform) with warnings as errors. Run the same
+check before pushing; it needs the MinGW cross-compiler, because `tract-linalg`'s build script
+compiles C for the target:
+
+```bash
+sudo apt-get install -y gcc-mingw-w64-x86-64     # once (x86_64-w64-mingw32-gcc)
+rustup target add x86_64-pc-windows-gnu          # once
+RUSTFLAGS="-D warnings" cargo check --workspace --all-targets \
+  --target x86_64-pc-windows-gnu --exclude rmedia-sr
+```
+
+`rmedia-sr` links the MSVC build of ncnn, and the desktop crate is a separate workspace: CI's
+Windows jobs check those. A typical catch: a test module whose only test is `#[cfg(unix)]`
+leaves `use super::*;` unused on Windows (fix: `#[cfg(all(test, unix))]` on the module).
+
 Run the benches in release mode. Their thresholds assume optimized builds. The 002 SC-003 bar
 (CPU tier in at most twice the clip's duration) is defined for the 12-thread reference machine,
 so on machines with fewer threads, including the CI runners, the bench reports the time without
