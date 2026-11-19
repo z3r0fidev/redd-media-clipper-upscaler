@@ -230,32 +230,19 @@ impl AppState {
     }
 
     /// Engine paths can only be set here — from the native file dialog in Rust — never by the page.
-    pub fn set_engine_path(&self, ffmpeg: Option<PathBuf>) -> OpResult<()> {
+    /// Sets (or resets) the ffmpeg program, with the ffprobe next to it. Only from the native file
+    /// dialog in Rust, never from the page. Both must identify themselves ([`check_engine`]).
+    pub async fn set_engine_path(&self, ffmpeg: Option<PathBuf>) -> OpResult<()> {
+        let pair = match ffmpeg {
+            Some(p) => {
+                let probe = check_engine(&p).await?;
+                Some((p, probe))
+            }
+            None => None,
+        };
         let _saving = lock(&self.settings_save);
         let mut s = lock(&self.settings).clone();
-        match ffmpeg {
-            Some(p) => {
-                let name =
-                    p.file_stem().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-                if !name.ends_with("ffmpeg") {
-                    return Err("choose the ffmpeg program (ffprobe must be in the same folder)".into());
-                }
-                let probe = p.with_file_name(format!(
-                    "{}{}",
-                    name.replace("ffmpeg", "ffprobe"),
-                    std::env::consts::EXE_SUFFIX
-                ));
-                if !probe.is_file() {
-                    return Err(format!("{} was not found next to ffmpeg", probe.display()));
-                }
-                s.ffmpeg_path = Some(p);
-                s.ffprobe_path = Some(probe);
-            }
-            None => {
-                s.ffmpeg_path = None;
-                s.ffprobe_path = None;
-            }
-        }
+        (s.ffmpeg_path, s.ffprobe_path) = pair.unzip();
         s.save().map_err(|e| e.to_string())?;
         *lock(&self.settings) = s;
         *self.engine.write().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
@@ -1143,6 +1130,26 @@ const GIF_ESTIMATES: &str = "gif-estimates";
 /// The output folder smart plans are named in (nothing is written there).
 const SMART_PLANS: &str = "smart-plans";
 /// Keyframe indexes kept (one per source; the oldest is dropped first).
+/// Checks a chosen ffmpeg program and returns the ffprobe next to it: the name must be ffmpeg,
+/// ffprobe must be in the same folder, and both must report their version (security L3), so a
+/// renamed program is refused before it is saved.
+pub async fn check_engine(ffmpeg: &Path) -> OpResult<PathBuf> {
+    let name = ffmpeg.file_stem().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if !name.ends_with("ffmpeg") {
+        return Err("choose the ffmpeg program (ffprobe must be in the same folder)".into());
+    }
+    let probe = ffmpeg.with_file_name(format!(
+        "{}{}",
+        name.replace("ffmpeg", "ffprobe"),
+        std::env::consts::EXE_SUFFIX
+    ));
+    if !probe.is_file() {
+        return Err(format!("{} was not found next to ffmpeg", probe.display()));
+    }
+    rmedia_core::tools::check_chosen(ffmpeg, &probe).await.map_err(|e| e.to_string())?;
+    Ok(probe)
+}
+
 const MAX_KEYFRAME_INDEXES: usize = 32;
 /// Uncached keyframe scans that may run at once; the frontend needs one (it cancels the old
 /// source's), the second covers a cancel still winding down.

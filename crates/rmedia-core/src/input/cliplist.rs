@@ -8,7 +8,7 @@ use crate::time::{EndSpec, Ts};
 
 /// Reads and parses a clip list file.
 pub fn load(path: &Path) -> Result<Vec<ClipRequest>, Vec<Issue>> {
-    match std::fs::read(path) {
+    match super::read_capped(path) {
         Ok(bytes) => match String::from_utf8(bytes) {
             Ok(text) => parse(path, &text),
             Err(e) => {

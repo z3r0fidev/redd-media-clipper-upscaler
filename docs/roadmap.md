@@ -248,12 +248,16 @@ security and code-review lows, then 005.
    GIF engines' cleared environment in the temp folder. Jobs keep the user's environment
    (hardware encoders and GPU drivers read it). Was: the ffmpeg and ffprobe PATH lookup lacked
    the refuse-cwd guard and the clean environment the GIF engines have.
-9. **L2.** `release.yml`: packages are unsigned and have no `SHA256SUMS`, SBOM or provenance
-   attestation; `npm ci` runs install scripts; rust-cache is used on tag builds.
-10. **L3.** `set_engine_path` has no `-version` banner check for ffmpeg (the GIF engines have one).
-11. **L4.** Clip lists and manifests are read without a size cap.
-12. **L5.** The `media_server` accept loop spins on persistent errors.
-13. **L6.** The desktop CSP allows `img-src` and `media-src` from any 127.0.0.1 port.
+9. ~~**L2.**~~ done 2026-11-18 except signing: `release.yml` now writes `SHA256SUMS`, an SPDX SBOM
+   and a provenance attestation (`checksums` job), runs `npm ci --ignore-scripts` (CI too), and uses
+   no Rust cache on tag builds. Code signing stays owner item 2.
+10. ~~**L3.**~~ done 2026-11-18: a chosen ffmpeg and the ffprobe next to it must report their
+    version before the setting is saved (`tools::check_chosen`, `ops::check_engine`).
+11. ~~**L4.**~~ done 2026-11-18: clip lists, path lists and manifests are read up to 16 MiB
+    (`input::read_capped`; stdin too).
+12. ~~**L5.**~~ done 2026-11-18: a failing accept waits 10 ms, doubling to 1 s, instead of spinning.
+13. ~~**L6.**~~ done 2026-11-18: the CSP's `img-src` and `media-src` name only the media server's
+    port, written in at start-up (checked in the app: a wrong port blocks playback).
 
 **Code review findings (2026-11-14: layering holds)**
 

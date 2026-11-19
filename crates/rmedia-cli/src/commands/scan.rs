@@ -133,14 +133,22 @@ pub async fn expand_inputs(
     let mut all: Vec<PathBuf> = inputs.iter().map(|p| absolute(p)).collect();
     if let Some(src) = inputs_from {
         let (text, base) = if src == "-" {
+            // Bounded like a path list file (security L4).
             let mut s = String::new();
-            if let Err(e) = std::io::stdin().read_to_string(&mut s) {
-                return Err(out.input_error(&format!("cannot read paths from stdin: {e}")));
+            let cap = rmedia_core::input::MAX_INPUT_BYTES;
+            match std::io::stdin().take(cap + 1).read_to_string(&mut s) {
+                Err(e) => return Err(out.input_error(&format!("cannot read paths from stdin: {e}"))),
+                Ok(n) if n as u64 > cap => {
+                    return Err(out.input_error("the paths on stdin are larger than 16 MiB"));
+                }
+                Ok(_) => {}
             }
             (s, std::env::current_dir().unwrap_or_default())
         } else {
             let p = absolute(Path::new(src));
-            match std::fs::read_to_string(&p) {
+            let text = rmedia_core::input::read_capped(&p)
+                .and_then(|b| String::from_utf8(b).map_err(|_| "not valid UTF-8 text".into()));
+            match text {
                 Ok(s) => (s, p.parent().map(Path::to_path_buf).unwrap_or_default()),
                 Err(e) => return Err(out.input_error(&format!("cannot read {}: {e}", p.display()))),
             }

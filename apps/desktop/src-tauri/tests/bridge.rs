@@ -154,7 +154,45 @@ async fn settings_from_the_page_cannot_set_engine_paths() {
         (None, None),
         "GIF engine paths are not taken from the page"
     );
-    assert!(st.set_engine_path(Some("/bin/sh".into())).is_err(), "only a program named ffmpeg is accepted");
+    assert!(
+        st.set_engine_path(Some("/bin/sh".into())).await.is_err(),
+        "only a program named ffmpeg is accepted"
+    );
+}
+
+/// Security L3: a program named ffmpeg must also say it is ffmpeg (`-version`), as the GIF
+/// engines must, and so must the ffprobe next to it. Nothing is saved otherwise.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chosen_ffmpeg_must_identify_itself() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = tempfile::tempdir().unwrap();
+    let st = state(d.path()).await;
+    let tool = |dir: &str, name: &str, banner: &str| {
+        let folder = d.path().join(dir);
+        std::fs::create_dir_all(&folder).unwrap();
+        let p = folder.join(name);
+        std::fs::write(&p, format!("#!/bin/sh\necho '{banner}'\n")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+    let ok_probe = |dir: &str| tool(dir, "ffprobe", "ffprobe version 7.1 Copyright (c) 2007-2024");
+
+    let impostor = tool("a", "ffmpeg", "hello");
+    ok_probe("a");
+    let err = st.set_engine_path(Some(impostor)).await.unwrap_err();
+    assert!(err.contains("ffmpeg version"), "{err}");
+
+    let ffmpeg = tool("b", "ffmpeg", "ffmpeg version 7.1 Copyright (c) 2000-2024");
+    tool("b", "ffprobe", "hello");
+    let err = st.set_engine_path(Some(ffmpeg)).await.unwrap_err();
+    assert!(err.contains("ffprobe"), "{err}");
+    assert_eq!(st.get_settings().ffmpeg_path, None, "nothing saved");
+
+    // Accepted (checked without saving: the settings file is shared by the tests in this process).
+    let ffmpeg = tool("c", "ffmpeg", "ffmpeg version 7.1 Copyright (c) 2000-2024");
+    let probe = ok_probe("c");
+    assert_eq!(rmedia_desktop::ops::check_engine(&ffmpeg).await.unwrap(), probe);
 }
 
 /// Security review M1/M4: outputs must stay in chosen folders; lists must be picked as lists;

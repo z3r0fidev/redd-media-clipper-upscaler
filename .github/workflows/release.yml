@@ -1,7 +1,8 @@
 name: Release
 
-# Builds installers and standalone CLI archives for a version tag. Publishing (GitHub release,
-# signing) is a separate, manual step — see README › Releasing.
+# Builds installers and standalone CLI archives for a version tag, then SHA256SUMS, an SBOM and a
+# provenance attestation for them. Publishing (GitHub release, signing) is a separate, manual
+# step — see README › Releasing.
 on:
   push:
     tags: ["v*"]
@@ -57,7 +58,9 @@ jobs:
           && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev
           libayatana-appindicator3-dev patchelf libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+      # Security L2: a release never builds from a cache another run could have written.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: github.ref_type != 'tag'
         with:
           workspaces: |
             . -> target
@@ -83,9 +86,10 @@ jobs:
           RMEDIA_FFMPEG: ${{ github.workspace }}/binaries/rmedia-ffmpeg-${{ matrix.triple }}${{ matrix.exe }}
           RMEDIA_FFPROBE: ${{ github.workspace }}/binaries/rmedia-ffprobe-${{ matrix.triple }}${{ matrix.exe }}
         run: cargo test --workspace
+      # Security L2: no package install scripts (only fsevents has one, and it is macOS-only).
       - name: Frontend dependencies
         working-directory: apps/desktop
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Third-party notices are current (covers both platforms)
         if: runner.os == 'Linux'
         run: cargo xtask notices && git diff --exit-code -- THIRD_PARTY_NOTICES.md
@@ -141,4 +145,55 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/**/*.msi
             dist/*.tar.gz
             dist/*.zip
+          if-no-files-found: error
+
+  # Security L2: SHA256SUMS over the six release files, an SBOM of the Rust and npm dependencies,
+  # and a provenance attestation (`gh attestation verify <file> -R <repo>`). Signing stays manual.
+  checksums:
+    needs: package
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: rmedia-*
+          path: artifacts
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: |
+          mkdir release
+          find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.msi' \
+            -o -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/ \;
+          # Two desktop packages and one CLI archive per platform.
+          test "$(ls release | wc -l)" -eq 6
+          cd release && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: release/rmedia-sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release/*.deb
+            release/*.AppImage
+            release/*.exe
+            release/*.msi
+            release/*.tar.gz
+            release/*.zip
+            release/rmedia-sbom.spdx.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rmedia-checksums
+          path: |
+            release/SHA256SUMS
+            release/rmedia-sbom.spdx.json
           if-no-files-found: error

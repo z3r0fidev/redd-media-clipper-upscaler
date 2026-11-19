@@ -228,3 +228,20 @@ fn the_same_video_reached_twice_is_clipped_once() {
         String::from_utf8_lossy(&o.stdout)
     );
 }
+
+/// Security L4: a path list over 16 MiB is refused (exit 3, an input error) instead of being
+/// read whole.
+#[test]
+fn an_oversized_path_list_is_refused() {
+    let d = tempfile::tempdir().unwrap();
+    let list = d.path().join("paths.txt");
+    std::fs::File::create(&list).unwrap().set_len(rmedia_core::input::MAX_INPUT_BYTES + 1).unwrap();
+    let o = rmedia(d.path())
+        .args(["clip", "--inputs-from"])
+        .arg(&list)
+        .args(["-s", "1", "-e", "2", "--dry-run"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(3), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("larger than 16 MiB"));
+}

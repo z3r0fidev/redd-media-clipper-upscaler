@@ -8,6 +8,11 @@ Authoritative sources: `crates/rmedia-core/src/{time.rs,input/*.rs,plan/naming.r
 Contracts: `specs/001-video-clipping/contracts/{cliplist-format.md,manifest.schema.json,manifest-csv.md}`.
 Where code and contract differ, this page follows the code and says so.
 
+Clip lists, path lists and JSON or CSV manifests are read up to **16 MiB** (security L4); a
+bigger file is refused with `the file is larger than 16 MiB (<path>)` (paths on stdin: `the
+paths on stdin are larger than 16 MiB`) and nothing runs. Real files are far smaller: 16 MiB
+holds about 400,000 clip list lines.
+
 ## Time Grammar
 
 Implemented by `Ts::parse` and `EndSpec::parse` (`time.rs`). Leading and trailing whitespace is

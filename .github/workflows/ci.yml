@@ -179,7 +179,7 @@ jobs:
       - name: Frontend checks and tests
         working-directory: apps/desktop
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm run check
           npm test
           npm run build

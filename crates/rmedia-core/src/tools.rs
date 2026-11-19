@@ -225,6 +225,20 @@ pub fn parse_version(output: &str) -> Option<Version> {
     }
 }
 
+/// A pair the user chose (the desktop's engine setting, security L3): both programs must exist
+/// and identify themselves (`ffmpeg version …` in a supported version, `ffprobe version …`),
+/// as the GIF engines must.
+pub async fn check_chosen(ffmpeg: &Path, ffprobe: &Path) -> Result<Tools> {
+    let opts =
+        LocateOptions { ffmpeg: Some(ffmpeg.into()), ffprobe: Some(ffprobe.into()), ..Default::default() };
+    let tools = locate(&opts).await?;
+    let out = probe(ffprobe, &["-hide_banner", "-version"]).await?;
+    if !String::from_utf8_lossy(&out).lines().next().is_some_and(|l| l.starts_with("ffprobe version ")) {
+        return Err(Error::EngineMissing(format!("{} did not report an ffprobe version", ffprobe.display())));
+    }
+    Ok(tools)
+}
+
 /// How long a look at ffmpeg (`-version`, `-encoders`…) may take; generous for a cold start
 /// under an antivirus scan, but a hung engine never stalls the caller.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(30);

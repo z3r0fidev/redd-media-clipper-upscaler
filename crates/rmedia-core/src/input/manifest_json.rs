@@ -46,7 +46,9 @@ struct RawClip {
 
 /// Reads and parses a manifest; `cli` supplies defaults below the manifest's own.
 pub fn load(path: &Path, cli: &Options) -> Result<BatchRequest, Vec<Issue>> {
-    match std::fs::read_to_string(path) {
+    match super::read_capped(path)
+        .and_then(|b| String::from_utf8(b).map_err(|_| "not valid UTF-8 text".into()))
+    {
         Ok(text) => parse(path, &text, cli),
         Err(e) => Err(vec![issue(path, "", format!("cannot read manifest: {e}"))]),
     }

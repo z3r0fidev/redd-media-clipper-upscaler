@@ -296,8 +296,10 @@ is left alone. After that commit Dependabot stops rebasing the PR on its own; co
 
 Triggers: push of a tag matching `v*`, or manual `workflow_dispatch`, whose `gifski` input
 (default on) chooses whether gifski is bundled. A tag push always bundles it. Permissions:
-`contents: read`. The workflow **builds** installers and CLI archives and uploads them as workflow
-artifacts. It does not create a GitHub release, sign, or publish anything.
+`contents: read` (the `checksums` job adds `id-token` and `attestations: write` for itself). The
+workflow **builds** installers and CLI archives, then `SHA256SUMS`, an SBOM and a provenance
+attestation for them, and uploads them as workflow artifacts. It does not create a GitHub
+release, sign, or publish anything.
 
 Matrix:
 
@@ -321,8 +323,11 @@ Steps per platform:
    `--no-gifski` when the input is off; gifsicle is always staged),
    `cargo xtask fetch-ncnn --target <T>`, `cargo xtask fetch-models` and
    `cargo xtask stage-cli --target <T>`.
-5. Run `cargo test --workspace` against the bundled engine (`RMEDIA_REQUIRE_FFMPEG=1`).
-6. `npm ci` in `apps/desktop`.
+5. Run `cargo test --workspace` against the bundled engine (`RMEDIA_REQUIRE_FFMPEG=1`). Tag
+   builds use no Rust cache (security L2): a release never builds from a cache another run
+   could have written. Manual runs use it.
+6. `npm ci --ignore-scripts` in `apps/desktop` (security L2; only `fsevents`, macOS-only, has an
+   install script).
 7. Linux: check that `THIRD_PARTY_NOTICES.md` is current. The file covers both platforms.
 8. `npx tauri build --bundles <bundles>` in `apps/desktop`. Without gifski it adds `--config`
    with a JSON merge patch (made by `jq` from `tauri.conf.json`) that drops `rmedia-gifski` from
@@ -335,6 +340,17 @@ Steps per platform:
    also `rmedia-gifski` and `GIFSKI-{NOTICE.md,LICENSE.txt,DEPS.md}`.
 10. Upload the `.deb`, `.AppImage`, `.exe`, `.msi`, and archives as artifact `rmedia-<triple>`.
    The upload fails if no files are found.
+
+Then one `checksums` job (security L2) downloads both artifacts and:
+
+1. collects the six release files (it fails unless there are exactly six) and writes
+   `SHA256SUMS`;
+2. writes an SPDX SBOM of the Rust and npm dependencies, `rmedia-sbom.spdx.json`
+   (`anchore/sbom-action`; the bundled programs are listed in `THIRD_PARTY_NOTICES.md`);
+3. attests the six files and the SBOM with `actions/attest-build-provenance` (SLSA provenance,
+   signed with the workflow's identity). Check a download with
+   `gh attestation verify <file> -R z3r0fidev/redd-media-clipper-upscaler`;
+4. uploads `SHA256SUMS` and the SBOM as artifact `rmedia-checksums`.
 
 The release workflow does not run clippy, the frontend tests, or the desktop backend tests. It
 relies on CI having passed on the tagged commit.
@@ -454,11 +470,13 @@ procedure below expands it from the workflows and manifests.
    git push origin v<version>
    ```
 
-5. Wait for the **Release** workflow to finish. Download the `rmedia-x86_64-unknown-linux-gnu` and
-   `rmedia-x86_64-pc-windows-msvc` artifacts.
+5. Wait for the **Release** workflow to finish. Download the `rmedia-x86_64-unknown-linux-gnu`,
+   `rmedia-x86_64-pc-windows-msvc` and `rmedia-checksums` artifacts, and check the files against
+   `SHA256SUMS` (and `gh attestation verify`).
 6. Smoke-test on clean machines, as in `quickstart.md` §5: install, run `rmedia doctor` (expect
    `bundled`), cut a first clip, and confirm the notices are present in the install folder.
-7. Sign (when signing is set up) and publish manually, together with the FFmpeg source archive.
+7. Sign (when signing is set up) and publish manually with `SHA256SUMS` and the SBOM, together
+   with the FFmpeg source archive.
 
 ### Version alignment
 

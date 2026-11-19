@@ -219,7 +219,7 @@ pub async fn pick_engine(
         return state.doctor_checked(CheckMode::Cached).await;
     }
     if reset {
-        state.set_engine_path(None)?;
+        state.set_engine_path(None).await?;
     } else {
         let dialog = app.dialog().file().set_title("Choose the ffmpeg program");
         let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
@@ -228,7 +228,7 @@ pub async fn pick_engine(
         let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
             return state.doctor_checked(CheckMode::Cached).await;
         };
-        state.set_engine_path(Some(path))?;
+        state.set_engine_path(Some(path)).await?;
     }
     state.doctor_checked(CheckMode::Cached).await
 }

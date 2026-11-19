@@ -55,7 +55,7 @@ const _: () = assert!(GIF_END + 1 == COLUMNS.len());
 const MODE_COLUMN: usize = 5;
 
 pub fn load(path: &Path, cli: &Options) -> Result<BatchRequest, Vec<Issue>> {
-    match std::fs::read(path) {
+    match super::read_capped(path) {
         Ok(bytes) => match String::from_utf8(bytes) {
             Ok(text) => parse(path, &text, cli),
             Err(e) => Err(vec![issue(

@@ -30,6 +30,28 @@ const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 const CHUNK: usize = 128 * 1024;
 
+/// The wait after a failed `accept` (security L5): 10 ms, doubling to at most a second, reset by
+/// the next accepted connection.
+#[derive(Default)]
+struct AcceptBackoff {
+    next: Option<Duration>,
+}
+
+impl AcceptBackoff {
+    const FIRST: Duration = Duration::from_millis(10);
+    const MAX: Duration = Duration::from_secs(1);
+
+    fn on_error(&mut self) -> Duration {
+        let wait = self.next.unwrap_or(Self::FIRST);
+        self.next = Some((wait * 2).min(Self::MAX));
+        wait
+    }
+
+    fn on_accept(&mut self) {
+        self.next = None;
+    }
+}
+
 /// Origins the app's webview uses (production on Linux/macOS, Windows), plus the Vite dev server
 /// in debug builds.
 fn allowed_origin(origin: &str) -> bool {
@@ -75,8 +97,19 @@ impl MediaServer {
         let ctx = Arc::new(Ctx { port, token: token.clone(), registry: registry.clone() });
         let limit = Arc::new(Semaphore::new(MAX_CONNECTIONS));
         let task = tokio::spawn(async move {
+            let mut backoff = AcceptBackoff::default();
             loop {
-                let Ok((stream, _)) = listener.accept().await else { continue };
+                let stream = match listener.accept().await {
+                    Ok((stream, _)) => {
+                        backoff.on_accept();
+                        stream
+                    }
+                    // Out of descriptors or another lasting error: wait instead of spinning (L5).
+                    Err(_) => {
+                        tokio::time::sleep(backoff.on_error()).await;
+                        continue;
+                    }
+                };
                 let Ok(permit) = limit.clone().try_acquire_owned() else {
                     drop(stream); // over the connection cap: refuse
                     continue;
@@ -351,6 +384,17 @@ async fn handle(mut stream: TcpStream, ctx: &Ctx) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Security L5: a failing accept (out of descriptors) waits before the next try, doubling up to
+    /// a second, instead of spinning; a connection that is accepted resets the wait.
+    #[test]
+    fn accept_errors_back_off() {
+        let mut b = AcceptBackoff::default();
+        let waits: Vec<u64> = (0..9).map(|_| b.on_error().as_millis() as u64).collect();
+        assert_eq!(waits, [10, 20, 40, 80, 160, 320, 640, 1000, 1000]);
+        b.on_accept();
+        assert_eq!(b.on_error(), Duration::from_millis(10));
+    }
 
     #[test]
     fn ranges() {

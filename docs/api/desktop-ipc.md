@@ -77,7 +77,7 @@ Further rules:
 | `ensure_proxy` | `path`, `codec: "h264" \| "vp8"`, `onProgress: Channel<number>` | `string` (media URL) | Encodes or reuses a cached 480p proxy; progress 0–1 |
 | `frame_at` | `path`, `t: number`, `height: number` | JPEG bytes (`ArrayBuffer`, via `ipc::Response`) | `height` clamped to 32–1080; `t` is clip time |
 | `thumbnails` | `path`, `n: number` | `string[]` (`data:image/jpeg;base64,…`) | `n` clamped to 1–60; cached |
-| `pick_engine` | `reset: boolean`, `kind?: "ffmpeg" \| "gifsicle" \| "gifski"` | `DoctorReport` | `reset: false` opens a native picker for that program (ffmpeg: ffprobe must sit next to it; gifsicle/gifski: a regular file, not a link, that identifies itself as version 1.x). `reset: true` returns to automatic lookup. Saved to settings. |
+| `pick_engine` | `reset: boolean`, `kind?: "ffmpeg" \| "gifsicle" \| "gifski"` | `DoctorReport` | `reset: false` opens a native picker for that program (ffmpeg: ffprobe must sit next to it, and both must report their version, `ffmpeg version …` in a supported version and `ffprobe version …`, before anything is saved; gifsicle/gifski: a regular file, not a link, that identifies itself as version 1.x). `reset: true` returns to automatic lookup. Saved to settings. |
 | `list_gif_targets` | — | `{default, targets: GifTarget[], problems}` | Built-in and user GIF targets (0.3.0). |
 | `gif_estimate` | `estimateId` (1–64 chars), `path`, `span`, `options: GifOptions`, `onEvent: Channel<AnalysisEvent>` | `{estimate, notes, notices}` | Requires an allowed path. The predicted size of the GIF job (the budget search from samples, nothing encoded in full; the `estimate` object of the plan JSON), in a private folder under the app cache (`gif-estimates/`, removed on every path and at startup). One estimate at a time: a new one cancels the others; refused while a run encodes, and a run that starts cancels it. The core re-checks every option. |
 | `cancel_estimate` | `estimateId` | — | |
@@ -174,8 +174,9 @@ Every response sets `Connection: close`, `Cache-Control: no-store` and
 `video/webm`, `video/quicktime`, `video/x-matroska`, `video/ogg`, else
 `application/octet-stream`.
 
-The page's Content Security Policy allows `media-src http://127.0.0.1:*`, and `connect-src` only
-for IPC.
+The page's Content Security Policy allows `media-src` (and `img-src`) only from the media
+server's own port, written into the policy at start-up (security L6), and `connect-src` only for
+IPC.
 
 ### Playback Time Mapping
 

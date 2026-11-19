@@ -128,9 +128,11 @@ only.
   `core:event:allow-unlisten`. There are no fs, shell or dialog permissions for the page, and
   dialogs run in Rust (`capabilities/default.json`).
 - **Configuration:** `withGlobalTauri: false`; asset protocol disabled; CSP `default-src 'self'`,
-  `script-src 'self'`, `connect-src ipc: http://ipc.localhost`, `media-src http://127.0.0.1:*`,
-  `img-src 'self' data: blob: http://127.0.0.1:*` (upscale preview stills, 002 US5),
-  `object-src 'none'`, `frame-ancestors 'none'` (`tauri.conf.json`).
+  `script-src 'self'`, `connect-src ipc: http://ipc.localhost`, `media-src http://127.0.0.1:<port>`,
+  `img-src 'self' data: blob: http://127.0.0.1:<port>` (upscale preview stills, 002 US5),
+  `object-src 'none'`, `frame-ancestors 'none'`. `tauri.conf.json` has `http://127.0.0.1:*`; at
+  start-up the app starts the media server first and narrows both to its port (security L6,
+  `csp_for_media_port`), and refuses to start if the policy has nothing to narrow.
 - **Path policy** (`ops::Allowed`): every path-taking command requires a user-chosen path, then
   works on the canonical path it checked, so there is no check/use race on links. Clip lists and
   manifests must be picked as such. A manifest grants access only to the existing video files it
@@ -247,12 +249,12 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
 | Risk | Status | Source |
 |---|---|---|
 | The media server re-checks the canonical path and uses `O_NOFOLLOW` but does not compare device/inode against registration. A local attacker who can race a parent-folder swap could redirect a request. | Accepted for v1 | research.md R8, implementation status |
-| CSP is static: `media-src` and `img-src http://127.0.0.1:*` (any port) and `style-src 'unsafe-inline'` (Svelte style attributes). It is not narrowed to the exact port at runtime, as R8 #11 required. | Accepted for v1. There is no script injection path, and `connect-src` is IPC only. | research.md R8 |
+| CSP `style-src 'unsafe-inline'` (Svelte style attributes). `media-src` and `img-src` are narrowed to the media server's port at start-up (security L6, 2026-11-18), as R8 #11 required. | Accepted for v1. There is no script injection path, and `connect-src` is IPC only. | research.md R8 |
 | The AI worker is crash-contained, not sandboxed (no seccomp/Landlock, `NO_NEW_PRIVS`), and inherits the environment (Vulkan loader variables, `LD_PRELOAD`) like ffmpeg. Models are pinned by hash, so ncnn only parses the known files. | Accepted for v1 | `crates/rmedia-sr` |
 | Upscale view (002 US5): `models_dir` is set only through a Rust folder picker, but models found there are hashed into the analysis cache key, not pinned to a known hash. One analysis and one preview run at a time (a new one cancels the old one); times from the page are range-checked; preview URLs are capped at 48 and evicted stills are forgotten by the media server. | Accepted for v1 (models are parsed by pure-Rust tract, not executed) | `ops.rs`, `upscale/preview.rs` |
 | Any local process that learns a media URL (token + id) can read that one registered file until the window closes | By design; the token is never logged | `media_server.rs` |
 | BtbN builds are unsigned, and dated autobuild tags are pruned over time | Open: mirror the pinned archives to project-owned release storage before the first release | research.md R9 (audit M3) |
-| No code signing for installers | Open owner decision | `checklists/validation.md` |
+| No code signing for installers | Open owner decision. Since 2026-11-18 the release workflow writes `SHA256SUMS`, an SPDX SBOM and a provenance attestation (security L2) | `checklists/validation.md`, `release.yml` |
 | The desktop page can register any allowed media file (including files under a picked folder) with the media server | Inherent to the path policy; limited to user-chosen locations | `ops.rs` |
 | Windows-specific controls (Job Objects, reparse-point flag, cloud placeholders, long paths) | Type-checked locally; **Unverified** beyond CI | `checklists/validation.md` |
 | A user-supplied gifsicle or gifski (flag, setting, environment or `PATH`) is trusted at the level of the user's own shell; only the banner is checked | Accepted (same as ffmpeg) | research R7 |

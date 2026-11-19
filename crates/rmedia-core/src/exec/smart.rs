@@ -314,14 +314,14 @@ async fn decode(
     ))
 }
 
-#[cfg(test)]
+// Its one test needs a shell script, so the module is Unix-only (an unused import on Windows).
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
     /// Item 27: the packet scan of a multi-hour clip prints more than `run_capture`'s 16 MiB
     /// (about 1.3 million packets); it is read line by line instead, and only what the check
     /// needs is kept.
-    #[cfg(unix)]
     #[tokio::test]
     async fn packet_scan_reads_past_16_mib() {
         use std::os::unix::fs::PermissionsExt;
