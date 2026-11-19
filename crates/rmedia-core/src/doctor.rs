@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::error::Result;
 use crate::plan::Caps;
 use crate::plan::streams::Container;
+use crate::settings::Settings;
 use crate::tools::{self, LocateOptions, Tool, Tools};
 use crate::upscale::capability::{
     CapabilityStore, CheckMode, Demotion, GpuDevice, ProbeEnv, TierStatus, ensure,
@@ -172,8 +173,9 @@ pub struct CapabilitySummary {
 }
 
 /// Locates the engine and inspects its capabilities (no GPU check: see [`check_capability`]).
-/// Never fails; problems are reported.
-pub async fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) {
+/// Never fails; problems are reported. `settings` are the caller's (the CLI loads them, the
+/// desktop app passes the ones it holds): the core never reads the settings file itself.
+pub async fn run(opts: &LocateOptions, settings: &Settings) -> (DoctorReport, Option<(Tools, Caps)>) {
     let mut report = DoctorReport {
         schema: 1,
         kind: "doctor",
@@ -203,17 +205,16 @@ pub async fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) 
     report.ffmpeg = Some(tools.ffmpeg.clone());
     report.ffprobe = Some(tools.ffprobe.clone());
     report.version = Some(tools.version.text().to_owned());
-    let mut caps = match caps(&tools).await {
+    let mut caps = match caps(&tools, settings).await {
         Ok(c) => c,
         Err(e) => {
             report.problems.push(e.to_string());
             return (report, None);
         }
     };
-    let settings = crate::settings::Settings::load();
     caps.gif_engines = crate::gif::engines::Engines::locate(&crate::gif::engines::EngineLookup {
-        gifsicle: opts.gifsicle.clone().or(settings.gifsicle_path),
-        gifski: opts.gifski.clone().or(settings.gifski_path),
+        gifsicle: opts.gifsicle.clone().or_else(|| settings.gifsicle_path.clone()),
+        gifski: opts.gifski.clone().or_else(|| settings.gifski_path.clone()),
         bundled_dir: opts.bundled_dir.clone(),
     })
     .await;
@@ -239,8 +240,7 @@ pub async fn run(opts: &LocateOptions) -> (DoctorReport, Option<(Tools, Caps)>) 
         if caps.models.get(crate::models::YUNET).is_some() { "ok" } else { "missing" }.to_owned(),
     );
     // The AI tier needs every scale of its model and the worker beside rmedia.
-    let ai_models =
-        crate::upscale::ai::locate_models(&crate::models::search_dirs(&crate::settings::Settings::load()));
+    let ai_models = crate::upscale::ai::locate_models(&crate::models::search_dirs(settings));
     report.models.insert(
         format!("{} (x2, x3, x4)", crate::upscale::ai::MODEL),
         if ai_models.is_some() { "ok" } else { "missing" }.to_owned(),
@@ -284,16 +284,15 @@ pub async fn check_capability(
     caps.capability = Some(record);
 }
 
-/// Reads the encoder and filter lists of the ffmpeg build.
-pub async fn caps(tools: &Tools) -> Result<Caps> {
+/// Reads the encoder and filter lists of the ffmpeg build; models are found with `settings`.
+pub async fn caps(tools: &Tools, settings: &Settings) -> Result<Caps> {
     let list = |flag: &'static str| async move {
         tools::probe(&tools.ffmpeg.path, &["-hide_banner", flag])
             .await
             .map(|o| String::from_utf8_lossy(&o).into_owned())
     };
     let (encoders, filters, muxers) = tokio::join!(list("-encoders"), list("-filters"), list("-muxers"));
-    let settings = crate::settings::Settings::load();
-    let models = crate::models::ModelSet::discover(&settings, &[crate::models::YUNET]);
+    let models = crate::models::ModelSet::discover(settings, &[crate::models::YUNET]);
     let face =
         models.get(crate::models::YUNET).cloned().map(crate::upscale::reframe::detect::DetectorSpec::Yunet);
     Ok(Caps {
@@ -303,7 +302,7 @@ pub async fn caps(tools: &Tools) -> Result<Caps> {
         face,
         models,
         reframe_cache: crate::settings::cache_root().map(|c| c.join("reframe")),
-        ai: crate::upscale::ai::AiEngine::discover(&settings),
+        ai: crate::upscale::ai::AiEngine::discover(settings),
         ..Caps::default()
     })
 }

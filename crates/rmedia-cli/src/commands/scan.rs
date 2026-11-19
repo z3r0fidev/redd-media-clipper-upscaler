@@ -23,7 +23,7 @@ pub async fn run(cli: &Cli, args: &ScanArgs) -> u8 {
         }
     }
     let opts = cli.locate();
-    let (report, engine) = doctor::run(&opts).await;
+    let (report, engine) = doctor::run(&opts, &rmedia_core::settings::Settings::load()).await;
     let Some((tools, _)) = engine else {
         return out.engine_error(&report.problems.join("; "));
     };

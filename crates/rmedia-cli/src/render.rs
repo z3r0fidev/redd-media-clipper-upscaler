@@ -662,7 +662,8 @@ impl EventSink for RenderSink {
                 print_json(&v);
             }
             RenderSink::Human { multi, labels, bars, .. } => {
-                let mut bars = bars.lock().expect("bars");
+                // A panic elsewhere while the lock was held leaves only bars behind; keep going.
+                let mut bars = bars.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 match event {
                     Event::JobStarted { job_id } => {
                         let pb = multi.add(ProgressBar::new(1000));
@@ -739,6 +740,20 @@ mod tests {
         assert_eq!(s(55.0, 58.0), "00:55–00:58");
         assert_eq!(s(54.6, 55.6), "00:55–00:56");
         assert_eq!(s(59.0, 86.4), "00:59–01:26");
+    }
+
+    #[test]
+    fn a_poisoned_bar_lock_does_not_stop_progress_output() {
+        let sink = human(&[]);
+        let RenderSink::Human { bars, .. } = &sink else { unreachable!() };
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = bars.lock().unwrap();
+            panic!("poison the lock");
+        }));
+        assert!(bars.is_poisoned());
+        sink.emit(Event::JobStarted { job_id: 1 });
+        let RenderSink::Human { bars, .. } = &sink else { unreachable!() };
+        assert!(bars.lock().unwrap_or_else(std::sync::PoisonError::into_inner).contains_key(&1));
     }
 
     #[test]

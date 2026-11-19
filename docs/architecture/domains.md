@@ -72,8 +72,8 @@ FR-026).
 | `tools::locate` — explicit path → `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` → bundled `rmedia-ffmpeg[.exe]`/`rmedia-ffprobe[.exe]` beside the executable → `PATH` | `tools.rs` |
 | `ToolSource` = `config` (flag, settings or env var) / `bundled` / `path` | `tools.rs` |
 | `MIN_VERSION` = 6.0. Git/nightly version strings count as supported. | `tools.rs` |
-| `doctor::run` → `DoctorReport` + `(Tools, Caps)`; `Caps` (encoders, filters, models, face detector, capability record) | `doctor.rs` |
-| `doctor::check_capability` (async): adds the machine capability record (tiers, GPUs) to a report and to `Caps` | `doctor.rs`, `upscale/capability.rs` |
+| `doctor::run(opts, settings)` → `DoctorReport` + `(Tools, Caps)` (the caller passes the settings; the core never reads the settings file); `Caps` (encoders, filters, models, face detector, capability record) | `doctor.rs` |
+| `doctor::check_capability` (async): adds the machine capability record (tiers, GPUs) to a report and to `Caps` | `doctor.rs`, `upscale/capability/` |
 
 **Invariants:** the doctor never fails, it reports problems instead. Accurate-mode containers are
 listed only when both their video and audio encoders exist. Explicit paths are canonicalized so
@@ -129,9 +129,9 @@ FR-016–FR-019).
 
 | Item | Location |
 |---|---|
-| `plan::plan` → `Plan { run_id, jobs, issues, cancelled }`; `Planner::plan_clip` | `plan/mod.rs` |
-| `PlannedJob`; `Disposition` = `run` / `skip{reason}`; `JobSpec::Clip(ClipSpec)`, `JobSpec::Upscale(UpscaleSpec)` or `JobSpec::Gif(GifSpec)` (0.3.0). Since the 002 refactor A1, clip-only fields (`mode`, `requested`, `predicted`) live in `ClipSpec`. | `plan/mod.rs` |
-| `Issue { severity, code, origin, message }`; `Plan::has_errors`, `engine_errors_only` | `plan/mod.rs` |
+| `plan::plan` → `Plan { run_id, jobs, issues, cancelled }`; `Planner::plan_clip` | `plan/mod.rs`, `plan/planner.rs` |
+| `PlannedJob`; `Disposition` = `run` / `skip{reason}`; `JobSpec::Clip(ClipSpec)`, `JobSpec::Upscale(UpscaleSpec)` or `JobSpec::Gif(GifSpec)` (0.3.0). Since the 002 refactor A1, clip-only fields (`mode`, `requested`, `predicted`) live in `ClipSpec`. | `plan/model.rs` |
+| `Issue { severity, code, origin, message }`; `Plan::has_errors`, `engine_errors_only` | `plan/model.rs` |
 | Name templates and file name sanitizing | `plan/naming.rs` |
 | `Container`, `EncodeProfile` (`X264_AAC`, `VP9_OPUS`), `SubtitlePolicy`, `select_streams` | `plan/streams.rs` |
 | `ClipSpec`, `Trim`, `common_args`, `clip_args` (pure; insta snapshot-tested) | `plan/ffargs.rs` |
@@ -221,7 +221,7 @@ at most 8 connections, and one request per connection. Full list:
 |---|---|
 | `lib.rs` | Builder: dialog plugin, `AppState` setup (settings, cache dir, media server), command-line paths (allowed + handed to the page once), drag-drop paths registered before the page is told (`rmedia://dropped` event), `CloseRequested` → `AppState::shutdown` |
 | `commands.rs` | 23 `#[tauri::command]`s; argument plumbing; native dialogs run in Rust |
-| `ops.rs` | `AppState` with `Allowed` (files, dirs, save targets, lists), engine cache, plans by run id, run controls, scan tokens |
+| `ops/` | `AppState` (`mod.rs`) with `Allowed` (`allowed.rs`: files, dirs, save targets, lists), engine cache, and the id-keyed plans, runs, scans, analyses, estimates and keyframe requests (`registry.rs`); one module per feature: `queue.rs`, `previews.rs`, `gif.rs`, `smart.rs`, `upscale.rs` |
 
 **Path policy invariants (`ops::Allowed`)**
 
@@ -268,7 +268,7 @@ Code is in `crates/rmedia-core/src/{upscale,preset,models.rs}`, `exec/upscale.rs
 | Preset to encoder, colour and tag arguments (`libx265` or `libx264`) | `upscale/encode.rs` |
 | Output size and time estimates, platform limit warnings, free-space check | `upscale/estimate.rs` |
 | Tier selection: `select(choice, record, size)`; auto takes the GPU only when it passed its self-test, is not slower than the CPU and has not failed since | `upscale/tier.rs` |
-| Capability record: Vulkan listing, software-renderer rejection, fingerprint (versions, listing, driver manifests, `VK_*`), self-tests, `<state>/capability.json` under `capability.lock`, demotions | `upscale/capability.rs` |
+| Capability record: Vulkan listing, software-renderer rejection, fingerprint (versions, listing, driver manifests, `VK_*`), self-tests, `<state>/capability.json` under `capability.lock`, demotions | `upscale/capability/` (`drivers.rs`, `store.rs`) |
 | Presets: `PresetRegistry` (built-ins plus `<config>/presets/*.json`), JSON schema v1 | `preset/` |
 | Model file lookup (`models_dir` setting, `models/` beside the executable, cache `models/`) | `models.rs` |
 | Executor: analyze (smart), render, verify; emits `job_stage`; one CPU retry after an automatic GPU failure | `exec/upscale.rs` |
@@ -278,9 +278,9 @@ Code is in `crates/rmedia-core/src/{upscale,preset,models.rs}`, `exec/upscale.rs
 | AI tier: worker and model lookup with pinned SHA-256s (`PINNED`), scale choice, the `rmedia-sr` arguments | `upscale/ai.rs` |
 | AI graphs: ffmpeg #1 frames the picture and writes rgb24; ffmpeg #2 scales to the target, de-flickers (`hqdn3d=0:0:3:3`), adds the blurred background and encodes | `upscale/graph.rs` (`ai_decode`, `ai_finish`) |
 | The 3-process pipeline ffmpeg #1 → `rmedia-sr` → ffmpeg #2 over OS pipes: one process group on Unix (`killpg`), a Job Object per process on Windows; which stage to blame for a failure | `exec/pipeline.rs` |
-| AI gate: `rmedia-sr --list-gpus` and `--selftest`; available when 60 s of 854x480 is predicted at 10 minutes or less | `upscale/capability.rs` (`ai_check`, `ai_gate`) |
+| AI gate: `rmedia-sr --list-gpus` and `--selftest`; available when 60 s of 854x480 is predicted at 10 minutes or less | `upscale/capability/ai_check.rs` (`ai_check`, `ai_gate`) |
 | The worker: ncnn with Vulkan, frames on stdin/stdout, JSON lines on stderr, exit codes 2–6; `unsafe` only in `ffi.rs` | `crates/rmedia-sr` ([protocol](../../specs/002-mobile-upscale/contracts/rmedia-sr-protocol.md)) |
-| Desktop: upscale options, preview, crop-path preview and queue commands | `apps/desktop/src-tauri/src/ops.rs`, `commands.rs` |
+| Desktop: upscale options, preview, crop-path preview and queue commands | `apps/desktop/src-tauri/src/ops/upscale.rs`, `commands.rs` |
 
 **Invariants**
 
@@ -314,7 +314,7 @@ can run several stages with weighted progress, and issue codes are a typed enum
 
 **Responsibility:** make an animated GIF or a silent "Reddit MP4" loop that fits a target's size
 budget: from `rmedia gif`, `clip --gif`, `batch --gif` and manifest `gif` blocks, and from the
-desktop GIF view. Code is in `crates/rmedia-core/src/gif/` and `exec/gif.rs`. Added in 0.3.0
+desktop GIF view. Code is in `crates/rmedia-core/src/gif/` and `exec/gif/` (`limits.rs`: the size watchdog and deadline; `external.rs`: the gifski pipe and gifsicle). Added in 0.3.0
 (unreleased); design in `specs/003-gif-export/` (research R1–R16).
 
 | Item | Location |

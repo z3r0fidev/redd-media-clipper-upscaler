@@ -36,7 +36,7 @@ crates/rmedia-cli/         the `rmedia` binary (clap); src/commands/{clip,batch,
 crates/rmedia-testkit/     test fixtures generated with FFmpeg + ffprobe assertions
 apps/desktop/              Tauri 2 + Svelte 5 + TypeScript desktop app
   src/                       App.svelte, lib/{components,stores,bindings}
-  src-tauri/                 Rust backend: commands.rs, ops.rs, media_server.rs; tests/
+  src-tauri/                 Rust backend: commands.rs, ops/ (one module per feature), media_server.rs; tests/
 xtask/                     build tasks: fetch-tools, pin-tools, gen-bindings, stage-cli, notices, fetch-models, fetch-ncnn, archive
 binaries/                  fetched engine + staged CLI (git-ignored)
 specs/001-video-clipping/  spec, plan, research, data model, contracts, tasks, checklists
@@ -151,7 +151,9 @@ cargo test --workspace
 
 - `rustfmt.toml`: edition 2024, `max_width = 110`, `use_small_heuristics = "Max"`.
 - Workspace lints: `unsafe_code = "deny"`, `missing_debug_implementations = "warn"`, all clippy
-  lints warn (errors under `-D warnings`). The desktop crate also denies `unsafe_code`.
+  lints warn (errors under `-D warnings`). The desktop crate also denies `unsafe_code`. The
+  few allowed exceptions are listed in `docs/security/security-model.md` (Supply Chain); add
+  any new one there.
 - `.editorconfig`: UTF-8, LF line endings, 4-space indent, 2 spaces for JSON, YAML, TS, Svelte, JS,
   CSS, HTML, and Markdown. `.gitattributes` enforces LF.
 - Frontend: `npm run check` (svelte-check with `tsconfig.json`).
@@ -238,12 +240,12 @@ the plan's mandatory refactors A1 to A5 were completed for it. Feature 003 added
 
 ### Current extension point
 
-- `crates/rmedia-core/src/plan/mod.rs` defines `pub enum JobSpec { Clip(Box<ClipSpec>), Upscale(Box<UpscaleSpec>), Gif(Box<GifSpec>) }`.
+- `crates/rmedia-core/src/plan/model.rs` defines `pub enum JobSpec { Clip(Box<ClipSpec>), Upscale(Box<UpscaleSpec>), Gif(Box<GifSpec>) }`.
   `PlannedJob.spec` holds it.
 - `crates/rmedia-core/src/exec/mod.rs` → `run_job()` dispatches on it:
   `JobSpec::Clip(spec) => clip::execute(spec, &mut ctx).await` and
   `JobSpec::Upscale(spec) => upscale::execute(spec, &mut ctx).await`, and the same for
-  `JobSpec::Gif` (`exec/gif.rs`).
+  `JobSpec::Gif` (`exec/gif/`).
 - The scheduler does not look inside a job kind. `JobCtx` provides the tools, the temp output path,
   the final output path, cancellation, the job ID, and progress events. The scheduler handles
   concurrency, journaling of `job.temp`, commit, and cleanup.
@@ -277,7 +279,7 @@ The table records what each refactor changed. Do not repeat them for a new kind;
    that the journal and commit apply.
 6. Report new capabilities in `doctor.rs` and fall back gracefully when they are missing.
 7. Expose the feature in the CLI (new subcommand or flags in `crates/rmedia-cli`), including
-   `--json`, `--dry-run`, and exit codes. Expose it in the desktop app through `ops.rs` and
+   `--json`, `--dry-run`, and exit codes. Expose it in the desktop app through `ops/` and
    `commands.rs`.
 8. Run `cargo xtask gen-bindings` if core types changed, and `cargo xtask notices` if dependencies
    changed.

@@ -58,7 +58,7 @@ flowchart LR
     cli["rmedia CLI<br/>crates/rmedia-cli"]
     subgraph desktop["Desktop app (apps/desktop)"]
       ui["Svelte 5 page<br/>(webview)"]
-      tauri["Tauri backend<br/>commands.rs → ops.rs"]
+      tauri["Tauri backend<br/>commands.rs → ops/"]
       ms["Media server<br/>127.0.0.1:random"]
     end
     core["rmedia-core<br/>(all media logic)"]
@@ -99,14 +99,14 @@ desktop app adapt input and output only.
 | Desktop ops | Path policy (`Allowed`), engine cache, plan/run registries, preview glue; tested without a webview | `apps/desktop/src-tauri/src/ops.rs` |
 | Media server | Loopback HTTP range server for `<video>` | `apps/desktop/src-tauri/src/media_server.rs` |
 | Svelte frontend | Sources, player, queue, run panel, settings; the queue is a v1 manifest | `apps/desktop/src/` |
-| `rmedia-testkit` | lavfi fixtures, ffprobe assertions, PSNR helpers (`publish = false`) | `crates/rmedia-testkit/src/lib.rs` |
+| `rmedia-testkit` | lavfi fixtures, ffprobe assertions, PSNR helpers (`publish = false`) | `crates/rmedia-testkit/src/` (`fixtures.rs`, `engine.rs`, `inspect.rs`, `quality.rs`, `gif_tools.rs`) |
 | `xtask` | `fetch-tools`, `pin-tools`, `pin-gif-tools`, `check-release-gate`, `gen-bindings`, `stage-cli`, `notices` | `xtask/src/main.rs` |
 
 ```mermaid
 flowchart TB
   subgraph surfaces["Surfaces (no media logic)"]
     clirs["rmedia-cli: main.rs, commands/*, render.rs"]
-    tcmd["src-tauri: commands.rs"] --> tops["src-tauri: ops.rs"]
+    tcmd["src-tauri: commands.rs"] --> tops["src-tauri: ops/"]
   end
   subgraph core["rmedia-core"]
     time["time"] --> input["input/*"]
@@ -124,7 +124,7 @@ flowchart TB
 ```
 
 The diagram shows both surfaces calling into `rmedia-core`. In the desktop app, `commands.rs`
-hands each call to `ops.rs`. Inside the core, time parsing feeds the input parsers, which build the
+hands each call to `ops/`. Inside the core, time parsing feeds the input parsers, which build the
 request. The request, probe results (fed by discovery) and engine capabilities (`tools` /
 `doctor`) feed planning. Planning and `preview` both feed execution, which emits events.
 
@@ -197,7 +197,7 @@ sequenceDiagram
    manifest parsed by `manifest_json::from_value`) all produce a `BatchRequest`
    (`request.rs`). Parsers report every problem with its origin: file and line, or file and
    JSON path.
-2. **Plan.** `plan::plan` (`plan/mod.rs`) probes each source once and validates times. It then
+2. **Plan.** `plan::plan` (`plan/mod.rs`, `plan/planner.rs`) probes each source once and validates times. It then
    chooses the container and encode profile, selects streams, renders the output name, refuses
    any output that equals a source, resolves collisions, and computes the seek plan. It writes
    nothing. The output is a `Plan` of `PlannedJob`s, each with a `Disposition` of `run` or
@@ -235,7 +235,7 @@ file extension. A mislabelled MPEG-TS named `.mp4` therefore still gets the safe
 | fast (stream copy) | Input `-ss S`. Lands on keyframe K ≤ S. | No demuxer seek. Output `-ss` at K − min(4 frames, ½ GOP). Leading non-keyframes are dropped, so the output starts exactly on K. |
 | accurate (re-encode) | Input `-ss S` (frame exact) | `-copyts` + coarse input `-ss S − 10 s` + `trim`/`atrim` filters at absolute source times. Subtitles are dropped with a warning. |
 
-Supporting rules from `plan/mod.rs` and `probe.rs`:
+Supporting rules from `plan/planner.rs` and `probe.rs`:
 
 - K is found by scanning video packets in a window before S. The window is 12 s, widened to 65 s
   if needed (`probe::keyframe_at_or_before`). K is never taken from where the demuxer lands. If no
@@ -311,7 +311,7 @@ into the binary plus user files in `<config>/presets/`.
 `JobSpec` has a third variant, `Gif(Box<GifSpec>)`. A GIF job runs analyze (smart framing only),
 a bounded size-budget search over sample encodes, a two-pass palette encode (or the ffmpeg →
 gifski pipe, or the MP4 encode), an optional gifsicle post-pass and a verify stage
-(`exec/gif.rs`), reusing 002's frame chain, reframe analysis, scratch folders, events and commit.
+(`exec/gif/`), reusing 002's frame chain, reframe analysis, scratch folders, events and commit.
 GIF targets are data (`gif/target.rs`, four built-ins plus `<config>/gif-targets/`). See
 [Domain Breakdown › GIF Export](domains.md#gif-export-feature-003) and the
 [0.3.0 release notes](../releases/0.3.0.md).

@@ -32,42 +32,11 @@ use crate::time::Ts;
 use crate::tools::Tools;
 use crate::upscale::estimate::human_bytes;
 
-/// Without a budget, an encode that passes this size is stopped (a runaway output).
-pub(crate) const MAX_OUTPUT: u64 = 4 << 30;
-/// Free space the watchdog leaves in the output folder (other writers, the file system).
-const SPACE_RESERVE: u64 = 64 << 20;
+mod external;
+mod limits;
 
-/// The size an output is stopped at, and whether the folder's free space set it (then passing
-/// it is `DISK_FULL`, not a runaway encode).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Cap {
-    pub bytes: u64,
-    pub from_space: bool,
-}
-
-impl Cap {
-    pub(crate) const fn size(bytes: u64) -> Cap {
-        Cap { bytes, from_space: false }
-    }
-
-    /// `base`, or less when `dir`'s folder cannot hold `copies` files of that size (security
-    /// review L2: without a budget, two 4 GiB files could fill the disk).
-    fn within_free_space(base: u64, dir: &Path, copies: u64) -> Cap {
-        Cap::within(base, copies, crate::upscale::estimate::free_space(dir))
-    }
-
-    fn within(base: u64, copies: u64, free: Option<u64>) -> Cap {
-        match free.map(|f| f.saturating_sub(SPACE_RESERVE) / copies.max(1)) {
-            Some(room) if room < base => Cap { bytes: room, from_space: true },
-            _ => Cap::size(base),
-        }
-    }
-}
-/// The gifski pipe is stopped when ffmpeg reports no progress for this long. gifski holds only
-/// a few frames, so it finishes soon after ffmpeg does.
-const PIPE_STALL: Duration = Duration::from_secs(300);
-/// The gifsicle post-pass is stopped after this long (it takes seconds on a Reddit-sized GIF).
-const GIFSICLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+pub(crate) use external::*;
+pub(crate) use limits::*;
 
 pub(super) async fn execute(spec: &GifSpec, ctx: &mut JobCtx<'_>) -> Result<JobMeasure> {
     let scratch = ctx
@@ -469,233 +438,6 @@ async fn encode_watched(
     if out.status.success() { Ok(()) } else { Err(classify_failure(&out.stderr_tail, ctx.output)) }
 }
 
-/// Research R7's size watchdog: cancels `stop` once `file` passes `limit` bytes. Dropping it
-/// stops the watching task.
-pub(crate) struct SizeWatch {
-    task: tokio::task::JoinHandle<()>,
-    over: Arc<AtomicBool>,
-    limit: Cap,
-    /// The output folder (the scratch folder's parent), named in `DISK_FULL`.
-    folder: PathBuf,
-}
-
-impl SizeWatch {
-    pub(crate) fn start(file: PathBuf, limit: Cap, stop: &CancellationToken) -> SizeWatch {
-        let over = Arc::new(AtomicBool::new(false));
-        let folder = file.parent().and_then(Path::parent).unwrap_or(&file).to_path_buf();
-        let (flag, stop) = (over.clone(), stop.clone());
-        let task = tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(250)).await;
-                if std::fs::metadata(&file).is_ok_and(|m| m.len() > limit.bytes) {
-                    flag.store(true, Ordering::SeqCst);
-                    stop.cancel();
-                    return;
-                }
-            }
-        });
-        SizeWatch { task, over, limit, folder }
-    }
-
-    /// Stops watching; an error when the file grew past the limit (the run was cancelled for it):
-    /// `DISK_FULL` when the folder's free space set the limit.
-    pub(crate) fn stop(self) -> Result<()> {
-        self.task.abort();
-        if self.over.load(Ordering::SeqCst) {
-            if self.limit.from_space {
-                return Err(Error::DiskFull(self.folder.clone()));
-            }
-            return Err(Error::engine_failed(
-                format!("the GIF grew past {} bytes and was stopped", self.limit.bytes),
-                String::new(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-impl Drop for SizeWatch {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
-/// Cancels `stop` after `after`; `fired()` tells whether it did.
-pub(crate) struct Deadline {
-    task: tokio::task::JoinHandle<()>,
-    fired: Arc<AtomicBool>,
-}
-
-impl Deadline {
-    pub(crate) fn start(after: Duration, stop: &CancellationToken) -> Deadline {
-        let fired = Arc::new(AtomicBool::new(false));
-        let (flag, stop) = (fired.clone(), stop.clone());
-        let task = tokio::spawn(async move {
-            tokio::time::sleep(after).await;
-            flag.store(true, Ordering::SeqCst);
-            stop.cancel();
-        });
-        Deadline { task, fired }
-    }
-
-    pub(crate) fn fired(&self) -> bool {
-        self.fired.load(Ordering::SeqCst)
-    }
-}
-
-impl Drop for Deadline {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
-/// The ffmpeg → gifski pipe (research R7), writing `output` in `dir`.
-pub(crate) struct Gifski<'a> {
-    pub program: &'a Path,
-    pub dir: &'a Path,
-    pub output: &'a str,
-    /// The size watchdog's limit.
-    pub limit: Cap,
-    /// A wall-clock limit, for runs without a progress file (no stall can be seen there).
-    pub timeout: Option<Duration>,
-}
-
-impl Gifski<'_> {
-    /// Runs `producer` (an ffmpeg argv writing y4m to stdout, and its progress to `progress`
-    /// when set) into gifski with the settings of `s`. A play-once GIF loses the loop block
-    /// gifski writes anyway. `job_output` names the output in disk errors.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn run(
-        &self,
-        tools: &Tools,
-        producer: Vec<OsString>,
-        s: &Settings,
-        loop_count: LoopCount,
-        progress: Option<&str>,
-        job_output: &Path,
-        cancel: &CancellationToken,
-        on_progress: impl FnMut(ProgressBlock),
-    ) -> Result<()> {
-        let params =
-            s.gifski.ok_or_else(|| Error::InvalidInput("a gifski encode needs its parameters".into()))?;
-        let file = self.dir.join(self.output);
-        let _ = std::fs::remove_file(&file);
-        let from = match progress {
-            Some(p) => {
-                let path = self.dir.join(p);
-                let _ = std::fs::remove_file(&path);
-                ProgressFrom::File(path)
-            }
-            None => ProgressFrom::ConsumerStdout,
-        };
-        let stages = [
-            StageSpec {
-                program: tools.ffmpeg.path.clone(),
-                args: producer,
-                role: Role::Producer,
-                report: Report::Tail,
-                env: None,
-            },
-            StageSpec {
-                program: self.program.to_path_buf(),
-                args: gifski_args(s.rate, params, loop_count, self.output),
-                role: Role::Consumer,
-                report: Report::CleanTail,
-                env: Some(crate::gif::engines::engine_env()),
-            },
-        ];
-        let stop = cancel.child_token();
-        let watch = SizeWatch::start(file.clone(), self.limit, &stop);
-        // Without a progress file nothing reports progress, so nothing can show a stall.
-        let stall = progress.map(|_| PIPE_STALL);
-        let deadline = self.timeout.map(|t| Deadline::start(t, &stop));
-        let r = run_stages(&stages, Some(self.dir), &from, stall, &stop, on_progress).await;
-        watch.stop()?;
-        if let (Some(d), Some(t)) = (&deadline, self.timeout)
-            && d.fired()
-            && !cancel.is_cancelled()
-        {
-            return Err(Error::engine_failed(
-                format!("the gifski pipe took longer than {} s and was stopped", t.as_secs()),
-                String::new(),
-            ));
-        }
-        let ends = r?;
-        match blame_pair(&ends[0], &ends[1]) {
-            Some(0) => return Err(classify_failure(&ends[0].tail, job_output)),
-            Some(_) if !ends[1].failed() => {
-                return Err(Error::EngineFailed {
-                    tool: "gifski".into(),
-                    message: "gifski stopped reading frames before the end".into(),
-                    stderr_tail: ends[1].tail.clone(),
-                });
-            }
-            Some(_) => return Err(tool_failed("gifski", ends[1].status, &ends[1].tail)),
-            None => {}
-        }
-        if loop_count == LoopCount::Plays(1) {
-            let unwritable = |e: std::io::Error| Error::OutputUnwritable {
-                path: job_output.to_path_buf(),
-                message: e.to_string(),
-            };
-            let path = file.clone();
-            tokio::task::spawn_blocking(move || strip_loop_block(&path))
-                .await
-                .map_err(|e| unwritable(std::io::Error::other(e)))?
-                .map_err(unwritable)?;
-        }
-        Ok(())
-    }
-}
-
-/// A failed optional engine, named by `tool`, with its last stderr line (control characters
-/// removed: these programs are less trusted than ffmpeg).
-fn tool_failed(tool: &str, status: Option<ExitStatus>, stderr_tail: &str) -> Error {
-    let tail: String =
-        stderr_tail.chars().filter(|c| !crate::gif::target::unsafe_char(*c) || *c == '\n').collect();
-    let last = tail.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("no message").trim().to_owned();
-    Error::EngineFailed {
-        tool: tool.into(),
-        message: format!("{last} ({})", super::pipeline::describe(status)),
-        stderr_tail: tail,
-    }
-}
-
-/// The gifsicle post-pass (`-O2`, lossy when set) with a cleared environment, the size watchdog
-/// on its output and a wall-clock limit.
-async fn run_gifsicle(
-    ctx: &mut JobCtx<'_>,
-    gifsicle: &Path,
-    scratch: &Path,
-    lossy: u16,
-    limit: Cap,
-    (input, output): (&str, &str),
-) -> Result<()> {
-    let env = crate::gif::engines::engine_env();
-    let args = gifsicle_args(lossy, input, output);
-    let stop = ctx.cancel.child_token();
-    let watch = SizeWatch::start(scratch.join(output), limit, &stop);
-    let deadline = Deadline::start(GIFSICLE_TIMEOUT, &stop);
-    let r = process::run_lines_env(gifsicle, &args, Some(scratch), Some(&env), &stop, |_| {}).await;
-    watch.stop()?;
-    if deadline.fired() && !ctx.cancel.is_cancelled() {
-        return Err(Error::EngineFailed {
-            tool: "gifsicle".into(),
-            message: format!(
-                "gifsicle took longer than {} min and was stopped",
-                GIFSICLE_TIMEOUT.as_secs() / 60
-            ),
-            stderr_tail: String::new(),
-        });
-    }
-    let out = r?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err(tool_failed("gifsicle", Some(out.status), &out.stderr_tail))
-    }
-}
-
 /// Moves the finished GIF from the scratch folder to the temp file (a copy when they are on
 /// different file systems). The copy goes into a newly created file, never through whatever
 /// already sits at `temp` (a planted link).
@@ -744,6 +486,107 @@ mod tests {
         );
         assert_eq!(Cap::within(40_000_000, 1, Some(1 << 30)), Cap::size(40_000_000), "a budget's cap fits");
         assert_eq!(Cap::within(MAX_OUTPUT, 1, Some(10 * MB)), Cap { bytes: 0, from_space: true });
+    }
+
+    /// Every stage list's weights add up to the whole bar, in the order the job runs them.
+    #[test]
+    fn the_stages_fill_the_bar_in_order() {
+        for bits in 0..16u8 {
+            let [gifski, optimise, search, analyze] = [0, 1, 2, 3].map(|b| bits & (1 << b) != 0);
+            let st = Stages::new(gifski, optimise, search, analyze);
+            let sum: f64 = st.list.iter().map(|s| s.1).sum();
+            assert!((sum - 1.0).abs() < 1e-9, "{bits:04b}: {sum}");
+            let names: Vec<&str> = st.list.iter().map(|s| s.0).collect();
+            assert_eq!(names.last(), Some(&"verify"));
+            assert_eq!(names.contains(&"analyze"), analyze);
+            assert_eq!(names.contains(&"search"), search);
+            assert_eq!(names.contains(&"palette"), !gifski, "{names:?}");
+            assert_eq!(names.contains(&"optimise"), !gifski && optimise, "{names:?}");
+            assert_eq!(st.position(names[0]).map(|p| p.0), Some(1));
+            assert_eq!(st.position("nope"), None);
+        }
+    }
+
+    #[test]
+    fn a_retry_writes_other_files() {
+        let (a, b) = (attempt_names(0), attempt_names(1));
+        assert_eq!(a, (ENCODED, OPTIMISED, ENCODED_MP4));
+        assert!(a.0 != b.0 && a.1 != b.1 && a.2 != b.2);
+    }
+
+    /// gifsicle and gifski are less trusted than ffmpeg: their last line is shown without
+    /// control characters.
+    #[test]
+    fn an_engine_failure_shows_its_last_clean_line() {
+        let e = tool_failed("gifski", None, "frame 1\n\x1b[31mbad\x07 input\n  \n");
+        let Error::EngineFailed { tool, message, stderr_tail } = &e else { panic!("{e:?}") };
+        assert_eq!(tool, "gifski");
+        assert!(message.starts_with("[31mbad input ("), "{message}");
+        assert!(!stderr_tail.contains('\x1b') && !stderr_tail.contains('\x07'));
+        let Error::EngineFailed { message, .. } = tool_failed("gifsicle", None, "") else { unreachable!() };
+        assert!(message.starts_with("no message ("), "{message}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_deadline_cancels_only_when_it_passes() {
+        let stop = CancellationToken::new();
+        let d = Deadline::start(Duration::from_secs(60), &stop);
+        tokio::time::sleep(Duration::from_secs(59)).await;
+        assert!(!d.fired() && !stop.is_cancelled());
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(d.fired() && stop.is_cancelled());
+        // Dropped early, it never fires.
+        let stop = CancellationToken::new();
+        drop(Deadline::start(Duration::from_secs(1), &stop));
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert!(!stop.is_cancelled());
+    }
+
+    /// Review item 17: the watchdog fires within one poll of the file passing the limit, so the
+    /// overshoot is at most what the encoder writes in one `SIZE_POLL` (plus one write). Paused
+    /// time makes the writer's pace and the polls exact.
+    #[tokio::test(start_paused = true)]
+    async fn the_overshoot_is_at_most_one_poll_of_writing() {
+        const CHUNK: usize = 64 * 1024;
+        const STEP: Duration = Duration::from_millis(10);
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("enc.gif");
+        std::fs::write(&file, b"").unwrap();
+        let limit = 3 * 1024 * 1024 + 123;
+        let stop = CancellationToken::new();
+        let watch = SizeWatch::start(file.clone(), Cap::size(limit), &stop);
+        let writer = {
+            let (file, stop) = (file.clone(), stop.clone());
+            tokio::spawn(async move {
+                use std::io::Write;
+                let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+                while !stop.is_cancelled() {
+                    f.write_all(&[7u8; CHUNK]).unwrap();
+                    tokio::time::sleep(STEP).await;
+                }
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(60), stop.cancelled()).await.expect("the watchdog fires");
+        writer.await.unwrap();
+        let len = std::fs::metadata(&file).unwrap().len();
+        let per_poll = (SIZE_POLL.as_millis() / STEP.as_millis()) as u64 + 1;
+        assert!(len > limit, "fired only after the limit: {len}");
+        assert!(len - limit <= per_poll * CHUNK as u64, "overshoot {} > {} chunks", len - limit, per_poll);
+        assert_eq!(watch.stop().unwrap_err().code(), "ENGINE_FAILED");
+    }
+
+    /// The limit is a maximum: a file of exactly `limit` bytes, or none yet, is not stopped.
+    #[tokio::test(start_paused = true)]
+    async fn a_file_at_the_limit_or_missing_is_not_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let (at, missing) = (dir.path().join("at.gif"), dir.path().join("missing.gif"));
+        std::fs::write(&at, vec![0u8; 4096]).unwrap();
+        let (s1, s2) = (CancellationToken::new(), CancellationToken::new());
+        let w1 = SizeWatch::start(at, Cap::size(4096), &s1);
+        let w2 = SizeWatch::start(missing, Cap::size(0), &s2);
+        tokio::time::sleep(SIZE_POLL * 40).await;
+        assert!(!s1.is_cancelled() && !s2.is_cancelled());
+        assert!(w1.stop().is_ok() && w2.stop().is_ok());
     }
 
     #[tokio::test]

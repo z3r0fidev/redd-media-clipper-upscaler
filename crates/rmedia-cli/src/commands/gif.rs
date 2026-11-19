@@ -24,7 +24,7 @@ pub async fn run(cli: &Cli, args: &GifArgs) -> u8 {
         Ok(r) => r,
         Err(msg) => return out.input_error(&msg),
     };
-    let (mut report, mut engine) = doctor::run(&cli.locate()).await;
+    let (mut report, mut engine) = doctor::run(&cli.locate(), &rmedia_core::settings::Settings::load()).await;
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };

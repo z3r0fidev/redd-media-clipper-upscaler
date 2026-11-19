@@ -7,7 +7,7 @@ use crate::{Cli, DoctorArgs, exit};
 
 pub async fn run(cli: &Cli, args: &DoctorArgs) -> u8 {
     let opts = cli.locate();
-    let (mut report, mut engine) = doctor::run(&opts).await;
+    let (mut report, mut engine) = doctor::run(&opts, &rmedia_core::settings::Settings::load()).await;
     let mode = if args.recheck { CheckMode::Recheck } else { CheckMode::Ensure };
     let ctrl_c = super::ctrl_c_token();
     doctor::check_capability(&mut report, engine.as_mut(), mode, &ctrl_c.token).await;

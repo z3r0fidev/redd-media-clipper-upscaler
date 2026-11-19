@@ -72,7 +72,7 @@ only.
 - **Protocol whitelist.** Every ffmpeg and ffprobe input carries `-protocol_whitelist file,pipe`.
   HLS, concat or SDP inputs that reference network URLs cannot make the engine fetch anything.
   The planner also refuses `.m3u8`, `.m3u`, `.ffconcat` and `.sdp` sources outright
-  (`plan/mod.rs`).
+  (`plan/planner.rs`).
 - **No stdin, no overwrite by ffmpeg.** `-nostdin`, stdin set to null, and `-n` on clip jobs:
   ffmpeg itself never overwrites (`plan/ffargs.rs::common_args`). The preview proxy uses `-y`, but
   only on its own `.part` file in the cache folder.
@@ -184,7 +184,11 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
   taken from it. Licences: `licenses/NCNN-NOTICE.md`, `licenses/models/`.
 - The workspace denies `unsafe_code`. The exceptions are `set_parent_death_signal` (its
   `pre_exec` closure calls only `prctl` and `getppid`), `exec::process::kill_group` (`killpg`
-  on a pipeline's own process group), and the worker's `crates/rmedia-sr/src/ffi.rs`.
+  on a pipeline's own process group), `upscale::capability::drivers::windows_manifests` (Windows only:
+  read-only `RegOpenKeyExW`/`RegEnumValueW`/`RegCloseKey` on
+  `HKLM\SOFTWARE\Khronos\Vulkan\Drivers`, into buffers it owns, to find the Vulkan driver
+  manifests), and the worker's `crates/rmedia-sr/src/ffi.rs`. Each is a `#[allow(unsafe_code)]`
+  on one function with a `SAFETY:` comment; any new one is added to this list.
 
 ### GIF Engines (feature 003)
 

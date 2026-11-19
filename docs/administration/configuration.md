@@ -11,7 +11,7 @@ rmedia has no server component, accounts, or network configuration. All configur
 and local.
 
 Sources: `crates/rmedia-core/src/settings.rs`, `tools.rs`, `exec/journal.rs`, `exec/mod.rs`,
-`preview.rs`, `request.rs`, `apps/desktop/src-tauri/src/{lib.rs,ops.rs}`, and the `directories`
+`preview.rs`, `request.rs`, `apps/desktop/src-tauri/src/{lib.rs,ops/mod.rs}`, and the `directories`
 crate 6.0.0 path rules.
 
 ## Which Surface Reads What
@@ -116,7 +116,7 @@ Template placeholders (from `rmedia clip --help`): `{source}`, `{index}`, `{inde
 
 The page (web UI) cannot set `ffmpeg_path` or `ffprobe_path`. When the desktop app saves settings
 from the page, it keeps the current engine paths and discards any engine paths the page sent
-(`AppState::set_settings` in `ops.rs`). Engine paths change only through **Settings** ›
+(`AppState::set_settings` in `ops/mod.rs`). Engine paths change only through **Settings** ›
 **Video engine** › **Choose ffmpeg…**, which opens a native dialog in Rust. That flow:
 
 1. Requires the chosen file name to end with `ffmpeg`.
@@ -133,7 +133,7 @@ You can also edit `settings.json` by hand while the app is closed.
 `defaults.output_dir` follows a similar rule. When the page saves settings, a changed output folder
 is accepted only if the user already picked it with the native folder dialog (**Choose…**);
 otherwise the save fails with `choose the output folder with Choose…`. An unchanged folder is
-always accepted. At startup the app re-allows the saved folder (`AppState::new` in `ops.rs`), so
+always accepted. At startup the app re-allows the saved folder (`AppState::new` in `ops/mod.rs`), so
 clips can be written there without picking it again. A folder written into `settings.json` by hand
 is trusted the same way.
 

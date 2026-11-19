@@ -5,7 +5,7 @@
 This reference lists every rmedia test suite: what it proves, how to run it, and what it needs. It
 is for engineers who change rmedia and reviewers who assess release readiness.
 
-Sources: the test files listed below, `crates/rmedia-testkit/src/lib.rs`,
+Sources: the test files listed below, `crates/rmedia-testkit/src/` (`lib.rs` and its modules),
 `.github/workflows/ci.yml`, and `specs/001-video-clipping/checklists/validation.md` (validation run
 of 2026-10-06).
 

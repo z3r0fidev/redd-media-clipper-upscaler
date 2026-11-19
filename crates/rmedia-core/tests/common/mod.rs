@@ -16,7 +16,9 @@ use tokio_util::sync::CancellationToken;
 pub fn engine() -> (Tools, Caps) {
     let (report, found) = std::thread::spawn(|| {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        rt.block_on(rmedia_core::doctor::run(&LocateOptions::default()))
+        // The user's settings, as the CLI would load them (models folder, engine paths).
+        let settings = rmedia_core::settings::Settings::load();
+        rt.block_on(rmedia_core::doctor::run(&LocateOptions::default(), &settings))
     })
     .join()
     .unwrap();

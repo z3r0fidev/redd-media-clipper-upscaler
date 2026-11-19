@@ -115,7 +115,7 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
     }
 
     let opts = cli.locate();
-    let (mut report, mut engine) = doctor::run(&opts).await;
+    let (mut report, mut engine) = doctor::run(&opts, &rmedia_core::settings::Settings::load()).await;
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };

@@ -3,7 +3,7 @@
 This page documents the interface between the desktop app's Svelte page and its Rust backend:
 Tauri commands, streaming channels, events, the path policy, and the media server URL scheme.
 
-Code: `apps/desktop/src-tauri/src/{lib.rs,commands.rs,ops.rs,media_server.rs}`, the frontend
+Code: `apps/desktop/src-tauri/src/{lib.rs,commands.rs,ops/,media_server.rs}`, the frontend
 wrappers in `apps/desktop/src/lib/api.ts`, and generated types in `apps/desktop/src/lib/bindings/`.
 Contract: `specs/001-video-clipping/contracts/tauri-commands.md`.
 
@@ -17,8 +17,8 @@ Contract: `specs/001-video-clipping/contracts/tauri-commands.md`.
 - Types named below (for example `MediaInfo` or `Plan`) are the ts-rs bindings generated from
   `rmedia-core` by `cargo xtask gen-bindings`. CI fails if regenerating them changes any file.
 - Times are seconds (`number`).
-- Every command is a thin adapter: `commands.rs` unwraps arguments and calls `ops.rs`, which calls
-  `rmedia-core`. `ops.rs` is tested without a webview (`src-tauri/tests/bridge.rs`).
+- Every command is a thin adapter: `commands.rs` unwraps arguments and calls `ops/`, which calls
+  `rmedia-core`. `ops/` is tested without a webview (`src-tauri/tests/bridge.rs`).
 
 ## Capabilities
 
