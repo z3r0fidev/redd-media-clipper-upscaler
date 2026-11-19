@@ -177,17 +177,17 @@ also press Ctrl+C by hand during the same command without `timeout`; the result 
 Install the `.deb` (`sudo apt install ./rmedia_0.4.0_amd64.deb`) or run the `.AppImage`. Open
 `src.mp4`, then follow these steps and note anything that looks wrong.
 
-| # | Step | Expected |
-|---|---|---|
-| D1 | Select `src.mp4` | Small ticks along the top of the timeline, one every 2 s (15), within about 2 s |
-| D2 | **Settings › New clips › Mode** → **Smart (frame-exact, copies most of the video)** → **Save**. Doctor line in Settings | `Smart cut: available (libx264)` |
-| D3 | Mark In at 3.32 s and Out at 20.72 s: **Home**, **Shift+→** three times, **→** eight times, **I**; **Shift+→** 17 times, **→** ten times, **O** | Green band 4–20 s, orange bands at each end; under the timeline `Smart: 92% copied · 0.68 s re-encoded at the start · 0.72 s at the end` |
-| D4 | **Add clip** (Enter), then **Run 1 job** | `Finished · 1 succeeded`; the row says `Smart · 92% copied` |
-| D5 | Select the result to play it in the app; pause on the seams (table in [section 1](#1-the-seam-checks-in-brief)) | Clean seams, 17.40 s |
-| D6 | Select `open.mp4` (add it with **Add videos**), mark 1.32–6.72 s | Orange text: `Smart cut not possible: the video has open GOPs …; cutting in accurate mode`, no bands |
-| D7 | In the queue, open the video options of `open.mp4`, tick **Only smart (no fallback)**, add the clip and run | The clip fails with `smart cut not possible: …`; nothing written |
-| D8 | Open a 10-minute source (`long.mp4` from 3.2) | All the ticks appear within 2 s; the view never blocks while they load |
-| D9 | **Export…** the queue as `.json`, then run `rmedia batch` on it with `--on-exists overwrite` | Same file as the app's (`cmp` reports nothing) |
+| #   | Step                                                                                                                                            | Expected                                                                                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Select `src.mp4`                                                                                                                                | Small ticks along the top of the timeline, one every 2 s (15), within about 2 s                                                          |
+| D2  | **Settings › New clips › Mode** → **Smart (frame-exact, copies most of the video)** → **Save**. Doctor line in Settings                         | `Smart cut: available (libx264)`                                                                                                         |
+| D3  | Mark In at 3.32 s and Out at 20.72 s: **Home**, **Shift+→** three times, **→** eight times, **I**; **Shift+→** 17 times, **→** ten times, **O** | Green band 4–20 s, orange bands at each end; under the timeline `Smart: 92% copied · 0.68 s re-encoded at the start · 0.72 s at the end` |
+| D4  | **Add clip** (Enter), then **Run 1 job**                                                                                                        | `Finished · 1 succeeded`; the row says `Smart · 92% copied`                                                                              |
+| D5  | Select the result to play it in the app; pause on the seams (table in [section 1](#1-the-seam-checks-in-brief))                                 | Clean seams, 17.40 s                                                                                                                     |
+| D6  | Select `open.mp4` (add it with **Add videos**), mark 1.32–6.72 s                                                                                | Orange text: `Smart cut not possible: the video has open GOPs …; cutting in accurate mode`, no bands                                     |
+| D7  | In the queue, open the video options of `open.mp4`, tick **Only smart (no fallback)**, add the clip and run                                     | The clip fails with `smart cut not possible: …`; nothing written                                                                         |
+| D8  | Open a 10-minute source (`long.mp4` from 3.2)                                                                                                   | All the ticks appear within 2 s; the view never blocks while they load                                                                   |
+| D9  | **Export…** the queue as `.json`, then run `rmedia batch` on it with `--on-exists overwrite`                                                    | Same file as the app's (`cmp` reports nothing)                                                                                           |
 
 ## 4. Windows
 
