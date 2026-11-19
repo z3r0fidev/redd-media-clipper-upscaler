@@ -332,7 +332,8 @@ security and code-review lows, then 005.
     (fit the cap with sound; length and resolution limits; the dry run; presets and batches;
     the desktop app), version 0.5.0. Planned on 2026-11-19: [plan](../specs/005-budgeted-reddit-video/plan.md)
     (`--fit TARGET`; video targets as data; two-pass x264 with a VBV ceiling, 95.6–99.7% of the
-    cap in research R1; the size is measured before commit, with at most 3 retries).
+    cap in research R1; the size is measured before commit, with at most 3 retries). Tasks on
+    2026-11-19: [tasks](../specs/005-budgeted-reddit-video/tasks.md), T001–T047 (MVP: T001–T022).
 24. Later candidates (no number yet): a desktop crop-path editor for smart reframe
     (`research/08`); audio-only export with loudness normalisation; frame and timecode input and
     chapter or EDL import.
