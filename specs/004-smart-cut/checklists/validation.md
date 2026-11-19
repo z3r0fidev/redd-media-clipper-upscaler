@@ -142,9 +142,11 @@ CI run 44027402281 (commit `4d5d783`): the Windows job's SC-007 took 2.14 s (SC-
 the 2 s bar, while Linux took 412 ms. Like SC-003's scan, SC-007 is now reported but not
 asserted on the Windows CI runners; the bar stays asserted everywhere else.
 
-Owner checks still open: smart mp4 playback in WebView2, on an Android phone and an iPhone, and
-a Reddit upload (spike S1 rows). The desktop app on Windows has not been run by hand with smart
-mode.
+Owner checks (2026-11-18, with the v0.4.0 tag build; [runbook](../../../docs/operations/smart-cut-owner-checks.md)):
+Linux and Windows CLI and desktop app, WebView2, an Android phone (plus Chrome and Google Photos
+in the Android 16 emulator), an iPhone and a Reddit upload all passed; results in
+`docs/operations/smart-cut-owner-checks-results-{linux,windows,android,iphone,reddit}.md`. Still
+open: section 8, real footage.
 
 ## T059 reviews (2026-11-16)
 
