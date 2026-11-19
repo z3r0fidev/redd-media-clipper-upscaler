@@ -3,17 +3,19 @@
 The Windows part of the [results sheet](smart-cut-owner-checks.md#results-sheet), filled in from
 the owner's PowerShell run on 2026-11-18 (working folder `%USERPROFILE%\rmedia-004`, the CLI
 archive `rmedia-cli-v0.4.0-x86_64-pc-windows-msvc.zip` from the tag build's Windows artifact).
-The machine's details were not in the output. The [Linux results](smart-cut-owner-checks-results-linux.md)
+The machine's details come from the owner's second run the same day. The [Linux results](smart-cut-owner-checks-results-linux.md)
 are in their own file.
 
 ```text
 rmedia 0.4.0 smart cut owner checks — date: 2026-11-18  build (release.yml run): 44075993817 (tag v0.4.0, 092171f)
 
-WINDOWS  version: ____  CPU/GPU: ____  WebView2 version: ____
+WINDOWS  version: Windows 11 Pro, 10.0.26300, 64-bit
+         CPU/GPU: Intel Core i7-1185G7 @ 3.00 GHz (11th gen), 32 GB / Intel Iris Xe Graphics (driver 32.0.101.7092)
+         WebView2 version: 157.0.4341.60
   digest matches ok (reported by the owner)
-  4.1 version/doctor ok / 92% line ok (text garbled by the console, see notes) / 435 frames ok / clean decodes ____ (not run)
+  4.1 version/doctor ok / 92% line ok (text garbled by the console, see notes) / 435 frames ok / clean decodes ok
       strict: error line ok exit 3 ok nothing written ok SMART_UNAVAILABLE/open_gop ok
-      cancel (a) Ctrl+C __ s (not timed) ok (c) kill parent: no process ok cleaned by the next run ____ (not run yet)
+      cancel (a) Ctrl+C __ s (not timed) ok (c) kill parent: no process ok cleaned by the next run ok
   4.2 D1–D9: not run
       W1 src_smart ____ other_smart ____  W2 seeks ____  W3 Edge ____  W4 ____   (not run)
 
@@ -33,8 +35,9 @@ Notes:
   [Console]::OutputEncoding = [Text.Encoding]::UTF8 before the command should show it correctly.
 - Frame counts: 435 for all six files; other_smart.ts printed "435  435" (the expected double
   count for .ts).
-- Clean decodes: the Windows CLI block (4.1) had no decode loop, so none were run; it was added
-  on 2026-11-18.
+- Clean decodes: the Windows CLI block (4.1) had no decode loop at first; it was added on
+  2026-11-18 and run the same day: "clean" for all six files (other_accurate.mp4,
+  other_smart.mkv, .mov, .mp4, .ts, src_smart.mp4), no error lines.
 - Strict mode: "error: command line: smart cut not possible: the video has open GOPs (frames that
   depend on the previous GOP)", "exit 3", strict\ empty; JSON "code":"SMART_UNAVAILABLE",
   "detail":{"reason":"open_gop"} (the error line is also printed on stderr).
@@ -55,10 +58,18 @@ Notes:
   deletes those of dead runs (the in-flight journal, FR-021). The runbook's pass rule for (c)
   wrongly failed any hidden folder; it was corrected on 2026-11-18 and got a cleanup line. On
   Linux (same release, kill -9 of the parent at 1.5 s and 2.5 s) the folder held head.ts and
-  copy.ts, no engine process was left, and the next short clip deleted the folder. The Windows
-  cleanup line has not been run yet.
+  copy.ts, no engine process was left, and the next short clip deleted the folder.
+- Cancel (c) cleanup on Windows: before, Show-Left still listed the scratch folder with its empty
+  head.ts; the cleanup line (a fast clip of src.mp4, 1–2 s, into next\) ran; after it,
+  Show-Left printed nothing: no process, and the hidden folder in cancel3\ was gone. The next run
+  deletes a killed run's temp files on Windows too.
+- Machine: Get-ComputerInfo gave "Microsoft Windows 11 Pro", OsVersion 10.0.26300, 64-bit,
+  "11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz", 33,706,872,832 B of memory (32 GB).
+  Win32_VideoController listed "Intel(R) Iris(R) Xe Graphics" 32.0.101.7092 and also
+  "Microsoft Remote Display Adapter" 10.0.26100.9818, which Windows adds for Remote Desktop
+  sessions; if the desktop checks (4.2) run over Remote Desktop, note that with their results.
+  WebView2 Runtime (machine-wide, EdgeUpdate pv): 157.0.4341.60.
 
-Still to do on Windows: machine details (Windows version, CPU/GPU, WebView2 version); the (c)
-cleanup line in 4.1 (expect Show-Left to print nothing, cancel3's hidden folder gone); the
-clean-decode loop in 4.1; the desktop app D1–D9 and W1–W4.
+Windows CLI (4.1): all checks passed. Still to do on Windows: the desktop app, D1–D9 and
+W1–W4 (section 4.2).
 ```
