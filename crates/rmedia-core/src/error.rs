@@ -38,6 +38,9 @@ pub enum Error {
     /// A smart job that may not fall back (strict mode) could not be smart-cut (feature 004).
     #[error("smart cut not possible: {}", .0.message())]
     SmartUnavailable(crate::smart::FallbackReason),
+    /// A fit job's output stayed over its cap after the last retry (feature 005).
+    #[error("{}", fit_failed_message(*cap, attempts))]
+    FitFailed { cap: u64, attempts: Vec<crate::fit::FitAttempt> },
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -85,6 +88,16 @@ pub enum IssueCode {
     SmartUnavailable,
     /// Notice: the job also upscales or makes a GIF, so smart cut does not apply (004).
     SmartNotApplied,
+    /// The range is longer than the video target allows, and trimming is not allowed (005).
+    RangeTooLong,
+    /// Notice: a fit lowered the output size or the audio bitrate to meet its cap (005).
+    FitLowered,
+    /// Notice: a fit shortened the range (length limit or budget; trimming allowed) (005).
+    FitTrimmed,
+    /// Notice: `--mode fast` with a fit; the clip is cut in accurate mode (005).
+    FitReencodes,
+    /// A fit job stayed over its cap after the last retry (005).
+    FitFailed,
 }
 
 impl IssueCode {
@@ -114,6 +127,11 @@ impl IssueCode {
             IssueCode::SmartFallback => "SMART_FALLBACK",
             IssueCode::SmartUnavailable => "SMART_UNAVAILABLE",
             IssueCode::SmartNotApplied => "SMART_NOT_APPLIED",
+            IssueCode::RangeTooLong => "RANGE_TOO_LONG",
+            IssueCode::FitLowered => "FIT_LOWERED",
+            IssueCode::FitTrimmed => "FIT_TRIMMED",
+            IssueCode::FitReencodes => "FIT_REENCODES",
+            IssueCode::FitFailed => "FIT_FAILED",
         }
     }
 }
@@ -146,6 +164,7 @@ impl Error {
             Error::EngineMissing(_) => IssueCode::EngineMissing,
             Error::BudgetUnreachable { .. } => IssueCode::BudgetUnreachable,
             Error::SmartUnavailable(_) => IssueCode::SmartUnavailable,
+            Error::FitFailed { .. } => IssueCode::FitFailed,
             Error::Io(_) => IssueCode::IoError,
         }
     }
@@ -179,15 +198,31 @@ impl Error {
                     fits_secs: fits_secs.map(|s| (s * 10.0).round() / 10.0),
                     best_bytes: *best_bytes,
                     min_bytes: *min_bytes,
-                    reason: None,
+                    ..ErrorDetail::default()
                 }),
                 Error::SmartUnavailable(reason) => {
                     Some(ErrorDetail { reason: Some(*reason), ..ErrorDetail::default() })
                 }
+                Error::FitFailed { cap, attempts } => Some(ErrorDetail {
+                    cap: Some(*cap),
+                    attempts: Some(attempts.clone()),
+                    ..ErrorDetail::default()
+                }),
                 _ => None,
             },
         }
     }
+}
+
+fn fit_failed_message(cap: u64, attempts: &[crate::fit::FitAttempt]) -> String {
+    let human = crate::upscale::estimate::human_bytes;
+    let last = attempts.last().map_or(0, |a| a.bytes);
+    format!(
+        "the output is still over its {} cap after {} encodes (last {})",
+        human(cap),
+        attempts.len(),
+        human(last)
+    )
 }
 
 fn budget_message(fits_secs: Option<f64>, best_bytes: Option<u64>, min_bytes: Option<u64>) -> String {
@@ -243,6 +278,26 @@ pub struct ErrorDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub reason: Option<crate::smart::FallbackReason>,
+    /// A fit's size cap in bytes (`FIT_FAILED`, feature 005).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub cap: Option<u64>,
+    /// A fit's encodes, in order (`FIT_FAILED`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub attempts: Option<Vec<crate::fit::FitAttempt>>,
+    /// The smallest cap that fits the range at the target's floor (`BUDGET_UNREACHABLE` for a
+    /// fit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub min_cap: Option<u64>,
+    /// The range's length and the target's limit, in seconds (`RANGE_TOO_LONG`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub len: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub max_length: Option<f64>,
 }
 
 #[cfg(test)]
@@ -260,5 +315,36 @@ mod tests {
             assert_eq!(serde_json::to_value(code).unwrap(), code.as_str());
         }
         assert_eq!(IssueCode::SmartNotApplied.as_str(), "SMART_NOT_APPLIED");
+    }
+
+    /// Feature 005's codes (contracts/json-output.md).
+    #[test]
+    fn fit_codes_serialize_as_their_names() {
+        for (code, name) in [
+            (IssueCode::RangeTooLong, "RANGE_TOO_LONG"),
+            (IssueCode::FitLowered, "FIT_LOWERED"),
+            (IssueCode::FitTrimmed, "FIT_TRIMMED"),
+            (IssueCode::FitReencodes, "FIT_REENCODES"),
+            (IssueCode::FitFailed, "FIT_FAILED"),
+        ] {
+            assert_eq!(code.as_str(), name);
+            assert_eq!(serde_json::to_value(code).unwrap(), name);
+        }
+    }
+
+    #[test]
+    fn a_fit_failure_names_the_cap_and_every_attempt() {
+        use crate::fit::FitAttempt;
+        let e = super::Error::FitFailed {
+            cap: 20_000_000,
+            attempts: vec![
+                FitAttempt { video_kbps: 3000, bytes: 20_400_000 },
+                FitAttempt { video_kbps: 2900, bytes: 20_100_000 },
+            ],
+        };
+        assert_eq!(e.code(), "FIT_FAILED");
+        assert_eq!(e.to_string(), "the output is still over its 20.0 MB cap after 2 encodes (last 20.1 MB)");
+        let d = e.info().detail.unwrap();
+        assert_eq!((d.cap, d.attempts.map(|a| a.len())), (Some(20_000_000), Some(2)));
     }
 }

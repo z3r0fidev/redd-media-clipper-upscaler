@@ -5,18 +5,18 @@
 //! the device-preset protections (regular files only, at most 64 KiB), at most 64 of them, and
 //! every rule of the schema is checked again in code.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::preset::{PresetProblem, PresetSource, read_preset_file};
+#[cfg(test)]
+use crate::data_files::shown;
+use crate::preset::{PresetProblem, PresetSource};
 
 /// The default target.
 pub const DEFAULT_TARGET: &str = "reddit-post";
 /// The largest size budget a target may set (1 GiB).
 pub const MAX_BUDGET: u64 = 1 << 30;
-/// At most this many user target files are read; the rest are reported.
-const MAX_USER_FILES: usize = 64;
 
 const BUILTIN: [&str; 4] = [
     include_str!("builtin/reddit-post.json"),
@@ -203,10 +203,14 @@ fn printable(s: &str) -> bool {
     !s.chars().any(unsafe_char)
 }
 
-/// `s` with unsafe characters replaced and at most 300 characters (problem messages quote
-/// file names and parser errors from untrusted files).
-fn shown(s: &str) -> String {
-    s.chars().take(300).map(|c| if unsafe_char(c) { '?' } else { c }).collect()
+impl crate::data_files::DataFile for GifTarget {
+    const KIND: &'static str = "GIF target";
+    fn parse(text: &str) -> Result<GifTarget, String> {
+        GifTarget::from_json(text)
+    }
+    fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 impl GifTarget {
@@ -325,49 +329,13 @@ impl GifTargetRegistry {
     }
 
     /// Built-ins plus `<config_dir>/gif-targets/*.json` (when `config_dir` is given). Problems
-    /// with user files are collected, never fatal.
+    /// with user files are collected, never fatal (`data_files::load`).
     pub fn load(config_dir: Option<&Path>) -> GifTargetRegistry {
-        let mut reg = GifTargetRegistry::builtin();
+        let reg = GifTargetRegistry::builtin();
         let Some(dir) = config_dir.map(|d| d.join("gif-targets")) else { return reg };
-        let Ok(entries) = std::fs::read_dir(&dir) else { return reg };
-        // A folder with a huge number of files is not listed in full.
-        let mut files: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")))
-            .take(MAX_USER_FILES * 4)
-            .collect();
-        files.sort();
-        if files.len() > MAX_USER_FILES {
-            reg.problems.push(PresetProblem {
-                file: dir.clone(),
-                message: format!(
-                    "{}{} files ignored: at most {MAX_USER_FILES} GIF target files are read",
-                    files.len() - MAX_USER_FILES,
-                    if files.len() == MAX_USER_FILES * 4 { " or more" } else { "" }
-                ),
-            });
-            files.truncate(MAX_USER_FILES);
-        }
-        let mut user: Vec<(GifTarget, PresetSource)> = Vec::new();
-        for file in files {
-            match read_preset_file(&file).and_then(|t| GifTarget::from_json(&t)).map_err(|e| shown(&e)) {
-                Ok(t) if user.iter().any(|(u, _)| u.id == t.id) => reg.problems.push(PresetProblem {
-                    file,
-                    message: format!("another user GIF target already uses the id {:?}", t.id),
-                }),
-                Ok(t) => user.push((t, PresetSource::User(file))),
-                Err(message) => reg.problems.push(PresetProblem { file, message }),
-            }
-        }
-        user.sort_by(|a, b| a.0.id.cmp(&b.0.id));
-        for (t, src) in user {
-            match reg.targets.iter_mut().find(|(b, _)| b.id == t.id) {
-                Some(slot) => *slot = (t, src),
-                None => reg.targets.push((t, src)),
-            }
-        }
-        reg
+        let mut problems = Vec::new();
+        let targets = crate::data_files::load(reg.targets, &dir, &mut problems);
+        GifTargetRegistry { targets, problems }
     }
 
     pub fn get(&self, id: &str) -> Option<&GifTarget> {

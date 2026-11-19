@@ -443,6 +443,14 @@ New in 0.4.0: `SMART_FALLBACK` (warning and notice: a smart job runs in accurate
 a failed job when the seam check fails) and `SMART_NOT_APPLIED` (notice: smart was asked for an
 upscale or GIF job).
 
+New in 0.5.0 (feature 005, a fit): `RANGE_TOO_LONG` (error, exit 3; `detail.len` and
+`detail.max_length` in seconds), `FIT_LOWERED` (notice: the size or the audio bitrate was
+lowered to fit), `FIT_TRIMMED` (notice: the range was shortened), `FIT_REENCODES` (notice:
+`--mode fast` with a fit is cut in accurate mode) and `FIT_FAILED` (a failed job, exit 1: still
+over the cap after the last retry; `detail.cap` and `detail.attempts`, each
+`{video_kbps, bytes}`). For a fit, `BUDGET_UNREACHABLE` carries `detail.min_cap`, the smallest
+cap that fits the range.
+
 ## `rmedia gif --list-targets --json`
 
 ```json

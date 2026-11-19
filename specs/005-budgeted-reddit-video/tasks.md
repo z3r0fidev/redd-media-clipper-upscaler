@@ -9,7 +9,8 @@ description: "Task list for 005 Budgeted Reddit Video"
 **Prerequisites**: plan.md, spec.md, research.md (R1–R12), data-model.md, contracts/,
 quickstart.md
 
-**Status (2026-11-19)**: generated; nothing started.
+**Status (2026-11-19)**: T001–T004 done (baseline, scaffold, issue codes, the shared `data_files`
+loader).
 
 **Tests**: REQUIRED. Constitution Principle III (test-first with real media) is non-negotiable.
 - Within each story, write the test tasks first and confirm they FAIL before implementing.
@@ -40,7 +41,7 @@ quickstart.md
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Record the 0.4.0+ baseline in a new `specs/005-budgeted-reddit-video/checklists/validation.md`:
+- [X] T001 Record the 0.4.0+ baseline in a new `specs/005-budgeted-reddit-video/checklists/validation.md`:
   - run `cargo test --workspace` (bundled engine, `RMEDIA_REQUIRE_FFMPEG=1`), the desktop tests
     (`apps/desktop/src-tauri`: `cargo test`; `apps/desktop`: `npm test`) and the MinGW Windows
     check;
@@ -48,14 +49,14 @@ quickstart.md
     list.
 
   Every phase must keep them green, with no snapshot changes for jobs without a fit (FR-022).
-- [ ] T002 Scaffold and register the empty modules:
+- [X] T002 Scaffold and register the empty modules:
   - `core/fit/{mod,target,plan}.rs` and `core/fit/builtin/reddit-video.json`
     (`pub mod fit` in `core/lib.rs`);
   - `core/exec/fit.rs` (in `core/exec/mod.rs`);
   - `core/data_files.rs`.
 
   Test files are created with their stories' first tests, so no empty test binaries are built.
-- [ ] T003 [P] Add the new issue codes to `core/error.rs`, with `as_str` tests:
+- [X] T003 [P] Add the new issue codes to `core/error.rs`, with `as_str` tests:
   - `RangeTooLong` (`RANGE_TOO_LONG`), `FitLowered`, `FitTrimmed`, `FitReencodes`, `FitFailed`;
   - `Error::FitFailed { cap, attempts }`, mapped to exit 1.
 
@@ -67,7 +68,7 @@ quickstart.md
 
 **Purpose**: targets, options and the pure planner: everything US1–US5 read.
 
-- [ ] T004 Test first, `core/data_files.rs` unit tests (moved from `core/gif/target.rs`):
+- [X] T004 Test first, `core/data_files.rs` unit tests (moved from `core/gif/target.rs`):
   - the 64-file cap and its "N files ignored" problem;
   - capped reads and symlinks;
   - duplicate user ids;

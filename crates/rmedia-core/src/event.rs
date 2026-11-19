@@ -253,10 +253,7 @@ mod tests {
         let floor =
             crate::Error::BudgetUnreachable { fits_secs: None, best_bytes: None, min_bytes: Some(65_536) };
         assert_eq!(serde_json::to_value(floor.info()).unwrap()["detail"], json!({"min_bytes": 65_536}));
-        assert_eq!(
-            ErrorDetail::default(),
-            ErrorDetail { fits_secs: None, best_bytes: None, min_bytes: None, reason: None }
-        );
+        assert_eq!(ErrorDetail::default(), ErrorDetail::default());
     }
 
     #[test]
