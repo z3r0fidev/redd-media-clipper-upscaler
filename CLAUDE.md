@@ -19,7 +19,8 @@ for Reddit (003). Spec-driven via Spec Kit.
   Owner checks left: Reddit's limits and a real upload, the 002 two-phone test and +3 VMAF.
   Pending list and review findings: `docs/roadmap.md`.
 - Next feature: **005 budgeted Reddit video** (specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
-  limits as of 2026-11-13 in `research/10`; next: plan).
+  limits as of 2026-11-13 in `research/10`; planned 2026-11-19: `--fit TARGET`, two-pass x264 with
+  a VBV ceiling, measured before commit (research R1); next: tasks).
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and
@@ -52,5 +53,5 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Commits: Conventional Commits.
 
 <!-- SPECKIT START -->
-Active plan: specs/004-smart-cut/plan.md
+Active plan: specs/005-budgeted-reddit-video/plan.md
 <!-- SPECKIT END -->
