@@ -20,7 +20,9 @@ for Reddit (003). Spec-driven via Spec Kit.
   Pending list and review findings: `docs/roadmap.md`.
 - Next feature: **005 budgeted Reddit video** (specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
   limits as of 2026-11-13 in `research/10`; planned 2026-11-19: `--fit TARGET`, two-pass x264 with
-  a VBV ceiling, measured before commit (research R1); tasks 2026-11-19: T001–T047, MVP = US1 (T001–T022); next: implement).
+  a VBV ceiling, measured before commit (research R1); tasks 2026-11-19: T001–T047, MVP = US1 (T001–T022)).
+- 005 progress: T001–T022 done (Phases 1–2 and US1, the MVP: `rmedia clip --fit` works, under the cap,
+  repeatable (research R13), with retries). `--fit` with upscaling is refused until T037. Next: US2 (T023).
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and
