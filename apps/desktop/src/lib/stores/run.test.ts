@@ -62,6 +62,7 @@ describe("job labels", () => {
   it("names the stage of a running upscale and keeps clip labels", () => {
     expect(statusLabel({ ...base, status: "running", stage: "analyze" })).toBe("Finding faces");
     expect(statusLabel({ ...base, status: "running", stage: "render" })).toBe("Upscaling");
+    expect(statusLabel({ ...base, status: "running", stage: "accurate" })).toBe("Cutting (accurate)");
     expect(statusLabel({ ...base, status: "running" })).toBe("Cutting");
     expect(statusLabel({ ...base, status: "done", stage: "verify" })).toBe("Done");
   });

@@ -59,6 +59,31 @@ describe("keyframes", () => {
     expect(smart.loadingIndex).toBe(false);
   });
 
+  it("does not start the same source's scan over while it runs or after it finished", async () => {
+    // Item 27: the player asked again when its state flickered (error, then ok) for the same file.
+    const first = loadKeyframes("/v/a.mp4");
+    const again = loadKeyframes("/v/a.mp4");
+    expect(calls.keyframes.length).toBe(1);
+    expect(calls.cancelled).toEqual([]);
+    calls.keyframes[0]!.resolve(index([0, 2]));
+    await Promise.all([first, again]);
+    await loadKeyframes("/v/a.mp4");
+    expect(calls.keyframes.length).toBe(1);
+    expect(smart.index?.keyframes.map((k) => k.at)).toEqual([0, 2]);
+  });
+
+  it("scans again after a failure or after another source", async () => {
+    const first = loadKeyframes("/v/a.mp4");
+    calls.keyframes[0]!.reject("busy");
+    await first;
+    expect(smart.indexError).toBe("busy");
+    void loadKeyframes("/v/a.mp4");
+    expect(calls.keyframes.length).toBe(2);
+    void loadKeyframes(null);
+    void loadKeyframes("/v/a.mp4");
+    expect(calls.keyframes.length).toBe(3);
+  });
+
   it("reports a failure without blocking", async () => {
     const p = loadKeyframes("/v/a.mp4");
     calls.keyframes[0]!.reject("the file has no video stream");

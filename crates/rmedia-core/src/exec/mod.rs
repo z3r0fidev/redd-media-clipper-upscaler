@@ -401,6 +401,14 @@ impl<'a> JobCtx<'a> {
         self.shared.emit(Event::JobStage { job_id: self.id, stage: name.to_owned(), index, of });
     }
 
+    /// Enters a stage that was not planned and takes the rest of the job (a smart job's fallback
+    /// to accurate mode): progress continues from where the bar is to the end.
+    pub fn final_stage(&mut self, name: &str) {
+        let from = self.last_fraction.clamp(0.0, 1.0);
+        self.stage = Some((from, 1.0 - from));
+        self.shared.emit(Event::JobStage { job_id: self.id, stage: name.to_owned(), index: 1, of: 1 });
+    }
+
     /// The run's state folder, where the capability record lives.
     pub fn state_dir(&self) -> Option<&Path> {
         self.shared.state_dir.as_deref()

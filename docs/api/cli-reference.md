@@ -268,6 +268,12 @@ the seams checked before the output is committed.
 - With `--upscale` or `--gif` the clip is re-encoded anyway, so it runs as accurate and prints
   the note `smart cut does not apply: the clip is re-encoded for upscaling/GIF`
   (`SMART_NOT_APPLIED`).
+- An end at or past the video's last frame (or no end) copies the last GOPs to the end of the
+  video: there is no tail to re-encode. `-s 24.10 -e 30` on a 30 s video gives `head 1.900 s
+  (47 fr) re-encoded · copy 4.000 s (100 fr) · 68% copied`.
+- While it runs, a smart job holds its parts and the joined file in the output folder, about
+  twice the clip's size (estimated from the source's bytes per second). The plan warns
+  (`DISK_FULL`) when the folder looks too small.
 - Only the video is smart-cut. Audio is re-encoded once for the whole range with accurate
   mode's settings, and the other streams (audio tracks, subtitles, attachments) are the same as
   in accurate mode; text subtitles are cut by time.

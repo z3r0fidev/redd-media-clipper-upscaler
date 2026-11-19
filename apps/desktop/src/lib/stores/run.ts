@@ -98,7 +98,13 @@ export function applyEvent(r: RunView, e: Event): RunView {
   }
 }
 
-const stageLabel: Record<string, string> = { analyze: "Finding faces", render: "Upscaling", verify: "Checking" };
+const stageLabel: Record<string, string> = {
+  analyze: "Finding faces",
+  render: "Upscaling",
+  verify: "Checking",
+  // A smart clip redone in accurate mode after its seam check failed (feature 004).
+  accurate: "Cutting (accurate)",
+};
 
 /** The status column of a job row: the stage of a running multi-stage job, else its status. */
 export function statusLabel(j: JobView): string {

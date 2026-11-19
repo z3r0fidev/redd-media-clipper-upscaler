@@ -111,8 +111,11 @@
   );
   const ticks = $derived(clipping ? tickPositions(smart.index, duration) : []);
   const smartBands = $derived(smartMode && inPt != null ? bands(smart.summary, duration) : []);
+  // The index belongs to the file, not to the player's state: a flicker of `mode` (error, then
+  // ok) must not cancel and restart the scan, so only the view and the source key this effect.
+  const keyframeSource = $derived(app.view === "clip" ? path : null);
   $effect(() => {
-    const p = clipping ? path : null;
+    const p = keyframeSource;
     untrack(() => void loadKeyframes(p));
   });
   $effect(() => {

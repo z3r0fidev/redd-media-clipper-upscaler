@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use super::JobCtx;
 use super::clip::classify_failure;
-use super::process::run_capture;
+use super::process::{run_capture, run_lines};
 use crate::error::{Error, Result};
 use crate::plan::ffargs::{ClipSpec, clip_args};
 use crate::plan::streams::Container;
@@ -14,6 +14,7 @@ use crate::probe::{INPUT_PROTOCOLS, file_arg};
 use crate::smart::args::{self, COPY, HEAD, LIST, TAIL};
 use crate::smart::{FallbackReason, SmartPlan};
 use crate::time::Ts;
+use tokio_util::sync::CancellationToken;
 
 /// The clip's other streams, written by the audio step.
 pub(crate) const REST: &str = "rest.av";
@@ -146,11 +147,12 @@ async fn verify(
     plan: &SmartPlan,
 ) -> Result<std::result::Result<(), FallbackReason>> {
     let total = plan.total_frames();
-    let mut pts = packet_times(ctx, ctx.temp).await?;
-    if pts.len() != total as usize {
-        tracing::warn!("smart cut: {} video frames joined, {total} planned", pts.len());
+    let scan = scan_packets(&ctx.tools.ffprobe.path, ctx.temp, total as usize, ctx.cancel).await?;
+    if scan.count != total as usize {
+        tracing::warn!("smart cut: {} video frames joined, {total} planned", scan.count);
         return Ok(Err(FallbackReason::SeamCheck));
     }
+    let mut pts = scan.times;
     pts.sort_unstable();
     let step = plan.frame.as_micros();
     let slack = (step / 20).max(2_000);
@@ -211,22 +213,41 @@ async fn verify(
     Ok(Ok(()))
 }
 
-/// The presentation times (µs) of the first video stream's packets.
-async fn packet_times(ctx: &JobCtx<'_>, file: &Path) -> Result<Vec<i64>> {
+/// The first video stream's packets in a file: how many, and their presentation times (µs).
+struct PacketScan {
+    count: usize,
+    /// At most `planned + 1` times: more is a mismatch already.
+    times: Vec<i64>,
+}
+
+/// Lists the packets' presentation times line by line (item 27: `run_capture`'s 16 MiB limit
+/// is about 1.3 million packets, which a multi-hour clip passes).
+async fn scan_packets(
+    ffprobe: &Path,
+    file: &Path,
+    planned: usize,
+    cancel: &CancellationToken,
+) -> Result<PacketScan> {
     let args: Vec<OsString> =
         ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0"]
             .iter()
             .map(OsString::from)
             .chain([file_arg(file)])
             .collect();
-    let out = run_capture(&ctx.tools.ffprobe.path, &args, ctx.cancel).await?;
-    Ok(String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| l.trim().trim_end_matches(',').parse::<f64>().ok())
+    let mut scan = PacketScan { count: 0, times: Vec::with_capacity(planned.min(1 << 20) + 1) };
+    run_lines(ffprobe, &args, cancel, |line| {
+        let Ok(s) = line.trim().trim_end_matches(',').parse::<f64>() else { return };
         // Within ±1e12 s, so the differences below cannot overflow (T059 review).
-        .filter(|s| s.is_finite() && s.abs() < 1e12)
-        .map(|s| (s * 1e6).round() as i64)
-        .collect())
+        if !(s.is_finite() && s.abs() < 1e12) {
+            return;
+        }
+        scan.count += 1;
+        if scan.times.len() <= planned {
+            scan.times.push((s * 1e6).round() as i64);
+        }
+    })
+    .await?;
+    Ok(scan)
 }
 
 /// Decodes `frames` video frames from `at` (user time of the file) and returns each frame's
@@ -291,4 +312,33 @@ async fn decode(
             })
             .collect(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Item 27: the packet scan of a multi-hour clip prints more than `run_capture`'s 16 MiB
+    /// (about 1.3 million packets); it is read line by line instead, and only what the check
+    /// needs is kept.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn packet_scan_reads_past_16_mib() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let probe = d.path().join("ffprobe");
+        // 2,000,000 lines of 15 bytes: about 29 MiB.
+        std::fs::write(&probe, "#!/bin/sh\nyes 12345.678000, | head -n 2000000\n").unwrap();
+        std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        // The old route: capturing the whole output fails past 16 MiB.
+        let err = run_capture(&probe, &[], &cancel).await.unwrap_err();
+        assert!(err.to_string().contains("16 MiB"), "{err}");
+        let scan = scan_packets(&probe, Path::new("joined.mp4"), 2_000_000, &cancel).await.unwrap();
+        assert_eq!((scan.count, scan.times.len()), (2_000_000, 2_000_000));
+        assert_eq!(scan.times[0], 12_345_678_000);
+        // More packets than planned: counted, but only the planned number plus one is kept.
+        let scan = scan_packets(&probe, Path::new("joined.mp4"), 10, &cancel).await.unwrap();
+        assert_eq!((scan.count, scan.times.len()), (2_000_000, 11));
+    }
 }

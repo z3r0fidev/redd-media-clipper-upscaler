@@ -54,10 +54,12 @@ export function smartLine(s: SmartSummary | null, notices: Notice[]): string {
   return why ? capital(why.message) : "Smart cut not possible here; the clip is cut in accurate mode";
 }
 
-/** The video's options over the queue's (what `smart_plan` should plan with). */
+/** The video's options over the queue's (what `smart_plan` should plan with). An option the
+ *  video reset to the default is stored as `undefined`; it must not hide the queue's value. */
 export function planOptions(queue: Manifest, path: string): PartialOptions {
   const video = queue.videos.find((v) => v.input === path);
-  return { ...queue.defaults, ...video?.options };
+  const set = Object.entries(video?.options ?? {}).filter(([, v]) => v !== undefined);
+  return { ...queue.defaults, ...Object.fromEntries(set) };
 }
 
 /** The mode a source's new clips are cut in: the video's, the queue's, the settings', else fast. */

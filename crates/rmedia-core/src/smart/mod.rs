@@ -160,6 +160,12 @@ pub struct SmartPlan {
     pub rotation: Option<i32>,
     /// Strict mode (`smart_fallback: false`): a failed seam check fails the job (FR-009).
     pub strict: bool,
+    /// About how big the clip will be: the source's bytes per second times the clip's length
+    /// (most of it is copied). 0 when the source's length is unknown. The job needs about twice
+    /// this while it runs (the parts and the joined file), which the plan's free-space check
+    /// counts.
+    #[serde(skip)]
+    pub bytes: u64,
 }
 
 impl SmartPlan {
@@ -243,7 +249,14 @@ pub fn check(
     let (a, z) = (range.span.start, range.span.end);
     let keys = &index.keyframes;
     let k1 = keys.iter().find(|k| k.at + SLACK >= a).ok_or(FallbackReason::NoFullGop)?;
-    let k2 = if range.to_end { None } else { keys.iter().rev().find(|k| k.at <= z + SLACK).copied() };
+    // An end at or past the last frame cuts to the end of the video, like an open end (item 27):
+    // the last GOP is copied, not re-encoded. The index reads past the end, so no packet there
+    // means the video ends (unless a cap cut the read short).
+    let to_end = range.to_end
+        || (!index.truncated
+            && !index.packets.is_empty()
+            && index.packets.iter().all(|p| p.pts < z.saturating_sub(SLACK)));
+    let k2 = if to_end { None } else { keys.iter().rev().find(|k| k.at <= z + SLACK).copied() };
     if let Some(k2) = k2
         && k2.at <= k1.at
     {
@@ -304,7 +317,7 @@ pub fn check(
         // Four decimals, as the JSON contract shows it.
         copied_share: (f64::from(copy.frames) / f64::from(total) * 1e4).round() / 1e4,
         copy_lead,
-        to_end: range.to_end,
+        to_end,
         frame,
         first_gop,
         last_gop,
@@ -316,7 +329,16 @@ pub fn check(
         sample_entry: matches!(output, Container::Mp4 | Container::M4v | Container::Mov).then_some("avc1"),
         rotation: v.rotation,
         strict: false,
+        bytes: clip_bytes(media, a, if to_end { None } else { Some(z) }),
     })
+}
+
+/// The source's bytes per second times the clip's length; 0 when the source's length is unknown.
+fn clip_bytes(media: &MediaInfo, start: Ts, end: Option<Ts>) -> u64 {
+    let Some(len) = media.duration.filter(|d| *d > Ts::ZERO) else { return 0 };
+    let end = end.unwrap_or(len).min(len);
+    let share = end.saturating_sub(start).as_secs_f64() / len.as_secs_f64();
+    (media.size as f64 * share.clamp(0.0, 1.0)).round() as u64
 }
 
 /// The x264 profile for an ffprobe H.264 profile name; `None` for the profiles smart cut does
@@ -471,6 +493,27 @@ mod tests {
                 .unwrap()
                 .sample_entry
                 .is_none()
+        );
+    }
+
+    /// Item 27: an end at or past the video's last frame copies the last GOP to the end, as an
+    /// open end does, instead of re-encoding it as a tail. An end before the last frame keeps
+    /// its tail.
+    #[test]
+    fn an_end_past_the_last_frame_copies_to_the_end() {
+        let frames = |p: Option<Part>| p.map(|p| p.frames);
+        for z in [10.0, 12.0] {
+            let p = check(&mp4(""), &cfr(), range(4.5, z), true, Container::Mp4).unwrap();
+            assert_eq!(
+                (frames(p.head), p.copy.frames, frames(p.tail), p.to_end),
+                (Some(37), 100, None, true),
+                "{z}"
+            );
+        }
+        let p = check(&mp4(""), &cfr(), range(4.5, 9.96), true, Container::Mp4).unwrap();
+        assert_eq!(
+            (frames(p.head), p.copy.frames, frames(p.tail), p.to_end),
+            (Some(37), 50, Some(49), false)
         );
     }
 

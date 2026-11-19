@@ -46,6 +46,7 @@ pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<Job
         Some(crate::error::ErrorDetail { reason: Some(reason), ..Default::default() }),
     );
     let accurate = ClipSpec { mode: Mode::Accurate, smart: None, ..spec.clone() };
+    ctx.final_stage("accurate");
     encode(&accurate, ctx).await?;
     let smart = SmartOutcome {
         mode_used: Mode::Accurate,

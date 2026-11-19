@@ -19,12 +19,18 @@ export const smart = $state({
 });
 
 let indexRequest: string | null = null;
+/** The source whose index is loaded or loading; asking for it again changes nothing. */
+let indexPath: string | null = null;
 
-/** Loads `path`'s keyframes (null: clears them). Never blocks the view. */
+/** Loads `path`'s keyframes (null: clears them). Never blocks the view. Asking again for the
+ *  source already loaded or loading does nothing (the player asks again when its state
+ *  flickers); after a failure it scans again. */
 export async function loadKeyframes(path: string | null): Promise<void> {
+  if (path && path === indexPath && !smart.indexError) return;
   if (indexRequest) void api.cancelKeyframes(indexRequest).catch(() => {});
   smart.index = null;
   smart.indexError = "";
+  indexPath = path;
   if (!path) {
     indexRequest = null;
     smart.loadingIndex = false;

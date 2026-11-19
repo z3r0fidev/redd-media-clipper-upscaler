@@ -684,6 +684,69 @@ async fn keyframes_index_cache_and_cancel() {
     assert!(err.contains("cancelled"), "{err}");
 }
 
+/// Item 27: at most two uncached keyframe scans run at once; the others wait for a slot (and
+/// still finish), so a page that keeps asking cannot start any number of ffprobe scans.
+#[tokio::test(flavor = "multi_thread")]
+async fn keyframe_scans_are_capped() {
+    if !rmedia_testkit::require_engine(&["libx264"]) {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let srcs: Vec<_> = (0..5)
+        .map(|i| {
+            let p = d.path().join(format!("v{i}.mp4"));
+            std::fs::copy(fixture(Fixture::SmartMp4), &p).unwrap();
+            p
+        })
+        .collect();
+    let st = Arc::new(state(d.path()).await);
+    st.allow(&srcs);
+    let tasks: Vec<_> = srcs
+        .iter()
+        .enumerate()
+        .map(|(i, src)| {
+            let (st, src) = (st.clone(), src.clone());
+            tokio::spawn(async move { st.keyframes(format!("c{i}"), &src).await })
+        })
+        .collect();
+    let mut most = 0;
+    while !tasks.iter().all(|t| t.is_finished()) {
+        most = most.max(st.keyframe_scans());
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    }
+    for t in tasks {
+        assert_eq!(t.await.unwrap().unwrap().keyframes.len(), 15);
+    }
+    assert!((1..=2).contains(&most), "{most} scans at once");
+    assert_eq!(st.keyframe_scans(), 0);
+
+    // A request waiting for a slot can be cancelled.
+    let busy: Vec<_> = (0..2)
+        .map(|i| {
+            let st = st.clone();
+            let p = d.path().join(format!("w{i}.mp4"));
+            std::fs::copy(fixture(Fixture::SmartMp4), &p).unwrap();
+            st.allow(std::slice::from_ref(&p));
+            tokio::spawn(async move { st.keyframes(format!("w{i}"), &p).await })
+        })
+        .collect();
+    let extra = d.path().join("w2.mp4");
+    std::fs::copy(fixture(Fixture::SmartMp4), &extra).unwrap();
+    st.allow(std::slice::from_ref(&extra));
+    let waiting = tokio::spawn({
+        let st = st.clone();
+        async move { st.keyframes("w2".into(), &extra).await }
+    });
+    while !waiting.is_finished() {
+        st.cancel_keyframes("w2");
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    }
+    assert!(waiting.await.unwrap().unwrap_err().contains("cancelled"));
+    for t in busy {
+        t.await.unwrap().unwrap();
+    }
+}
+
 /// Feature 004, T048: `smart_plan` gives the CLI dry run's `smart` block for the same range; a
 /// fallback source gives its reason; a newer call cancels the older one.
 #[tokio::test(flavor = "multi_thread")]

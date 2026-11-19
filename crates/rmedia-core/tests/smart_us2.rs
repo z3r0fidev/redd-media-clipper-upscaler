@@ -159,7 +159,91 @@ async fn run_time_fallback() {
         assert_eq!(frame_count(&output), frames, "{reason}");
         assert_eq!(warned(&events), [Some(reason)], "{reason}");
         assert!(partials(out.path()).is_empty(), "{reason}: {:?}", partials(out.path()));
+        // Item 27: the accurate re-encode gets a stage of its own that fills the rest of the bar,
+        // instead of moving inside the slice of the step that failed (the copy's is about 2%).
+        let after = fallback_progress(&events);
+        assert_eq!(after.stage.as_deref(), Some("accurate"), "{reason}: {after:?}");
+        assert!(after.last >= 0.95 && after.last > after.at_warning, "{reason}: {after:?}");
     }
+}
+
+/// What the job reported after its `SMART_FALLBACK` warning.
+#[derive(Debug)]
+struct AfterFallback {
+    at_warning: f64,
+    stage: Option<String>,
+    last: f64,
+}
+
+fn fallback_progress(events: &[Event]) -> AfterFallback {
+    let mut seen = false;
+    let mut r = AfterFallback { at_warning: 0.0, stage: None, last: 0.0 };
+    for e in events {
+        match e {
+            Event::JobWarning { code: Some(IssueCode::SmartFallback), .. } => seen = true,
+            Event::JobStage { stage, .. } if seen => r.stage = Some(stage.clone()),
+            Event::JobProgress { fraction, .. } if !seen => r.at_warning = *fraction,
+            Event::JobProgress { fraction, .. } => r.last = *fraction,
+            _ => {}
+        }
+    }
+    r
+}
+
+/// Item 27 (found in the Windows owner checks): an end on the video's end copies the last GOP
+/// instead of re-encoding it, and the clip still has accurate mode's frames.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_end_on_the_video_end_copies_the_last_gop() {
+    if !engine_ok() {
+        return;
+    }
+    let (_, caps) = engine();
+    let out = tempfile::tempdir().unwrap();
+    let src = fixture(Fixture::SmartMp4);
+    let plan = plan_with_caps(&src, 24.10, 30.0, smart_opts(out.path(), |_| {}), &caps).await;
+    let JobSpec::Clip(c) = &plan.jobs[0].spec else { panic!("{:?}", plan.jobs[0]) };
+    let sp = c.smart.as_ref().unwrap_or_else(|| panic!("{:?}", plan.jobs[0]));
+    // Head 24.12–25.96 (47 frames), then the GOPs from 26 s copied to the end (100 frames).
+    assert_eq!(
+        (sp.head.map(|p| p.frames), sp.copy.frames, sp.tail.is_none(), sp.to_end),
+        (Some(47), 100, true, true)
+    );
+    let (output, smart, _) = run_one(plan, out.path()).await;
+    assert_eq!((smart.mode_used, smart.fallback, smart.copied_frames), (Mode::Smart, None, 100));
+    let acc = tempfile::tempdir().unwrap();
+    let plan =
+        plan_with_caps(&src, 24.10, 30.0, smart_opts(acc.path(), |o| o.mode = Mode::Accurate), &caps).await;
+    let (tools, _) = engine();
+    let (summary, _) = run_plan(plan, tools, &acc.path().join("state")).await;
+    let JobOutcome::Succeeded { output: accurate, .. } = &summary.jobs[0].outcome else {
+        panic!("{summary:?}")
+    };
+    assert_eq!(frame_count(&output), frame_count(accurate));
+    assert_eq!(frame_count(&output), 147);
+}
+
+/// Item 27: a smart job needs room for its parts and the joined file, about twice the clip, so the
+/// plan's free-space check counts it (other clips are left out: their size is not predictable).
+#[tokio::test(flavor = "multi_thread")]
+async fn free_space_check_counts_smart_clips_twice() {
+    if !engine_ok() {
+        return;
+    }
+    let (_, caps) = engine();
+    let src = fixture(Fixture::SmartMp4);
+    let out = tempfile::tempdir().unwrap();
+    let plan = plan_with_caps(&src, 3.32, 20.72, smart_opts(out.path(), |_| {}), &caps).await;
+    assert!(plan.jobs[0].notices.is_empty(), "{:?}", plan.jobs[0]);
+    let needs = rmedia_core::plan::space_needs(&plan.jobs);
+    let need = *needs.get(out.path()).unwrap_or_else(|| panic!("{needs:?}"));
+    // The source is 30 s; the clip is 17.4 s of it, held twice.
+    let clip = std::fs::metadata(&src).unwrap().len() as f64 * 17.4 / 30.0;
+    assert!((need as f64 / (2.0 * clip) - 1.0).abs() < 0.02, "{need} vs 2 x {clip}");
+
+    // The same range in accurate mode is not counted.
+    let plan =
+        plan_with_caps(&src, 3.32, 20.72, smart_opts(out.path(), |o| o.mode = Mode::Accurate), &caps).await;
+    assert!(rmedia_core::plan::space_needs(&plan.jobs).is_empty());
 }
 
 /// T033 (scenario 4, FR-009): with `smart_fallback = false` a reason is an error instead.

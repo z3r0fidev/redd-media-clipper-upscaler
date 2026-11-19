@@ -423,7 +423,12 @@ pub fn space_needs(jobs: &[PlannedJob]) -> std::collections::BTreeMap<PathBuf, u
         let bytes = match &job.spec {
             JobSpec::Upscale(u) => u.up.estimate.bytes,
             JobSpec::Gif(g) => crate::gif::plan::rough_bytes(&g.gif),
-            JobSpec::Clip(_) => continue,
+            // A smart clip holds its parts and the joined file at once (item 27). Other clips are
+            // left out: a re-encode's size is not predictable from the source.
+            JobSpec::Clip(c) => match &c.smart {
+                Some(s) if s.bytes > 0 => s.bytes.saturating_mul(2),
+                _ => continue,
+            },
         };
         if let Some(dir) = job.output.parent()
             && job.disposition == Disposition::Run

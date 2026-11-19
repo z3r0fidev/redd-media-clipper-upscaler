@@ -164,6 +164,7 @@ fn smart_args(
         copy: part(4.0, 20.0, 400),
         tail: Some(part(20.0, 20.72, 18)),
         copied_share: 400.0 / 435.0,
+        bytes: 0,
         copy_lead: s(0.16),
         to_end: false,
         frame: s(0.04),

@@ -143,6 +143,8 @@ pub struct AppState {
     /// Finished keyframe indexes, most recent last, keyed by canonical path, size and
     /// modification time (a changed file is read again). Capped at `MAX_KEYFRAME_INDEXES`.
     keyframe_cache: Mutex<VecDeque<(KeyframeKey, Arc<KeyframeIndex>)>>,
+    /// Slots for uncached keyframe scans (`MAX_KEYFRAME_SCANS`): further requests wait.
+    keyframe_slots: tokio::sync::Semaphore,
     /// The smart plan being made (a new one cancels it: only the latest range is shown).
     smart_plan: Mutex<Option<CancellationToken>>,
     /// Held across read-modify-save of the settings, so concurrent saves never lose a field.
@@ -187,6 +189,7 @@ impl AppState {
             preview_files: Mutex::new(VecDeque::new()),
             keyframe_requests: Mutex::new(HashMap::new()),
             keyframe_cache: Mutex::new(VecDeque::new()),
+            keyframe_slots: tokio::sync::Semaphore::new(MAX_KEYFRAME_SCANS),
             smart_plan: Mutex::new(None),
             settings_save: Mutex::new(()),
             cache_dir,
@@ -805,6 +808,11 @@ impl AppState {
         }
         let registered = Registered(&self.keyframe_requests, &request_id);
         let result = async {
+            // At most `MAX_KEYFRAME_SCANS` scans at once (item 27); waiting stays cancellable.
+            let _slot = tokio::select! {
+                slot = self.keyframe_slots.acquire() => slot.map_err(|e| e.to_string())?,
+                () = cancel.cancelled() => return Err("the keyframe index was cancelled".to_owned()),
+            };
             let (tools, _) = self.engine().await?;
             let media = probe::probe(&tools, &path, &cancel).await.map_err(|e| e.to_string())?;
             rmedia_core::smart::keyframes(&tools, &media, None, &cancel).await.map_err(|e| e.to_string())
@@ -822,6 +830,11 @@ impl AppState {
             cache.pop_front();
         }
         Ok((*index).clone())
+    }
+
+    /// Uncached keyframe scans running now (tests).
+    pub fn keyframe_scans(&self) -> usize {
+        MAX_KEYFRAME_SCANS - self.keyframe_slots.available_permits()
     }
 
     pub fn cancel_keyframes(&self, request_id: &str) {
@@ -1131,6 +1144,9 @@ const GIF_ESTIMATES: &str = "gif-estimates";
 const SMART_PLANS: &str = "smart-plans";
 /// Keyframe indexes kept (one per source; the oldest is dropped first).
 const MAX_KEYFRAME_INDEXES: usize = 32;
+/// Uncached keyframe scans that may run at once; the frontend needs one (it cancels the old
+/// source's), the second covers a cancel still winding down.
+const MAX_KEYFRAME_SCANS: usize = 2;
 
 /// What a cached keyframe index was read from: a file with another size or time is read again.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -313,11 +313,14 @@ security and code-review lows, then 005.
     `astready`, which collects `clips/` and `gifs/` output for upload. Fixed: the list moved to
     `rmedia_core::discover::DEFAULT_OUTPUT_DIRS` with `gifs`, and the desktop folder scan, which
     skipped none of the three, now adds them on the Rust side; tests in `scan.rs` and `bridge.rs`.
-27. **004 review lows, not fixed** (T059, `specs/004-smart-cut/checklists/validation.md`):
-    `planOptions` can mask a queue default with an explicit `mode: undefined`; progress sits in the
-    verify slice while a run-time fallback re-encodes; a keyframe scan restarts when the player's
-    mode flickers from error to ok; no free-space check for a smart job's ~2× scratch; no cap on
-    concurrent uncached keyframe scans; the 16 MiB packet-scan limit on multi-hour clips. Small.
+27. ~~**004 review lows**~~ done 2026-11-18 (T059, `specs/004-smart-cut/checklists/validation.md`):
+    `planOptions` no longer lets a reset (`undefined`) video option hide the queue's value;
+    a run-time fallback's re-encode gets an `accurate` stage that fills the rest of the bar; the
+    keyframe scan is keyed on the view and the source, and asking again for the same source does
+    nothing; smart clips count about twice their size in the plan's free-space check; at most two
+    uncached keyframe scans run at once (others wait, cancellable); the seam check's packet scan
+    reads line by line (no 16 MiB limit). Also from the Windows owner checks: an end on the
+    video's end copies the last GOP instead of re-encoding it. Not in a release yet.
 
 ## Release and Project Housekeeping
 

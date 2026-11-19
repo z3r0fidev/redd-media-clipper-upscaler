@@ -99,6 +99,16 @@ describe("mode", () => {
     expect(planOptions(queue, "/v/a.mp4")).toEqual({ mode: "smart", smart_fallback: false });
     expect(planOptions(queue, "/v/b.mp4")).toEqual({ mode: "accurate" });
   });
+
+  it("keeps the queue's value where the video's option was reset to the default", () => {
+    // The queue's "Default mode" choice stores `mode: undefined` rather than deleting the key.
+    const reset = {
+      ...queue,
+      videos: [{ input: "/v/a.mp4", options: { mode: undefined, smart_fallback: undefined, audio: "none" as const }, clips: [] }],
+    };
+    expect(planOptions(reset, "/v/a.mp4")).toEqual({ mode: "accurate", audio: "none" });
+    expect(effectiveMode(reset, { mode: "smart" }, "/v/a.mp4")).toBe("accurate");
+  });
 });
 
 describe("run panel", () => {
