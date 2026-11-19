@@ -10,21 +10,22 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Feature specs: `specs/NNN-name/` (spec, plan, research, data-model, contracts, quickstart, tasks).
 - Docs: start at `docs/README.md` (user, admin, developer, API, architecture, operations, security, reference).
 - Done and released: 001 (`specs/001-video-clipping/`, 0.1.0, tag v0.1.0), 002
-  (`specs/002-mobile-upscale/`, 112/112, 0.2.0, tag v0.2.0) and **003 GIF export for Reddit**
+  (`specs/002-mobile-upscale/`, 112/112, 0.2.0, tag v0.2.0), **003 GIF export for Reddit**
   (`specs/003-gif-export/`, 80/80, 0.3.0, tag v0.3.0 on b96bfdd; GitHub release v0.3.0 published
-  2026-11-15 from tag build run 43573283485, unsigned). rmedia is AGPL-3.0-or-later; releases bundle gifski.
+  2026-11-15 from tag build run 43573283485, unsigned) and **004 Smart cut** (`specs/004-smart-cut/`,
+  59/59, 0.4.0, tag v0.4.0 on 092171f; GitHub release v0.4.0 published 2026-11-18 from tag build run
+  44075993817, unsigned, after the owner checks on every platform passed). rmedia is AGPL-3.0-or-later; releases bundle gifski.
   Owner checks left: Reddit's limits and a real upload, the 002 two-phone test and +3 VMAF.
   Pending list and review findings: `docs/roadmap.md`.
-- Next feature: **004 Smart cut** (`--mode smart`; spec, plan and tasks in
-  `specs/004-smart-cut/`, 59 tasks), then 005 budgeted Reddit video.
+- Next feature: **005 budgeted Reddit video** (not specified yet; after the Reddit limits check).
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and
   reasons, and US4: smart mode in JSON/CSV manifests and desktop exports, with CLI = desktop
   outputs, and US5: the desktop app's Smart mode, keyframe ticks and head/copy/tail bands; `research.md` R3/R5/R7 record what changed). Security L1 is done too. Phase 8 is done:
   docs, validation and T059's reviews (no high; mediums fixed; `specs/004-smart-cut/progress.md`).
-  Tag v0.4.0 is on 092171f (release.yml run 44075993817, unsigned, not published). Next: the owner checks in `docs/operations/smart-cut-owner-checks.md`
-  (all platforms) before publishing the release (`docs/releases/0.4.0.md`). Run tests with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to
+  Released as v0.4.0 on 2026-11-18 (owner checks: `docs/operations/smart-cut-owner-checks-results-*.md`;
+  notes: `docs/releases/0.4.0.md`). Lows left: roadmap item 27. Run tests with `RMEDIA_FFMPEG`/`RMEDIA_FFPROBE` set to
   `binaries/rmedia-ff*-x86_64-unknown-linux-gnu` (the system ffmpeg lacks libvmaf).
 - Session close: follow `docs/operations/session-close.md`.
 - The AI worker `crates/rmedia-sr` needs `cargo xtask fetch-ncnn` (and `fetch-models` for its GPU

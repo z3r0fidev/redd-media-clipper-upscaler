@@ -3,7 +3,7 @@
 rmedia cuts clips from videos on Linux and Windows, from the `rmedia` command line or the desktop
 app. `rmedia upscale` (feature 002, 0.2.0) makes videos
 phone-ready, and `rmedia gif` (feature 003, 0.3.0, tag `v0.3.0`) makes GIFs and silent MP4 loops
-that fit Reddit. Smart cut (`--mode smart`, feature 004, 0.4.0 in development) makes frame-exact
+that fit Reddit. Smart cut (`--mode smart`, feature 004, 0.4.0, tag `v0.4.0`) makes frame-exact
 clips that copy most of the video; see the [Roadmap](roadmap.md). Start with the page for your role.
 
 ## Users
@@ -45,13 +45,13 @@ clips that copy most of the video; see the [Roadmap](roadmap.md). Start with the
 | [Build and release](operations/build-and-release.md) | CI, packaging, pinned FFmpeg, releasing |
 | [Windows owner checks](operations/windows-owner-checks.md) | Runbook: Windows hardware QA and SC-009 (gifsicle's quality cost) on real footage |
 | [Windows checks over SSH](operations/windows-owner-checks-ssh.md) | The same runbook for an SSH session into the Windows machine, and the checks that need the screen |
-| [Smart cut owner checks](operations/smart-cut-owner-checks.md) | Runbook for 0.4.0 on every platform: Linux, Windows and WebView2, Android, iPhone, a Reddit upload, real footage |
+| [Smart cut owner checks](operations/smart-cut-owner-checks.md) | Runbook for 0.4.0 on every platform: Linux, Windows and WebView2, Android, iPhone, a Reddit upload, real footage. Results: [Linux](operations/smart-cut-owner-checks-results-linux.md), [Windows](operations/smart-cut-owner-checks-results-windows.md), [Android](operations/smart-cut-owner-checks-results-android.md), [iPhone](operations/smart-cut-owner-checks-results-iphone.md), [Reddit](operations/smart-cut-owner-checks-results-reddit.md) |
 | [Closing a session](operations/session-close.md) | Checklist for ending a development session: green CI, docs, numbering, Obsidian notes, push, handoff |
 | [Roadmap](roadmap.md) | What is done, next and planned; owner validation items |
 | [Release notes 0.1.0](releases/0.1.0.md) | What feature 001 delivers; known issues |
 | [Release notes 0.2.0](releases/0.2.0.md) | Phone upscaling (CPU, GPU and AI tiers), smart reframe, `clip --upscale`, manifests and the desktop upscale view |
 | [Release notes 0.3.0](releases/0.3.0.md) | GIF export for Reddit: `rmedia gif`, size budgets, the Reddit MP4, gifsicle and gifski, `clip --gif`, the desktop GIF view |
-| [Release notes 0.4.0](releases/0.4.0.md) | In development. Smart cut: `--mode smart`, fallbacks with reasons, strict mode, manifests, and the desktop Smart mode with keyframe markers |
+| [Release notes 0.4.0](releases/0.4.0.md) | Smart cut: `--mode smart`, fallbacks with reasons, strict mode, manifests, and the desktop Smart mode with keyframe markers |
 
 Specifications, plans and contracts live in [`specs/`](../specs/); research notes are in
 [`research/`](../research/).

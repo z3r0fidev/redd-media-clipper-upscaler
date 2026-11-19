@@ -13,7 +13,7 @@ Last updated: 2026-11-14.
 | 001 Video clipping | Complete (73/73 tasks); version 0.1.0, tagged `v0.1.0` (`bd1eef8`) | `clip`, `batch`, `scan`, `doctor`, desktop app |
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
-| 004 Smart cut | Done: 59 of 59 tasks (T059's reviews: no high, the three mediums fixed; `specs/004-smart-cut/`, 2026-11-16); 0.4.0, tag `v0.4.0` on `092171f` (not published) | Hybrid frame-exact clip mode, see Pending item 22 |
+| 004 Smart cut | Done: 59 of 59 tasks (T059's reviews: no high, the three mediums fixed; `specs/004-smart-cut/`, 2026-11-16); 0.4.0, tag `v0.4.0` on `092171f`, released 2026-11-18 ([v0.4.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.4.0)) | Hybrid frame-exact clip mode, see Pending item 22 |
 | 005 Budgeted Reddit video | Planned after 004; no version yet | MP4 with audio under Reddit size and length caps, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
@@ -208,8 +208,9 @@ Work in this order. Items 5–7 and 14–16 were done on 2026-11-14; item 1's re
 004's tasks, Phases 1–2 and US1 (T001–T030) were done on 2026-11-15, and US2 and US3 (T031–T042)
 on 2026-11-16; item 8 (L1), 004 US4 and US5 (T043–T053) and Phase 8's docs and validation (T054–T058) were
 done the same day, and so were T059's reviews and item 26 (#37); tag `v0.4.0` followed on
-2026-11-17 (`092171f`, `release.yml` run 44075993817, not published); the next work is
-its owner checks (item 22, [runbook](operations/smart-cut-owner-checks.md)).
+2026-11-17 (`092171f`, `release.yml` run 44075993817); its owner checks passed on every platform
+and the GitHub release was published on 2026-11-18 (item 22). The next work is item 27, then the
+security and code-review lows, then 005.
 
 **Owner actions**
 
@@ -280,10 +281,10 @@ its owner checks (item 22, [runbook](operations/smart-cut-owner-checks.md)).
 
 **Planned features** (a version follows the feature number: 004 becomes 0.4.0)
 
-22. **004 Smart cut** (next; specified and planned in `specs/004-smart-cut/` on 2026-11-14; tasks
+22. ~~**004 Smart cut**~~ (done; specified and planned in `specs/004-smart-cut/` on 2026-11-14; tasks
     T001–T059 on 2026-11-15; Phases 1–2 and US1 (T001–T030) done on 2026-11-15, US2 to US5 and Phase 8
-    (T031–T059) on 2026-11-16, 59/59; tagged `v0.4.0` on 2026-11-17; next the owner checks in
-    `docs/operations/smart-cut-owner-checks.md`). A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
+    (T031–T059) on 2026-11-16, 59/59; tagged `v0.4.0` on 2026-11-17; owner checks passed and [v0.4.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.4.0) published on
+    2026-11-18, results in `docs/operations/smart-cut-owner-checks-results-*.md`). **Done.** A hybrid clip mode, `--mode smart` (size M to L): frame-exact start
     and end, interior GOPs stream-copied, the partial head and tail GOPs re-encoded to match the
     source parameters, then joined. H.264 in mp4, mov, mkv and ts first; an automatic fallback to
     accurate mode with a typed code for HEVC, interlaced, VFR, open-GOP, mismatched parameters,

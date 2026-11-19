@@ -145,8 +145,9 @@ asserted on the Windows CI runners; the bar stays asserted everywhere else.
 Owner checks (2026-11-18, with the v0.4.0 tag build; [runbook](../../../docs/operations/smart-cut-owner-checks.md)):
 Linux and Windows CLI and desktop app, WebView2, an Android phone (plus Chrome and Google Photos
 in the Android 16 emulator), an iPhone and a Reddit upload all passed; results in
-`docs/operations/smart-cut-owner-checks-results-{linux,windows,android,iphone,reddit}.md`. Still
-open: section 8, real footage.
+`docs/operations/smart-cut-owner-checks-results-{linux,windows,android,iphone,reddit}.md`. Real
+footage (section 8) passed too (owner report, no details given). Every owner check is done; the
+GitHub release v0.4.0 was published on 2026-11-18.
 
 ## T059 reviews (2026-11-16)
 

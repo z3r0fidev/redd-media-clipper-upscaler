@@ -7,7 +7,7 @@ Cut clips from videos on **Linux and Windows**, from the command line or a deskt
 - **Folders** are scanned for real videos (non-videos, cover art and partial downloads are skipped).
 - **Fast** mode cuts without re-encoding (instant, lossless, starts on the keyframe at or before
   your start time and tells you so). **Accurate** mode re-encodes and is frame-exact.
-  **Smart** mode (0.4.0, in development) is frame-exact too, but copies the middle of the clip
+  **Smart** mode (0.4.0) is frame-exact too, but copies the middle of the clip
   and re-encodes only the ends: about four times faster than accurate on long H.264 clips, with
   the source's quality in between. Other videos fall back to accurate mode with a reason.
 - Source files are never modified; existing outputs are never overwritten unless you ask.

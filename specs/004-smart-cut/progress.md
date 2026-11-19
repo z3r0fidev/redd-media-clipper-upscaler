@@ -27,9 +27,10 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 - T059 is done: both agent passes ran over all 004 changes at the end (the earlier checkpoints
   were self-reviewed). Lows left: roadmap item 27.
 - The release: version 0.4.0 (`354ac15`) and tag `v0.4.0` on `092171f` (2026-11-17), built by
-  `release.yml` run 44075993817; published after the owner checks.
-- Owner checks, all platforms: `docs/operations/smart-cut-owner-checks.md` (Linux and Windows
-  packages and desktop app, WebView2, Android, iPhone, a Reddit upload, real footage).
+  `release.yml` run 44075993817; published as [v0.4.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.4.0) on 2026-11-18 after the owner checks.
+- Owner checks, all platforms, passed on 2026-11-18: `docs/operations/smart-cut-owner-checks.md`,
+  results in `docs/operations/smart-cut-owner-checks-results-{linux,windows,android,iphone,reddit}.md`
+  (real footage: owner report).
 
 ## Measured
 
