@@ -94,3 +94,77 @@ fn fit_flag_misuse_and_unknown_targets_exit_with_their_codes() {
         assert!(all.contains(text), "{args:?}: {all}");
     }
 }
+
+/// T026: plan-time refusals exit 3 with the contract's messages, and write nothing; an override
+/// above the target is a usage error (2).
+#[test]
+fn refusals_exit_before_any_encode() {
+    require_engine!("libx264", "aac");
+    let d = tempfile::tempdir().unwrap();
+    let src = copy(Fixture::FitBusy, d.path(), "busy.mp4");
+    let target = d.path().join("config/video-targets");
+    std::fs::create_dir_all(&target).unwrap();
+    let short = serde_json::json!({
+        "schema": 1, "id": "short", "version": 1, "name": "short", "description": "10 s",
+        "verified": false, "max_bytes": 50_000_000, "max_duration": 10,
+        "long_side": 1920, "floor_short_side": 480, "max_fps": 60,
+        "quality": {"crf": 20, "max_bpp": 0.12, "min_bpp": 0.03},
+        "audio": {"kbps": 128, "floor_kbps": 64}
+    });
+    std::fs::write(target.join("short.json"), short.to_string()).unwrap();
+
+    for (args, code, text) in [
+        (
+            vec!["--fit", "short"],
+            3,
+            "the range (0:25) is longer than short allows (0:10); use --fit-allow-trim to keep the first 0:10",
+        ),
+        (
+            vec!["--fit", "reddit-video", "--fit-max-size", "200KB"],
+            3,
+            "25 s cannot fit 200 kB even at 854x480 (needs at least 1.4 MB); raise --fit-max-size or use --fit-allow-trim",
+        ),
+        (
+            vec!["--fit", "short", "--fit-max-length", "20"],
+            2,
+            "--fit-max-length 0:20 is above short's limit of 0:10",
+        ),
+        (
+            vec!["--fit", "short", "--fit-max-size", "60MB"],
+            2,
+            "--fit-max-size 60.0 MB is above short's cap of 50.0 MB",
+        ),
+    ] {
+        let o =
+            rmedia(d.path()).args(["clip", "-s", "2", "-e", "27"]).args(&args).arg(&src).output().unwrap();
+        assert_eq!(o.status.code(), Some(code), "{args:?}: {}", stderr(&o));
+        let all = stdout(&o) + &stderr(&o);
+        assert!(all.contains(text), "{args:?}: {all}");
+        assert!(!d.path().join("clips").exists(), "{args:?} wrote output");
+    }
+
+    // `--json` carries the detail.
+    let o = rmedia(d.path())
+        .args([
+            "clip",
+            "--json",
+            "--dry-run",
+            "-s",
+            "2",
+            "-e",
+            "27",
+            "--fit",
+            "reddit-video",
+            "--fit-max-size",
+            "200KB",
+        ])
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(3), "{}", stderr(&o));
+    let all = stdout(&o) + &stderr(&o);
+    let doc: Value = all.lines().find_map(|l| serde_json::from_str(l).ok()).expect("a JSON document");
+    let issue =
+        doc["issues"].as_array().unwrap().iter().find(|i| i["code"] == "BUDGET_UNREACHABLE").expect("issue");
+    assert!(issue["detail"]["min_cap"].as_u64().unwrap() > 1_000_000, "{issue}");
+}

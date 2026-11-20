@@ -445,7 +445,8 @@ upscale or GIF job).
 
 New in 0.5.0 (feature 005, a fit): `RANGE_TOO_LONG` (error, exit 3; `detail.len` and
 `detail.max_length` in seconds), `FIT_LOWERED` (notice: the size or the audio bitrate was
-lowered to fit), `FIT_TRIMMED` (notice: the range was shortened) and `FIT_FAILED` (a failed job, exit 1: still
+lowered to fit), `FIT_TRIMMED` (notice: the range was shortened; `detail.from` and `detail.to`, its length
+before and after in seconds) and `FIT_FAILED` (a failed job, exit 1: still
 over the cap after the last retry; `detail.cap` and `detail.attempts`, each
 `{video_kbps, bytes}`). For a fit, `BUDGET_UNREACHABLE` carries `detail.min_cap`, the smallest
 cap that fits the range.

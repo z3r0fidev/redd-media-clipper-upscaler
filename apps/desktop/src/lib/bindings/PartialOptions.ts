@@ -2,6 +2,7 @@
 import type { AudioSel } from "./AudioSel";
 import type { Mode } from "./Mode";
 import type { OnExists } from "./OnExists";
+import type { PartialFit } from "./PartialFit";
 import type { PartialGif } from "./PartialGif";
 import type { PartialUpscale } from "./PartialUpscale";
 import type { SubSel } from "./SubSel";
@@ -17,4 +18,8 @@ upscale?: PartialUpscale,
 /**
  * Present = GIF export on at this layer (unless `enabled: false`); absent = inherited.
  */
-gif?: PartialGif, };
+gif?: PartialGif, 
+/**
+ * Present = a fit at this layer (unless `enabled: false`); absent = inherited (feature 005).
+ */
+fit?: PartialFit, };

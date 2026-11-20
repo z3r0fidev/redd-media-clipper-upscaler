@@ -295,6 +295,13 @@ pub struct ErrorDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub max_length: Option<f64>,
+    /// A trimmed range's length before and after, in seconds (`FIT_TRIMMED`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub from: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub to: Option<f64>,
 }
 
 #[cfg(test)]

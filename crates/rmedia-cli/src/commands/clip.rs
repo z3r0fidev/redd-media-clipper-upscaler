@@ -57,6 +57,10 @@ pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };
+    if let Some(msg) = args.fit.options().and_then(|f| f.override_error(&found.1.video_targets)) {
+        eprintln!("error: {msg}");
+        return exit::USAGE;
+    }
     let inputs = match super::scan::expand_inputs(
         &found.0,
         &args.inputs,

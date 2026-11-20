@@ -573,11 +573,12 @@ fn plan_doc(plan: &Plan) -> Value {
             m.insert("code".into(), json!(i.code));
             origin_fields(&i.origin, &mut m);
             m.insert("message".into(), json!(i.message));
-            if i.code == rmedia_core::error::IssueCode::BudgetUnreachable {
-                // At plan time only the static floor is checked (contracts/json-output.md).
-                m.insert("detail".into(), json!({"min_bytes": rmedia_core::gif::plan::MIN_BUDGET}));
-            } else if let Some(d) = &i.detail {
+            if let Some(d) = &i.detail {
+                // A fit's refusal carries its own detail (`min_cap`, feature 005).
                 m.insert("detail".into(), json!(d));
+            } else if i.code == rmedia_core::error::IssueCode::BudgetUnreachable {
+                // A GIF's: at plan time only the static floor is checked (contracts/json-output.md).
+                m.insert("detail".into(), json!({"min_bytes": rmedia_core::gif::plan::MIN_BUDGET}));
             }
             Value::Object(m)
         })

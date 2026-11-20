@@ -59,6 +59,12 @@ const DENOISE: &str = "hqdn3d=1.5:1.5:6:6";
 const TONEMAP: &str = "zscale={in}:t=linear:npl=100,format=gbrpf32le,zscale=p=709,tonemap=tonemap=hable:desat=0,\
                        zscale=t=709:m=709:r=limited,format=yuv420p";
 
+/// 002's tone-map from an HDR source (`colour_in`: zscale's input options) to BT.709 SDR
+/// `yuv420p`, as one filter chain (feature 005's fitted clips).
+pub fn tonemap_chain(colour_in: &str) -> String {
+    TONEMAP.replace("{in}", colour_in)
+}
+
 /// zscale's input options for a source with these colour tags (ffprobe names), filling in
 /// defaults for anything untagged: BT.601 for SD (≤ 576 lines), BT.709 otherwise.
 pub fn zscale_input(tags: &ColourTags, coded_height: u32) -> String {

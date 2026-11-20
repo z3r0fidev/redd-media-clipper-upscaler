@@ -78,6 +78,14 @@ pub struct FitOptions {
     pub allow_trim: bool,
 }
 
+impl FitOptions {
+    /// Why these overrides are refused for their target (an override may only lower a limit),
+    /// or `None` (also when the target is unknown: the planner reports that).
+    pub fn override_error(&self, targets: &target::VideoTargetRegistry) -> Option<String> {
+        plan::limits(targets.get(&self.target)?, self).err()
+    }
+}
+
 impl Default for FitOptions {
     fn default() -> Self {
         FitOptions {

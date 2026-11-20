@@ -49,6 +49,9 @@ pub struct FitPlan {
     /// The source audio has more than 2 channels: it is downmixed to stereo (set by the
     /// planner, which knows the streams).
     pub downmix: bool,
+    /// An HDR source: zscale's input options for 002's tone-map to SDR BT.709 (set by the
+    /// planner, which knows the colour tags).
+    pub tonemap: Option<String>,
     pub mode: Mode,
     /// Budget mode: the target bitrate; quality mode: the ceiling.
     pub video_kbps: u32,
@@ -68,7 +71,7 @@ pub enum Refusal {
     TooLong { len: f64, max_length: f64 },
     /// Even at the floor, with the least audio, the cap is too small (`BUDGET_UNREACHABLE`);
     /// `min_cap` is the smallest cap that would fit the range.
-    Unreachable { min_cap: u64, floor: (u32, u32) },
+    Unreachable { min_cap: u64, floor: (u32, u32), len: f64, cap: u64 },
     /// `max_size` or `max_length` is above the target's own limit (an override may only lower).
     AboveTarget(String),
 }
@@ -83,8 +86,10 @@ impl Refusal {
                 clock(*max_length),
                 clock(*max_length)
             ),
-            Refusal::Unreachable { min_cap, floor } => format!(
-                "the range cannot fit {target}'s cap even at {}x{} (needs at least {}); raise --fit-max-size or use --fit-allow-trim",
+            Refusal::Unreachable { min_cap, floor, len, cap } => format!(
+                "{} s cannot fit {} even at {}x{} (needs at least {}); raise --fit-max-size or use --fit-allow-trim",
+                (len * 10.0).round() / 10.0,
+                human(*cap),
                 floor.0,
                 floor.1,
                 human(*min_cap)
@@ -111,33 +116,41 @@ pub struct Source {
     pub has_audio: bool,
 }
 
-/// Plans a fit of `src` for `target` with the user's `opts` (data-model.md › planning order).
-pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<FitPlan, Refusal> {
-    // 1. The effective limits (an override may only lower them).
+/// The effective cap (bytes) and length limit (seconds) of `target` with the user's
+/// overrides, or why an override is refused: it may only lower a limit (contracts/cli.md, exit 2).
+pub fn limits(target: &VideoTarget, opts: &FitOptions) -> Result<(u64, f64), String> {
+    let human = crate::upscale::estimate::human_bytes;
     let cap = match opts.max_size {
         Some(s) if s > target.max_bytes => {
-            return Err(Refusal::AboveTarget(format!(
+            return Err(format!(
                 "--fit-max-size {} is above {}'s cap of {}",
-                crate::upscale::estimate::human_bytes(s),
+                human(s),
                 target.id,
-                crate::upscale::estimate::human_bytes(target.max_bytes)
-            )));
+                human(target.max_bytes)
+            ));
         }
         Some(s) => s,
         None => target.max_bytes,
     };
     let max_length = match opts.max_length.map(|t| t.as_secs_f64()) {
         Some(l) if l > target.max_duration + 1e-6 => {
-            return Err(Refusal::AboveTarget(format!(
+            return Err(format!(
                 "--fit-max-length {} is above {}'s limit of {}",
                 clock(l),
                 target.id,
                 clock(target.max_duration)
-            )));
+            ));
         }
         Some(l) => l,
         None => target.max_duration,
     };
+    Ok((cap, max_length))
+}
+
+/// Plans a fit of `src` for `target` with the user's `opts` (data-model.md › planning order).
+pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<FitPlan, Refusal> {
+    // 1. The effective limits (an override may only lower them).
+    let (cap, max_length) = limits(target, opts).map_err(Refusal::AboveTarget)?;
     // 2. The length limit.
     let mut len = src.len;
     let mut trimmed_from = None;
@@ -174,6 +187,7 @@ pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<
             fps,
             resample_fps: fps != src.fps,
             downmix: false,
+            tonemap: None,
             mode: Mode::Quality,
             video_kbps,
             crf: Some(target.quality.crf),
@@ -221,7 +235,7 @@ pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<
         let min_cap = (need * 1000.0 / 8.0 * len / (1.0 - MARGIN)).ceil() as u64;
         let fits = usable * 8.0 / (need * 1000.0);
         if !opts.allow_trim || fits < MIN_TRIMMED_SECS {
-            return Err(Refusal::Unreachable { min_cap, floor: size });
+            return Err(Refusal::Unreachable { min_cap, floor: size, len, cap });
         }
         if let (Some(a), Some(f)) = (audio, floor_audio)
             && a != f
@@ -243,6 +257,7 @@ pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<
         fps,
         resample_fps: fps != src.fps,
         downmix: false,
+        tonemap: None,
         mode: Mode::Budget,
         video_kbps,
         crf: None,
@@ -345,9 +360,13 @@ mod tests {
         assert_eq!((p.size, p.audio_kbps, p.video_kbps), ((854, 480), Some(64), 369));
         assert_eq!(p.lowered.iter().map(|l| l.setting.as_str()).collect::<Vec<_>>(), ["size", "audio_kbps"]);
         let e = plan_fit(&reddit(), &opts(Some(8_000_000)), src(600.0, (1920, 1080))).unwrap_err();
-        assert_eq!(e, Refusal::Unreachable { min_cap: 33_132_245, floor: (854, 480) });
+        assert_eq!(
+            e,
+            Refusal::Unreachable { min_cap: 33_132_245, floor: (854, 480), len: 600.0, cap: 8_000_000 }
+        );
         assert!(
-            e.message("reddit-video").contains("needs at least 33.1 MB"),
+            e.message("reddit-video")
+                .starts_with("600 s cannot fit 8.0 MB even at 854x480 (needs at least 33.1 MB)"),
             "{}",
             e.message("reddit-video")
         );

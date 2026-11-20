@@ -38,11 +38,12 @@ fit reddit-video (unverified): 1280x720 quality · crf 20 ≤ 3,318 kb/s + 128 k
 fit sub-50mb: size lowered 1920x1080 → 1440x810 (budget below the minimum bitrate)
 ```
 
-A refusal prints the issue instead:
+A refusal prints the issue instead, after where it came from (`--json` gives the code and
+`detail`):
 
 ```text
-error: RANGE_TOO_LONG: the range (20:00) is longer than reddit-video allows (15:00); use --fit-allow-trim to keep the first 15:00
-error: BUDGET_UNREACHABLE: 600 s cannot fit 8 MB even at 854x480 (needs at least 33.1 MB); raise --fit-max-size or use --fit-allow-trim
+error: command line: the range (20:00) is longer than reddit-video allows (15:00); use --fit-allow-trim to keep the first 15:00
+error: command line: 600 s cannot fit 8.0 MB even at 854x480 (needs at least 33.1 MB); raise --fit-max-size or use --fit-allow-trim
 ```
 
 ### Result line

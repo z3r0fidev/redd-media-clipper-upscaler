@@ -32,3 +32,26 @@ fit (FR-022).
 | argv | `core-tests/snapshots_fit_args.rs` (3 snapshots) | accepted after review |
 | CLI result line, JSON `fit`, exit codes 2/3 | `cli-tests/fit.rs` (2 tests) | pass |
 | planner invariant: `predicted ≤ cap × 0.98` over a grid | `fit::plan` unit tests (10) | pass |
+
+## US2 (T023–T029), 2026-11-19
+
+| Check | Test | Result |
+|---|---|---|
+| FR-008, `RANGE_TOO_LONG` with `detail {len, max_length}`; trim to the limit with `FIT_TRIMMED` | `core-tests/fit_us2.rs` `too_long_and_unreachable_ranges_are_refused_or_trimmed` (user target `short`, 10 s) | pass |
+| FR-009, `BUDGET_UNREACHABLE` with R4's `min_cap`; trim at the floor size and audio | same | pass |
+| FR-011, one ladder step 1920x1080 → 1440x810 with `FIT_LOWERED` | same | pass |
+| SC-005, a trimmed run is the first 10 s (start ±1 frame); the lowered size is encoded | `trims_and_sizes_are_what_was_planned` | pass |
+| FR-012, never enlarged (640x360 kept); 4K fitted to 1920x1080 | same (new fixture `FitUhd`) | pass |
+| HDR10 → SDR BT.709 `yuv420p` (002's tone-map) | `awkward_sources_give_a_plain_reddit_mp4_or_are_refused` | pass |
+| VFR capped at 24 fps by a user target, length ±1 frame; 120 fps → 60 | same | pass |
+| 5.1 → stereo with a notice; audio-only refused (`PROBE_FAILED`, as for every clip) | same | pass |
+| CLI: exit 3 with the messages, nothing written; an override above the target exits 2; `--json` `detail.min_cap` | `cli-tests/fit.rs` `refusals_exit_before_any_encode` | pass |
+
+Fixed on the way:
+- The JSON plan document replaced a fit's `BUDGET_UNREACHABLE` detail (`min_cap`) with GIF's
+  static `min_bytes`; an issue's own detail now wins.
+- `FIT_TRIMMED`'s detail is `{from, to}`, as contracts/json-output.md says (it was `{len,
+  max_length}`).
+- A fit without libx264 (or aac, with audio) is `ENGINE_MISSING` at plan time (Principle VI).
+- The TypeScript bindings for the 005 types were regenerated (US1 had not).
+- contracts/cli.md's refusal example now shows the real text format (origin, then message).

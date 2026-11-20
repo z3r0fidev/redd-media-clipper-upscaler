@@ -450,7 +450,9 @@ impl Planner<'_> {
             fit: None,
         };
         if let Some((f, target)) = &fit {
-            let Some(found) = self.plan_fit(origin, media, &mut cut, f, target) else { return };
+            let Some(found) = self.plan_fit(origin, media, &mut cut, f, target, &mut warnings) else {
+                return;
+            };
             for (code, message, detail) in found {
                 notice(&mut warnings, code, message, detail);
             }
@@ -555,6 +557,7 @@ impl Planner<'_> {
         cut: &mut ClipSpec,
         opts: &crate::fit::FitOptions,
         target: &crate::fit::target::VideoTarget,
+        warnings: &mut Vec<String>,
     ) -> Option<Vec<(IssueCode, String, Option<crate::error::ErrorDetail>)>> {
         use crate::fit::plan::{Refusal, Source, plan_fit};
         let Some(v) = media.first_video() else {
@@ -572,6 +575,19 @@ impl Planner<'_> {
             .iter()
             .find(|m| m.kind == crate::probe::StreamKind::Audio)
             .and_then(|m| media.streams.iter().find(|s| s.index == m.index));
+        // Principle VI: without the encoders a fit cannot run (ENGINE_MISSING, exit 4).
+        let lacking: Vec<&str> = ["libx264", "aac"]
+            .into_iter()
+            .filter(|e| (*e != "aac" || audio.is_some()) && !self.caps.encoders.contains(*e))
+            .collect();
+        if !lacking.is_empty() {
+            self.error(
+                origin,
+                IssueCode::EngineMissing,
+                format!("the ffmpeg build lacks {} needed to fit a clip", lacking.join(", ")),
+            );
+            return None;
+        }
         let src = Source {
             len: cut.requested.end.saturating_sub(cut.requested.start).as_secs_f64(),
             size,
@@ -606,7 +622,33 @@ impl Planner<'_> {
                 return None;
             }
         };
-        plan.downmix = audio.and_then(|a| a.channels).is_some_and(|c| c > 2);
+        if let Some(c) = audio.and_then(|a| a.channels).filter(|c| *c > 2) {
+            plan.downmix = true;
+            warnings.push(format!("the {c}-channel audio is mixed down to stereo (extra channels dropped)"));
+        }
+        if v.is_hdr() {
+            // 002's tone-map to SDR, so every phone plays it (spec › Edge cases).
+            let lacking: Vec<&str> =
+                ["zscale", "tonemap"].into_iter().filter(|f| !self.caps.filters.contains(*f)).collect();
+            if !lacking.is_empty() {
+                self.error(
+                    origin,
+                    IssueCode::EngineMissing,
+                    format!(
+                        "the ffmpeg build lacks {} needed to tone-map this HDR source",
+                        lacking.join(", ")
+                    ),
+                );
+                return None;
+            }
+            let tags = crate::upscale::encode::ColourTags {
+                space: v.color_space.clone(),
+                primaries: v.color_primaries.clone(),
+                transfer: v.color_transfer.clone(),
+                range: v.color_range.clone(),
+            };
+            plan.tonemap = Some(crate::upscale::graph::zscale_input(&tags, v.height.unwrap_or(size.1)));
+        }
         let mut found = Vec::new();
         let mut notice = |code, message: String, detail| found.push((code, message, detail));
         for l in &plan.lowered {
@@ -634,8 +676,8 @@ impl Planner<'_> {
                     from, plan.len, target.id
                 ),
                 Some(crate::error::ErrorDetail {
-                    len: Some(from),
-                    max_length: Some(plan.len),
+                    from: Some(from),
+                    to: Some(plan.len),
                     ..Default::default()
                 }),
             );

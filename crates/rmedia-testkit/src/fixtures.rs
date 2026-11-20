@@ -105,6 +105,8 @@ pub enum Fixture {
     FitSurround,
     /// `FitBusy`, 2 s.
     FitShort,
+    /// 3840x2160 @ 30 fps, 2 s, testsrc2 (no noise) with stereo AAC: fitted down to 1920.
+    FitUhd,
 }
 
 impl Fixture {
@@ -156,6 +158,7 @@ impl Fixture {
             Fixture::FitNoAudio => "fit-noaudio.mp4",
             Fixture::FitSurround => "fit-surround.mp4",
             Fixture::FitShort => "fit-short.mp4",
+            Fixture::FitUhd => "fit-uhd.mp4",
         }
     }
 
@@ -176,6 +179,31 @@ impl Fixture {
             Fixture::FitNoAudio => fit_args(30, None),
             Fixture::FitSurround => fit_args(10, Some(6)),
             Fixture::FitShort => fit_args(2, Some(2)),
+            Fixture::FitUhd => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=3840x2160:rate=30:duration=2",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-shortest",
+                "-f",
+                "mp4",
+            ],
             Fixture::Gop50Mp4 => vec![
                 "-f",
                 "lavfi",

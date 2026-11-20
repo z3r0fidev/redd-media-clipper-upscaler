@@ -214,11 +214,26 @@ pub fn fit_args(spec: &ClipSpec, pass: FitPass, output: &Path) -> Vec<OsString> 
     if fit.resample_fps {
         vf.push(format!("fps={}/{}", fit.fps.0, fit.fps.1));
     }
+    if let Some(colour_in) = &fit.tonemap {
+        vf.push(crate::upscale::graph::tonemap_chain(colour_in));
+    }
     vf.push(format!("scale={}:{}:flags=lanczos,setsar=1", fit.size.0, fit.size.1));
     vf.push("format=yuv420p".into());
     let fps_mode = if fit.resample_fps { "cfr" } else { "passthrough" };
     push(&["-fps_mode", fps_mode, "-vf", &vf.join(",")]);
     push(&["-c:v", "libx264", "-preset", "medium", "-profile:v", "high", "-pix_fmt", "yuv420p"]);
+    if fit.tonemap.is_some() {
+        push(&[
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+            "-color_range",
+            "tv",
+        ]);
+    }
     let kbps = |k: u32| format!("{k}k");
     match pass {
         // Determinism (research R13): x264's VBV with frame threads differs from run to run, so

@@ -236,37 +236,38 @@ Sizes step down to the floor, and the picture is never enlarged.
 
 ### Tests for User Story 2 (write first)
 
-- [ ] T023 [P] [US2] `core-tests/fit_us2.rs`, plan level (no encode), with a user target written
+- [X] T023 [P] [US2] `core-tests/fit_us2.rs`, plan level (no encode), with a user target written
   to a temp config folder:
   - 3:00 against a 1:00 limit gives `RANGE_TOO_LONG` with `detail {len, max_length}`;
   - the same with `allow_trim` gives a plan of 60 s with `FIT_TRIMMED`;
   - an unreachable cap gives `BUDGET_UNREACHABLE` with `detail.min_cap` (R4's formula);
   - with `allow_trim` it trims to `len'`;
   - a tight cap gives `FIT_LOWERED` 1920×1080 → 1440×810.
-- [ ] T024 [P] [US2] `core-tests/fit_us2.rs`, a run: a trimmed range is the first 60 s (start ±1
+- [X] T024 [P] [US2] `core-tests/fit_us2.rs`, a run: a trimmed range is the first 60 s (start ±1
   frame; `fit.trimmed = true`), and a lowered size encodes at the planned size. A 640×360 source
   is never enlarged, and a 4K source is fitted to 1920 on the long side.
-- [ ] T025 [P] [US2] `core-tests/fit_us2.rs`, sources:
+- [X] T025 [P] [US2] `core-tests/fit_us2.rs`, sources:
   - HDR is tone-mapped to SDR `bt709` 8-bit (002's chain);
   - `VfrMp4` is capped at `max_fps` with the duration ±1 frame;
   - `FitSurround` gives 2 channels and the "extra channels" notice;
-  - an audio-only source is refused (`INVALID_INPUT`).
-- [ ] T026 [P] [US2] `cli-tests/fit.rs`: exit 3 for `RANGE_TOO_LONG` and `BUDGET_UNREACHABLE`,
+  - an audio-only source is refused (`PROBE_FAILED` "has no video stream", as for every clip; the
+    probe refuses it before the fit is planned).
+- [X] T026 [P] [US2] `cli-tests/fit.rs`: exit 3 for `RANGE_TOO_LONG` and `BUDGET_UNREACHABLE`,
   with the contracts/cli.md messages, and nothing written. An override above the target exits 2.
 
 ### Implementation for User Story 2
 
-- [ ] T027 [US2] `core/plan/planner.rs`: map `plan_fit`'s problems to issues:
+- [X] T027 [US2] `core/plan/planner.rs`: map `plan_fit`'s problems to issues:
   - `RANGE_TOO_LONG` and `BUDGET_UNREACHABLE` as errors with their `detail`;
   - `FIT_LOWERED` and `FIT_TRIMMED` as notices;
   - a trim shortens the `ClipSpec` (requested end, duration or trim end, `verify_video`), as
     `GifSpec::trimmed` does.
-- [ ] T028 [US2] Plain-clip HDR and fps:
+- [X] T028 [US2] Plain-clip HDR and fps:
   - `core/plan/ffargs.rs` adds 002's tone-map chain (`upscale::graph`) and `fps=` when the plan
     needs them;
   - `doctor`'s fit availability needs libx264, aac, and `zscale`/`tonemap` only for HDR sources
     (Principle VI, `ENGINE_MISSING` exit 4).
-- [ ] T029 [US2] Make T023–T026 pass (`core-tests/fit_us2.rs`, `cli-tests/fit.rs`).
+- [X] T029 [US2] Make T023–T026 pass (`core-tests/fit_us2.rs`, `cli-tests/fit.rs`).
 
 ---
 
