@@ -89,3 +89,39 @@ Design notes: the fit lives on `UpscaleSpec.cut.fit` (one field for clips and up
 size is a `scale` appended to the upscale graph's `[v]`, so every tier shares one tail. A trimmed
 upscale is planned again for the shorter range. The dry-run time estimate doubles in budget mode.
 `fit` with `gif` on one clip is refused by the planner (exit 3), as tested in US1.
+
+## US5 (T039–T043), 2026-11-20
+
+| Check | Test | Result |
+|---|---|---|
+| `list_fit_targets` equals `rmedia clip --list-fit-targets --json` (plus `default`) | `desktop-tests/bridge.rs` `fit_targets_plans_and_outcomes_match_the_cli` | pass |
+| SC-007, the app's `plan` `fit` block equals the CLI's `batch --dry-run --json` for the same manifest | same (`FitBusy` 2–8 s, 3 MB) | pass |
+| A run's outcome carries `fit`; its `bytes` is the file's size, within the cap | same | pass |
+| `RANGE_TOO_LONG` comes back as a plan issue (not an error of the call) | same | pass |
+| `fit_plan` (the panel's prediction) equals the plan's block; refusals are issues; trimming gives `FIT_TRIMMED`; unopened files refused | same | pass |
+| The picker builds `PartialFit` (custom limits fill `max_size`/`max_length`); the round trip keeps only the set keys; a fit turns GIF off for the clip; the mode note is shown; a refusal blocks Add and says whether trimming helps; queue and result labels | `apps/desktop/src/lib/stores/fit.test.ts` (vitest, 7 tests) | pass |
+
+### Manual check (T043), private Xvfb display :99, never the real display
+
+Debug build (`tauri build --debug --no-bundle`), isolated XDG and `RMEDIA_CONFIG_DIR`, the bundled
+FFmpeg n9.0.2. Source: the testkit's `FitBusy` (`src.mp4`, 30 s, 1080p30, stereo). User targets:
+`short.json` (5 MB, 10 s, verified) and a broken `broken.json`. Input was driven with XTest.
+
+| Step (quickstart › Desktop) | Result |
+|---|---|
+| 1. Mark 1.989–26.989 s, pick **Reddit video post** | "Reddit video post: 25.6 MB at most of 1.07 GB · limit 15:00 · 1920x1080 30 fps · 1 pass" and the "limits unverified" badge, before queueing |
+| 2. Pick **Short clips (10 s)** (the 25 s range is too long) | The refusal in the warning colour, an **Allow trimming** button, and **Add clip** disabled. With trimming: "4.9 MB predicted of 5.0 MB · limit 0:10 · 1920x1080 30 fps · 2 passes" and "the range was shortened from 25.0 s to 10.0 s to fit short"; Add enabled |
+| Queue | The clip shows "Short clips (10 s) · 5.0 MB · may trim" |
+| 3. Run | "Finished · 1 succeeded"; the job line "4.8 MB of 5.0 MB · trimmed". The file: 4,846,014 bytes, h264 1920x1080, 300 frames, 10.000 s, AAC 128 kb/s |
+| CLI, same request (`clip --fit short --fit-allow-trim -s 1.989 -e 26.989`) | Same settings: 1920x1080, 30 fps, 3792 kb/s video, 128 kb/s audio, 1 attempt, 10.000 s (SC-007). The bytes differ slightly (see below) |
+| Settings › Targets | Both targets with cap, limit and long side; "limits unverified" on Reddit's; the user file's path; the broken file's parse error in red |
+
+Found and fixed: the panel printed a 1 GiB cap as "1073.7 MB" (now "1.07 GB", the CLI's units),
+and refusals named CLI flags (`--fit-allow-trim`); the panel now names its own controls.
+
+**Found and fixed: budget-mode bytes were not repeatable on every source.** Two CLI runs of the
+request above gave 4,848,045 and 4,851,381 bytes, and the app gave 4,846,014. With ffmpeg alone,
+pass 1 (`-threads 1`) repeated exactly, but pass 2 with `sliced-threads=1` differed every run, and
+quality mode did too. The owner chose exact repeats (2026-11-20): every fit encode now runs on one
+encoder thread (research R13, revised), about 2.3× slower for pass 2.
+`a_fit_is_deterministic` now covers this case (10 s at 5 MB) and quality mode, two runs each.

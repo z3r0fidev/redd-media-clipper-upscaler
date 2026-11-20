@@ -3,6 +3,10 @@
   import type { TierInfo } from "../bindings/TierInfo";
   import { api, errorText, type EngineKind } from "../api";
   import { app, toast } from "../stores/app.svelte";
+  import { fit, loadFitTargets } from "../stores/fit.svelte";
+  import { bytes, clock } from "../stores/fit";
+
+  $effect(() => void loadFitTargets());
 
   let draft = $state<Settings | null>(app.settings ? structuredClone($state.snapshot(app.settings)) : null);
 
@@ -143,6 +147,21 @@
         {#each g.target_problems as p, i (i)}<p class="small bad">{p}</p>{/each}
         <p class="small">Reddit's size limits in the targets are estimates (unverified); check Reddit's Help Center.</p>
       {/if}
+    </fieldset>
+    <fieldset>
+      <legend class="section-title">Targets</legend>
+      <p class="small">Video targets (budgeted Reddit video): add your own as JSON files in the <span class="mono">video-targets</span> folder of rmedia's settings folder.</p>
+      {#if app.engine?.fit && !app.engine.fit.available}<p class="small bad">Fitting is unavailable — {app.engine.fit.reason ?? "unknown"}</p>{/if}
+      {#each fit.targets?.targets ?? [] as t (t.id)}
+        <p class="small">
+          <strong>{t.name}</strong> <span class="mono faint">{t.id}</span> · {bytes(t.max_bytes)} · {clock(t.max_duration)} · {t.long_side} px
+          {#if !t.verified}<span class="pill">limits unverified</span>{/if}
+          {#if t.source === "user"}<span class="mono faint">{t.file}</span>{/if}
+        </p>
+      {/each}
+      {#each fit.targets?.problems ?? [] as p, i (i)}<p class="small bad"><span class="mono">{p.file}</span>: {p.message}</p>{/each}
+      {#if fit.targetsError}<p class="small bad">{fit.targetsError}</p>{/if}
+      <span class="row"><button class="small" onclick={() => loadFitTargets(true)}>Reload targets</button></span>
     </fieldset>
     <fieldset>
       <legend class="section-title">Upscaling quality tiers</legend>

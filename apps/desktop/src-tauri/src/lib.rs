@@ -83,6 +83,8 @@ pub fn run() {
             commands::cancel_analysis,
             commands::upscale_preview,
             commands::pick_models_dir,
+            commands::list_fit_targets,
+            commands::fit_plan,
             commands::list_gif_targets,
             commands::gif_estimate,
             commands::cancel_estimate,

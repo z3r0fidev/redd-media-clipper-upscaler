@@ -188,4 +188,4 @@ No violations. These choices were weighed and kept simple:
 |---|---|---|
 | Two encoder passes in budget mode | the only measured mode that stays under the cap and above 95% (R1) | One pass with a size check passed the cap (capped CRF, 1.009×) or wasted budget (0.80×) |
 | A shared `data_files` loader | GIF and video targets share their rules (R10) | Copying the GIF loader would let the two drift apart |
-| Pass 1 on one thread, pass 2 with sliced threads | x264's VBV with frame threads differs between runs; this keeps output identical (Principle II, R13) | Frame threads are about 1.6× faster but not repeatable, which breaks a MUST |
+| Every fit encode on one thread (revised 2026-11-20; was: pass 2 with sliced threads) | x264's VBV with frame or sliced threads differs between runs; one thread keeps output identical (Principle II, R13) | Threaded encodes are about 2.3× faster but not repeatable, which breaks a MUST |

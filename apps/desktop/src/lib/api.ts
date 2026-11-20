@@ -21,6 +21,9 @@ import type { Notice } from "./bindings/Notice";
 import type { KeyframeIndex } from "./bindings/KeyframeIndex";
 import type { PartialOptions } from "./bindings/PartialOptions";
 import type { SmartSummary } from "./bindings/SmartSummary";
+import type { FitSummary } from "./bindings/FitSummary";
+import type { Issue } from "./bindings/Issue";
+import type { VideoTarget } from "./bindings/VideoTarget";
 import type { Manifest } from "./manifest";
 
 export interface PreviewInfo {
@@ -97,6 +100,20 @@ export interface OutputInfo {
 export interface SmartPlanResult {
   summary: SmartSummary | null;
   notices: Notice[];
+}
+
+/** `list_fit_targets` (feature 005): the same as `rmedia clip --list-fit-targets --json`. */
+export interface FitTargetList {
+  default: string;
+  targets: (VideoTarget & { source: "builtin" | "user"; file?: string })[];
+  problems: { file: string; message: string }[];
+}
+
+/** `fit_plan`: the fit one range would get; refusals are issues. */
+export interface FitPlanResult {
+  fit: FitSummary | null;
+  notices: Notice[];
+  issues: Issue[];
 }
 
 export type EngineKind = "ffmpeg" | "gifsicle" | "gifski";
@@ -176,6 +193,11 @@ export const api = {
   /** What smart mode would do for one range; a newer call cancels the older. */
   smartPlan: (path: string, span: RangeArg, options: PartialOptions) =>
     invoke<SmartPlanResult>("smart_plan", { path, span, options }),
+  /** Video targets (feature 005). */
+  listFitTargets: () => invoke<FitTargetList>("list_fit_targets"),
+  /** The fit one range would get; a newer call cancels the older. */
+  fitPlan: (path: string, span: RangeArg, options: PartialOptions) =>
+    invoke<FitPlanResult>("fit_plan", { path, span, options }),
   onDropped: (f: (paths: string[]) => void): Promise<UnlistenFn> =>
     listen<string[]>("rmedia://dropped", (e) => f(e.payload)),
 };

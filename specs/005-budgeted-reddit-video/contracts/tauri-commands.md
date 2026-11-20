@@ -2,10 +2,15 @@
 
 Additions to `docs/api/desktop-ipc.md`. Every command calls the core; the app has no fit logic.
 
+Changed in implementation: the prediction was planned to come from `plan`, but `plan` keeps each
+plan for `run`, so predictions on every range change would pile up. `fit_plan` plans the one clip
+like `smart_plan` does and keeps nothing.
+
 | Command | Arguments | Returns | Notes |
 |---|---|---|---|
 | `list_fit_targets` | — | `{targets: [VideoTarget & {source, file?}], problems: [...]}` | the same as `rmedia clip --list-fit-targets --json` |
-| `plan` (existing) | manifest with `fit` at any level | `Plan` with `jobs[].fit` | the panel's prediction comes from the plan: arithmetic only, so it is instant (research R1) |
+| `fit_plan` (new) | `path`, `span`, `options: PartialOptions` | `{fit: FitSummary \| null, notices, issues}` | the panel's prediction: the core's plan of the one clip, arithmetic only, so it is instant (research R1). Refusals are `issues`. A newer call cancels the older; nothing is kept |
+| `plan` (existing) | manifest with `fit` at any level | `Plan` with `jobs[].fit` (`FitSummary`, the CLI's `fit` block) | |
 | `run` (existing) | — | outcomes with `fit` | progress stages `pass1`, `pass2`, `verify` |
 
 ## Clip panel

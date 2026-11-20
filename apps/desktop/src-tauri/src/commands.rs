@@ -294,6 +294,12 @@ pub async fn pick_models_dir(app: AppHandle, state: State<'_, AppState>, reset: 
     Ok(state.get_settings())
 }
 
+/// Video targets for the fit picker and Settings › Targets (feature 005).
+#[tauri::command]
+pub fn list_fit_targets(state: State<'_, AppState>) -> Value {
+    state.list_fit_targets()
+}
+
 /// GIF targets for the GIF view.
 #[tauri::command]
 pub fn list_gif_targets(state: State<'_, AppState>) -> Value {
@@ -342,6 +348,17 @@ pub async fn smart_plan(
     options: rmedia_core::request::PartialOptions,
 ) -> OpResult<crate::ops::SmartPlanResult> {
     state.smart_plan(&path, span, &options).await
+}
+
+/// The fit one range would get (feature 005); a newer call cancels the older one.
+#[tauri::command]
+pub async fn fit_plan(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    span: RangeArg,
+    options: rmedia_core::request::PartialOptions,
+) -> OpResult<crate::ops::FitPlanResult> {
+    state.fit_plan(&path, span, &options).await
 }
 
 /// A finished output of this app's run, for playback in the GIF view.

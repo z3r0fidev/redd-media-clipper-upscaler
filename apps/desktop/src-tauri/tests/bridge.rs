@@ -864,3 +864,90 @@ async fn folder_scans_skip_the_output_folders() {
     assert_eq!(found, [PathBuf::from("v.mp4")]);
     assert_eq!(r.excluded_named.len(), 4, "{:?}", r.excluded_named);
 }
+
+/// Feature 005, T039 (SC-007): the app lists the CLI's video targets, plans the CLI's `fit`
+/// block for the same manifest, reports the fit in the run's outcome, and returns a range that
+/// is too long as a plan issue.
+#[tokio::test(flavor = "multi_thread")]
+async fn fit_targets_plans_and_outcomes_match_the_cli() {
+    use rmedia_core::error::IssueCode;
+    use rmedia_core::event::JobMeasure;
+    if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
+        return;
+    }
+    if !cli_bin().is_file() {
+        panic!("build the CLI first (cargo build -p rmedia-cli) or set RMEDIA_CLI_BIN");
+    }
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("busy.mp4");
+    std::fs::copy(fixture(Fixture::FitBusy), &src).unwrap();
+    let st = state(d.path()).await;
+    st.allow(std::slice::from_ref(&src));
+    let cli = |args: &[&str]| {
+        let o = Command::new(cli_bin()).args(args).env("RMEDIA_STATE_DIR", d.path()).output().unwrap();
+        assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+        let text = String::from_utf8(o.stdout).unwrap();
+        text.lines().find_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()).expect("a JSON document")
+    };
+
+    // The targets.
+    let mut app = st.list_fit_targets();
+    assert_eq!(app["default"], "reddit-video");
+    app.as_object_mut().unwrap().remove("default");
+    let mut listed = cli(&["clip", "--list-fit-targets", "--json"]);
+    let doc = listed.as_object_mut().unwrap();
+    assert_eq!((doc.remove("schema"), doc.remove("type")), (Some(json!(1)), Some(json!("fit_targets"))));
+    assert_eq!(app, listed);
+
+    // The plan's fit block equals the CLI's dry run of the same manifest.
+    let out = d.path().join("fit");
+    let manifest = json!({"version":1,"defaults":{"output_dir": out,
+        "fit": {"target": "reddit-video", "max_size": "3MB"}},
+        "videos":[{"input": src, "clips":[{"start":2,"end":8}]}]});
+    let plan = st.plan(&manifest).await.unwrap();
+    assert!(plan.issues.is_empty(), "{:?}", plan.issues);
+    let fit = plan.jobs[0].fit.clone().expect("a fit block");
+    assert_eq!((fit.cap, fit.passes), (3_000_000, 2), "{fit:?}");
+    let file = d.path().join("m.json");
+    std::fs::write(&file, manifest.to_string()).unwrap();
+    let doc = cli(&["batch", &file.to_string_lossy(), "--dry-run", "--json"]);
+    assert_eq!(serde_json::to_value(&fit).unwrap(), doc["jobs"][0]["fit"]);
+
+    // The run's outcome carries the fit.
+    let summary = st.run(&plan.run_id, Arc::new(Collect::default())).await.unwrap();
+    let JobOutcome::Succeeded { output, measure: JobMeasure::Clip { fit: Some(f), .. } } =
+        &summary.jobs[0].outcome
+    else {
+        panic!("{:?}", summary.jobs[0].outcome)
+    };
+    let bytes = std::fs::metadata(output).unwrap().len();
+    assert!(f.bytes == bytes && bytes <= f.cap, "{bytes} of {}", f.cap);
+
+    // Too long for the limit, without trimming: a plan issue, not an error of the call.
+    let long = json!({"version":1,"defaults":{"output_dir": out, "fit": {"max_length": 3}},
+        "videos":[{"input": src, "clips":[{"start":0,"end":8}]}]});
+    let plan = st.plan(&long).await.unwrap();
+    assert!(plan.issues.iter().any(|i| i.code == IssueCode::RangeTooLong), "{:?}", plan.issues);
+
+    // The clip panel's prediction: the same block as the queue's plan, refusals as issues.
+    let opts = |fit: serde_json::Value| -> rmedia_core::request::PartialOptions {
+        serde_json::from_value(json!({ "fit": fit })).unwrap()
+    };
+    let budget = opts(json!({"target": "reddit-video", "max_size": "3MB"}));
+    let r = st.fit_plan(&src, RangeArg { start: 2.0, end: Some(8.0) }, &budget).await.unwrap();
+    assert!(r.issues.is_empty(), "{:?}", r.issues);
+    assert_eq!(r.fit.as_ref(), Some(&fit));
+    let r = st
+        .fit_plan(&src, RangeArg { start: 0.0, end: Some(8.0) }, &opts(json!({"max_length": 3})))
+        .await
+        .unwrap();
+    assert!(r.fit.is_none() && r.issues.iter().any(|i| i.code == IssueCode::RangeTooLong), "{r:?}");
+    let trim = opts(json!({"max_length": 3, "allow_trim": true}));
+    let r = st.fit_plan(&src, RangeArg { start: 0.0, end: Some(8.0) }, &trim).await.unwrap();
+    assert_eq!(r.fit.as_ref().and_then(|f| f.trimmed_from), Some(8.0), "{r:?}");
+    assert!(r.notices.iter().any(|n| n.code == IssueCode::FitTrimmed), "{:?}", r.notices);
+    let other = d.path().join("other.mp4");
+    std::fs::copy(&src, &other).unwrap();
+    let err = st.fit_plan(&other, RangeArg { start: 0.0, end: Some(2.0) }, &budget).await.unwrap_err();
+    assert!(err.contains("was not opened"), "{err}");
+}

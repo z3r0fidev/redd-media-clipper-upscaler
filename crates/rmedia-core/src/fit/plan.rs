@@ -80,24 +80,56 @@ impl FitPlan {
 
     /// The dry run's `fit` block (contracts/json-output.md › Dry run).
     pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "target": self.target.id,
-            "target_verified": self.target.verified,
-            "cap": self.cap,
-            "max_length": self.max_length,
-            "len": self.len,
-            "trimmed_from": self.trimmed_from,
-            "mode": self.mode,
-            "size": [self.size.0, self.size.1],
-            "fps": (self.fps_f64() * 1000.0).round() / 1000.0,
-            "video_kbps": self.video_kbps,
-            "crf": self.crf,
-            "audio_kbps": self.audio_kbps,
-            "predicted_bytes": self.predicted_bytes,
-            "lowered": self.lowered,
-            "passes": self.passes(),
-        })
+        serde_json::to_value(self.summary()).expect("a fit summary serialises")
     }
+
+    /// The plan as the dry run and the desktop app show it (contracts/json-output.md › `fit`).
+    pub fn summary(&self) -> FitSummary {
+        FitSummary {
+            target: self.target.id.clone(),
+            target_verified: self.target.verified,
+            cap: self.cap,
+            max_length: self.max_length,
+            len: self.len,
+            trimmed_from: self.trimmed_from,
+            mode: self.mode,
+            size: self.size,
+            fps: (self.fps_f64() * 1000.0).round() / 1000.0,
+            video_kbps: self.video_kbps,
+            crf: self.crf,
+            audio_kbps: self.audio_kbps,
+            predicted_bytes: self.predicted_bytes,
+            lowered: self.lowered.clone(),
+            passes: self.passes(),
+        }
+    }
+}
+
+/// A planned fit, as the dry run's JSON `fit` block and the desktop queue show it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct FitSummary {
+    pub target: String,
+    pub target_verified: bool,
+    pub cap: u64,
+    /// Seconds.
+    pub max_length: f64,
+    /// The range's length after any trim, in seconds.
+    pub len: f64,
+    /// The requested length, when the range was trimmed.
+    pub trimmed_from: Option<f64>,
+    pub mode: Mode,
+    pub size: (u32, u32),
+    /// Frames per second, to three decimals.
+    pub fps: f64,
+    pub video_kbps: u32,
+    pub crf: Option<u8>,
+    /// `null`: the output has no audio.
+    pub audio_kbps: Option<u32>,
+    pub predicted_bytes: u64,
+    pub lowered: Vec<Lowered>,
+    /// 2 in budget mode, 1 in quality mode.
+    pub passes: u32,
 }
 
 /// Why a fit cannot be planned.

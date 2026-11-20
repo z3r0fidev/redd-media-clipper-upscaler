@@ -13,7 +13,8 @@ quickstart.md
 with audio at or under the cap, frame-exact, repeatable, with bounded retries. Changes found while
 implementing:
 - T014 found that x264's VBV with frame threads isn't repeatable, so pass 1 runs on one thread and
-  the outputs use sliced threads (research R13).
+  the outputs use sliced threads (research R13; revised 2026-11-20: every fit encode runs on one
+  thread).
 - T012 found that quality mode can pass `rate × length` by its VBV buffer, so it needs `B·len ≥
   C·(len + 2 s)` (`VBV_SECS`).
 - T013 found that a retry must stop at the target's minimum bitrate (x264 refuses very low
@@ -345,12 +346,12 @@ identical to the CLI's.
 
 ### Tests for User Story 5 (write first)
 
-- [ ] T039 [P] [US5] `apps/desktop/src-tauri/tests/bridge.rs`:
+- [X] T039 [P] [US5] `apps/desktop/src-tauri/tests/bridge.rs`:
   - `list_fit_targets` equals the CLI's JSON;
   - for the same manifest, `plan` gives a `fit` block equal to the core plan's (SC-007);
   - a run gives `fit` in the outcome;
   - `RANGE_TOO_LONG` comes back as a plan issue.
-- [ ] T040 [P] [US5] `apps/desktop/src/**/*.test.ts` (vitest):
+- [X] T040 [P] [US5] `apps/desktop/src/**/*.test.ts` (vitest):
   - the target picker builds `PartialFit`, and "custom limits…" fills `max_size` and
     `max_length`;
   - choosing a target turns GIF off and shows the mode note;
@@ -359,9 +360,11 @@ identical to the CLI's.
 
 ### Implementation for User Story 5
 
-- [ ] T041 [US5] `desk/ops/fit.rs` (a new module in `ops/`, re-exported): `list_fit_targets`.
-  `desk/commands.rs` registers it; add it to the capability and permission files.
-- [ ] T042 [US5] `ui/`:
+- [X] T041 [US5] `desk/ops/fit.rs` (a new module in `ops/`, re-exported): `list_fit_targets`.
+  `desk/commands.rs` registers it; add it to the capability and permission files. (Done:
+  `list_fit_targets` and `fit_plan`, the panel's prediction. App commands need no capability
+  entry: the app defines no command permissions.)
+- [X] T042 [US5] `ui/`:
   - a target picker in the clip panel, with the prediction (cap, limit, predicted size, notices)
     and the Allow-trimming toggle;
   - the queue shows `bytes of cap` and "trimmed", and the unverified badge;
@@ -369,7 +372,7 @@ identical to the CLI's.
 
   TS types come from `ts-rs` (`VideoTarget`, `PartialFit`, `FitPlan`, `FitOutcome`). Make T039
   and T040 pass.
-- [ ] T043 [US5] A manual desktop check on Xvfb `:99` (quickstart › Desktop): record the steps
+- [X] T043 [US5] A manual desktop check on Xvfb `:99` (quickstart › Desktop): record the steps
   and screenshots in `checklists/validation.md`.
 
 ---

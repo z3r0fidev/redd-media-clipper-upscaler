@@ -248,7 +248,7 @@ the executor:
 - The CLI and the desktop app call the same core plan and executor, so their settings are
   identical (checked by a bridge test).
 - Output bytes are deterministic per machine, as for accurate mode. This holds only with R13's
-  threading; frame-threaded VBV encodes are not repeatable (measured).
+  threading (one encoder thread); threaded VBV encodes are not repeatable (measured).
 
 ## R13. Determinism of the VBV encodes (found in T014, 2026-11-19)
 
@@ -269,15 +269,28 @@ unaffected, because CRF without VBV is deterministic with frame threads (004 R10
 | **pass 1 `-threads 1`, pass 2 `sliced-threads=1`** | **yes, byte-identical** | 3.7 + 3.6 s |
 | quality pass with `sliced-threads=1` | yes | — |
 
-**Decision.**
-- Pass 1 runs with `-threads 1`. Its "fast first pass" settings run at about 49 fps at 1080p.
-- Pass 2 and the quality pass use `-x264-params sliced-threads=1`.
+**Decision (revised 2026-11-20).**
+- Every fit encode runs with `-threads 1`: pass 1, pass 2 and the quality pass.
 - The output is identical for identical inputs on one machine (Principle II), as for accurate
-  mode. The thread count still follows the CPU.
+  mode. A batch still uses the CPU: several clips run at once.
 
-**Cost.** About 1.6× the frame-threaded time in this test. Sliced threads compress slightly less
-well, but the bitrate is fixed by the budget, so the size is the same (1.97 MB against
-1.92 MB here, both under the cap).
+**Revision (US5 desktop check, 2026-11-20).** The first decision ran pass 2 and the quality pass
+with `sliced-threads=1`, which repeated on the 6 s test above but not in general. On 10 s of the
+busy 1080p fixture at 5 MB (3,792 kb/s), with 12 threads:
+
+| Pass 2 | Repeats? | Time |
+|---|---|---|
+| `sliced-threads=1` | no (three runs, three outputs) | 6.0–6.3 s |
+| `sliced-threads=1:lookahead-threads=1` | no | 7.3–7.6 s |
+| `sliced-threads=1:threads=12` | no | 6.0–6.2 s |
+| **`-threads 1`** | **yes, byte-identical** | 13.8–14.1 s |
+
+A one-pass capped CRF with `sliced-threads=1` did not repeat either. Pass 1 with `-threads 1`
+always repeated. The owner chose exact repeats over speed: about 2.3× the sliced-thread time for
+pass 2. `a_fit_is_deterministic` now checks this case and quality mode.
+
+**Cost (first decision).** About 1.6× the frame-threaded time in the 6 s test. Single-threaded
+pass 2 costs more (above). The bitrate is fixed by the budget, so the size class is the same.
 
 **Alternative rejected.** Frame threads, with determinism documented as an exception. That
 breaks a MUST in the constitution for a speed gain under 2×.

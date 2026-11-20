@@ -478,8 +478,8 @@ fn job_doc(j: &PlannedJob) -> Value {
             m.insert("cwd".into(), json!(lossy(cwd)));
         }
     }
-    if let Some(f) = job_fit(&j.spec) {
-        m.insert("fit".into(), f.to_json());
+    if let Some(f) = &j.fit {
+        m.insert("fit".into(), json!(f));
     }
     if let JobSpec::Gif(g) = &j.spec {
         m.insert("kind".into(), json!("gif"));

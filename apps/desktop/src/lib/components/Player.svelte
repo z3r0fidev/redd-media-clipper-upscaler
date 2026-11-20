@@ -13,6 +13,9 @@
   import { gif, initGif, stopEstimate, syncEstimate } from "../stores/gif.svelte";
   import { bands, effectiveMode, planOptions, smartLine, tickPositions } from "../stores/smart";
   import { loadKeyframes, smart, stopPlan, syncPlan } from "../stores/smart.svelte";
+  import FitPicker from "./FitPicker.svelte";
+  import { fit, loadFitTargets, stopFitPlan, syncFitPlan } from "../stores/fit.svelte";
+  import { fitPartial, refusal, withFit } from "../stores/fit";
 
   type Mode = "empty" | "loading" | "direct" | "proxy-h264" | "proxy-vp8" | "still" | "error";
 
@@ -38,7 +41,11 @@
     const v = preview?.info.streams.find((s) => s.kind === "video" && !s.is_attached_pic);
     return v?.frame_rate ? v.frame_rate[1] / v.frame_rate[0] : 1 / 25;
   });
-  const canAdd = $derived(!!path && inPt != null && (outPt == null || outPt > inPt));
+  // Feature 005: a fitted clip can be queued once its prediction is in and nothing refuses it.
+  const fitBlocked = $derived(
+    app.view === "clip" && !!fit.choice.target && (fit.planning || !!fit.planError || !!refusal(fit.issues)),
+  );
+  const canAdd = $derived(!!path && inPt != null && (outPt == null || outPt > inPt) && !fitBlocked);
 
   // Upscale view: the range is the In/Out marks (or the whole video); the overlay follows the
   // playhead every frame while playing.
@@ -106,8 +113,9 @@
   // Clip view (feature 004): keyframe ticks, loaded in the background per source; with Smart
   // selected, the marked range is drawn as re-encoded head and tail around the copied GOPs.
   const clipping = $derived(app.view === "clip" && !!path && mode !== "empty" && mode !== "error");
+  // A fitted clip is re-encoded: smart cut does not apply (the core's note says so).
   const smartMode = $derived(
-    clipping && !!path && effectiveMode(app.queue, app.settings?.defaults, path) === "smart",
+    clipping && !!path && !fit.choice.target && effectiveMode(app.queue, app.settings?.defaults, path) === "smart",
   );
   const ticks = $derived(clipping ? tickPositions(smart.index, duration) : []);
   const smartBands = $derived(smartMode && inPt != null ? bands(smart.summary, duration) : []);
@@ -127,6 +135,28 @@
     const r = { start: inPt, end: outPt };
     const o = planOptions(app.queue, p);
     untrack(() => syncPlan(p, r, o));
+  });
+
+  // Feature 005: the video targets, and the prediction for the marked range.
+  $effect(() => {
+    if (clipping) untrack(() => void loadFitTargets());
+  });
+  /** The options the clip would be planned with, and whether they make GIFs. */
+  function clipOptions(p: string) {
+    const o = { ...app.settings?.defaults, ...planOptions(app.queue, p) };
+    return { o, gifOn: !!o.gif && o.gif.enabled !== false };
+  }
+  $effect(() => {
+    const partial = fitPartial(fit.choice);
+    if (!clipping || !partial || !path || inPt == null || mode === "loading" || !(duration > 0)) {
+      untrack(() => stopFitPlan());
+      return;
+    }
+    const p = path;
+    const r = { start: inPt, end: outPt };
+    const { gifOn } = clipOptions(p);
+    const o = { ...planOptions(app.queue, p), fit: partial, ...(gifOn ? { gif: { enabled: false } } : {}) };
+    untrack(() => syncFitPlan(p, r, o));
   });
 
   // Only a change of source reloads: load() reads and writes state, which must not become
@@ -237,11 +267,12 @@
   function addCurrentClip() {
     if (!canAdd || !path || inPt == null) return;
     const round = (x: number) => Math.round(x * 1000) / 1000;
-    app.queue = addClip(app.queue, path, {
+    const clip = {
       start: round(inPt),
       end: outPt == null ? "end" : round(outPt),
       ...(clipName.trim() ? { name: clipName.trim() } : {}),
-    });
+    };
+    app.queue = addClip(app.queue, path, withFit(clip, fitPartial(fit.choice), clipOptions(path).gifOn));
     toast(`Added ${fmt(inPt)} → ${outPt == null ? "end" : fmt(outPt)} to the queue`);
     inPt = outPt;
     outPt = null;
@@ -483,6 +514,7 @@
         {/if}
       </p>
     {/if}
+    {#if clipping}<FitPicker marked={inPt != null} />{/if}
     {#if smart.index?.truncated && clipping}<p class="faint note">Keyframe markers stop early: this file has too many to show.</p>{/if}
     <div class="clipbar">
       <input type="text" placeholder="Clip name (optional)" bind:value={clipName} onkeydown={(e) => e.key === "Enter" && addCurrentClip()} />

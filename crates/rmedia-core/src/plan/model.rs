@@ -135,6 +135,10 @@ pub struct PlannedJob {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub smart: Option<SmartSummary>,
+    /// The planned fit (feature 005): present when the job fits a video target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub fit: Option<crate::fit::plan::FitSummary>,
     #[serde(skip)]
     pub spec: JobSpec,
 }

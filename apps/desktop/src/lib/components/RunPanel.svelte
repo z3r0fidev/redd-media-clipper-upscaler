@@ -3,6 +3,7 @@
   import { app } from "../stores/app.svelte";
   import { statusLabel, upscaleDetail, type JobView } from "../stores/run";
   import { smartOutcomeLabel } from "../stores/smart";
+  import { fitOutcomeLabel } from "../stores/fit";
   import { baseName } from "../time";
 
   const run = $derived(app.run);
@@ -18,12 +19,12 @@
     if (!o) return j.warnings.join(" · ");
     if (o.status === "failed") return o.error.message;
     if (o.status === "skipped") return o.reason;
-    if (o.status === "succeeded" && o.measure === "clip" && o.adjusted) {
+    if (o.status === "succeeded" && o.measure === "clip" && o.adjusted && !o.fit) {
       // `adjusted` also covers an end that moved (e.g. clamped to the media end).
       if (Math.abs(o.actual.start - j.requestedStart) > 0.05) return `Starts on the keyframe at ${o.actual.start.toFixed(3)} s`;
       return `Ends at ${o.actual.end.toFixed(3)} s`;
     }
-    return [smartOutcomeLabel(o), upscaleDetail(o), ...j.warnings].filter(Boolean).join(" · ");
+    return [fitOutcomeLabel(o), smartOutcomeLabel(o), upscaleDetail(o), ...j.warnings].filter(Boolean).join(" · ");
   }
 </script>
 

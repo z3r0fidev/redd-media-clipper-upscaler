@@ -9,11 +9,20 @@
   import { canRun, runManifest, runner } from "../stores/runner.svelte";
   import { isUpscale } from "../stores/upscale";
   import { effectiveMode } from "../stores/smart";
+  import { fit, loadFitTargets } from "../stores/fit.svelte";
+  import { fitLabel } from "../stores/fit";
   import { baseName, fmt } from "../time";
 
   let invalid = $state<Record<string, string>>({});
 
   const total = $derived(clipCount(app.queue));
+  // Feature 005: the queue labels fitted clips with their target and cap.
+  $effect(() => void loadFitTargets());
+  const fitTargets = $derived(fit.targets?.targets ?? []);
+  const unverified = (c: ClipEntry) => {
+    const t = fitTargets.find((x) => x.id === (c.options?.fit?.target ?? "reddit-video"));
+    return !!t && !t.verified;
+  };
 
   function lengthOf(c: { start: TimeValue; end?: TimeValue; duration?: TimeValue }, input: string): string {
     const s = typeof c.start === "number" ? c.start : null;
@@ -224,7 +233,7 @@
               aria-label="End"
             />
             <span class="len mono faint">{lengthOf(c, v.input)}</span>
-            {#if isSmart(v) && !isUpscale(c)}
+            {#if isSmart(v) && !isUpscale(c) && !fitLabel(c.options?.fit, fitTargets)}
               <button
                 class="pill smart"
                 class:on={smartOnly(v, c)}
@@ -234,6 +243,9 @@
               >{smartOnly(v, c) ? "Smart only" : "Smart"}</button>
             {/if}
             {#if isUpscale(c)}<span class="pill up" title="Upscaled for phones: {upscaleLabel(c)}" aria-label="Upscale: {upscaleLabel(c)}"><span aria-hidden="true">↑</span> {upscaleLabel(c)}</span>{/if}
+            {#if fitLabel(c.options?.fit, fitTargets)}
+              <span class="pill fit" title="Fitted to a size budget{unverified(c) ? ' (limits unverified)' : ''}" aria-label="Video target: {fitLabel(c.options?.fit, fitTargets)}">{fitLabel(c.options?.fit, fitTargets)}{unverified(c) ? " · unverified" : ""}</span>
+            {/if}
             <input type="text" class="n" placeholder="name" value={c.name ?? ""} onchange={(e) => (app.queue = updateClip(app.queue, v.input, i, { name: e.currentTarget.value }))} aria-label="Clip name" />
             <button class="icon ghost" aria-label="Remove clip" onclick={() => (app.queue = removeClip(app.queue, v.input, i))}>×</button>
           </div>
@@ -278,6 +290,7 @@
   .pill.smart { font-size: 11px; cursor: pointer; }
   .pill.smart.on { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
   .strict { display: inline-flex; align-items: center; gap: var(--space-1); font-size: 12px; flex-basis: 100%; }
+  .pill.fit { font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill.up { font-size: 11px; color: var(--accent); background: var(--accent-soft); border-color: transparent; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card-head { justify-content: space-between; }
   .name { font-weight: 650; padding: 0 var(--space-1); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }

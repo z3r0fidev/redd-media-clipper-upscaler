@@ -115,15 +115,21 @@ async fn a_generous_cap_is_not_filled_and_no_audio_means_no_audio_track() {
     assert!(f.bytes <= 8_000_000 && f.bytes >= 7_200_000, "{}", f.bytes);
 }
 
-/// T014 (R12): the same fit twice gives the same bytes.
+/// T014 (R12, R13): the same fit gives the same bytes every time, in budget mode (10 s of busy
+/// 1080p at 5 MB, where threaded VBV encodes differed run to run) and in quality mode.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_fit_is_deterministic() {
     if !engine_ok() {
         return;
     }
     let src = fixture(Fixture::FitBusy);
-    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let (fa, _, _) = fit(&src, 3.0, 9.0, capped(2_000_000), a.path()).await;
-    let (fb, _, _) = fit(&src, 3.0, 9.0, capped(2_000_000), b.path()).await;
-    assert_eq!(rmedia_testkit::sha256(&fa), rmedia_testkit::sha256(&fb));
+    for (start, end, opts) in [(2.0, 12.0, capped(5_000_000)), (3.0, 6.0, FitOptions::default())] {
+        let mut hashes = Vec::new();
+        for _ in 0..2 {
+            let out = tempfile::tempdir().unwrap();
+            let (file, _, _) = fit(&src, start, end, opts.clone(), out.path()).await;
+            hashes.push(rmedia_testkit::sha256(&file));
+        }
+        assert!(hashes.iter().all(|h| *h == hashes[0]), "{start}-{end}: {hashes:?}");
+    }
 }

@@ -572,6 +572,11 @@ impl Planner<'_> {
             warnings,
             notices,
             smart,
+            fit: match &spec {
+                JobSpec::Clip(c) => c.fit.as_ref().map(crate::fit::plan::FitPlan::summary),
+                JobSpec::Upscale(u) => u.cut.fit.as_ref().map(crate::fit::plan::FitPlan::summary),
+                JobSpec::Gif(_) => None,
+            },
             spec,
         });
     }

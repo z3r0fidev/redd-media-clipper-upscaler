@@ -21,12 +21,13 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Next feature: **005 budgeted Reddit video** (specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
   limits as of 2026-11-13 in `research/10`; planned 2026-11-19: `--fit TARGET`, two-pass x264 with
   a VBV ceiling, measured before commit (research R1); tasks 2026-11-19: T001–T047, MVP = US1 (T001–T022)).
-- 005 progress: T001–T038 done (Phases 1–2, US1, the MVP: `rmedia clip --fit` works, under the cap,
+- 005 progress: T001–T043 done (Phases 1–2, US1, the MVP: `rmedia clip --fit` works, under the cap,
   repeatable (research R13), with retries; US2: length refusals and trims, the size ladder,
   `BUDGET_UNREACHABLE` with `min_cap`, HDR tone-map, fps caps; US3: the dry-run line and JSON
   `fit` block, `clip --list-fit-targets`, `doctor`'s fit block; US4: `upscale --fit`,
-  `clip --upscale --fit` on every tier, `fit` in JSON/CSV manifests and `batch --fit`). Next: US5
-  (T039, desktop).
+  `clip --upscale --fit` on every tier, `fit` in JSON/CSV manifests and `batch --fit`; US5: the desktop target picker with the
+  prediction (`fit_plan`), queue and run labels, Settings › Targets, Xvfb check). Every fit
+  encode runs on one thread so outputs repeat exactly (R13 revised). Next: Phase 8 (T044).
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and

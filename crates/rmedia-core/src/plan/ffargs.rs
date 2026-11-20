@@ -254,8 +254,9 @@ fn fit_tail(
     }
     let kbps = |k: u32| format!("{k}k");
     match pass {
-        // Determinism (research R13): x264's VBV with frame threads differs from run to run, so
-        // pass 1 runs on one thread and the outputs use sliced threads.
+        // Determinism (research R13): x264's VBV gives different bytes from run to run with
+        // frame threads and with sliced threads alike, so every fit encode runs on one thread
+        // (a batch still uses every core: several clips run at once).
         FitPass::First => {
             let k = fit.video_kbps;
             push(&["-b:v", &kbps(k), "-maxrate", &kbps(k), "-bufsize", &kbps(k * 2), "-threads", "1"]);
@@ -263,13 +264,21 @@ fn fit_tail(
             return;
         }
         FitPass::Second { video_kbps: k } => {
-            push(&["-b:v", &kbps(k), "-maxrate", &kbps(k), "-bufsize", &kbps(k * 2)]);
-            push(&["-x264-params", "sliced-threads=1", "-pass", "2", "-passlogfile", FIT_PASSLOG]);
+            push(&["-b:v", &kbps(k), "-maxrate", &kbps(k), "-bufsize", &kbps(k * 2), "-threads", "1"]);
+            push(&["-pass", "2", "-passlogfile", FIT_PASSLOG]);
         }
         FitPass::Quality => {
             let (crf, c) = (fit.crf.unwrap_or(fit.target.quality.crf), fit.video_kbps);
-            push(&["-crf", &crf.to_string(), "-maxrate", &kbps(c), "-bufsize", &kbps(c * 2)]);
-            push(&["-x264-params", "sliced-threads=1"]);
+            push(&[
+                "-crf",
+                &crf.to_string(),
+                "-maxrate",
+                &kbps(c),
+                "-bufsize",
+                &kbps(c * 2),
+                "-threads",
+                "1",
+            ]);
         }
     }
     if let (true, Some(k)) = (audio, fit.audio_kbps) {

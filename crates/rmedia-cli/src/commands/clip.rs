@@ -212,28 +212,10 @@ fn list_fit_targets(out: &Output) -> u8 {
     use serde_json::json;
     let reg = VideoTargetRegistry::load(rmedia_core::settings::config_dir().as_deref());
     if out.json {
-        let targets: Vec<_> = reg
-            .list()
-            .map(|(t, src)| {
-                let mut v = serde_json::to_value(t).expect("a target serialises");
-                match src {
-                    PresetSource::Builtin => v["source"] = json!("builtin"),
-                    PresetSource::User(f) => {
-                        v["source"] = json!("user");
-                        v["file"] = json!(rmedia_core::pathser::lossy(f));
-                    }
-                }
-                v
-            })
-            .collect();
-        let problems: Vec<_> = reg
-            .problems()
-            .iter()
-            .map(|p| json!({"file": rmedia_core::pathser::lossy(&p.file), "message": p.message}))
-            .collect();
-        render::print_json(
-            &json!({"schema": 1, "type": "fit_targets", "targets": targets, "problems": problems}),
-        );
+        let mut v = reg.listing();
+        v["schema"] = json!(1);
+        v["type"] = json!("fit_targets");
+        render::print_json(&v);
     } else {
         for (t, src) in reg.list() {
             let secs = t.max_duration.round() as u64;

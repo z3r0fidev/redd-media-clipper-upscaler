@@ -39,6 +39,7 @@ use tokio_util::sync::CancellationToken;
 use crate::media_server::MediaServer;
 
 mod allowed;
+mod fit;
 mod gif;
 mod previews;
 mod queue;
@@ -47,6 +48,7 @@ mod smart;
 mod upscale;
 
 pub use allowed::*;
+pub use fit::*;
 pub use gif::*;
 pub use previews::*;
 pub use queue::*;
@@ -96,6 +98,8 @@ pub struct AppState {
     keyframe_slots: tokio::sync::Semaphore,
     /// The smart plan being made (a new one cancels it: only the latest range is shown).
     smart_plan: Mutex<Option<CancellationToken>>,
+    /// The fit prediction being made (feature 005; a new one cancels it).
+    fit_plan: Mutex<Option<CancellationToken>>,
     /// Held across read-modify-save of the settings, so concurrent saves never lose a field.
     settings_save: Mutex<()>,
     cache_dir: PathBuf,
@@ -140,6 +144,7 @@ impl AppState {
             keyframe_cache: Mutex::new(VecDeque::new()),
             keyframe_slots: tokio::sync::Semaphore::new(MAX_KEYFRAME_SCANS),
             smart_plan: Mutex::new(None),
+            fit_plan: Mutex::new(None),
             settings_save: Mutex::new(()),
             cache_dir,
             opened: Mutex::new(Vec::new()),

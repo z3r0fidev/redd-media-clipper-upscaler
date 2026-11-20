@@ -176,6 +176,32 @@ impl VideoTargetRegistry {
         self.targets.iter().find(|(t, _)| t.id == id).map(|(t, _)| t)
     }
 
+    /// The targets with their `source` (and `file` for user targets), and the target files that
+    /// could not be used: `rmedia clip --list-fit-targets --json` and the desktop app's list.
+    pub fn listing(&self) -> serde_json::Value {
+        use serde_json::json;
+        let targets: Vec<_> = self
+            .list()
+            .map(|(t, src)| {
+                let mut v = serde_json::to_value(t).expect("a target serialises");
+                match src {
+                    PresetSource::Builtin => v["source"] = json!("builtin"),
+                    PresetSource::User(f) => {
+                        v["source"] = json!("user");
+                        v["file"] = json!(crate::pathser::lossy(f));
+                    }
+                }
+                v
+            })
+            .collect();
+        let problems: Vec<_> = self
+            .problems()
+            .iter()
+            .map(|p| json!({"file": crate::pathser::lossy(&p.file), "message": p.message}))
+            .collect();
+        json!({"targets": targets, "problems": problems})
+    }
+
     pub fn list(&self) -> impl Iterator<Item = (&VideoTarget, &PresetSource)> {
         self.targets.iter().map(|(t, s)| (t, s))
     }
