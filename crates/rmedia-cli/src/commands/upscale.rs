@@ -15,11 +15,19 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
     if args.list_presets {
         return list_presets(&out);
     }
+    if let Some(msg) = args.fit.usage_error(false) {
+        eprintln!("error: {msg}");
+        return exit::USAGE;
+    }
     let opts = cli.locate();
     let (mut report, mut engine) = doctor::run(&opts, &rmedia_core::settings::Settings::load()).await;
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };
+    if let Some(msg) = args.fit.options().and_then(|f| f.override_error(&found.1.video_targets)) {
+        eprintln!("error: {msg}");
+        return exit::USAGE;
+    }
     let inputs = match super::scan::expand_inputs(
         &found.0,
         &args.inputs,
@@ -38,6 +46,7 @@ pub async fn run(cli: &Cli, args: &UpscaleArgs) -> u8 {
     // per-source sub-folder (`{source}_{preset}` names are unique per folder).
     let mut defaults = options(&args.common, Mode::Accurate, false);
     defaults.upscale = Some(args.upscale.options());
+    defaults.fit = args.fit.options();
     let whole = ClipRequest {
         start: Ts::ZERO,
         end: EndSpec::EndOfMedia,

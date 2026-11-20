@@ -138,6 +138,10 @@ pub enum JobMeasure {
         fallback_ranges: Vec<Span>,
         /// The source was already at or above the target size (FR-005).
         no_upscale_needed: bool,
+        /// What a fitted upscale measured (feature 005); absent unless it was fitted.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        fit: Option<crate::fit::FitOutcome>,
     },
     /// A GIF or Reddit MP4 (feature 003, contracts/json-output.md › Outcome).
     Gif {

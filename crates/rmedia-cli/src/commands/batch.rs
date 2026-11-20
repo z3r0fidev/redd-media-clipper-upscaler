@@ -51,6 +51,12 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
         eprintln!("error: --crop-path and --no-sample do not apply to batch (its dry run does not sample)");
         return crate::exit::USAGE;
     }
+    if let Some(msg) = args.fit.usage_error(args.gif) {
+        eprintln!("error: {msg}");
+        return crate::exit::USAGE;
+    }
+    // `--fit TARGET` fits every clip below the manifest's own `fit` values.
+    defaults.fit = args.fit.options();
     // GIF flags fill the clips the manifest makes GIFs; only --gif turns GIF export on for all.
     if args.gif || args.gifo.any() {
         defaults.gif_fill = Some(args.gifo.options());
@@ -119,6 +125,10 @@ pub async fn run(cli: &Cli, args: &BatchArgs) -> u8 {
     let Some(found) = engine.as_mut() else {
         return out.engine_error(&report.problems.join("; "));
     };
+    if let Some(msg) = args.fit.options().and_then(|f| f.override_error(&found.1.video_targets)) {
+        eprintln!("error: {msg}");
+        return crate::exit::USAGE;
+    }
     if let Err(code) = super::check_tiers(&mut report, found, &req).await {
         return code;
     }

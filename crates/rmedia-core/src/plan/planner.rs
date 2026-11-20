@@ -109,11 +109,11 @@ impl Planner<'_> {
                     "a clip cannot be both fitted to a video target and made a GIF (use --fit or --gif)",
                 );
             }
-            Some(_) if up.is_some() => {
+            Some(_) if up.as_ref().is_some_and(|(u, _, _)| u.hdr == crate::upscale::HdrMode::Keep) => {
                 return self.error(
                     origin,
                     IssueCode::InvalidInput,
-                    "--fit with upscaling is not supported yet",
+                    "a fitted video is SDR H.264: --hdr keep cannot be used with --fit",
                 );
             }
             Some(f) => match self.caps.video_targets.get(&f.target) {
@@ -449,15 +449,18 @@ impl Planner<'_> {
             smart_fallback: None,
             fit: None,
         };
-        if let Some((f, target)) = &fit {
-            let Some(found) = self.plan_fit(origin, media, &mut cut, f, target, &mut warnings) else {
+        // An upscale's fit is planned from its output size and rate, below.
+        if let Some((f, target)) = &fit
+            && up.is_none()
+        {
+            let Some(found) = self.plan_fit(origin, media, &mut cut, (f, target), &mut warnings, None) else {
                 return;
             };
             for (code, message, detail) in found {
                 notice(&mut warnings, code, message, detail);
             }
         }
-        let requested = cut.requested;
+        let mut requested = cut.requested;
         let mut smart = None;
         if smart_requested {
             let strict = !opts.smart_fallback;
@@ -527,7 +530,32 @@ impl Planner<'_> {
                 (JobSpec::Clip(Box::new(cut)), scratch)
             }
             (None, Some((u, preset, tier))) => {
-                let plan = self.upscale_plan(origin, u, preset, tier, media, &cut, whole, &mut warnings);
+                let again = fit.as_ref().map(|_| (preset.clone(), tier.clone()));
+                let mut plan = self.upscale_plan(origin, u, preset, tier, media, &cut, whole, &mut warnings);
+                if let (Some((f, target)), Some((preset, tier))) = (&fit, again) {
+                    // Feature 005 (research R7): the fit takes the preset's shape and rate; the
+                    // budget may lower the size further or trim the range.
+                    let out = Some((plan.target, plan.frame_rate));
+                    let Some(found) = self.plan_fit(origin, media, &mut cut, (f, target), &mut warnings, out)
+                    else {
+                        return;
+                    };
+                    if cut.fit.as_ref().is_some_and(|p| p.trimmed_from.is_some()) {
+                        // Trimmed: the upscale is planned again for the shorter range.
+                        plan =
+                            self.upscale_plan(origin, u, preset, tier, media, &cut, false, &mut Vec::new());
+                        requested = cut.requested;
+                    }
+                    for (code, message, detail) in found {
+                        warnings.push(message.clone());
+                        notices.push(Notice { code, message, detail });
+                    }
+                    if let Some(p) = &cut.fit {
+                        // Two passes take about twice as long (R7); the size is the fit's.
+                        plan.estimate.secs *= f64::from(p.passes());
+                        plan.estimate.bytes = p.predicted_bytes;
+                    }
+                }
                 let scratch = scratch_path(&output, &self.run_id, id);
                 (JobSpec::Upscale(Box::new(UpscaleSpec { cut, up: plan })), Some(scratch))
             }
@@ -555,20 +583,26 @@ impl Planner<'_> {
         origin: &Origin,
         media: &MediaInfo,
         cut: &mut ClipSpec,
-        opts: &crate::fit::FitOptions,
-        target: &crate::fit::target::VideoTarget,
+        (opts, target): (&crate::fit::FitOptions, &crate::fit::target::VideoTarget),
         warnings: &mut Vec<String>,
+        upscaled: Option<((u32, u32), (u32, u32))>,
     ) -> Option<Vec<(IssueCode, String, Option<crate::error::ErrorDetail>)>> {
         use crate::fit::plan::{Refusal, Source, plan_fit};
         let Some(v) = media.first_video() else {
             self.error(origin, IssueCode::InvalidInput, "a fit needs a video stream");
             return None;
         };
-        let Some(size) = v.display_size() else {
+        let Some(source_size) = v.display_size() else {
             self.error(origin, IssueCode::InvalidInput, "the source's picture size is unknown");
             return None;
         };
-        let fps = if v.is_vfr() { v.r_frame_rate.or(v.frame_rate) } else { v.frame_rate.or(v.r_frame_rate) };
+        let source_fps =
+            if v.is_vfr() { v.r_frame_rate.or(v.frame_rate) } else { v.frame_rate.or(v.r_frame_rate) };
+        // An upscale's output (its preset's shape and rate), or the source.
+        let (size, fps) = match upscaled {
+            Some((size, fps)) => (size, Some(fps)),
+            None => (source_size, source_fps),
+        };
         let audio = cut
             .streams
             .maps
@@ -626,7 +660,8 @@ impl Planner<'_> {
             plan.downmix = true;
             warnings.push(format!("the {c}-channel audio is mixed down to stereo (extra channels dropped)"));
         }
-        if v.is_hdr() {
+        // An upscale's graph already converts HDR to SDR.
+        if v.is_hdr() && upscaled.is_none() {
             // 002's tone-map to SDR, so every phone plays it (spec › Edge cases).
             let lacking: Vec<&str> =
                 ["zscale", "tonemap"].into_iter().filter(|f| !self.caps.filters.contains(*f)).collect();
@@ -647,7 +682,8 @@ impl Planner<'_> {
                 transfer: v.color_transfer.clone(),
                 range: v.color_range.clone(),
             };
-            plan.tonemap = Some(crate::upscale::graph::zscale_input(&tags, v.height.unwrap_or(size.1)));
+            plan.tonemap =
+                Some(crate::upscale::graph::zscale_input(&tags, v.height.unwrap_or(source_size.1)));
         }
         let mut found = Vec::new();
         let mut notice = |code, message: String, detail| found.push((code, message, detail));

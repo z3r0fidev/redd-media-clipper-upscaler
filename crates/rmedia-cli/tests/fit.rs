@@ -315,3 +315,48 @@ fn fit_targets_are_listed_and_reported_by_doctor() {
     let doc2: Value = serde_json::from_str(stdout(&o2).trim()).unwrap();
     assert_eq!((o.status.code(), &doc["ok"]), (o2.status.code(), &doc2["ok"]));
 }
+
+/// T037: `upscale --fit` and `clip --upscale --fit` plan a fit from the preset's shape.
+#[test]
+fn upscales_can_be_fitted_from_the_cli() {
+    require_engine!("libx264", "aac", "zscale");
+    let d = tempfile::tempdir().unwrap();
+    let src = copy(Fixture::FitShort, d.path(), "short.mp4");
+    let up = ["--preset", "reddit-916", "--reframe", "blur", "--tier", "cpu"];
+    for cmd in [vec!["upscale"], vec!["clip", "-s", "0", "-e", "2", "--upscale"]] {
+        let o = rmedia(d.path())
+            .args(&cmd)
+            .args(["--dry-run", "--json", "--fit", "reddit-video", "--fit-max-size", "1MB"])
+            .args(up)
+            .arg(&src)
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(0), "{cmd:?}: {}", stderr(&o));
+        let doc = plan_doc(&o);
+        let fit = &doc["jobs"][0]["fit"];
+        assert_eq!(
+            (fit["cap"].as_u64(), fit["size"][1].as_u64()),
+            (Some(1_000_000), Some(1920)),
+            "{cmd:?}: {doc}"
+        );
+    }
+    // A real run: the result line shows the size against the cap.
+    let o = rmedia(d.path())
+        .args(["upscale", "--fit", "reddit-video", "--fit-max-size", "1MB"])
+        .args(up)
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let text = stdout(&o) + &stderr(&o);
+    assert!(text.contains(" of 1.0 MB (") && text.contains("2 passes"), "{text}");
+    // --fit-max-size without --fit, and an override above the target.
+    let o = rmedia(d.path()).args(["upscale", "--fit-max-size", "1MB"]).arg(&src).output().unwrap();
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+    let o = rmedia(d.path())
+        .args(["upscale", "--fit", "reddit-video", "--fit-max-size", "2GB"])
+        .arg(&src)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+}

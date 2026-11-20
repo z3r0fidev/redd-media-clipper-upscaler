@@ -403,3 +403,50 @@ async fn ai_timing_holds_for_trimmed_offset_vfr_and_whole_videos() {
         );
     }
 }
+
+/// Feature 005, T037 (research R7): a fitted AI-tier upscale runs the whole pipeline in each
+/// pass and comes out H.264 within the cap, at the fit's size.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fitted_ai_upscale_runs_the_pipeline_in_both_passes() {
+    let _serial = SERIAL.lock().await;
+    require_engine!("libx264", "aac", "zscale", "gblur");
+    let Some(w) = worker() else { return };
+    let d = tempfile::tempdir().unwrap();
+    let (tools, _) = engine();
+    let caps = ai_caps(&w);
+    let mut o = opts(d.path(), Reframe::Center);
+    o.upscale.as_mut().unwrap().preset = "reddit-916".into();
+    let cap = 1_000_000;
+    o.fit = Some(rmedia_core::fit::FitOptions { max_size: Some(cap), ..Default::default() });
+    let p = make_plan(
+        &request(&fixture(Fixture::Gop50Mp4), vec![clip(1.0, EndSpec::At(secs(3.0)))], o),
+        &tools,
+        &caps,
+    )
+    .await;
+    assert!(p.issues.is_empty(), "{:?}", p.issues);
+    let (summary, events) = run_plan(p, tools, &d.path().join("state")).await;
+    let JobOutcome::Succeeded {
+        output,
+        measure: rmedia_core::event::JobMeasure::Upscale { fit: Some(f), .. },
+    } = &summary.jobs[0].outcome
+    else {
+        panic!("{:?}", summary.jobs[0].outcome)
+    };
+    let bytes = std::fs::metadata(output).unwrap().len();
+    assert!(bytes <= cap && f.bytes == bytes, "{bytes} of {cap}");
+    let info = probe_json(output);
+    let v = info["streams"].as_array().unwrap().iter().find(|s| s["codec_type"] == "video").unwrap().clone();
+    assert_eq!(
+        (v["codec_name"].as_str(), v["width"].as_u64(), v["height"].as_u64()),
+        (Some("h264"), Some(f.size.0.into()), Some(f.size.1.into()))
+    );
+    let stages: Vec<String> = events
+        .iter()
+        .filter_map(|e| if let Event::JobStage { stage, .. } = e { Some(stage.clone()) } else { None })
+        .collect();
+    if f.mode == rmedia_core::fit::plan::Mode::Budget {
+        assert!(stages.starts_with(&["pass1".into(), "pass2".into()]), "{stages:?}");
+    }
+    assert_eq!(stages.last().map(String::as_str), Some("verify"));
+}

@@ -68,3 +68,24 @@ Fixed on the way:
 
 Changed on the way: `FIT_LOWERED` messages print sizes as `1920x1080` (they printed JSON arrays);
 contracts/cli.md's examples now show the real output (decimal units: 1 GiB is 1.07 GB).
+
+## US4 (T034–T038), 2026-11-19
+
+| Check | Test | Result |
+|---|---|---|
+| FR-019, `reddit-916` + `reddit-video`: 1080x1920 H.264 High `yuv420p` BT.709 with AAC, 90–100% of a 3 MB cap | `core-tests/fit_us4.rs` `an_upscale_to_a_device_shape_fits_its_cap` (CPU tier, blur reframe) | pass |
+| A tighter cap lowers the size after the preset's graph: 810x1440 within 1.2 MB | same | pass |
+| `--hdr keep` with `--fit` refused (a fit is SDR H.264) | `hdr_keep_and_fit_are_refused_together` | pass |
+| R7, the AI tier runs its pipeline in both passes; H.264 within the cap | `core-tests/us6_pipeline.rs` `a_fitted_ai_upscale_runs_the_pipeline_in_both_passes` (built-in nearest model) | pass |
+| FR-017, JSON `fit` at every level, `enabled: false`, sizes as text or bytes, unknown keys refused, whole videos | `manifest_json` unit test `fit_at_every_level` | pass |
+| CSV `fit`, `fit_max_size`, `fit_max_length`, `fit_allow_trim`, `none`, errors by line; CSV = JSON; round trip | `manifest_csv` unit tests `fit_columns`, `fit_csv_equals_json_and_round_trips` | pass |
+| A batch: top-level target, one override, one off; each output within its own cap; smart mode noted `SMART_NOT_APPLIED`, cut accurate | `fit_us4.rs` `a_batch_fits_each_clip_to_its_own_cap` | pass |
+| CLI: `upscale --fit` and `clip --upscale --fit` dry runs and a real run's result line; flag misuse and overrides exit 2 | `cli-tests/fit.rs` `upscales_can_be_fitted_from_the_cli` | pass |
+
+Not run here: the GPU tier's "same size class" check (no usable Vulkan device on this machine;
+the GPU tier shares the CPU tier's fit tail, `encode_tail`).
+
+Design notes: the fit lives on `UpscaleSpec.cut.fit` (one field for clips and upscales). A lowered
+size is a `scale` appended to the upscale graph's `[v]`, so every tier shares one tail. A trimmed
+upscale is planned again for the shorter range. The dry-run time estimate doubles in budget mode.
+`fit` with `gif` on one clip is refused by the planner (exit 3), as tested in US1.

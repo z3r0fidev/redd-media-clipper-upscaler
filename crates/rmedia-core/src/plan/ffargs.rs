@@ -1,5 +1,6 @@
 //! Pure ffmpeg argument builders (research.md R2/R3). Snapshot-tested.
 
+use crate::fit::plan::FitPlan;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -221,8 +222,25 @@ pub fn fit_args(spec: &ClipSpec, pass: FitPass, output: &Path) -> Vec<OsString> 
     vf.push("format=yuv420p".into());
     let fps_mode = if fit.resample_fps { "cfr" } else { "passthrough" };
     push(&["-fps_mode", fps_mode, "-vf", &vf.join(",")]);
+    fit_tail(fit, pass, audio, spec.trim, fit.tonemap.is_some(), &mut a, output);
+    a
+}
+
+/// A fit's encoder, rate control, audio and output (research R1, R6, R13), after the video
+/// filters: clips and upscales (every tier) share it. `bt709`: tag the output BT.709 (the frames
+/// were converted to it).
+fn fit_tail(
+    fit: &FitPlan,
+    pass: FitPass,
+    audio: bool,
+    trim: Option<Trim>,
+    bt709: bool,
+    a: &mut Vec<OsString>,
+    output: &Path,
+) {
+    let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
     push(&["-c:v", "libx264", "-preset", "medium", "-profile:v", "high", "-pix_fmt", "yuv420p"]);
-    if fit.tonemap.is_some() {
+    if bt709 {
         push(&[
             "-color_primaries",
             "bt709",
@@ -242,7 +260,7 @@ pub fn fit_args(spec: &ClipSpec, pass: FitPass, output: &Path) -> Vec<OsString> 
             let k = fit.video_kbps;
             push(&["-b:v", &kbps(k), "-maxrate", &kbps(k), "-bufsize", &kbps(k * 2), "-threads", "1"]);
             push(&["-pass", "1", "-passlogfile", FIT_PASSLOG, "-an", "-f", "null", "-"]);
-            return a;
+            return;
         }
         FitPass::Second { video_kbps: k } => {
             push(&["-b:v", &kbps(k), "-maxrate", &kbps(k), "-bufsize", &kbps(k * 2)]);
@@ -259,20 +277,25 @@ pub fn fit_args(spec: &ClipSpec, pass: FitPass, output: &Path) -> Vec<OsString> 
         if fit.downmix {
             push(&["-ac", "2"]);
         }
-        if let Some(t) = spec.trim {
+        if let Some(t) = trim {
             push(&["-af", &format!("atrim={},asetpts=PTS-STARTPTS", t.params())]);
         }
     }
     push(&["-tag:v", "avc1", "-movflags", "+faststart", "-f", "mp4"]);
     a.push(file_arg(output));
-    a
 }
 
 /// One-pass upscale: the clip's input and range, the upscale filtergraph for video, the clip's
 /// audio and subtitle streams, chapters and metadata, and the preset's encoder (research R2, R5).
 pub fn upscale_args(spec: &UpscaleSpec, output: &Path) -> Vec<OsString> {
+    upscale_pass_args(spec, None, output)
+}
+
+/// [`upscale_args`] for one pass of a fitted upscale (feature 005, research R7); `None`: the
+/// preset's own encode.
+pub fn upscale_pass_args(spec: &UpscaleSpec, pass: Option<FitPass>, output: &Path) -> Vec<OsString> {
     if spec.up.ai.is_some() {
-        return ai_args(spec, output).encode;
+        return ai_pass_args(spec, pass, output).encode;
     }
     let (cut, up) = (&spec.cut, &spec.up);
     let mut a = common_args();
@@ -287,7 +310,7 @@ pub fn upscale_args(spec: &UpscaleSpec, output: &Path) -> Vec<OsString> {
     }
     a.extend(input_args(cut));
     a.extend(["-filter_complex".into(), OsString::from(graph::build(&up.graph))]);
-    encode_tail(spec, &mut a, output);
+    encode_tail(spec, pass, &mut a, output);
     a
 }
 
@@ -303,6 +326,11 @@ pub struct AiArgs {
 
 /// The AI pipeline of an AI-tier job. Panics if the job has no AI engine (`up.ai`).
 pub fn ai_args(spec: &UpscaleSpec, output: &Path) -> AiArgs {
+    ai_pass_args(spec, None, output)
+}
+
+/// [`ai_args`] for one pass of a fitted upscale: the whole pipeline runs in each pass (R7).
+pub fn ai_pass_args(spec: &UpscaleSpec, pass: Option<FitPass>, output: &Path) -> AiArgs {
     let (cut, up) = (&spec.cut, &spec.up);
     let engine = up.ai.as_ref().expect("an AI-tier job has its engine");
     let stage = crate::upscale::ai::stage(&up.graph);
@@ -335,13 +363,16 @@ pub fn ai_args(spec: &UpscaleSpec, output: &Path) -> AiArgs {
     encode.extend(raw.into_iter().map(OsString::from));
     encode.extend(range);
     encode.extend(["-filter_complex".into(), OsString::from(graph::ai_finish(&up.graph, &stage, &rate))]);
-    encode_tail(spec, &mut encode, output);
+    encode_tail(spec, pass, &mut encode, output);
     AiArgs { decode, worker, encode }
 }
 
 /// Everything after the filtergraph: the video label, the clip's other streams, chapters and
 /// metadata (from the source, input 0), the preset's encoder, audio, subtitles and the output.
-fn encode_tail(spec: &UpscaleSpec, a: &mut Vec<OsString>, output: &Path) {
+fn encode_tail(spec: &UpscaleSpec, pass: Option<FitPass>, a: &mut Vec<OsString>, output: &Path) {
+    if let (Some(fit), Some(pass)) = (&spec.cut.fit, pass) {
+        return fit_upscale_tail(spec, fit, pass, a, output);
+    }
     let (cut, up) = (&spec.cut, &spec.up);
     let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
     push(&["-map", "[v]"]);
@@ -374,6 +405,41 @@ fn encode_tail(spec: &UpscaleSpec, a: &mut Vec<OsString>, output: &Path) {
     }
     push(&["-movflags", "+faststart", "-f", "mp4"]);
     a.push(file_arg(output));
+}
+
+/// A fitted upscale's tail (feature 005, R7): the graph's `[v]`, scaled down further when the
+/// budget lowered the size (and resampled when the rate is above the target's), then the fit's
+/// encoder and audio. The upscale graph already converted to BT.709 SDR (a fit never keeps HDR).
+fn fit_upscale_tail(spec: &UpscaleSpec, fit: &FitPlan, pass: FitPass, a: &mut Vec<OsString>, output: &Path) {
+    let cut = &spec.cut;
+    let mut post = Vec::new();
+    if fit.resample_fps {
+        post.push(format!("fps={}/{}", fit.fps.0, fit.fps.1));
+    }
+    if fit.size != spec.up.target {
+        post.push(format!("scale={}:{}:flags=lanczos,setsar=1,format=yuv420p", fit.size.0, fit.size.1));
+    }
+    let label = if post.is_empty() {
+        "[v]"
+    } else {
+        // Extend the job's filtergraph (the last -filter_complex) with the extra steps.
+        let at = a.iter().rposition(|x| x == "-filter_complex").expect("an upscale has a filtergraph") + 1;
+        let mut graph = a[at].clone();
+        graph.push(format!(";[v]{}[vfit]", post.join(",")));
+        a[at] = graph;
+        "[vfit]"
+    };
+    let audio = pass != FitPass::First && fit.audio_kbps.is_some();
+    let mut push = |items: &[&str]| a.extend(items.iter().map(OsString::from));
+    push(&["-map", label]);
+    if audio {
+        for m in cut.streams.maps.iter().filter(|m| m.kind == StreamKind::Audio) {
+            push(&["-map", &format!("0:{}", m.index)]);
+        }
+    }
+    push(&["-map_metadata", "0", "-map_chapters", "-1"]);
+    push(&["-fps_mode", if fit.resample_fps { "cfr" } else { "passthrough" }]);
+    fit_tail(fit, pass, audio, cut.trim, true, a, output);
 }
 
 fn has(spec: &ClipSpec, kind: StreamKind) -> bool {

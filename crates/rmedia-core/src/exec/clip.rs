@@ -17,24 +17,13 @@ const ADJUST_TOLERANCE: Ts = Ts::from_micros(50_000);
 
 pub(super) async fn execute(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<JobMeasure> {
     if let Some(fit) = &spec.fit {
-        let attempts = super::fit::encode(spec, ctx).await?;
-        let of = if fit.mode == crate::fit::plan::Mode::Budget { 3 } else { 2 };
+        let of = super::fit::stages(fit) + 1;
+        let attempts = super::fit::encode(super::fit::FitJob::Clip(spec), ctx, 0, of, 0.9).await?;
         ctx.stage("verify", of, of, 0.1);
         let JobMeasure::Clip { actual, adjusted, smart, .. } = measure(spec, ctx, None).await? else {
             unreachable!("a clip job measures a clip")
         };
-        let last = *attempts.last().expect("at least one encode");
-        let outcome = crate::fit::FitOutcome {
-            bytes: last.bytes,
-            cap: fit.cap,
-            mode: fit.mode,
-            video_kbps: last.video_kbps,
-            audio_kbps: fit.audio_kbps,
-            attempts,
-            trimmed: fit.trimmed_from.is_some(),
-            size: fit.size,
-            fps: f64::from(fit.fps.0) / f64::from(fit.fps.1),
-        };
+        let outcome = super::fit::outcome(fit, attempts);
         return Ok(JobMeasure::Clip { actual, adjusted, smart, fit: Some(outcome) });
     }
     let Some(plan) = &spec.smart else {

@@ -135,9 +135,7 @@ impl Output {
             if let JobSpec::Gif(g) = &j.spec {
                 gif_lines(&g.gif);
             }
-            if let JobSpec::Clip(c) = &j.spec
-                && let Some(f) = &c.fit
-            {
+            if let Some(f) = job_fit(&j.spec) {
                 println!("     {}", fit_line(f));
             }
             if let Some(s) = &j.smart {
@@ -216,8 +214,9 @@ impl Output {
                     }
                     println!("✓ {}{note}", output.display());
                 }
-                JobOutcome::Succeeded { output, measure: JobMeasure::Upscale { .. } } => {
-                    println!("✓ {}", output.display());
+                JobOutcome::Succeeded { output, measure: JobMeasure::Upscale { fit, .. } } => {
+                    let note = fit.as_ref().map(|f| format!("  {}", fit_note(f))).unwrap_or_default();
+                    println!("✓ {}{note}", output.display());
                 }
                 JobOutcome::Succeeded {
                     output,
@@ -479,9 +478,7 @@ fn job_doc(j: &PlannedJob) -> Value {
             m.insert("cwd".into(), json!(lossy(cwd)));
         }
     }
-    if let JobSpec::Clip(c) = &j.spec
-        && let Some(f) = &c.fit
-    {
+    if let Some(f) = job_fit(&j.spec) {
         m.insert("fit".into(), f.to_json());
     }
     if let JobSpec::Gif(g) = &j.spec {
@@ -491,6 +488,15 @@ fn job_doc(j: &PlannedJob) -> Value {
         m.insert("pipeline".into(), json!(pipeline));
     }
     v
+}
+
+/// A clip's or an upscale's fit (feature 005).
+fn job_fit(spec: &JobSpec) -> Option<&rmedia_core::fit::plan::FitPlan> {
+    match spec {
+        JobSpec::Clip(c) => c.fit.as_ref(),
+        JobSpec::Upscale(u) => u.cut.fit.as_ref(),
+        JobSpec::Gif(_) => None,
+    }
 }
 
 /// The dry run's fit line (contracts/cli.md › Dry run), e.g.

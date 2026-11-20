@@ -8,20 +8,24 @@ set at every level (`defaults`, a video, a clip), and each level overrides the o
 
 ```json
 {
+  "version": 1,
   "defaults": { "fit": { "target": "reddit-video" } },
   "videos": [
     {
-      "path": "talk.mp4",
+      "input": "talk.mp4",
       "clips": [
         { "start": "00:10", "end": "03:10" },
-        { "start": "05:00", "end": "25:00", "fit": { "allow_trim": true } },
-        { "start": "30:00", "end": "31:00", "fit": { "target": "sub-50mb", "max_size": "40MB" } },
-        { "start": "40:00", "end": "41:00", "fit": { "enabled": false } }
+        { "start": "05:00", "end": "25:00", "options": { "fit": { "allow_trim": true } } },
+        { "start": "30:00", "end": "31:00", "options": { "fit": { "target": "sub-50mb", "max_size": "40MB" } } },
+        { "start": "40:00", "end": "41:00", "options": { "fit": { "enabled": false } } }
       ]
-    }
+    },
+    { "input": "short.mp4" }
   ]
 }
 ```
+
+A video without `clips` is one whole-video job when a fit (or upscaling, or GIF export) is on.
 
 | Key | Type | Notes |
 |---|---|---|
@@ -37,8 +41,13 @@ set at every level (`defaults`, a video, a clip), and each level overrides the o
 ## CSV
 
 The new columns are `fit` (a target id, or `none`), `fit_max_size`, `fit_max_length` and
-`fit_allow_trim` (`true`/`false`). An empty cell inherits. The defaults row and the row order work
-as for the GIF columns, and a CSV and its equivalent JSON give identical plans (a test checks it).
+`fit_allow_trim` (`true`/`false`). An empty cell inherits (from the command line's `--fit` flags),
+`none` turns the fit off and cannot be combined with the other `fit_*` cells, and a row with a fit
+and no times is the whole video. The writer adds the four columns only when some row has a fit. A
+CSV and its equivalent JSON give the same requests (a test checks it).
+
+`batch --fit TARGET` (with `--fit-max-size`, `--fit-max-length`, `--fit-allow-trim`) fits every
+clip the manifest does not turn the fit off for; the manifest's own `fit` values win.
 
 ## Round trip
 

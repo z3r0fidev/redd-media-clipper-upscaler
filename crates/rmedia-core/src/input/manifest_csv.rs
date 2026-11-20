@@ -10,7 +10,7 @@ use crate::request::{BatchRequest, ClipRequest, Mode, Options, Origin, PartialOp
 use crate::time::{EndSpec, Ts};
 use crate::upscale::{MAX_CRF, PartialUpscale};
 
-const COLUMNS: [&str; 30] = [
+const COLUMNS: [&str; 34] = [
     "input",
     "start",
     "end",
@@ -41,6 +41,10 @@ const COLUMNS: [&str; 30] = [
     "gif_optimise",
     "gif_strict_engine",
     "smart_fallback",
+    "fit",
+    "fit_max_size",
+    "fit_max_length",
+    "fit_allow_trim",
 ];
 
 /// Columns a plain 001 manifest has; the `upscale_*` and `gif_*` ones are written only when
@@ -50,7 +54,9 @@ const CLIP_COLUMNS: usize = 7;
 const GIF_COLUMNS: usize = CLIP_COLUMNS + 6;
 /// Where the `gif_*` columns end (`smart_fallback`, feature 004, follows them).
 const GIF_END: usize = GIF_COLUMNS + 16;
-const _: () = assert!(GIF_END + 1 == COLUMNS.len());
+/// Where the `fit*` columns start (feature 005, after `smart_fallback`).
+const FIT_COLUMNS: usize = GIF_END + 1;
+const _: () = assert!(FIT_COLUMNS + 4 == COLUMNS.len());
 /// `mode`'s place among the clip columns.
 const MODE_COLUMN: usize = 5;
 
@@ -99,7 +105,8 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
     // `start` may be left out when the rows can be whole videos (upscaling, GIF export).
     let can_be_whole = cli.upscale.is_some()
         || cli.gif.is_some()
-        || headers.iter().any(|h| h.starts_with("upscale_") || h.starts_with("gif_"));
+        || cli.fit.is_some()
+        || headers.iter().any(|h| h.starts_with("upscale_") || h.starts_with("gif_") || h.starts_with("fit"));
     for required in ["input", "start"] {
         let optional = required == "start" && can_be_whole;
         if !optional && !headers.iter().any(|h| h == required) {
@@ -116,6 +123,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
     let c_up: Vec<Option<usize>> = COLUMNS[CLIP_COLUMNS..GIF_COLUMNS].iter().map(|c| col(c)).collect();
     let c_gif: Vec<Option<usize>> = COLUMNS[GIF_COLUMNS..GIF_END].iter().map(|c| col(c)).collect();
     let c_smart = col("smart_fallback");
+    let c_fit: Vec<Option<usize>> = COLUMNS[FIT_COLUMNS..].iter().map(|c| col(c)).collect();
 
     let mut sources: Vec<SourceRequest> = Vec::new();
     for record in rdr.records() {
@@ -139,10 +147,16 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
         };
         let upscale = upscale_cells(&c_up.iter().map(|&c| get(c)).collect::<Vec<_>>(), &mut row_issues);
         let gif = gif_cells(&c_gif.iter().map(|&c| get(c)).collect::<Vec<_>>(), &mut row_issues);
-        // A row with upscaling or GIF export on and no times is the whole video.
-        let on = PartialOptions { upscale: upscale.clone(), gif: gif.clone(), ..PartialOptions::default() }
-            .apply(cli);
-        let upscaling = on.upscale.is_some() || on.gif.is_some();
+        let fit = fit_cells(&c_fit.iter().map(|&c| get(c)).collect::<Vec<_>>(), &mut row_issues);
+        // A row with upscaling, GIF export or a fit on and no times is the whole video.
+        let on = PartialOptions {
+            upscale: upscale.clone(),
+            gif: gif.clone(),
+            fit: fit.clone(),
+            ..PartialOptions::default()
+        }
+        .apply(cli);
+        let upscaling = on.upscale.is_some() || on.gif.is_some() || on.fit.is_some();
         let no_times = get(c_start).is_none() && get(c_end).is_none() && get(c_dur).is_none();
         let start = match get(c_start).map(Ts::parse) {
             Some(Ok(t)) => Some(t),
@@ -201,6 +215,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
                 output_dir: get(c_out).map(|o| resolve(&base, Path::new(o))),
                 upscale,
                 gif,
+                fit,
                 ..PartialOptions::default()
             },
             origin: Origin::Line { file: path.to_path_buf(), line },
@@ -402,6 +417,62 @@ fn gif_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<crate::
     })
 }
 
+/// The row's `fit*` cells (feature 005, contracts/manifest-fit.md): `fit` is a target id or
+/// `none` (turns an inherited fit off); any non-empty cell turns a fit on. `None` = all empty.
+fn fit_cells(cells: &[Option<&str>], issues: &mut Vec<String>) -> Option<crate::fit::PartialFit> {
+    use crate::fit::PartialFit;
+    if cells.iter().all(Option::is_none) {
+        return None;
+    }
+    let [target, max_size, max_length, trim] = cells else { unreachable!("four fit columns") };
+    if target.is_some_and(|t| t.eq_ignore_ascii_case("none")) {
+        if cells[1..].iter().any(Option::is_some) {
+            issues.push("fit=none cannot be combined with other fit_* values".into());
+        }
+        return Some(PartialFit { enabled: Some(false), ..PartialFit::default() });
+    }
+    let max_size = max_size.and_then(|v| {
+        crate::fit::parse_size(v).map(|b| Some(Some(b))).unwrap_or_else(|e| {
+            issues.push(format!("fit_max_size: {e}"));
+            None
+        })
+    });
+    let max_length = max_length.and_then(|v| match Ts::parse(v) {
+        Ok(t) if t > Ts::ZERO => Some(Some(t)),
+        _ => {
+            issues.push(format!("fit_max_length must be a duration such as 5:00 or 300, not {v:?}"));
+            None
+        }
+    });
+    let allow_trim = trim.and_then(|v| match v.to_ascii_lowercase().as_str() {
+        "true" | "yes" | "1" => Some(true),
+        "false" | "no" | "0" => Some(false),
+        other => {
+            issues.push(format!("fit_allow_trim must be true or false (yes/no, 1/0), not {other:?}"));
+            None
+        }
+    });
+    Some(PartialFit { enabled: None, target: target.map(str::to_owned), max_size, max_length, allow_trim })
+}
+
+/// The `fit*` cells of a row resolved to `f` (written in full; `none` when off).
+fn fit_row(f: Option<&crate::fit::FitOptions>) -> [String; 4] {
+    match f {
+        None => ["none".into(), String::new(), String::new(), String::new()],
+        Some(f) => [
+            f.target.clone(),
+            f.max_size.map(|b| b.to_string()).unwrap_or_default(),
+            f.max_length
+                .map(|t| match time_value(t) {
+                    serde_json::Value::String(s) => s,
+                    v => v.to_string(),
+                })
+                .unwrap_or_default(),
+            f.allow_trim.to_string(),
+        ],
+    }
+}
+
 /// The `gif_*` cells of a row with GIF export resolved to `g` (written in full, as for upscale).
 fn gif_row(g: Option<&crate::gif::GifOptions>) -> Vec<String> {
     let Some(g) = g else {
@@ -483,6 +554,7 @@ pub fn write(req: &BatchRequest) -> String {
         |f: &dyn Fn(&Options) -> bool| req.sources.iter().any(|s| s.clips.iter().any(|c| f(&resolved(s, c))));
     let upscaled = any(&|o| o.upscale.is_some());
     let gifs = any(&|o| o.gif.is_some());
+    let fits = any(&|o| o.fit.is_some());
     // Feature 004: only when some row is strict, right after `mode` (plain exports unchanged).
     let strict = any(&|o| !o.smart_fallback);
     let mut columns: Vec<&str> = COLUMNS[..CLIP_COLUMNS].to_vec();
@@ -494,6 +566,9 @@ pub fn write(req: &BatchRequest) -> String {
     }
     if gifs {
         columns.extend(&COLUMNS[GIF_COLUMNS..GIF_END]);
+    }
+    if fits {
+        columns.extend(&COLUMNS[FIT_COLUMNS..]);
     }
     let mut w = csv::Writer::from_writer(Vec::new());
     let _ = w.write_record(&columns);
@@ -545,6 +620,9 @@ pub fn write(req: &BatchRequest) -> String {
             }
             if gifs {
                 row.extend(gif_row(o.gif.as_ref()));
+            }
+            if fits {
+                row.extend(fit_row(o.fit.as_ref()));
             }
             let _ = w.write_record(&row);
         }
@@ -827,6 +905,74 @@ mod tests {
                 assert_eq!((x.start, x.end, &x.name), (y.start, y.end, &y.name));
                 assert_eq!(x.overrides.output_dir, y.overrides.output_dir);
             }
+        }
+    }
+
+    fn fit_of(req: &BatchRequest, v: usize, c: usize) -> Option<crate::fit::FitOptions> {
+        let src = &req.sources[v];
+        src.clips[c].overrides.apply(&src.overrides.apply(&req.defaults)).fit
+    }
+
+    /// T035: the `fit*` columns, `fit=none`, errors by line, and a whole-video row.
+    #[test]
+    fn fit_columns() {
+        let text = "input,start,end,fit,fit_max_size,fit_max_length,fit_allow_trim\n\
+                    a.mp4,0,10,reddit-video,,,\n\
+                    a.mp4,10,20,sub-50mb,40MB,5:00,true\n\
+                    a.mp4,20,30,none,,,\n\
+                    b.mp4,,,reddit-video,,,\n";
+        let req = parse(Path::new("/m/m.csv"), text, &Options::default()).unwrap();
+        let f = fit_of(&req, 0, 0).unwrap();
+        assert_eq!((f.target.as_str(), f.max_size, f.allow_trim), ("reddit-video", None, false));
+        let f = fit_of(&req, 0, 1).unwrap();
+        assert_eq!(
+            (f.target.as_str(), f.max_size, f.max_length, f.allow_trim),
+            ("sub-50mb", Some(40_000_000), Some(s(300.0)), true)
+        );
+        assert_eq!(fit_of(&req, 0, 2), None);
+        assert_eq!(req.sources[1].clips[0].end, EndSpec::EndOfMedia, "a fit row without times is whole");
+        // Inherited from the command line, and turned off by `none`.
+        let cli = Options { fit: Some(crate::fit::FitOptions::default()), ..Options::default() };
+        let req =
+            parse(Path::new("/m/m.csv"), "input,start,end,fit\na.mp4,0,1,\na.mp4,1,2,none\n", &cli).unwrap();
+        assert!(fit_of(&req, 0, 0).is_some() && fit_of(&req, 0, 1).is_none());
+
+        let bad = "input,start,end,fit,fit_max_size,fit_max_length,fit_allow_trim\n\
+                   a.mp4,0,1,none,5MB,,\n\
+                   a.mp4,0,1,x,lots,,\n\
+                   a.mp4,0,1,x,,never,\n\
+                   a.mp4,0,1,x,,,maybe\n";
+        let err = parse(Path::new("/m/m.csv"), bad, &Options::default()).unwrap_err();
+        let lines: Vec<_> = err
+            .iter()
+            .map(|i| match i.origin {
+                Origin::Line { line, .. } => line,
+                _ => 0,
+            })
+            .collect();
+        assert_eq!(lines, [2, 3, 4, 5], "{err:?}");
+    }
+
+    /// T035: a CSV and its equivalent JSON give the same requests, and fit rows round-trip.
+    #[test]
+    fn fit_csv_equals_json_and_round_trips() {
+        let csv = "input,start,end,fit,fit_max_size,fit_max_length,fit_allow_trim\n\
+                   /v/a.mp4,0,10,reddit-video,,,\n\
+                   /v/a.mp4,10,20,sub-50mb,40000000,60,true\n\
+                   /v/a.mp4,20,30,none,,,\n";
+        let json = r#"{ "version": 1, "videos": [ { "input": "/v/a.mp4", "clips": [
+            { "start": 0, "end": 10, "options": { "fit": { "target": "reddit-video" } } },
+            { "start": 10, "end": 20, "options": { "fit": { "target": "sub-50mb", "max_size": "40MB", "max_length": 60, "allow_trim": true } } },
+            { "start": 20, "end": 30, "options": { "fit": { "enabled": false } } } ] } ] }"#;
+        let a = parse(Path::new("/m/m.csv"), csv, &Options::default()).unwrap();
+        let b =
+            crate::input::manifest_json::parse(Path::new("/m/m.json"), json, &Options::default()).unwrap();
+        for c in 0..3 {
+            assert_eq!(fit_of(&a, 0, c), fit_of(&b, 0, c), "clip {c}");
+        }
+        let again = parse(Path::new("/m/m.csv"), &write(&a), &Options::default()).unwrap();
+        for c in 0..3 {
+            assert_eq!(fit_of(&again, 0, c), fit_of(&a, 0, c), "round trip, clip {c}");
         }
     }
 }

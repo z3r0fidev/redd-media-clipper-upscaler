@@ -72,7 +72,7 @@ pub enum Command {
     /// Make videos phone-ready: upscale and reframe to a device preset (default 1080x2340).
     Upscale(Box<UpscaleArgs>),
     /// Run a batch manifest (.json or .csv) listing many videos and their clips.
-    Batch(BatchArgs),
+    Batch(Box<BatchArgs>),
     /// Find the videos in folders (recursively) and list them.
     Scan(ScanArgs),
     /// Show the video engine in use and its capabilities.
@@ -158,6 +158,9 @@ pub struct UpscaleArgs {
     /// With --dry-run, skip the smart-reframe analysis (the crop path is shown as pending).
     #[arg(long)]
     pub no_analyze: bool,
+    /// Fit each upscaled video to a video target's size cap and length limit (feature 005).
+    #[command(flatten)]
+    pub fit: FitFlags,
     #[command(flatten)]
     pub common: CommonArgs,
 }
@@ -686,6 +689,10 @@ pub struct BatchArgs {
     /// GIF settings for the clips that are GIFs, under the manifest's own values.
     #[command(flatten)]
     pub gifo: GifFlags,
+    /// Fit every clip the manifest does not turn the fit off for (feature 005); the manifest's
+    /// own `fit` values win.
+    #[command(flatten)]
+    pub fit: FitFlags,
     /// Show what would be done without writing anything.
     #[arg(long)]
     pub dry_run: bool,

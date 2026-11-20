@@ -34,7 +34,11 @@ fallback_ranges: Array<Span>,
 /**
  * The source was already at or above the target size (FR-005).
  */
-no_upscale_needed: boolean, } | { "measure": "gif", span: Span, format: GifFormat, bytes: number, width: number, height: number, fps: number, timing: GifTiming, 
+no_upscale_needed: boolean, 
+/**
+ * What a fitted upscale measured (feature 005); absent unless it was fitted.
+ */
+fit?: FitOutcome, } | { "measure": "gif", span: Span, format: GifFormat, bytes: number, width: number, height: number, fps: number, timing: GifTiming, 
 /**
  * Palette size, dithering and gifsicle lossy level (built-in engine only).
  */

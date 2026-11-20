@@ -305,31 +305,31 @@ per-level targets.
 
 ### Tests for User Story 4 (write first)
 
-- [ ] T034 [P] [US4] `core-tests/fit_us4.rs`: `--preset reddit-916` with `reddit-video` gives
+- [X] T034 [P] [US4] `core-tests/fit_us4.rs`: `--preset reddit-916` with `reddit-video` gives
   1080×1920, reframed as 002 does, within a 15 MB cap. The preset's `limits` and
   `maxrate_for_limit` are not applied. On the GPU tier, when available (`require_engine!`), the
   two passes give the same size class.
-- [ ] T035 [P] [US4] `core/input/manifest_json.rs` and `core/input/manifest_csv.rs` unit tests:
+- [X] T035 [P] [US4] `core/input/manifest_json.rs` and `core/input/manifest_csv.rs` unit tests:
   - `fit` at every level, including `enabled: false` and `max_size` as a string or a number;
   - unknown keys refused;
   - `fit` with `gif` on one clip refused (exit 3);
   - the CSV columns `fit`, `fit_max_size`, `fit_max_length` and `fit_allow_trim`;
   - `fit = none`;
   - CSV and JSON give equal plans.
-- [ ] T036 [P] [US4] `core-tests/fit_us4.rs`: a batch of 4 clips with the target at the top
+- [X] T036 [P] [US4] `core-tests/fit_us4.rs`: a batch of 4 clips with the target at the top
   level, one override and one `enabled: false`. Every fitted output is within its own cap, and
   the unfitted one is unchanged. With `--mode smart`, `SMART_NOT_APPLIED` is noted and the cut is
   accurate.
 
 ### Implementation for User Story 4
 
-- [ ] T037 [US4] `core/plan/planner.rs` and `core/upscale/`:
-  - put a fit on `UpscaleSpec` (`UpscaleSpec.fit`), with the preset's size and fps as the
-    planner's input;
+- [X] T037 [US4] `core/plan/planner.rs` and `core/upscale/`:
+  - put a fit on `UpscaleSpec` (as `UpscaleSpec.cut.fit`: the upscale's `ClipSpec` carries it,
+    one field for both job kinds), with the preset's size and fps as the planner's input;
   - `core/plan/ffargs.rs` `upscale_args` takes the fit's rate control and audio;
   - `core/exec/upscale.rs` calls `exec::fit::encode`;
   - the AI tier runs the pipeline in both passes (R7), and the dry-run time estimate doubles.
-- [ ] T038 [US4] Manifests:
+- [X] T038 [US4] Manifests:
   - `core/input/manifest_json.rs`: the `fit` object;
   - `core/input/manifest_csv.rs`: the four columns;
   - `cli/commands/{upscale,batch}.rs`: `FitFlags`.

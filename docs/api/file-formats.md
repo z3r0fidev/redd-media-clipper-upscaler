@@ -173,7 +173,7 @@ This writes `upscaled/low_phone-fill.mp4` (1080x2340), `clips/land_001_pan_reddi
   `"enabled": false`. Fields layer defaults < video < clip, one by one; unknown fields are
   rejected.
 - A video without `clips` is valid only when upscaling is on for it; otherwise the error is at
-  `videos[i]`: `no clips for this video (list clips, or turn upscaling on to process the whole video)`.
+  `videos[i]`: `no clips for this video (list clips, or turn upscaling, GIF export or a fit on to process the whole video)`.
 - `mode` does not apply to upscaled jobs. A `container` other than `mp4` that the manifest sets
   for an upscaled job is an error at the object that set it, for example
   `videos[3].options.container: upscaled outputs are always .mp4; container "mov" cannot be used`.

@@ -6,39 +6,72 @@ use super::JobCtx;
 use crate::error::{Error, Result};
 use crate::fit::FitAttempt;
 use crate::fit::plan::{FitPlan, MARGIN, Mode};
-use crate::plan::ffargs::{ClipSpec, FitPass, fit_args};
+use crate::plan::ffargs::{ClipSpec, FitPass, ai_pass_args, fit_args, upscale_pass_args};
 use crate::time::Ts;
+use crate::upscale::UpscaleSpec;
 
 /// At most this many re-encodes after the first (FR-010).
 pub(crate) const MAX_RETRIES: usize = 3;
 
-/// Budget mode's stages and weights (contracts/json-output.md › Progress).
-const BUDGET_STAGES: [(&str, f64); 3] = [("pass1", 0.45), ("pass2", 0.45), ("verify", 0.10)];
-const QUALITY_STAGES: [(&str, f64); 2] = [("encode", 0.9), ("verify", 0.1)];
+/// What a fit encodes: a clip, or an upscale on any tier (research R7).
+#[derive(Clone, Copy)]
+pub(super) enum FitJob<'a> {
+    Clip(&'a ClipSpec),
+    Upscale(&'a UpscaleSpec),
+}
 
-/// Encodes `spec` (which has a fit) into the job's temp file, measuring and retrying until it is
-/// at most the cap. Returns every attempt; the last one is what the temp file holds. The caller
-/// enters the `verify` stage and verifies.
-pub(super) async fn encode(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<Vec<FitAttempt>> {
-    let fit = spec.fit.as_ref().expect("a fit job");
+impl<'a> FitJob<'a> {
+    fn cut(self) -> &'a ClipSpec {
+        match self {
+            FitJob::Clip(c) => c,
+            FitJob::Upscale(u) => &u.cut,
+        }
+    }
+
+    fn fit(self) -> &'a FitPlan {
+        self.cut().fit.as_ref().expect("a fit job")
+    }
+}
+
+/// The encode stages of a fit (contracts/json-output.md › Progress): `pass1`, `pass2` in budget
+/// mode, `encode` in quality mode. The caller's `verify` stage comes after them.
+pub(super) fn stages(fit: &FitPlan) -> u32 {
+    match fit.mode {
+        Mode::Budget => 2,
+        Mode::Quality => 1,
+    }
+}
+
+/// Encodes `job` (which has a fit) into the job's temp file, measuring and retrying until it is
+/// at most the cap. Returns every attempt; the last one is what the temp file holds. Its stages
+/// are numbered after `before` earlier ones, out of `of`, and take `share` of the progress; the
+/// caller enters the `verify` stage and verifies.
+pub(super) async fn encode(
+    job: FitJob<'_>,
+    ctx: &mut JobCtx<'_>,
+    before: u32,
+    of: u32,
+    share: f64,
+) -> Result<Vec<FitAttempt>> {
+    let fit = job.fit();
     let scratch = ctx.scratch_dir().expect("fit jobs have a scratch folder").to_path_buf();
     let total = Ts::from_secs_f64(fit.len);
     let temp = ctx.temp.to_path_buf();
     let mut attempts = Vec::new();
     let mut pass = match fit.mode {
         Mode::Budget => {
-            ctx.stage(BUDGET_STAGES[0].0, 1, 3, BUDGET_STAGES[0].1);
-            run(ctx, spec, FitPass::First, &scratch, total).await?;
-            ctx.stage(BUDGET_STAGES[1].0, 2, 3, BUDGET_STAGES[1].1);
+            ctx.stage("pass1", before + 1, of, share / 2.0);
+            run(ctx, job, FitPass::First, &scratch, total).await?;
+            ctx.stage("pass2", before + 2, of, share / 2.0);
             FitPass::Second { video_kbps: fit.video_kbps }
         }
         Mode::Quality => {
-            ctx.stage(QUALITY_STAGES[0].0, 1, 2, QUALITY_STAGES[0].1);
+            ctx.stage("encode", before + 1, of, share);
             FitPass::Quality
         }
     };
     loop {
-        run(ctx, spec, pass, &scratch, total).await?;
+        run(ctx, job, pass, &scratch, total).await?;
         let bytes = measured(&temp, fit.cap)?;
         let video_kbps = match pass {
             FitPass::Second { video_kbps } => video_kbps,
@@ -58,11 +91,11 @@ pub(super) async fn encode(spec: &ClipSpec, ctx: &mut JobCtx<'_>) -> Result<Vec<
         // Over the cap: pass 2 again, lower (research R2). A quality pass that overshot falls
         // back to budget mode, which needs pass 1's stats first.
         if pass == FitPass::Quality {
-            run(ctx, spec, FitPass::First, &scratch, total).await?;
+            run(ctx, job, FitPass::First, &scratch, total).await?;
         }
         remove(&temp).await;
         pass = FitPass::Second { video_kbps: next };
-        ctx.restart_stage("pass2", 2, 3);
+        ctx.restart_stage("pass2", before + 2, of);
     }
 }
 
@@ -83,17 +116,42 @@ pub(crate) fn retry_kbps(fit: &FitPlan, video_kbps: u32, bytes: u64) -> u32 {
 
 async fn run(
     ctx: &mut JobCtx<'_>,
-    spec: &ClipSpec,
+    job: FitJob<'_>,
     pass: FitPass,
     scratch: &std::path::Path,
     total: Ts,
 ) -> Result<()> {
-    let args = fit_args(spec, pass, ctx.temp);
+    let args = match job {
+        FitJob::Clip(spec) => fit_args(spec, pass, ctx.temp),
+        FitJob::Upscale(spec) if spec.up.ai.is_some() => {
+            // The AI tier runs its whole pipeline in each pass (R7).
+            let engine = spec.up.ai.as_ref().expect("checked");
+            let args = ai_pass_args(spec, Some(pass), ctx.temp);
+            return super::pipeline::run(ctx, &engine.worker, &args, Some(scratch), total).await;
+        }
+        FitJob::Upscale(spec) => upscale_pass_args(spec, Some(pass), ctx.temp),
+    };
     let out = ctx.run_ffmpeg_in(Some(scratch), &args, total).await?;
     if out.status.success() {
         Ok(())
     } else {
         Err(super::clip::classify_failure(&out.stderr_tail, ctx.output))
+    }
+}
+
+/// The job outcome's fit block from the plan and the attempts.
+pub(super) fn outcome(fit: &FitPlan, attempts: Vec<FitAttempt>) -> crate::fit::FitOutcome {
+    let last = *attempts.last().expect("at least one encode");
+    crate::fit::FitOutcome {
+        bytes: last.bytes,
+        cap: fit.cap,
+        mode: fit.mode,
+        video_kbps: last.video_kbps,
+        audio_kbps: fit.audio_kbps,
+        attempts,
+        trimmed: fit.trimmed_from.is_some(),
+        size: fit.size,
+        fps: fit.fps_f64(),
     }
 }
 

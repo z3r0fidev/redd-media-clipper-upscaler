@@ -91,9 +91,9 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
     for (vi, v) in raw.videos.into_iter().enumerate() {
         let vpath = format!("videos[{vi}]");
         let video_own = v.options.apply(&own);
-        // A video without clips is one whole-video job when upscaling or GIF export is on.
+        // A video without clips is one whole-video job when upscaling, GIF export or a fit is on.
         let on = v.options.apply(&defaults);
-        let whole = v.clips.is_none() && (on.upscale.is_some() || on.gif.is_some());
+        let whole = v.clips.is_none() && (on.upscale.is_some() || on.gif.is_some() || on.fit.is_some());
         let raw_clips = match v.clips {
             Some(c) if c.is_empty() => {
                 issues.push(issue(path, &format!("{vpath}.clips"), "no clips for this video".into()));
@@ -105,7 +105,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
                 issues.push(issue(
                     path,
                     &vpath,
-                    "no clips for this video (list clips, or turn upscaling on to process the whole video)"
+                    "no clips for this video (list clips, or turn upscaling, GIF export or a fit on to process the whole video)"
                         .into(),
                 ));
                 Vec::new()
@@ -454,7 +454,7 @@ mod tests {
             {"input":"d.mp4","clips":[]}]}"#;
         let err = parse(Path::new("j.json"), text, &Options::default()).unwrap_err();
         assert_eq!(paths(&err), ["videos[0]", "videos[1]", "videos[3].clips"]);
-        assert!(err[0].message.contains("turn upscaling on"), "{}", err[0].message);
+        assert!(err[0].message.contains("turn upscaling, GIF export or a fit on"), "{}", err[0].message);
         // Turned on from the command line (`batch --upscale`), a bare video is whole-file.
         let cli = Options { upscale: Some(crate::upscale::UpscaleOptions::default()), ..Options::default() };
         let req = parse(Path::new("j.json"), r#"{"version":1,"videos":[{"input":"a.mp4"}]}"#, &cli).unwrap();
@@ -566,5 +566,36 @@ mod tests {
         }
         let odd = Ts::from_micros(1_234_567);
         assert_eq!(time_value(odd), serde_json::json!(1.234567));
+    }
+
+    /// T035: `fit` at every level, with `enabled: false`, sizes as text or a number, and whole
+    /// videos; unknown keys are refused.
+    #[test]
+    fn fit_at_every_level() {
+        let text = r#"{ "version": 1, "defaults": { "fit": { "target": "reddit-video" } },
+          "videos": [ { "input": "talk.mp4", "clips": [
+                          { "start": 10, "end": 190 },
+                          { "start": 300, "end": 1500, "options": { "fit": { "allow_trim": true } } },
+                          { "start": 1800, "end": 1860, "options": { "fit": { "target": "sub-50mb", "max_size": "40MB" } } },
+                          { "start": 2400, "end": 2460, "options": { "fit": { "max_size": 8000000, "max_length": "1:00" } } },
+                          { "start": 2500, "end": 2560, "options": { "fit": { "enabled": false } } } ] },
+                      { "input": "whole.mp4" } ] }"#;
+        let req = parse(Path::new("/m/m.json"), text, &Options::default()).unwrap();
+        let fit = |c: usize| resolved(&req, 0, c).fit;
+        let f = fit(0).unwrap();
+        assert_eq!((f.target.as_str(), f.max_size, f.allow_trim), ("reddit-video", None, false));
+        assert!(fit(1).unwrap().allow_trim);
+        let f = fit(2).unwrap();
+        assert_eq!((f.target.as_str(), f.max_size), ("sub-50mb", Some(40_000_000)));
+        let f = fit(3).unwrap();
+        assert_eq!((f.max_size, f.max_length), (Some(8_000_000), Some(Ts::from_secs_f64(60.0))));
+        assert_eq!(fit(4), None, "enabled:false at the clip");
+        let whole = &req.sources[1].clips;
+        assert_eq!((whole.len(), whole[0].end), (1, EndSpec::EndOfMedia), "a fit makes a whole-video job");
+
+        let bad = r#"{ "version": 1, "videos": [ { "input": "a.mp4",
+          "clips": [ { "start": 1, "end": 2, "options": { "fit": { "target": "x", "colour": 3 } } } ] } ] }"#;
+        let err = parse(Path::new("/m/m.json"), bad, &Options::default()).unwrap_err();
+        assert!(err.iter().any(|i| i.message.contains("colour")), "{err:?}");
     }
 }

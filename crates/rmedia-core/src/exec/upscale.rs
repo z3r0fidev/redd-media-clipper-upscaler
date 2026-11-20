@@ -36,7 +36,14 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
             }
         }
     }
-    ctx.stage("render", of - 1, of, if analyse { 0.7 } else { 0.9 });
+    // A fit replaces the render stage with its passes (feature 005, research R7).
+    let fit_stages = spec.cut.fit.as_ref().map(super::fit::stages);
+    let of = of + fit_stages.map_or(0, |n| n - 1);
+    let share = if analyse { 0.7 } else { 0.9 };
+    let before = u32::from(analyse);
+    if fit_stages.is_none() {
+        ctx.stage("render", of - 1, of, share);
+    }
     if let (Some(a), Some(dir), Some(_)) = (spec.up.analysis(), ctx.scratch_dir(), spec.up.graph.track) {
         let files = if spec.up.ai.is_some() {
             // The AI tier moves the crop in ffmpeg #1 and switches the fallback in ffmpeg #2.
@@ -54,7 +61,9 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
         }
     }
     let mut tier_fallback = false;
-    if let Err(e) = render(&spec, ctx, total).await {
+    let mut attempts = None;
+    let first = render(&spec, ctx, total, before, of, share).await;
+    if let Err(e) = first.map(|a| attempts = a) {
         if !should_fall_back(&spec.up.tier, &e, ctx.cancel.is_cancelled()) {
             return Err(e);
         }
@@ -67,8 +76,10 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
         // ffmpeg never overwrites (`-n`): clear the failed attempt's output first.
         let _ = std::fs::remove_file(ctx.temp);
         spec.up = spec.up.with_tier_cpu("fallback: the GPU tier failed; the CPU tier");
-        ctx.restart_stage("render", of - 1, of);
-        render(&spec, ctx, total).await?;
+        if fit_stages.is_none() {
+            ctx.restart_stage("render", of - 1, of);
+        }
+        attempts = render(&spec, ctx, total, before, of, 0.0).await?;
         tier_fallback = true;
         // The CPU succeeded where the GPU failed, so the source is fine and the GPU is at fault:
         // remember it (SC-008). If the CPU had failed too, the source would be to blame.
@@ -96,11 +107,29 @@ pub(super) async fn execute(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>) -> Result<
         tier_fallback,
         fallback_ranges: spec.up.analysis().map_or_else(Vec::new, |a| a.fallback_ranges.clone()),
         no_upscale_needed: spec.up.geometry.no_upscale_needed,
+        fit: spec.cut.fit.as_ref().zip(attempts).map(|(f, a)| super::fit::outcome(f, a)),
     })
 }
 
-/// One render attempt in the scratch directory (so the graph can name its files relatively).
-async fn render(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>, total: Ts) -> Result<()> {
+/// One render attempt in the scratch directory (so the graph can name its files relatively). A
+/// fitted upscale encodes in passes with measuring and retries (`Some` attempts); its stages are
+/// numbered after `before`, out of `of`, with `share` of the progress.
+async fn render(
+    spec: &UpscaleSpec,
+    ctx: &mut JobCtx<'_>,
+    total: Ts,
+    before: u32,
+    of: u32,
+    share: f64,
+) -> Result<Option<Vec<crate::fit::FitAttempt>>> {
+    if spec.cut.fit.is_some() {
+        let job = super::fit::FitJob::Upscale(spec);
+        return super::fit::encode(job, ctx, before, of, share).await.map(Some);
+    }
+    render_once(spec, ctx, total).await.map(|()| None)
+}
+
+async fn render_once(spec: &UpscaleSpec, ctx: &mut JobCtx<'_>, total: Ts) -> Result<()> {
     let cwd = ctx.scratch_dir();
     if let Some(engine) = &spec.up.ai {
         let args = crate::plan::ffargs::ai_args(spec, ctx.temp);
@@ -122,24 +151,30 @@ pub(crate) fn should_fall_back(tier: &TierDecision, e: &Error, cancelled: bool) 
 /// stream count, colour tags and duration (data-model.md › Executor stages).
 pub(crate) fn verify(spec: &UpscaleSpec, info: &MediaInfo) -> std::result::Result<(), String> {
     let up = &spec.up;
+    let fit = spec.cut.fit.as_ref();
     let v = info.first_video().ok_or("the output has no video stream")?;
     let size = (v.width.unwrap_or(0), v.height.unwrap_or(0));
-    if size != up.target {
-        return Err(format!("output is {}x{}, expected {}x{}", size.0, size.1, up.target.0, up.target.1));
+    // A fit encodes H.264 SDR at its own (possibly lowered) size (feature 005).
+    let target = fit.map_or(up.target, |f| f.size);
+    if size != target {
+        return Err(format!("output is {}x{}, expected {}x{}", size.0, size.1, target.0, target.1));
     }
-    let pix = if up.graph.keep_hdr { "yuv420p10le" } else { "yuv420p" };
+    let keep_hdr = up.graph.keep_hdr && fit.is_none();
+    let pix = if keep_hdr { "yuv420p10le" } else { "yuv420p" };
     if v.pix_fmt.as_deref() != Some(pix) {
         return Err(format!("output pixel format is {:?}, expected {pix}", v.pix_fmt));
     }
     let codec = match up.preset.video.codec {
+        _ if fit.is_some() => "h264",
         VideoCodec::Hevc => "hevc",
         VideoCodec::H264 => "h264",
     };
     if v.codec != codec {
         return Err(format!("output codec is {}, expected {codec}", v.codec));
     }
-    if let Some(tag) = &up.preset.video.tag
-        && v.codec_tag.as_deref() != Some(tag.as_str())
+    let tag = if fit.is_some() { Some("avc1") } else { up.preset.video.tag.as_deref() };
+    if let Some(tag) = tag
+        && v.codec_tag.as_deref() != Some(tag)
     {
         return Err(format!("output is tagged {:?}, expected {tag}", v.codec_tag));
     }
@@ -157,13 +192,14 @@ pub(crate) fn verify(spec: &UpscaleSpec, info: &MediaInfo) -> std::result::Resul
         (_, None) => Ok(()),
         _ => Err(format!("output {field} is {got:?}, expected {expected:?}")),
     };
-    let expected = if up.graph.keep_hdr { up.colour_in.clone() } else { ColourTags::bt709() };
+    let expected = if keep_hdr { up.colour_in.clone() } else { ColourTags::bt709() };
     want("colour matrix", &v.color_space, &expected.space)?;
     want("colour primaries", &v.color_primaries, &expected.primaries)?;
     want("transfer", &v.color_transfer, &expected.transfer)?;
     want("colour range", &v.color_range, &Some("tv".to_owned()))?;
     if let (Some(expected), Some(got)) = (up.expected_video, v.duration.or(info.duration)) {
-        let frame = Ts::from_secs_f64(1.0 / up.fps_out.max(1.0));
+        let fps = fit.map_or(up.fps_out, |f| f.fps_f64());
+        let frame = Ts::from_secs_f64(1.0 / fps.max(1.0));
         let tolerance = frame + Ts::from_micros(50_000);
         let diff = if got > expected { got - expected } else { expected - got };
         if diff > tolerance {
