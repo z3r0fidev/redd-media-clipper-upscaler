@@ -379,7 +379,7 @@ identical to the CLI's.
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T044 [P] Docs:
+- [X] T044 [P] Docs:
   - `docs/api/cli-reference.md` (`--fit*`, `--list-fit-targets`, exit codes);
   - `docs/api/json-output.md` (the fit blocks);
   - `docs/reference/file-formats.md` (the manifest `fit` and video target files);
@@ -388,21 +388,33 @@ identical to the CLI's.
   - `docs/administration/configuration.md` (the `video-targets/` folder);
   - `docs/architecture/domains.md` (a 005 section);
   - `docs/security/security-model.md` (target files, `-passlogfile` in scratch).
-- [ ] T045 [P] Run quickstart.md end to end on Linux, and the Windows checks through CI and the
+
+  Done 2026-11-20. The file formats page is `docs/api/file-formats.md`. Also: troubleshooting
+  entries for every fit message, the glossary, `docs/README.md`, and the help blocks in the CLI
+  reference regenerated from the binary. Writing the docs found two bugs, fixed with tests: the
+  plan's `argv` (and `-v`) showed an accurate encode instead of the fit passes (now `pipeline`
+  lists every pass, with `cwd`), and `{target}` was refused in fit jobs' name templates.
+- [X] T045 [P] Run quickstart.md end to end on Linux, and the Windows checks through CI and the
   MinGW type-check; record every SC result in `checklists/validation.md`.
-- [ ] T046 Reviews, with findings recorded in `specs/005-budgeted-reddit-video/progress.md`:
+- [X] T046 Reviews, with findings recorded in `specs/005-budgeted-reddit-video/progress.md`:
   - a senior code review of `core/fit/`, `core/exec/fit.rs` and the planner changes;
   - a security review (target files read capped, ids validated, scratch-relative pass files, no
     shell).
 
   Fix the highs and mediums.
-- [ ] T047 Release prep:
+
+  Done 2026-11-20 (self-review; `progress.md`): no high; two mediums (the dry run's fit
+  commands, `{target}` in fit names) and two lows fixed with tests; one low kept and documented;
+  no security finding.
+- [X] T047 Release prep:
   - version 0.5.0 in the manifests;
   - `docs/releases/0.5.0.md`;
   - `docs/operations/fit-owner-checks.md` for SC-008 (a real upload with sound of a
     `reddit-video` output and a `reddit-916` output; the result sets `verified` in
     `reddit-video.json`, per roadmap item 3);
   - update the roadmap, CLAUDE.md and the Obsidian notes.
+
+  Done 2026-11-20. The tag, its build and the GitHub release wait for the owner's SC-008 check.
 
 ---
 

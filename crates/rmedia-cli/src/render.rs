@@ -480,6 +480,13 @@ fn job_doc(j: &PlannedJob) -> Value {
     }
     if let Some(f) = &j.fit {
         m.insert("fit".into(), json!(f));
+        // Every pass, in order (`argv` is the one that writes the output), run in the scratch
+        // folder that holds the pass log.
+        let pipeline: Vec<Value> = j.commands().iter().map(|c| json!(display_args(&c.args))).collect();
+        m.insert("pipeline".into(), json!(pipeline));
+        if let Some(cwd) = &j.scratch {
+            m.insert("cwd".into(), json!(lossy(cwd)));
+        }
     }
     if let JobSpec::Gif(g) = &j.spec {
         m.insert("kind".into(), json!("gif"));

@@ -222,6 +222,30 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
   Engines](../operations/build-and-release.md#pinned-gif-engines-030)). Notices with source offers:
   `licenses/GIFSICLE-NOTICE.md`, `licenses/GIFSKI-NOTICE.md`.
 
+### Video Targets and Fit (feature 005)
+
+- **User targets** (`<config>/video-targets/*.json`) are untrusted and read through the same
+  loader as GIF targets (`data_files`): regular files only, at most 64 KiB each, at most 64
+  files (more are reported, not read), duplicate ids reported. Every field is range-checked in
+  code (`VideoTarget::validate`): `id` 1–40 characters `[a-z0-9-]`, `max_bytes` 64 KiB–4 GiB,
+  `max_duration` ≤ 4 h, `long_side` 256–3840, `max_fps` 1–120, CRF 0–51, bits per pixel in
+  (0, 1], audio 32–320 kbit/s. Problem messages quote file content only after control
+  characters are replaced and it is cut to 300 characters. An unusable file is ignored; the
+  others stay usable.
+- **Overrides** (`--fit-max-size`, `--fit-max-length`, manifest `max_size`/`max_length`) are
+  parsed with checked arithmetic, capped at 4 GiB, and may only lower the target's limits.
+- **Only generated names reach ffmpeg.** Each pass runs through `exec::process` with argv only,
+  `file:` paths, and the job's scratch folder as working directory. The two-pass log is the
+  fixed relative name `fit` (`-passlogfile fit`, so `fit-0.log` and its `.mbtree`), never a
+  path from a target or the user; the scratch folder and the logs are removed with the job and
+  purged by the crash journal. The target `id` reaches a file name only through `{target}`,
+  which the name template sanitizes like every other placeholder.
+- **Never over the cap.** The size is measured on the `.part` file before the no-clobber commit;
+  an output still over the cap after 3 retries is deleted and the job fails (`FIT_FAILED`).
+- **Desktop.** `fit_plan` requires a path the user opened (`require_allowed`), plans one clip in
+  the core (which re-validates every option), cancels the previous call, runs no encode and
+  keeps nothing. `list_fit_targets` returns the same validated listing as the CLI.
+
 ### AI Worker (T9)
 
 - **Separate process.** ncnn and the Vulkan driver run in `rmedia-sr`, never in rmedia or the

@@ -21,13 +21,16 @@ for Reddit (003). Spec-driven via Spec Kit.
 - Next feature: **005 budgeted Reddit video** (specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
   limits as of 2026-11-13 in `research/10`; planned 2026-11-19: `--fit TARGET`, two-pass x264 with
   a VBV ceiling, measured before commit (research R1); tasks 2026-11-19: T001–T047, MVP = US1 (T001–T022)).
-- 005 progress: T001–T043 done (Phases 1–2, US1, the MVP: `rmedia clip --fit` works, under the cap,
+- 005 progress: T001–T047 done (47/47) (Phases 1–2, US1, the MVP: `rmedia clip --fit` works, under the cap,
   repeatable (research R13), with retries; US2: length refusals and trims, the size ladder,
   `BUDGET_UNREACHABLE` with `min_cap`, HDR tone-map, fps caps; US3: the dry-run line and JSON
   `fit` block, `clip --list-fit-targets`, `doctor`'s fit block; US4: `upscale --fit`,
   `clip --upscale --fit` on every tier, `fit` in JSON/CSV manifests and `batch --fit`; US5: the desktop target picker with the
   prediction (`fit_plan`), queue and run labels, Settings › Targets, Xvfb check). Every fit
-  encode runs on one thread so outputs repeat exactly (R13 revised). Next: Phase 8 (T044).
+  encode runs on one thread so outputs repeat exactly (R13 revised). Phase 8 done 2026-11-20: docs
+  (T044), quickstart end to end (T045), self-review (T046, `progress.md`: two mediums and two lows
+  fixed), release prep (T047: version 0.5.0, `docs/releases/0.5.0.md` draft, owner runbook
+  `docs/operations/fit-owner-checks.md`). Left: the owner's SC-008 Reddit upload, then tag `v0.5.0`.
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and

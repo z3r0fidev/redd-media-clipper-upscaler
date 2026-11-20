@@ -14,7 +14,7 @@ Last updated: 2026-11-14.
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
 | 004 Smart cut | Done: 59 of 59 tasks (T059's reviews: no high, the three mediums fixed; `specs/004-smart-cut/`, 2026-11-16); 0.4.0, tag `v0.4.0` on `092171f`, released 2026-11-18 ([v0.4.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.4.0)) | Hybrid frame-exact clip mode, see Pending item 22 |
-| 005 Budgeted Reddit video | Planned after 004; no version yet | MP4 with audio under Reddit size and length caps, see Pending item 23 |
+| 005 Budgeted Reddit video | In progress: T001–T046 of 47 done (2026-11-20; `specs/005-budgeted-reddit-video/progress.md`); release prep (T047) next, then 0.5.0 | `--fit TARGET` on `clip`, `upscale` and `batch`, manifest `fit`, desktop **Video target**: an MP4 with audio never over the cap, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -225,6 +225,8 @@ security and code-review lows, then 005.
    2026-11-19 in `research/10-reddit-limits-2026-11-13.md` (from allplatforms.io, which cites
    Reddit Help): video 1 GB / 15 min, MP4 or MOV, H.264; images and GIFs 20 MB, 4000 × 4000 px.
    Comment GIF limits are still unstated. Left: read Reddit Help itself, and the real uploads.
+   For 005, the upload check is [fit-owner-checks.md](operations/fit-owner-checks.md) (SC-008);
+   passing it sets `verified` in `reddit-video.json`.
 4. 002 owner checks: two-phone gallery test (SC-001) and +3 VMAF on real footage (SC-002).
    Optional: AI speed on a faster Windows GPU; the Wayland check of the GIF view; the
    `VK_LOADER_LAYERS_DISABLE=~implicit~` `vulkaninfo` test; Linux NVIDIA VM diagnostics for the
@@ -334,6 +336,10 @@ security and code-review lows, then 005.
     (`--fit TARGET`; video targets as data; two-pass x264 with a VBV ceiling, 95.6–99.7% of the
     cap in research R1; the size is measured before commit, with at most 3 retries). Tasks on
     2026-11-19: [tasks](../specs/005-budgeted-reddit-video/tasks.md), T001–T047 (MVP: T001–T022).
+    Built 2026-11-19 to 2026-11-20: US1–US5 (T001–T043); docs (T044); reviews (T046: two
+    mediums and two lows fixed, no security finding). Low left: a trimmed clip keeps the default
+    name of the range that was asked for, as GIF trims do; naming it after the output range
+    would change names that 003 already writes.
 24. Later candidates (no number yet): a desktop crop-path editor for smart reframe
     (`research/08`); audio-only export with loudness normalisation; frame and timecode input and
     chapter or EDL import.

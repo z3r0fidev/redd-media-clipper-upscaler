@@ -133,3 +133,38 @@ async fn a_fit_is_deterministic() {
         assert!(hashes.iter().all(|h| *h == hashes[0]), "{start}-{end}: {hashes:?}");
     }
 }
+
+/// The plan shows the commands a fit job really runs (Principle II): budget mode's two passes,
+/// with `args()` the pass that writes the output, and quality mode's single pass.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_plan_shows_the_fit_passes() {
+    if !engine_ok() {
+        return;
+    }
+    let src = fixture(Fixture::FitBusy);
+    let out = tempfile::tempdir().unwrap();
+    let (tools, caps) = engine();
+    let text = |a: &[std::ffi::OsString]| rmedia_core::plan::ffargs::display_args(a).join(" ");
+    for (cap, passes) in [(capped(5_000_000), 2), (FitOptions::default(), 1)] {
+        let o = rmedia_core::request::Options { fit: Some(cap), ..opts(out.path(), Mode::Fast) };
+        let plan =
+            make_plan(&request(&src, vec![clip(2.0, EndSpec::At(secs(12.0)))], o), &tools, &caps).await;
+        let job = &plan.jobs[0];
+        let cmds: Vec<String> = job.commands().iter().map(|c| text(&c.args)).collect();
+        assert_eq!(cmds.len(), passes, "{cmds:#?}");
+        assert_eq!(cmds.last().unwrap(), &text(&job.args()), "args() is the last pass");
+        let f = job.fit.as_ref().unwrap();
+        if passes == 2 {
+            assert!(cmds[0].contains("-pass 1") && cmds[0].ends_with("-f null -"), "{}", cmds[0]);
+            assert!(
+                cmds[1].contains(&format!("-b:v {}k", f.video_kbps)) && cmds[1].contains("-pass 2"),
+                "{}",
+                cmds[1]
+            );
+        } else {
+            assert!(cmds[0].contains(&format!("-crf {}", f.crf.unwrap())), "{}", cmds[0]);
+            assert!(!cmds[0].contains("-pass"), "{}", cmds[0]);
+        }
+        assert!(cmds.iter().all(|c| c.contains("-threads 1")), "{cmds:#?}");
+    }
+}

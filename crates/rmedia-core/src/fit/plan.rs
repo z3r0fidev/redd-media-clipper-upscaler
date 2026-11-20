@@ -148,12 +148,12 @@ impl Refusal {
     pub fn message(&self, target: &str) -> String {
         let human = crate::upscale::estimate::human_bytes;
         match self {
-            Refusal::TooLong { len, max_length } => format!(
-                "the range ({}) is longer than {target} allows ({}); use --fit-allow-trim to keep the first {}",
-                clock(*len),
-                clock(*max_length),
-                clock(*max_length)
-            ),
+            Refusal::TooLong { len, max_length } => {
+                let (len, max) = clock_pair(*len, *max_length);
+                format!(
+                    "the range ({len}) is longer than {target} allows ({max}); use --fit-allow-trim to keep the first {max}"
+                )
+            }
             Refusal::Unreachable { min_cap, floor, len, cap } => format!(
                 "{} s cannot fit {} even at {}x{} (needs at least {}); raise --fit-max-size or use --fit-allow-trim",
                 (len * 10.0).round() / 10.0,
@@ -170,6 +170,18 @@ impl Refusal {
 fn clock(secs: f64) -> String {
     let s = secs.round() as u64;
     format!("{}:{:02}", s / 60, s % 60)
+}
+
+/// Two lengths that must read differently: whole seconds, or tenths when they round the same.
+fn clock_pair(a: f64, b: f64) -> (String, String) {
+    if a.round() != b.round() {
+        return (clock(a), clock(b));
+    }
+    let tenths = |secs: f64| {
+        let t = (secs * 10.0).round() as u64;
+        format!("{}:{:02}.{}", t / 600, t / 10 % 60, t % 10)
+    };
+    (tenths(a), tenths(b))
 }
 
 /// The source facts the planner needs.
@@ -466,6 +478,12 @@ mod tests {
         assert_eq!(
             plan_fit(&reddit(), &short, src(61.0, (1920, 1080))).unwrap_err(),
             Refusal::TooLong { len: 61.0, max_length: 60.0 }
+        );
+        // Less than a second over: the two lengths never read the same.
+        let e = Refusal::TooLong { len: 900.4, max_length: 900.0 };
+        assert_eq!(
+            e.message("reddit-video"),
+            "the range (15:00.4) is longer than reddit-video allows (15:00.0); use --fit-allow-trim to keep the first 15:00.0"
         );
     }
 

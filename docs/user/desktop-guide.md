@@ -282,6 +282,7 @@ When the run ends, the panel shows **Finished** and a summary such as **3 succee
 Next to each clip it shows:
 
 * **Starts on the keyframe at … s** for a fast-mode clip that starts earlier than the time you chose;
+* **4.9 MB of 5.0 MB** for a fitted clip, with **trimmed** when the range was shortened (0.5.0);
 * **Smart · 92% copied** for a smart clip, or **Accurate (smart fallback: open_gop)** when it was
   cut in accurate mode instead;
 * the reason for a skipped clip, for example `output already exists`;
@@ -437,6 +438,44 @@ from. To use your own copy, select **Choose gifsicle…** or **Choose gifski…*
 program; rmedia checks that it really is that program. **Use automatic** goes back to the
 bundled copy. You can also set `RMEDIA_GIFSICLE` or `RMEDIA_GIFSKI` before you start the app.
 
+## Fit a Reddit Video
+
+New in 0.5.0. In the clip view, **Video target** makes the clip an MP4 with sound that is never
+larger than the target's size cap and never longer than its length limit. The choices are
+**None** (the default), the targets (the built-in **Reddit video post**, and any you added), and
+**Custom limits…**.
+
+1. Mark the range with **In** and **Out**.
+2. Choose a target. The line under it predicts the result, for example:
+
+   ```text
+   Reddit video post: 25.6 MB at most of 1.07 GB · limit 15:00 · 1920x1080 30 fps · 1 pass
+   ```
+
+   It also lists anything rmedia had to lower, such as the picture size, and shows the
+   **limits unverified** badge while Reddit's limits are not confirmed.
+3. Select **Add clip**.
+
+**Custom limits…** adds a **Maximum size** field (for example `50MB`) and a **Maximum length**
+field (for example `5:00`), starting from the target you choose. They can only lower the
+target's limits. **Allow trimming** keeps the start of a range that is too long, or too big for
+the cap even at the smallest picture size, instead of refusing it.
+
+If the range cannot fit, the line says why in red and **Add clip** is unavailable; when trimming
+would help, turn on **Allow trimming**.
+
+While a target is chosen, GIF export is off for the clip, and Smart and Fast mode do not apply:
+the clip is always re-encoded and cut to the exact frame.
+
+In the queue, a fitted clip shows its target and cap, for example **Reddit video post · 50.0 MB ·
+may trim**. When it is done, the run panel shows the size against the cap, for example
+**4.8 MB of 5.0 MB · trimmed**.
+
+To add your own targets (for example a subreddit's size rule), save target files in the
+`video-targets` folder of rmedia's settings folder ([File Formats › Video target
+files](../api/file-formats.md#video-target-files-video-targetsjson)), then select **Reload
+targets** in **Settings › Targets**.
+
 ## Change Settings
 
 Select **Settings** in the top-right corner. Select **Save** to keep your changes, or **Cancel**
@@ -460,6 +499,12 @@ override them.
 |---|---|---|
 | **Clips at once** | How many clips are cut at the same time (1–64). | Empty (automatic): half the number of processor cores, up to 4 |
 | **Preview cache (MB)** | The most disk space used for preview copies and thumbnails. | 5120 |
+
+### Targets
+
+Added in 0.5.0. Lists the video targets for **Video target**, each with its size cap and length
+limit, and any target file that could not be read, with the reason. Select **Reload targets**
+after you add or change a file in the `video-targets` folder.
 
 ### Video engine
 

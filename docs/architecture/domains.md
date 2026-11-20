@@ -380,6 +380,37 @@ design in `specs/004-smart-cut/` (research R1–R11).
 - `--upscale` and `--gif` jobs are re-encoded anyway; smart mode does not apply to them
   (`SMART_NOT_APPLIED`).
 
+## Budgeted Reddit Video (feature 005)
+
+**Responsibility:** an MP4 with audio that is never larger than a video target's size cap and
+never longer than its length limit. From `--fit` on `clip`, `upscale` and `batch`, the manifest
+`fit` object and CSV columns, and the desktop app's **Video target**. Code is in
+`crates/rmedia-core/src/fit/` and `exec/fit.rs`. Added in 0.5.0; design in
+`specs/005-budgeted-reddit-video/` (research R1–R13).
+
+| Item | Location |
+|---|---|
+| `FitOptions` (target, overrides, trim), `PartialFit` (the layered manifest/desktop form, `diff` for exports), `parse_size`, `FitOutcome` and `FitAttempt` (the result block) | `fit/mod.rs` |
+| `VideoTarget` (schema 1, every field range-checked), the built-in `reddit-video` (`fit/builtin/`), `VideoTargetRegistry` (built-ins, then user files through `data_files`, problems collected) and `listing()` (the `--list-fit-targets` and desktop document) | `fit/target.rs` |
+| `plan_fit`: pure arithmetic, no encodes (research R1–R4). Length check (refuse or trim), size never enlarged, fps capped; quality mode when the budget covers the `max_bpp` ceiling, else budget mode with the 2% margin, the 0.75 size ladder down to the floor, the audio floor, then `BUDGET_UNREACHABLE` (with `min_cap`) or a trim. `FitPlan`, `Refusal`, `FitSummary` (the dry-run and IPC block) | `fit/plan.rs` |
+| Planning: the target lookup (`TARGET_UNKNOWN`), the fit/GIF and fit/`--hdr keep` refusals, accurate cut, the first video and audio track only, `.mp4`, HDR tone-mapping, refusals as issues and lowerings/trims as notices; `PlannedJob.fit` | `plan/planner.rs` |
+| The argvs: pass 1 (video only, to the null muxer), pass 2 at `video_kbps`, or the quality pass at the target's CRF under the ceiling, all with a VBV ceiling, `-threads 1` (outputs repeat exactly, R13) and the pass log `fit` relative to the scratch folder; `upscale_pass_args` and `ai_pass_args` add the same tail to an upscale on any tier (R7) | `plan/ffargs.rs` › `fit_args`, `fit_tail` |
+| `PlannedJob::commands` lists every pass; `args` is the one that writes the output | `plan/model.rs` |
+| Executor: stages `pass1`, `pass2` (or `encode`) and `verify`; the `.part` file is measured before commit, and an overshoot re-runs pass 2 lower (R2), at most 3 times, then `FIT_FAILED` with nothing written | `exec/fit.rs` |
+| Desktop: `list_fit_targets` and `fit_plan` (one core plan of one clip, newest call wins, nothing kept); the picker, prediction line and labels in `src/lib/stores/fit.ts` and `components/FitPicker.svelte` | `apps/desktop/src-tauri/src/ops/fit.rs` |
+
+**Invariants**
+
+- No committed output is larger than its cap: the size is measured on the `.part` file, and an
+  output still over after the last retry is deleted and the job fails.
+- An override can only lower a target's limits; the picture is never enlarged and the frame
+  rate never raised.
+- The same input, range and target give the same bytes (one encoder thread, R13).
+- The dry run and the desktop prediction come from the same `plan_fit` the run uses; the CLI's
+  `fit` block and the desktop's are equal (bridge test).
+- No new process kind: every pass is an ffmpeg run (or the AI tier's pipeline) through
+  `exec::process`, with `file:` paths and generated names inside the scratch folder.
+
 ## Tooling (`xtask`)
 
 | Command | Effect |

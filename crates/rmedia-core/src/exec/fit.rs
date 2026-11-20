@@ -89,13 +89,16 @@ pub(super) async fn encode(
             return Err(Error::FitFailed { cap: fit.cap, attempts });
         }
         // Over the cap: pass 2 again, lower (research R2). A quality pass that overshot falls
-        // back to budget mode, which needs pass 1's stats first.
+        // back to budget mode, which needs pass 1's stats first; both run within the `encode`
+        // stage it planned (it has no `pass2` stage).
         if pass == FitPass::Quality {
+            ctx.restart_stage("encode", before + 1, of);
             run(ctx, job, FitPass::First, &scratch, total).await?;
+        } else {
+            ctx.restart_stage("pass2", before + 2, of);
         }
         remove(&temp).await;
         pass = FitPass::Second { video_kbps: next };
-        ctx.restart_stage("pass2", before + 2, of);
     }
 }
 

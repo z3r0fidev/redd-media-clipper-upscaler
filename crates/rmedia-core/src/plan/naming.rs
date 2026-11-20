@@ -2,7 +2,7 @@
 //!
 //! Placeholders: `{source}` `{index}` `{index:0N}` `{name}` `{name-or-start}` `{name-or-range}`
 //! `{start}` `{end}` `{range}` (`{start}_{end}`) `{ext}`, `{preset}` for upscale jobs, and
-//! `{target}` and `{format}` for GIF jobs. A `/` in the template creates a sub-folder of the
+//! `{target}` for GIF and fit jobs, `{format}` for GIF jobs. A `/` in the template creates a sub-folder of the
 //! output directory.
 
 use std::path::PathBuf;
@@ -20,8 +20,9 @@ pub struct NameVars<'a> {
     pub ext: &'a str,
     /// Upscale jobs: the device preset id. `{preset}` is unknown for clip jobs.
     pub preset: Option<&'a str>,
-    /// GIF jobs: the GIF target id and the format (`gif`/`mp4`); unknown for other jobs.
+    /// GIF jobs: the GIF target id; fit jobs: the video target id. Unknown for other jobs.
     pub target: Option<&'a str>,
+    /// GIF jobs: the format (`gif`/`mp4`); unknown for other jobs.
     pub format: Option<&'a str>,
 }
 

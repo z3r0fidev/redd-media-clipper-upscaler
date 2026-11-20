@@ -23,6 +23,7 @@ clip in the run panel.
 * [Clips that fail while cutting](#clips-that-fail-while-cutting)
 * [Folders and scanning](#folders-and-scanning)
 * [Installation](#installation)
+* [Fit a Reddit video](#fit-a-reddit-video)
 
 ---
 
@@ -1063,6 +1064,88 @@ Nothing is wrong: enlarging only makes a GIF bigger, not sharper. For an upright
 use `rmedia upscale` instead.
 
 ---
+
+## Fit a Reddit Video
+
+These messages come from `--fit` on `clip`, `upscale` and `batch`, manifests with `fit`, and the
+desktop app's **Video target** (0.5.0). In the desktop app, the flag names read as the controls:
+"allow trimming" for `--fit-allow-trim`, "the size limit" for `--fit-max-size`.
+
+### "the range (…) is longer than … allows (…); use --fit-allow-trim to keep the first …" (RANGE_TOO_LONG)
+
+#### Cause
+
+The range is longer than the target's length limit (Reddit's is 15:00), or than the
+`--fit-max-length` you set. Nothing was written (exit 3).
+
+#### Resolution
+
+Choose one:
+
+1. Shorten the range.
+2. Add `--fit-allow-trim` (desktop: **Allow trimming**) to keep the first part, up to the limit.
+
+### "… s cannot fit … even at …x… (needs at least …); raise --fit-max-size or use --fit-allow-trim" (BUDGET_UNREACHABLE)
+
+#### Cause
+
+The size cap is too small for this length, even at the target's smallest picture size and audio
+bitrate. The message gives the smallest cap that would work. Nothing was written (exit 3).
+
+#### Resolution
+
+Choose one:
+
+1. Raise the cap (`--fit-max-size`, or **Maximum size**), up to the target's own.
+2. Shorten the range.
+3. Add `--fit-allow-trim` to keep the longest start that fits.
+
+### "the output is still over its … cap after … encodes (last …)" (FIT_FAILED)
+
+#### Cause
+
+The encoder overshot the planned size and three lower retries did not bring it under the cap.
+This is rare (very busy or noisy video at a very small cap). The over-size file was deleted, the
+job failed (exit 1) and the other jobs ran.
+
+#### Resolution
+
+Lower the cap a little (for example 5% under the real limit) and run the job again, or shorten
+the range. If it happens with a normal cap, report it with the `--json` output, whose
+`detail.attempts` lists each encode's bitrate and size.
+
+### "unknown video target "…" (known: …)" (TARGET_UNKNOWN)
+
+#### Cause
+
+No built-in or user video target has that id. A user file that could not be read is not
+loaded.
+
+#### Resolution
+
+1. Run `rmedia clip --list-fit-targets` (desktop: **Settings › Targets**) to see the ids and any
+   file problems.
+2. Fix the file the warning names, or use one of the listed ids.
+
+### "video target file … ignored: …"
+
+#### Cause
+
+A file in the `video-targets` folder is not valid JSON, misses a field, has a value out of range
+(for example `max_bytes must be within 64 KiB and 4 GiB`), or repeats another file's id. The
+other targets still work.
+
+#### Resolution
+
+Fix the file as the message says ([File Formats › Video target
+files](../api/file-formats.md#video-target-files-video-targetsjson)), then check with
+`rmedia doctor` or **Reload targets**.
+
+### "--fit-max-size … is above …'s cap of …" and "--fit-max-length … is above …'s limit of …"
+
+An override can only lower a target's limits (exit 2). For a larger cap or a longer limit, make
+a user target with those values. "--fit-max-size needs --fit" means a `--fit-*` flag was given
+without `--fit`, and "--fit cannot be combined with --gif" that both were.
 
 ## Still Stuck?
 

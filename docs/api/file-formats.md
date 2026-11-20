@@ -142,6 +142,7 @@ A clip with neither `end` nor `duration` runs to the end of the video.
 | `subtitles` | `"all"` \| `"none"` | |
 | `upscale` | upscale object | Feature 002; see [Upscaling in manifests](#upscaling-in-manifests) |
 | `gif` | GIF object | Feature 003; see [GIFs in manifests](#gifs-in-manifests) |
+| `fit` | fit object | Feature 005; see [Fit in manifests](#fit-in-manifests) |
 
 ### Upscaling in Manifests
 
@@ -225,6 +226,37 @@ beats the video, which beats the defaults.
   `SMART_NOT_APPLIED` notice.
 - Manifests written for 0.3.0 read exactly as before; nothing about them changes.
 
+### Fit in Manifests
+
+Added in 0.5.0 (feature 005; contract `specs/005-budgeted-reddit-video/contracts/manifest-fit.md`).
+`fit` may appear in `defaults`, a video's `options` and a clip's `options`; layers apply defaults
+→ video → clip, field by field, and `"enabled": false` turns the fit off for that layer and below.
+
+```json
+{"version":1,"defaults":{"fit":{"target":"reddit-video"}},
+ "videos":[{"input":"talk.mp4","clips":[
+   {"start":"00:10","end":"03:10"},
+   {"start":"05:00","end":"25:00","options":{"fit":{"allow_trim":true}}},
+   {"start":"30:00","end":"31:00","options":{"fit":{"target":"sub-50mb","max_size":"40MB"}}},
+   {"start":"40:00","end":"41:00","options":{"fit":{"enabled":false}}}]},
+  {"input":"short.mp4"}]}
+```
+
+| Key | Values | Notes |
+|---|---|---|
+| `enabled` | boolean | Any other `fit` key turns the fit on; `false` turns an inherited fit off |
+| `target` | string | A video target id (default `reddit-video`) |
+| `max_size` | `"50MB"`, `"8MiB"` or bytes | Lowers the target's cap; `null` clears an override from a lower layer |
+| `max_length` | a duration (`"5:00"`) or seconds | Lowers the target's length limit; `null` clears an override |
+| `allow_trim` | boolean | Keep the start of a range that is too long instead of refusing it |
+
+- A video without `clips` is one whole-video job when a fit is on.
+- `fit` with `gif` on the same clip is refused, as is `fit` with an `upscale` that keeps HDR
+  (`"hdr": "keep"`). Unknown keys are errors, as elsewhere.
+- `fit` with `upscale` fits the upscaled output: the preset sets the shape, the target the caps.
+- `batch --fit TARGET` (and the other `--fit-*` flags) fits every clip whose manifest does not set
+  a fit; the manifest's own `fit` values win.
+
 ### Strictness and Errors
 
 - Unknown fields are rejected at every level (`deny_unknown_fields`), for example
@@ -286,6 +318,10 @@ match13.mp4,12:00,end,,,accurate,
 | `gif_loop` | No | `forever` or plays |
 | `gif_budget`, `gif_hard_limit` | No | Sizes (`3MB`, `800k`); `gif_budget=none` turns the search off (not with `gif_hard_limit`) |
 | `gif_allow_trim`, `gif_optimise`, `gif_strict_engine` | No | `true`/`false`/`yes`/`no`/`1`/`0` |
+| `fit` | No | Video target id, or `none` to turn the fit off for the row (not with other `fit_*` cells). 0.5.0 |
+| `fit_max_size` | No | A size (`50MB`, `8MiB`, bytes) |
+| `fit_max_length` | No | A duration (`5:00`, `300`) |
+| `fit_allow_trim` | No | `true`/`false`/`yes`/`no`/`1`/`0` |
 
 - Without `end` and `duration`, a clip runs to the end of the video.
 - Any non-empty `upscale_*` cell turns upscaling on for the row. A row with upscaling on and empty
@@ -315,6 +351,10 @@ both planned the same outputs, modes and spans.
 Any `gif_*` column (or `batch --gif`) makes `start` optional: a row without times is the whole
 video. The writer emits the `gif_*` columns only when some job has GIF export on.
 
+The `fit` columns (0.5.0) work the same way: an empty cell inherits from the `--fit` flags, a row
+with a fit and no times is the whole video, and the writer adds the four columns only when some
+row has a fit.
+
 ## GIF Target Files (`gif-targets/*.json`)
 
 Added in 0.3.0. User targets live in `<config>/gif-targets/*.json` (schema
@@ -324,6 +364,41 @@ Invalid files are listed by `rmedia gif --list-targets` and ignored. Fields: `sc
 `{landscape, portrait}`, `floor_width`, `fps`, `floor_fps`, `colours`, `dither`, `stats_mode`,
 `sharpen`, `engine` (`builtin`/`best`), `lossy`, `gifski`, `max_duration`, and `mp4`
 `{crf, max_fps, hint}` (`hint`: GIF jobs also estimate the MP4's size).
+
+## Video Target Files (`video-targets/*.json`)
+
+Added in 0.5.0 (feature 005; contract `specs/005-budgeted-reddit-video/contracts/video-target.md`).
+A video target sets the size cap, length limit and quality settings for `--fit`. User targets
+live in `<config>/video-targets/*.json` ([Configuration › File locations](../administration/configuration.md#file-locations)):
+at most 64 files of at most 64 KiB each are read. An unusable file is reported by
+`rmedia doctor`, `rmedia clip --list-fit-targets` and the desktop app's **Settings › Targets**,
+and ignored; the other targets stay usable. When two user files have the same id, the first by
+file name wins and the second is reported. A user file with a built-in id replaces the built-in
+target.
+
+```json
+{"schema":1,"id":"sub-50mb","version":1,"name":"r/example rule","verified":false,
+ "max_bytes":50000000,"max_duration":300,"long_side":1920,"floor_short_side":480,
+ "max_fps":60,"quality":{"crf":20,"max_bpp":0.12,"min_bpp":0.03},
+ "audio":{"kbps":128,"floor_kbps":64}}
+```
+
+| Field | Meaning |
+|---|---|
+| `schema` | `1` |
+| `id` | 1–40 characters `a-z`, `0-9` or `-`; the name `--fit` uses |
+| `version`, `name`, `description`, `verified` | Bookkeeping; `verified: false` shows "unverified" next to the target |
+| `max_bytes` | The hard size cap in bytes (64 KiB to 4 GiB); no output is ever larger |
+| `max_duration` | The length limit in seconds (above 0, at most 14400) |
+| `long_side` | The largest long side in pixels (even, 256–3840); the output is never enlarged |
+| `floor_short_side` | The smallest short side the size may be lowered to (at least 144, below the 16:9 short side of `long_side`) |
+| `max_fps` | 1–120. Frame rates above this are lowered to it; lower ones are kept |
+| `quality.crf` | 0–51: the x264 CRF when the cap is not the limiting factor (quality mode) |
+| `quality.max_bpp`, `quality.min_bpp` | Bits per pixel per frame, `0 < min_bpp < max_bpp ≤ 1`: the ceiling (no bigger than needed) and the least before the size is lowered |
+| `audio.kbps`, `audio.floor_kbps` | AAC kbit/s (at most 320), and the least it may be lowered to (32 ≤ floor ≤ kbps) |
+
+The built-in `reddit-video` target uses the values above with `max_bytes` 1073741824 (1 GiB) and
+`max_duration` 900 (Reddit's limits as of 2026-11-13, unverified).
 
 ## Name Templates
 
@@ -342,7 +417,8 @@ the template creates sub-folders.
 | `{range}` | `{start}_{end}` |
 | `{ext}` | Output extension |
 | `{preset}` | Device preset id; upscale jobs only (0.2.0) |
-| `{target}`, `{format}` | GIF target id and `gif`/`mp4`; GIF jobs only (0.3.0) |
+| `{target}` | GIF target id (GIF jobs, 0.3.0) or video target id (fit jobs, 0.5.0) |
+| `{format}` | `gif`/`mp4`; GIF jobs only (0.3.0) |
 
 - Default: `{source}_{index:03}_{name-or-range}.{ext}`, for example
   `a_001_00-00-10.500_00-00-15.500.mp4` or `a_001_goal.mp4`.
@@ -350,6 +426,7 @@ the template creates sub-folders.
 - Upscale defaults (0.2.0): `{source}_{preset}.{ext}` for a whole video, `{source}_{index:03}_{name-or-range}_{preset}.{ext}` for a clip.
 - GIF defaults (0.3.0): `{source}_{target}.{ext}` for a whole video, `{source}_{index:03}_{name-or-range}_{target}.{ext}` for a clip, and `{source}/{source}_{index:03}_{name-or-range}_{target}.{ext}` for clips of several sources into one `-o` folder.
 - Using `{preset}`, `{target}` or `{format}` in a job of another kind is an error.
+- A fit job keeps the default clip and upscale names; its output is always `.mp4`.
 - Errors: an unknown placeholder, an unclosed `{`, `{index:0}`, `{index:010}`, and templates that
   yield absolute paths or empty, `.` or `..` parts.
 - Sanitizing:

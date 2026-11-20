@@ -24,7 +24,7 @@ crate 6.0.0 path rules.
 | `RMEDIA_GIFSICLE` / `RMEDIA_GIFSKI` | Yes | Yes (when no engine path is set in settings) |
 | `RMEDIA_FFMPEG` / `RMEDIA_FFPROBE` | Yes | Yes (when no engine path is set in settings) |
 | `RMEDIA_STATE_DIR` | Yes | Yes |
-| `RMEDIA_CONFIG_DIR` | Yes: device presets (`presets/`), GIF targets (`gif-targets/`) and the three `settings.json` fields above | Yes |
+| `RMEDIA_CONFIG_DIR` | Yes: device presets (`presets/`), GIF targets (`gif-targets/`), video targets (`video-targets/`, 0.5.0) and the three `settings.json` fields above | Yes |
 | `RMEDIA_CACHE_DIR` | Yes (cache root; used by upscale and models lookup) | Yes |
 
 The CLI takes its clip, upscale and GIF options from flags and manifests only; it never reads
@@ -254,7 +254,7 @@ The cache is safe to delete while the app is closed.
 | `RMEDIA_GIFSICLE`, `RMEDIA_GIFSKI` | `rmedia`, `rmedia-desktop`, test kit | Paths to the optional GIF engines, after the `--gifsicle`/`--gifski` flags and the settings, before the bundled copies and `PATH`. In tests, they enable the engine tests. Added in 0.3.0. | not set |
 | `RMEDIA_REQUIRE_GIF_TOOLS` | test kit only | When `1`, the gifsicle and gifski tests fail instead of being skipped if the engines are missing. Set in the CI bundled-engine jobs. | not set |
 | `RMEDIA_STATE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the state directory (crash journal parent). Used by the CLI tests. | per-user state directory |
-| `RMEDIA_CONFIG_DIR` | `rmedia`, `rmedia-desktop` | Folder that holds `settings.json`, the user device presets (`presets/*.json`, read by `rmedia upscale`) and GIF targets (`gif-targets/*.json`). Used by tests. | per-user config directory |
+| `RMEDIA_CONFIG_DIR` | `rmedia`, `rmedia-desktop` | Folder that holds `settings.json`, the user device presets (`presets/*.json`, read by `rmedia upscale`) GIF targets (`gif-targets/*.json`) and video targets (`video-targets/*.json`, 0.5.0). Used by tests. | per-user config directory |
 | `RMEDIA_CACHE_DIR` | `rmedia`, `rmedia-desktop` | Replaces the cache root, which holds `preview/`, `reframe/` (smart-reframe analyses) and `models/`. Used by tests. Added in 0.2.0. | per-user cache directory |
 | `RMEDIA_LOG` | `rmedia`, `rmedia-desktop` | Which log messages are shown: a level (`error`, `warn`, `info`, `debug`, `trace`) or targets such as `rmedia_core=debug,warn`. Replaces `-v`/`-q` for log messages in the CLI and the default filter in the desktop app. The CLI warns and ignores a value it cannot parse. Added in 0.3.0. | not set |
 | `RMEDIA_REQUIRE_FFMPEG` | test kit only | When `1`, media tests fail instead of being skipped if FFmpeg is missing. Set in CI. | not set |
@@ -276,6 +276,7 @@ Linux the folder name is the lowercased application name (`rmedia`); on Windows 
 | Preview cache (`preview/`) | `~/.cache/rmedia/` | `%LOCALAPPDATA%\OpenLogic\rmedia\cache\` |
 | User device presets (`presets/*.json`) | `~/.config/rmedia/presets/` | `%APPDATA%\OpenLogic\rmedia\config\presets\` |
 | User GIF targets (`gif-targets/*.json`, 0.3.0) | `~/.config/rmedia/gif-targets/` | `%APPDATA%\OpenLogic\rmedia\config\gif-targets\` |
+| User video targets (`video-targets/*.json`, 0.5.0) | `~/.config/rmedia/video-targets/` | `%APPDATA%\OpenLogic\rmedia\config\video-targets\` |
 | GIF output (default, 0.3.0) | `gifs/` next to each source video | `gifs\` next to each source video |
 | Model files (searched in order) | `models_dir` setting, `models/` beside the executable, `/usr/lib/rmedia/models/` (deb; `usr/lib/rmedia/models/` inside the AppImage), `~/.cache/rmedia/models/` | same pattern; cache under `%LOCALAPPDATA%\OpenLogic\rmedia\cache\models\` |
 | Upscaled output (default) | `upscaled/` next to each source video | `upscaled\` next to each source video |

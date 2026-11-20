@@ -4,7 +4,8 @@ rmedia cuts clips from videos on Linux and Windows, from the `rmedia` command li
 app. `rmedia upscale` (feature 002, 0.2.0) makes videos
 phone-ready, and `rmedia gif` (feature 003, 0.3.0, tag `v0.3.0`) makes GIFs and silent MP4 loops
 that fit Reddit. Smart cut (`--mode smart`, feature 004, 0.4.0, tag `v0.4.0`) makes frame-exact
-clips that copy most of the video; see the [Roadmap](roadmap.md). Start with the page for your role.
+clips that copy most of the video, and `--fit` (feature 005, 0.5.0) makes Reddit-ready MP4s with
+sound that never exceed a size cap; see the [Roadmap](roadmap.md). Start with the page for your role.
 
 ## Users
 

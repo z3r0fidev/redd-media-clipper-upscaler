@@ -229,9 +229,14 @@ impl PlannedJob {
                     let rest = crate::smart::args::rest_spec(c).map(|_| dir.join(crate::exec::SMART_REST));
                     crate::smart::args::join_args(c, p, rest.as_deref(), &self.temp)
                 }
-                _ => ffargs::clip_args(c, &self.temp),
+                _ => match self.fit_passes() {
+                    Some(p) => ffargs::fit_args(c, *p.last().expect("a pass"), &self.temp),
+                    None => ffargs::clip_args(c, &self.temp),
+                },
             },
-            JobSpec::Upscale(u) => ffargs::upscale_args(u, &self.temp),
+            JobSpec::Upscale(u) => {
+                ffargs::upscale_pass_args(u, self.fit_passes().and_then(|p| p.last().copied()), &self.temp)
+            }
             JobSpec::Gif(g) if g.gif.engine == crate::gif::plan::EngineUsed::Gifski => {
                 crate::gif::graph::y4m_args(g, &g.gif.start, crate::gif::graph::PROGRESS)
             }
@@ -253,9 +258,27 @@ impl PlannedJob {
     /// The AI tier's three argvs (`None` for other jobs). `args()` is the last of them.
     pub fn pipeline(&self) -> Option<ffargs::AiArgs> {
         match &self.spec {
-            JobSpec::Upscale(u) if u.up.ai.is_some() => Some(ffargs::ai_args(u, &self.temp)),
+            JobSpec::Upscale(u) if u.up.ai.is_some() => {
+                Some(ffargs::ai_pass_args(u, self.fit_passes().and_then(|p| p.last().copied()), &self.temp))
+            }
             _ => None,
         }
+    }
+
+    /// A fit job's encode passes, in order (`exec/fit.rs`): pass 1 and pass 2 in budget mode,
+    /// one pass in quality mode. A retry runs pass 2 again lower, which a plan cannot show.
+    fn fit_passes(&self) -> Option<Vec<ffargs::FitPass>> {
+        use crate::fit::plan::Mode;
+        use ffargs::FitPass;
+        let fit = match &self.spec {
+            JobSpec::Clip(c) => c.fit.as_ref(),
+            JobSpec::Upscale(u) => u.cut.fit.as_ref(),
+            JobSpec::Gif(_) => None,
+        }?;
+        Some(match fit.mode {
+            Mode::Budget => vec![FitPass::First, FitPass::Second { video_kbps: fit.video_kbps }],
+            Mode::Quality => vec![FitPass::Quality],
+        })
     }
 
     /// Every process this job runs, in order (a pipe's stages in pipe order). For clip and
@@ -301,6 +324,25 @@ impl PlannedJob {
                     program: Program::Gifsicle,
                     args: gifsicle_args(s.lossy, ENCODED, OPTIMISED),
                 });
+            }
+            return cmds;
+        }
+        if let Some(passes) = self.fit_passes() {
+            let mut cmds = Vec::new();
+            for pass in passes {
+                match &self.spec {
+                    JobSpec::Upscale(u) if u.up.ai.is_some() => {
+                        let p = ffargs::ai_pass_args(u, Some(pass), &self.temp);
+                        cmds.push(ffmpeg(p.decode));
+                        cmds.push(JobCommand { program: Program::AiWorker, args: p.worker });
+                        cmds.push(ffmpeg(p.encode));
+                    }
+                    JobSpec::Upscale(u) => {
+                        cmds.push(ffmpeg(ffargs::upscale_pass_args(u, Some(pass), &self.temp)))
+                    }
+                    JobSpec::Clip(c) => cmds.push(ffmpeg(ffargs::fit_args(c, pass, &self.temp))),
+                    JobSpec::Gif(_) => unreachable!("a GIF has no fit"),
+                }
             }
             return cmds;
         }

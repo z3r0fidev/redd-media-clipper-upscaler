@@ -629,6 +629,61 @@ further, and **gifski** makes the best-looking GIFs (`max-quality`). Without the
 still works with the built-in engine. `rmedia doctor` lists both. All flags:
 [CLI Reference › rmedia gif](../api/cli-reference.md#rmedia-gif).
 
+## Fit a Reddit Video
+
+New in 0.5.0. `--fit` makes an MP4 with sound that Reddit accepts: never larger than the size
+cap and never longer than the length limit. rmedia picks the bitrate from the length, checks the
+file's size before saving it, and encodes it again lower if it is over.
+
+```bash
+rmedia clip -s 10:00 -e 13:00 --fit reddit-video talk.mp4          # Reddit's limits: 1 GB, 15 min
+rmedia clip -s 10:00 -e 13:00 --fit reddit-video --fit-max-size 100MB talk.mp4
+rmedia clip -s 0 -e 20:00 --fit reddit-video --fit-allow-trim talk.mp4   # keeps the first 15:00
+rmedia upscale --preset reddit-916 --fit reddit-video talk.mp4     # upright, and within the cap
+rmedia clip -s 10:00 -e 13:00 --fit reddit-video --dry-run talk.mp4      # predict, write nothing
+```
+
+The clip is saved in the usual `clips` folder as an `.mp4`. The source is never changed.
+
+### What rmedia does
+
+- **A small clip under a large cap** is encoded once at good quality; rmedia does not pad it to
+  fill the cap.
+- **A clip that the cap limits** is encoded in two passes to use nearly all of it (95–99%).
+- **When the cap is too small for full size**, the picture is made smaller (1920 → 1440 → 1080
+  px wide …), never below 480 px on the short side. The picture is never enlarged.
+- **When it cannot fit even then**, rmedia refuses the clip and says the smallest size that would
+  work. `--fit-allow-trim` keeps the part that fits instead.
+- **A range longer than the limit** is refused (`the range (20:00) is longer than reddit-video
+  allows (15:00)`), or with `--fit-allow-trim` cut to the limit. A trimmed clip keeps the name of
+  the range you asked for.
+
+The result line shows how much of the cap was used, and any setting that was lowered:
+
+```text
+$ rmedia clip -s 0 -e 25 --fit reddit-video --fit-max-size 5MB talk.mp4
+warning: talk_001_00-00-00.000_00-00-25.000.mp4: size lowered 1920x1080 → 1440x810 to fit reddit-video
+✓ /home/me/clips/talk_001_00-00-00.000_00-00-25.000.mp4  4.9 MB of 5.0 MB (98%) · 1440x810 · 2 passes
+```
+
+### Choose a target
+
+`rmedia clip --list-fit-targets` lists the targets. The built-in `reddit-video` uses Reddit's
+limits as of 2026-11-13 (1 GB, 15 minutes); they are marked *unverified* until checked with a
+real upload. For a stricter rule, such as a subreddit's size or length limit, either lower the
+limits for one run (`--fit-max-size 50MB --fit-max-length 5:00`) or save a target file in the
+`video-targets` folder of your settings folder ([File Formats › Video target
+files](../api/file-formats.md#video-target-files-video-targetsjson)), then use `--fit <its id>`.
+
+### In a batch
+
+Add `"fit": {"target": "reddit-video"}` to a manifest's `defaults`, a video or a clip, or the
+`fit` CSV column, or run `rmedia batch --fit reddit-video jobs.json` to fit every clip
+([File Formats › Fit in manifests](../api/file-formats.md#fit-in-manifests)).
+
+`--fit` cannot be combined with `--gif`. Smart and fast mode do not apply: a fitted clip is
+always re-encoded and cut to the exact frame.
+
 ## Check the Video Engine
 
 ```bash

@@ -28,6 +28,7 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
 | `clip`/`upscale`/`gif`/`batch --dry-run --json` | One document, `type: "plan"` |
 | `clip`/`upscale`/`gif`/`batch --json` (run) | NDJSON: one event per line, ending with `type: "summary"` |
 | `gif --list-targets --json` | One document, `type: "targets"` (0.3.0) |
+| `clip --list-fit-targets --json` | One document, `type: "fit_targets"` (0.5.0) |
 | `clip`, `batch` or `scan` failing before planning (engine missing, bad scan root, unreadable input) | One document, `type: "error"` (or `type: "plan"` with `issues` for clip list / manifest parse errors) |
 
 ## `doctor`
@@ -74,6 +75,7 @@ Code: `crates/rmedia-cli/src/render.rs`, `crates/rmedia-cli/src/commands/scan.rs
 | `models` | object | Model file name → `ok` or `missing` |
 | `capability` | object, absent without the check | `checked_at` (RFC 3339 UTC), `fingerprint`, `demoted[]` (`{tier, error, at}`: tiers that failed after an automatic choice) |
 | `preset_problems` | string[] | User preset files that could not be used (`file: message`) |
+| `fit` | object | Added in 0.5.0: `{"available": true, "targets": ["reddit-video", "sub-50mb"], "problems": [{file, message}]}`. `available` is `false`, with a `reason`, when `libx264` or `aac` is missing. `problems` lists the video target files that could not be used. It does not change `ok`. |
 | `smart` | object | Added in 0.4.0: `{"available": true, "reason": null}`. `available` is `false` (with a `reason`) when the engine has no `libx264`; smart jobs then fall back to accurate mode. It does not change `ok`. |
 | `gif` | object | Added in 0.3.0: `gif` and `mp4` (booleans: the built-in GIF engine and the Reddit MP4 can run), `missing` (filters, muxers or encoders either lacks), `engines` (`[{name, path, source, version, ok, reason}]` for gifsicle and gifski) and `target_problems` (user GIF target files that could not be used). None of it changes `ok`. |
 
@@ -266,6 +268,53 @@ With `--no-smart-fallback`, a reason found while planning is an error issue and 
  "message":"smart cut not possible: the video has open GOPs (frames that depend on the previous GOP)"}
 ```
 
+### Fit
+
+Added in 0.5.0 (feature 005). Every field is additive: a job without `--fit` (or a manifest
+`fit`) has no `fit` key. A fit job is a clip or upscale job with a `fit` block, a `pipeline`
+(every encode pass in order; `argv` is the one that writes the output) and a `cwd` (its scratch
+folder, which holds the two-pass log). Real dry run, abridged (`argv` and `pipeline` omitted):
+
+```json
+{"id":1,"source":"/work/talk.mp4","output":"/work/clips/talk_001_00-00-00.000_00-00-25.000.mp4",
+ "status":"planned","mode":"accurate","requested":{"start":0.0,"end":25.0},
+ "warnings":["size lowered 1920x1080 → 1440x810 to fit reddit-video"],
+ "notices":[{"code":"FIT_LOWERED","message":"size lowered 1920x1080 → 1440x810 to fit reddit-video"}],
+ "cwd":"/work/clips/.talk_001_00-00-00.000_00-00-25.000.rmedia-91deed3094f2fff2-1.d",
+ "fit":{"target":"reddit-video","target_verified":false,"cap":5000000,"max_length":900.0,
+   "len":25.0,"trimmed_from":null,"mode":"budget","size":[1440,810],"fps":30.0,
+   "video_kbps":1440,"crf":null,"audio_kbps":128,"predicted_bytes":4900000,
+   "lowered":[{"setting":"size","from":[1920,1080],"to":[1440,810]}],"passes":2}}
+```
+
+| `fit` field | Notes |
+|---|---|
+| `target`, `target_verified` | The video target's id, and whether its limits are confirmed |
+| `cap`, `max_length` | The size cap in bytes and the length limit in seconds, after any override |
+| `len`, `trimmed_from` | The output's length in seconds; the requested length when the range was trimmed, else `null` |
+| `mode` | `budget` (two passes at `video_kbps`, `crf` `null`) or `quality` (one pass at `crf`, with `video_kbps` as the ceiling) |
+| `size`, `fps` | The output's `[width, height]` and frame rate (3 decimals) |
+| `video_kbps`, `audio_kbps` | kbit/s; `audio_kbps` is `null` when the output has no audio |
+| `predicted_bytes` | The planned size; in quality mode an upper bound |
+| `lowered` | `[{setting, from, to}]`: `size` (`[w, h]`) or `audio_kbps` |
+| `passes` | 2 in budget mode, 1 in quality mode |
+
+A refusal is an error issue and nothing runs (exit 3): `RANGE_TOO_LONG` (`detail.len`,
+`detail.max_length`), `BUDGET_UNREACHABLE` (`detail.min_cap`) or `TARGET_UNKNOWN`. The desktop
+app's `fit_plan` returns the same block ([Desktop IPC](desktop-ipc.md)).
+
+`clip --list-fit-targets --json` prints one document, `type: "fit_targets"`: `targets` (each
+target's fields from its file, plus `source`, `builtin` or `user`, and `file` for user targets)
+and `problems` (`[{file, message}]`, the files that could not be used):
+
+```json
+{"schema":1,"type":"fit_targets","targets":[{"id":"reddit-video","name":"Reddit video post",
+  "verified":false,"max_bytes":1073741824,"max_duration":900.0,"long_side":1920,"…":"…",
+  "source":"builtin"}],
+ "problems":[{"file":"/home/me/.config/rmedia/video-targets/broken.json",
+   "message":"EOF while parsing an object at line 2 column 0"}]}
+```
+
 ### `issues[]` and Errors
 
 When any issue has severity `error`, nothing runs (exit 3, or 4 when every error is
@@ -321,8 +370,8 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 | `run_started` | `run_id`, `total_jobs`, `total_media` | `total_media`: seconds of media to produce (jobs that will run) |
 | `job_started` | `job_id` | |
 | `job_progress` | `job_id`, `fraction` (0–1), `out_time`, `speed`?, `eta_ms`? | At most about 10 per second per job; the final block is always sent |
-| `job_warning` | `job_id`, `message`, `code`? | One per plan warning, at job start, and for warnings found while the job runs. `code` only for coded warnings (0.3.0: `OVER_RECOMMENDED`, `ENGINE_FALLBACK`, `TIMING_APPROXIMATE`, `LONG_RANGE`, `DISK_FULL`; 0.4.0: `SMART_FALLBACK`, with `detail.reason`, also when a seam check or a parameter change turns a running smart job into an accurate one) |
-| `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs (0.2.0) and GIF jobs (0.3.0). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). GIF stages, in order and only those that apply: `analyze` (smart framing), `search` (with a budget), `palette`, `encode`, `optimise` (gifsicle), `verify`. `job_progress.fraction` covers the whole job, weighted across stages. Smart clip jobs (0.4.0): `head`, `copy`, `tail`, `audio`, `join`, `verify` (only those that apply); after a run-time fallback the job enters `accurate`, which takes the rest of the progress bar, and is redone in accurate mode. Other clip jobs emit none. |
+| `job_warning` | `job_id`, `message`, `code`? | One per plan warning, at job start, and for warnings found while the job runs. `code` only for coded warnings (0.3.0: `OVER_RECOMMENDED`, `ENGINE_FALLBACK`, `TIMING_APPROXIMATE`, `LONG_RANGE`, `DISK_FULL`; 0.5.0: `FIT_LOWERED`, `FIT_TRIMMED`; 0.4.0: `SMART_FALLBACK`, with `detail.reason`, also when a seam check or a parameter change turns a running smart job into an accurate one) |
+| `job_stage` | `job_id`, `stage`, `index`, `of` | Upscale jobs (0.2.0) and GIF jobs (0.3.0). Names the stage the job entered, for example `render` (1 of 2) then `verify` (2 of 2). GIF stages, in order and only those that apply: `analyze` (smart framing), `search` (with a budget), `palette`, `encode`, `optimise` (gifsicle), `verify`. `job_progress.fraction` covers the whole job, weighted across stages. Smart clip jobs (0.4.0): `head`, `copy`, `tail`, `audio`, `join`, `verify` (only those that apply); after a run-time fallback the job enters `accurate`, which takes the rest of the progress bar, and is redone in accurate mode. Fit jobs (0.5.0): `pass1`, `pass2`, `verify` in budget mode (a retry enters `pass2` again), `encode`, `verify` in quality mode; a fit upscale has these instead of `render`. Other clip jobs emit none. |
 | `job_finished` | `job_id`, `outcome` | See below. Skipped jobs emit only this event. |
 | `run_progress` | `done`, `total`, `fraction`, `eta_ms`? | Weighted by media length. Throttled to about 4 per second, plus one after each finished job. `eta_ms` only when 2% < fraction < 100%. |
 | `summary` | `succeeded`, `skipped`, `failed`, `cancelled`, `exit_code`, `jobs[]` | **Always the last line**, also on cancel; a cancel before the run starts gives one with no jobs and `exit_code` 130 (0.3.0). This is the core's `run_finished` event, renamed by the CLI. |
@@ -333,7 +382,7 @@ Codes used here: `ENGINE_MISSING` (exit 4) and `INVALID_INPUT` (exit 3).
 |---|---|
 | `succeeded` | `output` (path actually written; may differ under `rename`) and `measure` (`clip` or `upscale`, added in 0.2.0; `gif`, added in 0.3.0), plus the fields for that measure below |
 | `skipped` | `reason`: `output already exists`, or `output appeared while the clip was being made` |
-| `failed` | `error` `{code, message, stderr_tail?, detail?}` (`detail` only for `BUDGET_UNREACHABLE`, 0.3.0, and `SMART_UNAVAILABLE`, `{reason}`, 0.4.0) |
+| `failed` | `error` `{code, message, stderr_tail?, detail?}` (`detail` only for `BUDGET_UNREACHABLE`, 0.3.0, `SMART_UNAVAILABLE`, `{reason}`, 0.4.0, and `FIT_FAILED`, `{cap, attempts}`, 0.5.0) |
 | `cancelled` | — |
 
 `summary.jobs[]` items have `id`, `source`, `output`, `requested`, plus the outcome fields.
@@ -350,6 +399,19 @@ for smart mode (0.4.0) also has `smart`:
 
 After a fallback: `"mode_used":"accurate","copied_frames":0,"reencoded_frames":<all>,
 "copied_share":0.0` and `fallback` set to the reason.
+
+A fit job (0.5.0), clip or upscale, also has `fit`. Real outcome of a trimmed fit:
+
+```json
+{"status":"succeeded","measure":"clip","actual":{"start":0.0,"end":10.0},"adjusted":false,
+ "fit":{"bytes":8545351,"cap":50000000,"mode":"quality","video_kbps":7465,"audio_kbps":128,
+        "attempts":[{"video_kbps":7465,"bytes":8545351}],"trimmed":true,"size":[1920,1080],
+        "fps":30.0}}
+```
+
+`bytes` is the committed file's size, always at most `cap`. `attempts` lists every encode of
+the output (more than one after a retry; the last is the file). A job still over the cap after
+3 retries fails with `FIT_FAILED` (`detail.cap`, `detail.attempts`) and writes nothing.
 
 **`measure: "gif"`** (0.3.0) adds `span`, `format`, `bytes`, `width`, `height`, `fps`, `timing`,
 `colours`, `dither` and `lossy` (built-in engine only; otherwise the keys are absent), `engine`, `optimiser` (bool:

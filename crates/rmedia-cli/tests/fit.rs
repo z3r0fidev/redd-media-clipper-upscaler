@@ -249,6 +249,19 @@ fn the_dry_run_shows_the_fit_and_its_prediction_holds() {
         (Some(1920), Some(30.0), Some(25.0))
     );
     let predicted = fit["predicted_bytes"].as_u64().unwrap();
+    // A name template can use the target's id (contracts/cli.md).
+    let o = dry(&["--json", "--fit", "reddit-video", "--name", "{source}_{target}.{ext}"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let named = plan_doc(&o)["jobs"][0]["output"].as_str().unwrap().to_owned();
+    assert!(named.ends_with("busy_reddit-video.mp4"), "{named}");
+    // The commands it will run: both passes, in the scratch folder that holds the pass log.
+    let job = &doc["jobs"][0];
+    let pipeline = job["pipeline"].as_array().expect("a pipeline");
+    assert_eq!(pipeline.len(), 2, "{job}");
+    assert_eq!(pipeline[1], job["argv"], "argv is pass 2");
+    let has = |a: &serde_json::Value, w: &str| a.as_array().unwrap().iter().any(|x| x == w);
+    assert!(has(&pipeline[0], "-pass") && has(&job["argv"], "-passlogfile"), "{job}");
+    assert!(job["cwd"].is_string(), "{job}");
 
     // SC-006: the real size is within 15% of the prediction.
     let o = rmedia(d.path())

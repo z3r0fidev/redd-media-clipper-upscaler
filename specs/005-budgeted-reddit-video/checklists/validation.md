@@ -125,3 +125,28 @@ pass 1 (`-threads 1`) repeated exactly, but pass 2 with `sliced-threads=1` diffe
 quality mode did too. The owner chose exact repeats (2026-11-20): every fit encode now runs on one
 encoder thread (research R13, revised), about 2.3× slower for pass 2.
 `a_fit_is_deterministic` now covers this case (10 s at 5 MB) and quality mode, two runs each.
+
+## T045 quickstart end to end, 2026-11-20 (Linux, debug build of the T044 tree)
+
+Source: the quickstart's 4-minute 1080p30 `testsrc2` + noise with a 440 Hz tone (CRF 12, 6.8 GB),
+with `RMEDIA_CONFIG_DIR`/`STATE`/`CACHE` isolated. Script: the commands in `quickstart.md`.
+
+| SC | Check | Result |
+|---|---|---|
+| SC-001 | 0:10–3:10, `--fit-max-size 40MB`: bytes ≤ cap; h264 High yuv420p + aac | pass: 39,380,107 ≤ 40,000,000; h264 High yuv420p, aac |
+| SC-002 | ≥ 90% of the cap, budget mode | pass: 98.5%, budget |
+| SC-003 | 180 s ± 1 frame; audio start within 21.3 ms | pass: 180.000000 s; audio − video start 0.0000 s |
+| SC-004 | one encode | pass: 1 attempt (the matrix in `fit_*.rs` is green) |
+| SC-005 | 3:00 with `--fit-max-length 1:00`; 4:00 at 1 MB | pass: exit 3 `RANGE_TOO_LONG` `{len 180, max_length 60}`, nothing written; exit 3 `BUDGET_UNREACHABLE` `{min_cap 13,252,898}` |
+| SC-006 | real ÷ predicted within 15% | pass: 1.005 (the quickstart's old 0.85–1.0 band was stricter than the spec; corrected) |
+| SC-007 | desktop `fit` = CLI `fit` | pass (bridge test, US5) |
+| SC-008 | real Reddit upload | owner check: `docs/operations/fit-owner-checks.md` |
+
+Also: the 1:00 trim of 0:00–4:00 is 60.000000 s (`FIT_TRIMMED`, quality mode, 57.4 MB); 3:00 at
+15 MB lowers 1920x1080 → 854x480 (525 kb/s, 14.7 MB predicted); 0:20 under 1 GB is quality mode
+(≤ 20.8 MB); `clip --upscale --preset reddit-916 --fit reddit-video` over 1:00 is 1080x1920 with
+audio, 60.000 s, 39.6 MB; the JSON and CSV manifests of `contracts/manifest-fit.md` (with a user
+target `sub-50mb`) plan the same 5 jobs (targets, caps, lengths, modes). The run took 243 s for
+3 minutes of 1080p (one encoder thread, R13). The quickstart's shapes line used
+`upscale -s/-e`, which `upscale` does not take (whole videos only); corrected to
+`clip --upscale`. Windows: the MinGW type-check is clean and CI runs the suites on Windows.

@@ -85,62 +85,67 @@ Arguments:
   [INPUT]...  Input video files and/or folders (folders are scanned for videos)
 
 Options:
-      --ffmpeg <PATH>          Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
-      --inputs-from <FILE>     Read more inputs from a file (one path per line), or "-" for stdin
-      --ffprobe <PATH>         Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
-      --no-recursive           Only look at the top level of each folder
-      --gifsicle <PATH>        Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
-      --max-depth <N>          Maximum folder depth (1 = top level only)
-      --gifski <PATH>          Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
-      --include <GLOB>         Only include matching paths (glob, relative to the folder; repeatable), e.g. "*.mp4"
-      --exclude <GLOB>         Exclude matching paths (glob; repeatable), e.g. "**/drafts/**"
-  -v, --verbose...             More detail (show ffmpeg commands with -v)
-      --hidden                 Include hidden files and folders
-  -q, --quiet                  Only print errors and the final summary
-      --follow-symlinks        Follow symbolic links (loops are detected)
-  -s, --start <TIME>           Clip start: 90, 1:30, 00:01:30.500, 1m30s …
-  -l, --list <FILE>            Clip list file: one clip per line, "START END|+DURATION [NAME]" (applied to every input)
-  -e, --end <TIME>             Clip end (a time, or "end"). Defaults to the end of the video
-  -d, --duration <DURATION>    Clip length instead of an end time: 15, +15, 1:00 …
-      --mode <MODE>            fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode; smart = frame-exact, copying whole GOPs and re-encoding only the ends (H.264 in mp4, mov, mkv or ts; other sources are cut in accurate mode) [default: fast] [possible values: fast, accurate, smart]
-      --no-smart-fallback      With --mode smart: fail a job that cannot be smart-cut instead of cutting it in accurate mode
-      --upscale                Also upscale every clip for phones, in the same pass (feature 002; see `rmedia upscale`)
-      --preset <ID>            Device preset (see `upscale --list-presets`) [default: phone-fill]
-      --reframe <REFRAME>      How to fill a screen of a different shape: follow the subject, crop the centre, or show the whole frame over a blurred background [default: smart] [possible values: smart, center, blur]
-      --tier <TIER>            Quality tier: chosen for this machine (auto) or forced [default: auto] [possible values: auto, cpu, gpu, ai]
-      --hdr <HDR>              HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only) [default: sdr] [possible values: sdr, keep]
-      --motion <MOTION>        Smart-reframe camera speed [default: normal] [possible values: calm, normal, fast]
-      --crf <N>                Override the preset's quality (CRF, lower = better and bigger)
-      --gif                    Make every clip a GIF (or Reddit MP4) instead (feature 003; see `rmedia gif`)
-      --target <ID>            GIF target (see `gif --list-targets`) [default: reddit-post]
-      --format <FORMAT>        Output format [default: gif] [possible values: gif, mp4]
-      --width <N>              Output width in pixels; never above the source's [default: the target's]
-      --fps <N>                Frames per second, at most 50 for a GIF [default: the target's]
-      --colors <N>             Palette size, 2 to 256 (built-in engine) [default: the target's]
-      --dither <MODE>          Dithering: none, bayer, bayer:0..5, floyd-steinberg or sierra [default: the target's]
-      --lossy <N>              gifsicle lossy compression, 0 to 200 (needs gifsicle) [default: the target's]
-      --loop <N>               How many times it plays: forever, or 1 to 65535 [default: forever]
-      --budget <SIZE>          The size to aim for (3MB, 2.5MiB, 800k), or none [default: the target's]
-      --hard-limit <SIZE>      Never write above this size [default: the budget, else the target's hard limit]
-      --allow-trim             Allow shortening the range when no setting fits the budget
-      --engine <ENGINE>        GIF engine: the target's (auto), the built-in one or gifski [default: auto] [possible values: auto, builtin, gifski]
-      --strict-engine          Fail instead of falling back when the chosen engine is missing
-      --no-optimise            Never run the gifsicle optimiser
-      --shape <SHAPE>          Output shape [default: source] [possible values: source, 9:16, 4:5, 1:1]
-      --framing <FRAMING>      How to reach another shape [default: smart] [possible values: smart, center, blur]
-      --no-sample              With --dry-run, skip the sample encodes (the size estimate is shown as pending). Without it, a dry run encodes short samples of each input in a temporary folder
-      --crop-path <FILE>       With smart framing, write the full crop path as JSON to FILE
-  -o, --output-dir <DIR>       Output folder (default: a "clips" folder next to each source; "upscaled" for upscale)
-      --name <TEMPLATE>        Output name template: {source} {index} {index:03} {name} {name-or-range} {name-or-start} {start} {end} {range} {ext}
-      --container <EXT>        Output container/extension (default: same as the source)
-      --on-exists <ON_EXISTS>  What to do when an output file already exists [default: skip] [possible values: skip, overwrite, rename]
-      --no-audio               Drop all audio
-      --audio <TRACKS>         Keep only these audio tracks (1-based), e.g. 1,2
-      --no-subs                Drop subtitles
-  -j, --jobs <N>               How many clips to process at once (default: half the CPU cores, max 4)
-      --dry-run                Show what would be done without writing anything
-      --json                   Machine-readable output on stdout (NDJSON events, or one document for --dry-run)
-  -h, --help                   Print help
+      --ffmpeg <PATH>              Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
+      --inputs-from <FILE>         Read more inputs from a file (one path per line), or "-" for stdin
+      --ffprobe <PATH>             Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
+      --list-fit-targets           List the video targets for --fit and exit; with --json, as JSON
+      --gifsicle <PATH>            Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
+      --no-recursive               Only look at the top level of each folder
+      --gifski <PATH>              Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
+      --max-depth <N>              Maximum folder depth (1 = top level only)
+      --include <GLOB>             Only include matching paths (glob, relative to the folder; repeatable), e.g. "*.mp4"
+  -v, --verbose...                 More detail (show ffmpeg commands with -v)
+      --exclude <GLOB>             Exclude matching paths (glob; repeatable), e.g. "**/drafts/**"
+  -q, --quiet                      Only print errors and the final summary
+      --hidden                     Include hidden files and folders
+      --follow-symlinks            Follow symbolic links (loops are detected)
+  -s, --start <TIME>               Clip start: 90, 1:30, 00:01:30.500, 1m30s …
+  -l, --list <FILE>                Clip list file: one clip per line, "START END|+DURATION [NAME]" (applied to every input)
+  -e, --end <TIME>                 Clip end (a time, or "end"). Defaults to the end of the video
+  -d, --duration <DURATION>        Clip length instead of an end time: 15, +15, 1:00 …
+      --mode <MODE>                fast = no re-encode, starts at the keyframe before START; accurate = frame-exact re-encode; smart = frame-exact, copying whole GOPs and re-encoding only the ends (H.264 in mp4, mov, mkv or ts; other sources are cut in accurate mode) [default: fast] [possible values: fast, accurate, smart]
+      --no-smart-fallback          With --mode smart: fail a job that cannot be smart-cut instead of cutting it in accurate mode
+      --upscale                    Also upscale every clip for phones, in the same pass (feature 002; see `rmedia upscale`)
+      --preset <ID>                Device preset (see `upscale --list-presets`) [default: phone-fill]
+      --reframe <REFRAME>          How to fill a screen of a different shape: follow the subject, crop the centre, or show the whole frame over a blurred background [default: smart] [possible values: smart, center, blur]
+      --tier <TIER>                Quality tier: chosen for this machine (auto) or forced [default: auto] [possible values: auto, cpu, gpu, ai]
+      --hdr <HDR>                  HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only) [default: sdr] [possible values: sdr, keep]
+      --motion <MOTION>            Smart-reframe camera speed [default: normal] [possible values: calm, normal, fast]
+      --crf <N>                    Override the preset's quality (CRF, lower = better and bigger)
+      --gif                        Make every clip a GIF (or Reddit MP4) instead (feature 003; see `rmedia gif`)
+      --target <ID>                GIF target (see `gif --list-targets`) [default: reddit-post]
+      --format <FORMAT>            Output format [default: gif] [possible values: gif, mp4]
+      --width <N>                  Output width in pixels; never above the source's [default: the target's]
+      --fps <N>                    Frames per second, at most 50 for a GIF [default: the target's]
+      --colors <N>                 Palette size, 2 to 256 (built-in engine) [default: the target's]
+      --dither <MODE>              Dithering: none, bayer, bayer:0..5, floyd-steinberg or sierra [default: the target's]
+      --lossy <N>                  gifsicle lossy compression, 0 to 200 (needs gifsicle) [default: the target's]
+      --loop <N>                   How many times it plays: forever, or 1 to 65535 [default: forever]
+      --budget <SIZE>              The size to aim for (3MB, 2.5MiB, 800k), or none [default: the target's]
+      --hard-limit <SIZE>          Never write above this size [default: the budget, else the target's hard limit]
+      --allow-trim                 Allow shortening the range when no setting fits the budget
+      --engine <ENGINE>            GIF engine: the target's (auto), the built-in one or gifski [default: auto] [possible values: auto, builtin, gifski]
+      --strict-engine              Fail instead of falling back when the chosen engine is missing
+      --no-optimise                Never run the gifsicle optimiser
+      --shape <SHAPE>              Output shape [default: source] [possible values: source, 9:16, 4:5, 1:1]
+      --framing <FRAMING>          How to reach another shape [default: smart] [possible values: smart, center, blur]
+      --no-sample                  With --dry-run, skip the sample encodes (the size estimate is shown as pending). Without it, a dry run encodes short samples of each input in a temporary folder
+      --crop-path <FILE>           With smart framing, write the full crop path as JSON to FILE
+      --fit <TARGET>               Make each output an MP4 with audio that fits TARGET's size cap and length limit (re-encodes; accurate cut)
+      --fit-max-size <SIZE>        Lower the target's size cap for this run: 50MB, 8MiB, 1GB, or bytes
+      --fit-max-length <DURATION>  Lower the target's length limit (same syntax as -d)
+      --fit-allow-trim             Shorten a range that is too long, or that cannot fit the cap even at the target's smallest size, instead of refusing it
+  -o, --output-dir <DIR>           Output folder (default: a "clips" folder next to each source; "upscaled" for upscale)
+      --name <TEMPLATE>            Output name template: {source} {index} {index:03} {name} {name-or-range} {name-or-start} {start} {end} {range} {ext}
+      --container <EXT>            Output container/extension (default: same as the source)
+      --on-exists <ON_EXISTS>      What to do when an output file already exists [default: skip] [possible values: skip, overwrite, rename]
+      --no-audio                   Drop all audio
+      --audio <TRACKS>             Keep only these audio tracks (1-based), e.g. 1,2
+      --no-subs                    Drop subtitles
+  -j, --jobs <N>                   How many clips to process at once (default: half the CPU cores, max 4)
+      --dry-run                    Show what would be done without writing anything
+      --json                       Machine-readable output on stdout (NDJSON events, or one document for --dry-run)
+  -h, --help                       Print help
 ```
 
 ### Clip and Upscale in One Pass
@@ -212,6 +217,7 @@ Implemented in `commands/scan.rs` › `expand_inputs`:
 |---|---|
 | `--mode` | `fast` |
 | `--no-smart-fallback` | off: smart jobs that cannot be smart-cut run in accurate mode |
+| `--fit` | off. With it, `--container` defaults to `mp4` and `--mode` to accurate |
 | `-o` | `<source folder>/clips` |
 | `--name` | `{source}_{index:03}_{name-or-range}.{ext}`. With more than one source **and** `-o`: `{source}/{source}_{index:03}_{name-or-range}.{ext}` (one sub-folder per source). |
 | `--container` | Source extension. In accurate mode, containers without an encode profile fall back to `mp4` with a warning. |
@@ -312,6 +318,78 @@ A batch dry run with smart jobs ends with a totals line such as
 `smart: 3 jobs; fallback: 2 (open_gop 1, vfr 1)`. `--dry-run --json` shows each job's parts and
 its five commands ([JSON Output › Smart cut](json-output.md#smart-cut)).
 
+### Fit a Reddit Video (`--fit`)
+
+Added in 0.5.0 (feature 005). `--fit TARGET` makes each output an MP4 with audio that is never
+larger than the target's size cap and never longer than its length limit. The built-in target
+is `reddit-video` (Reddit's limits as of 2026-11-13: 1 GiB, 15:00, 1920 px, up to 60 fps; marked
+*unverified* until the owner upload check confirms them). User targets live in the
+`video-targets` folder ([File Formats › Video target files](file-formats.md#video-target-files-video-targetsjson)).
+
+| Flag | Meaning |
+|---|---|
+| `--fit <TARGET>` | Fit each output to TARGET. Re-encodes with H.264 and AAC; the cut is accurate |
+| `--fit-max-size <SIZE>` | Lower the size cap for this run: `50MB`, `8MiB`, `1GB` or bytes (decimal `MB`, binary `MiB`) |
+| `--fit-max-length <DURATION>` | Lower the length limit (the `-d` syntax) |
+| `--fit-allow-trim` | Keep the start of a range that is too long, or too long for the cap at the smallest size, instead of refusing it |
+| `--list-fit-targets` | (`clip` only) List the targets and exit; with `--json`, as JSON |
+
+The same flags work on `clip`, `upscale` (and `clip --upscale`) and `batch`. With a preset, the
+preset sets the shape, size and reframing and the target sets the caps.
+
+How the size is chosen (research R1–R4):
+
+- When the budget covers the target's quality ceiling (`max_bpp`, 0.12 bits per pixel: about
+  7.5 Mbit/s at 1080p30), the clip is encoded once at CRF 20 with that ceiling (`quality`), so a
+  short clip is not padded to fill a large cap.
+- Otherwise the video bitrate comes from the budget (the cap less a 2% container margin and the
+  audio) and the clip is encoded in two passes (`budget`). If that bitrate is under the target's
+  minimum (`min_bpp`, 0.03), the long side is scaled by 0.75 per step (1920 → 1440 → 1080 …)
+  until it fits, but the short side never goes below the floor (480 px). At the floor, the audio
+  is lowered toward its floor (64 kb/s). If that is still not enough, the range is refused
+  (`BUDGET_UNREACHABLE`, with the smallest cap that would work) or, with `--fit-allow-trim`,
+  trimmed to the longest start that fits.
+- Every output is measured before it is committed. One that is over the cap is encoded again
+  with a lower bitrate, up to 3 times; after that the job fails (`FIT_FAILED`, exit 1) and
+  nothing is written.
+- The size is never enlarged and the frame rate never raised. HDR sources are tone-mapped to SDR.
+- Every fit encode runs on one encoder thread, so the same input always gives the same bytes.
+
+Rules:
+
+- The `--fit-*` flags need `--fit`; `--fit` with `--gif` is refused; a size or length above the
+  target's own is refused (an override can only lower a limit). All exit 2.
+- `--container` other than `mp4` is refused (exit 3). Without it, the output is `.mp4`.
+- `--mode smart` prints `smart cut does not apply: the clip is re-encoded to fit its target`
+  (`SMART_NOT_APPLIED`); `fast` is ignored silently. The cut is accurate either way.
+- A name template can use `{target}`.
+
+```text
+$ rmedia clip --list-fit-targets
+reddit-video   Reddit video post    1.07 GB · 15:00 · 1920 px · unverified   built-in
+sub-50mb       r/example rule       50.0 MB · 05:00 · 1920 px · unverified   user (/home/me/.config/rmedia/video-targets/sub-50mb.json)
+
+$ rmedia clip talk.mp4 --start 0 --end 25 --fit reddit-video --dry-run
+#1   would write: /work/clips/talk_001_00-00-00.000_00-00-25.000.mp4
+     from /work/talk.mp4  00:00:00.000 → 00:00:25.000  [accurate]
+     fit reddit-video (unverified): 1920x1080 30 fps quality · crf 20 ≤ 7,465 kb/s + 128 kb/s · ≤ 25.6 MB of 1.07 GB (a 25 s range)
+
+$ rmedia clip talk.mp4 --start 0 --end 25 --fit reddit-video --fit-max-size 5MB
+warning: talk_001_00-00-00.000_00-00-25.000.mp4: size lowered 1920x1080 → 1440x810 to fit reddit-video
+✓ /work/clips/talk_001_00-00-00.000_00-00-25.000.mp4  4.9 MB of 5.0 MB (98%) · 1440x810 · 2 passes
+
+$ rmedia clip talk.mp4 --start 0 --end 25 --fit reddit-video --fit-max-length 10
+error: command line: the range (0:25) is longer than reddit-video allows (0:10); use --fit-allow-trim to keep the first 0:10
+
+$ rmedia clip talk.mp4 --start 0 --end 25 --fit reddit-video --fit-max-size 200kB
+error: command line: 25 s cannot fit 200 kB even at 854x480 (needs at least 1.4 MB); raise --fit-max-size or use --fit-allow-trim
+```
+
+Sizes print in decimal units, so the built-in 1 GiB cap shows as 1.07 GB. A lowered setting
+or a trim is a `warning:` line; the clip still succeeds. A trimmed clip keeps the name of the
+range you asked for. `--json` gives the plan's `fit` block and each outcome's `fit` block
+([JSON Output › Fit](json-output.md#fit)).
+
 ### Cancellation
 
 `clip`, `upscale`, `gif` and `batch` catch Ctrl-C from the moment they start. The first Ctrl-C
@@ -338,49 +416,53 @@ Arguments:
   <MANIFEST>  Manifest file: .json (structured) or .csv (one row per clip)
 
 Options:
-      --continue-on-missing    Skip videos that do not exist instead of stopping before anything runs
-      --ffmpeg <PATH>          Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
-      --ffprobe <PATH>         Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
-      --mode <MODE>            Default mode for clips the manifest does not specify [possible values: fast, accurate, smart]
-      --no-smart-fallback      With smart mode: fail a job that cannot be smart-cut instead of cutting it in accurate mode (unless the manifest says otherwise)
-      --gifsicle <PATH>        Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
-  -o, --output-dir <DIR>       Default output folder for clips the manifest does not specify
-      --gifski <PATH>          Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
-      --name <TEMPLATE>        Default name template
-      --container <EXT>        Default output container/extension
-  -v, --verbose...             More detail (show ffmpeg commands with -v)
-      --on-exists <ON_EXISTS>  What to do when an output file already exists (default: skip) [possible values: skip, overwrite, rename]
-  -q, --quiet                  Only print errors and the final summary
-  -j, --jobs <N>               How many clips to process at once
-      --upscale                Upscale every video the manifest does not turn upscaling off for (feature 002)
-      --preset <ID>            Device preset (see `upscale --list-presets`) [default: phone-fill]
-      --reframe <REFRAME>      How to fill a screen of a different shape: follow the subject, crop the centre, or show the whole frame over a blurred background [default: smart] [possible values: smart, center, blur]
-      --tier <TIER>            Quality tier: chosen for this machine (auto) or forced [default: auto] [possible values: auto, cpu, gpu, ai]
-      --hdr <HDR>              HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only) [default: sdr] [possible values: sdr, keep]
-      --motion <MOTION>        Smart-reframe camera speed [default: normal] [possible values: calm, normal, fast]
-      --crf <N>                Override the preset's quality (CRF, lower = better and bigger)
-      --gif                    Make a GIF of every clip the manifest does not turn GIF export off for (feature 003)
-      --target <ID>            GIF target (see `gif --list-targets`) [default: reddit-post]
-      --format <FORMAT>        Output format [default: gif] [possible values: gif, mp4]
-      --width <N>              Output width in pixels; never above the source's [default: the target's]
-      --fps <N>                Frames per second, at most 50 for a GIF [default: the target's]
-      --colors <N>             Palette size, 2 to 256 (built-in engine) [default: the target's]
-      --dither <MODE>          Dithering: none, bayer, bayer:0..5, floyd-steinberg or sierra [default: the target's]
-      --lossy <N>              gifsicle lossy compression, 0 to 200 (needs gifsicle) [default: the target's]
-      --loop <N>               How many times it plays: forever, or 1 to 65535 [default: forever]
-      --budget <SIZE>          The size to aim for (3MB, 2.5MiB, 800k), or none [default: the target's]
-      --hard-limit <SIZE>      Never write above this size [default: the budget, else the target's hard limit]
-      --allow-trim             Allow shortening the range when no setting fits the budget
-      --engine <ENGINE>        GIF engine: the target's (auto), the built-in one or gifski [default: auto] [possible values: auto, builtin, gifski]
-      --strict-engine          Fail instead of falling back when the chosen engine is missing
-      --no-optimise            Never run the gifsicle optimiser
-      --shape <SHAPE>          Output shape [default: source] [possible values: source, 9:16, 4:5, 1:1]
-      --framing <FRAMING>      How to reach another shape [default: smart] [possible values: smart, center, blur]
-      --no-sample              With --dry-run, skip the sample encodes (the size estimate is shown as pending). Without it, a dry run encodes short samples of each input in a temporary folder
-      --crop-path <FILE>       With smart framing, write the full crop path as JSON to FILE
-      --dry-run                Show what would be done without writing anything
-      --json                   Machine-readable output on stdout
-  -h, --help                   Print help
+      --continue-on-missing        Skip videos that do not exist instead of stopping before anything runs
+      --ffmpeg <PATH>              Path to the ffmpeg executable (default: $RMEDIA_FFMPEG, then bundled, then PATH)
+      --ffprobe <PATH>             Path to the ffprobe executable (default: $RMEDIA_FFPROBE, then bundled, then PATH)
+      --mode <MODE>                Default mode for clips the manifest does not specify [possible values: fast, accurate, smart]
+      --gifsicle <PATH>            Path to gifsicle, the optional GIF optimiser (default: the gifsicle_path setting, $RMEDIA_GIFSICLE, then bundled, then PATH)
+      --no-smart-fallback          With smart mode: fail a job that cannot be smart-cut instead of cutting it in accurate mode (unless the manifest says otherwise)
+      --gifski <PATH>              Path to gifski, the optional best-quality GIF engine (default: the gifski_path setting, $RMEDIA_GIFSKI, then bundled, then PATH)
+  -o, --output-dir <DIR>           Default output folder for clips the manifest does not specify
+      --name <TEMPLATE>            Default name template
+  -v, --verbose...                 More detail (show ffmpeg commands with -v)
+      --container <EXT>            Default output container/extension
+  -q, --quiet                      Only print errors and the final summary
+      --on-exists <ON_EXISTS>      What to do when an output file already exists (default: skip) [possible values: skip, overwrite, rename]
+  -j, --jobs <N>                   How many clips to process at once
+      --upscale                    Upscale every video the manifest does not turn upscaling off for (feature 002)
+      --preset <ID>                Device preset (see `upscale --list-presets`) [default: phone-fill]
+      --reframe <REFRAME>          How to fill a screen of a different shape: follow the subject, crop the centre, or show the whole frame over a blurred background [default: smart] [possible values: smart, center, blur]
+      --tier <TIER>                Quality tier: chosen for this machine (auto) or forced [default: auto] [possible values: auto, cpu, gpu, ai]
+      --hdr <HDR>                  HDR sources: convert to standard range (sdr) or keep HDR (HDR-capable presets only) [default: sdr] [possible values: sdr, keep]
+      --motion <MOTION>            Smart-reframe camera speed [default: normal] [possible values: calm, normal, fast]
+      --crf <N>                    Override the preset's quality (CRF, lower = better and bigger)
+      --gif                        Make a GIF of every clip the manifest does not turn GIF export off for (feature 003)
+      --target <ID>                GIF target (see `gif --list-targets`) [default: reddit-post]
+      --format <FORMAT>            Output format [default: gif] [possible values: gif, mp4]
+      --width <N>                  Output width in pixels; never above the source's [default: the target's]
+      --fps <N>                    Frames per second, at most 50 for a GIF [default: the target's]
+      --colors <N>                 Palette size, 2 to 256 (built-in engine) [default: the target's]
+      --dither <MODE>              Dithering: none, bayer, bayer:0..5, floyd-steinberg or sierra [default: the target's]
+      --lossy <N>                  gifsicle lossy compression, 0 to 200 (needs gifsicle) [default: the target's]
+      --loop <N>                   How many times it plays: forever, or 1 to 65535 [default: forever]
+      --budget <SIZE>              The size to aim for (3MB, 2.5MiB, 800k), or none [default: the target's]
+      --hard-limit <SIZE>          Never write above this size [default: the budget, else the target's hard limit]
+      --allow-trim                 Allow shortening the range when no setting fits the budget
+      --engine <ENGINE>            GIF engine: the target's (auto), the built-in one or gifski [default: auto] [possible values: auto, builtin, gifski]
+      --strict-engine              Fail instead of falling back when the chosen engine is missing
+      --no-optimise                Never run the gifsicle optimiser
+      --shape <SHAPE>              Output shape [default: source] [possible values: source, 9:16, 4:5, 1:1]
+      --framing <FRAMING>          How to reach another shape [default: smart] [possible values: smart, center, blur]
+      --no-sample                  With --dry-run, skip the sample encodes (the size estimate is shown as pending). Without it, a dry run encodes short samples of each input in a temporary folder
+      --crop-path <FILE>           With smart framing, write the full crop path as JSON to FILE
+      --fit <TARGET>               Make each output an MP4 with audio that fits TARGET's size cap and length limit (re-encodes; accurate cut)
+      --fit-max-size <SIZE>        Lower the target's size cap for this run: 50MB, 8MiB, 1GB, or bytes
+      --fit-max-length <DURATION>  Lower the target's length limit (same syntax as -d)
+      --fit-allow-trim             Shorten a range that is too long, or that cannot fit the cap even at the target's smallest size, instead of refusing it
+      --dry-run                    Show what would be done without writing anything
+      --json                       Machine-readable output on stdout
+  -h, --help                       Print help
 ```
 
 Notes:
@@ -556,6 +638,8 @@ User presets are tagged `[user]` in the text listing. The JSON form is documente
 - Presets with platform limits (for example the Reddit presets) produce a `LIMIT_EXCEEDED`
   warning when the predicted size or the duration exceeds the limit. For size, the video bitrate
   is capped to fit.
+- With `--fit` (0.5.0), the target's size cap and length limit replace the preset's limits, and
+  the size is guaranteed rather than estimated ([Fit a Reddit Video](#fit-a-reddit-video---fit)).
 - rmedia warns when an output folder has less free space than the summed estimates plus 20%.
 - A source already at or above the target size is flagged (`no_upscale_needed`).
 - After encoding, rmedia probes the output; a bad output fails the job with `VERIFY_FAILED`.
@@ -725,6 +809,12 @@ RMEDIA_GIFSICLE)`. User GIF target files that cannot be used print `problem:  GI
 <file: message>`. None of these change `status` or the exit code. `--json` adds them as the `gif`
 block ([JSON Output › doctor](json-output.md#doctor)).
 
+From 0.5.0, a line reports the video targets for `--fit`: `video targets: 2 (reddit-video,
+sub-50mb)`, or `fit: unavailable — <reason>` when `libx264` or `aac` is missing. A target file
+that cannot be used prints `problem:  video target file <file> ignored: <message>`. Neither
+changes `status` or the exit code. `--json` adds the `fit` block
+([JSON Output › doctor](json-output.md#doctor)).
+
 Problems print to stderr as `problem:  <text>`. The exit code is 0 when the engine was found and
 its encoder list read; otherwise 4. "No encoders for accurate mode" is reported as a problem, but
 the status stays `ready`, because fast mode still works.
@@ -737,8 +827,8 @@ running the binary (see [JSON Output](json-output.md)).
 | Code | Meaning | Typical causes |
 |---|---|---|
 | `0` | Every job succeeded or was skipped (smart jobs that fell back to accurate mode included); a dry run that planned without errors; `scan`/`doctor` succeeded; `--help`/`--version` | — |
-| `1` | At least one job failed, or a single job was cancelled while the run continued | `ENGINE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_UNWRITABLE`, `INTERNAL`; for GIF jobs, `BUDGET_UNREACHABLE` at run time; with `--no-smart-fallback`, a smart job whose seam check failed |
-| `2` | Usage error (clap, or a flag combination the command refuses) | Unknown flag, `-e` together with `-d`, missing required argument; a GIF flag without `--gif` on `clip`, `--fps` above 50 for a GIF, `--hard-limit` with `--budget none` |
-| `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing; for `upscale`: unknown preset, `--hdr keep` with a preset that cannot keep HDR, a forced `--tier gpu` or `ai`; for GIF export: unknown target (`TARGET_UNKNOWN`), a size limit under 64 KiB without `--allow-trim`; with `--no-smart-fallback`, a source that cannot be smart-cut (`SMART_UNAVAILABLE`) |
-| `4` | Engine missing, too old, or a required encoder or filter absent | `ENGINE_MISSING` (plans whose only errors are engine errors also return 4); for `upscale` also a missing `libx265`/`libx264` or upscaling filter; for GIF export, with `--strict-engine`, a missing gifski (or a missing gifsicle when a lossy level is set) |
+| `1` | At least one job failed, or a single job was cancelled while the run continued | `ENGINE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_UNWRITABLE`, `INTERNAL`; for GIF jobs, `BUDGET_UNREACHABLE` at run time; for a fit, `FIT_FAILED` (still over the cap after 3 retries); with `--no-smart-fallback`, a smart job whose seam check failed |
+| `2` | Usage error (clap, or a flag combination the command refuses) | Unknown flag, `-e` together with `-d`, missing required argument; a GIF flag without `--gif` on `clip`, `--fps` above 50 for a GIF, `--hard-limit` with `--budget none`; a `--fit-*` flag without `--fit`, `--fit` with `--gif`, a fit override above the target's limit |
+| `3` | Invalid input; nothing ran | Clip list / manifest errors, end not after start, missing source, unsupported container, invalid glob, scan root missing; for `upscale`: unknown preset, `--hdr keep` with a preset that cannot keep HDR, a forced `--tier gpu` or `ai`; for GIF export: unknown target (`TARGET_UNKNOWN`), a size limit under 64 KiB without `--allow-trim`; with `--no-smart-fallback`, a source that cannot be smart-cut (`SMART_UNAVAILABLE`); for a fit, an unknown target (`TARGET_UNKNOWN`), a range over the length limit (`RANGE_TOO_LONG`), a cap the range cannot fit even at the smallest size (`BUDGET_UNREACHABLE`), a container other than mp4 |
+| `4` | Engine missing, too old, or a required encoder or filter absent | `ENGINE_MISSING` (plans whose only errors are engine errors also return 4); for `upscale` also a missing `libx265`/`libx264` or upscaling filter; for a fit, a missing `libx264` or `aac`; for GIF export, with `--strict-engine`, a missing gifski (or a missing gifsicle when a lossy level is set) |
 | `130` | Cancelled (Ctrl-C) | First Ctrl-C after the summary (also before the run starts), or immediately on the second |

@@ -348,7 +348,7 @@ impl Planner<'_> {
                 end: requested_end,
                 ext: &out_ext,
                 preset: up.as_ref().map(|(u, ..)| u.preset.as_str()),
-                target: gif.map(|g| g.target.as_str()),
+                target: gif.map(|g| g.target.as_str()).or(fit.as_ref().map(|(_, t)| t.id.as_str())),
                 format: gif.map(|g| g.format.ext()),
             },
         ) {

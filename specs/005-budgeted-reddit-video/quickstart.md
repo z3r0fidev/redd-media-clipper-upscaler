@@ -27,7 +27,7 @@ $RMEDIA_FFMPEG -v error -f lavfi -i "testsrc2=s=1920x1080:r=30,noise=alls=20:all
 | SC-004 | the integration test matrix (`crates/rmedia-core/tests/fit_*.rs`) | ≥ 95% of jobs have `attempts.len() == 1`; none has more than 4 |
 | SC-005 | `$R clip src.mp4 -s 0 -e 3:00 --fit reddit-video --fit-max-length 1:00 --dry-run` | exit 3, `RANGE_TOO_LONG`, nothing written |
 | SC-005 | `$R clip src.mp4 -s 0 -e 4:00 --fit reddit-video --fit-max-size 1MB --dry-run` | exit 3, `BUDGET_UNREACHABLE` with `min_cap` |
-| SC-006 | dry run, then run, with `--json` | `fit.bytes / fit.predicted_bytes` between 0.85 and 1.0 |
+| SC-006 | dry run, then run, with `--json` | `fit.bytes / fit.predicted_bytes` between 0.85 and 1.15 (spec SC-006: within 15%) |
 | SC-007 | `apps/desktop/src-tauri/tests/bridge.rs` fit test | the desktop plan's `fit` block equals the CLI's for the same manifest |
 | SC-008 | owner: upload a `reddit-video` output with sound, and a `--preset reddit-916 --fit reddit-video` one | both post and play with sound (record in `docs/operations/`) |
 
@@ -39,7 +39,8 @@ $R clip src.mp4 -s 0 -e 3:00 --fit reddit-video --fit-max-size 15MB --dry-run   
 $R clip src.mp4 -s 0 -e 0:20 --fit reddit-video --dry-run                               # mode quality (1 GB is generous)
 ```
 
-**Shapes and manifests:** `$R upscale src.mp4 -s 0 -e 1:00 --preset reddit-916 --fit reddit-video`
+**Shapes and manifests:** `$R clip src.mp4 -s 0 -e 1:00 --upscale --preset reddit-916 --fit reddit-video`
+(`upscale` takes whole videos only)
 gives 1080×1920 within the cap. To check manifests, run the JSON and CSV manifests from
 [manifest-fit.md](./contracts/manifest-fit.md) with `batch --dry-run --json`; the plans are
 identical.
