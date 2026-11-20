@@ -64,6 +64,42 @@ pub struct FitPlan {
     pub lowered: Vec<Lowered>,
 }
 
+impl FitPlan {
+    /// The output frame rate in frames per second.
+    pub fn fps_f64(&self) -> f64 {
+        f64::from(self.fps.0) / f64::from(self.fps.1.max(1))
+    }
+
+    /// Encoder passes: two in budget mode, one in quality mode.
+    pub fn passes(&self) -> u32 {
+        match self.mode {
+            Mode::Budget => 2,
+            Mode::Quality => 1,
+        }
+    }
+
+    /// The dry run's `fit` block (contracts/json-output.md › Dry run).
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "target": self.target.id,
+            "target_verified": self.target.verified,
+            "cap": self.cap,
+            "max_length": self.max_length,
+            "len": self.len,
+            "trimmed_from": self.trimmed_from,
+            "mode": self.mode,
+            "size": [self.size.0, self.size.1],
+            "fps": (self.fps_f64() * 1000.0).round() / 1000.0,
+            "video_kbps": self.video_kbps,
+            "crf": self.crf,
+            "audio_kbps": self.audio_kbps,
+            "predicted_bytes": self.predicted_bytes,
+            "lowered": self.lowered,
+            "passes": self.passes(),
+        })
+    }
+}
+
 /// Why a fit cannot be planned.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Refusal {

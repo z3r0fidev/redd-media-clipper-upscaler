@@ -135,6 +135,11 @@ impl Output {
             if let JobSpec::Gif(g) = &j.spec {
                 gif_lines(&g.gif);
             }
+            if let JobSpec::Clip(c) = &j.spec
+                && let Some(f) = &c.fit
+            {
+                println!("     {}", fit_line(f));
+            }
             if let Some(s) = &j.smart {
                 println!("     {}", smart_line(s));
             }
@@ -474,6 +479,11 @@ fn job_doc(j: &PlannedJob) -> Value {
             m.insert("cwd".into(), json!(lossy(cwd)));
         }
     }
+    if let JobSpec::Clip(c) = &j.spec
+        && let Some(f) = &c.fit
+    {
+        m.insert("fit".into(), f.to_json());
+    }
     if let JobSpec::Gif(g) = &j.spec {
         m.insert("kind".into(), json!("gif"));
         m.insert("gif".into(), g.gif.to_json());
@@ -481,6 +491,56 @@ fn job_doc(j: &PlannedJob) -> Value {
         m.insert("pipeline".into(), json!(pipeline));
     }
     v
+}
+
+/// The dry run's fit line (contracts/cli.md › Dry run), e.g.
+/// `fit reddit-video (unverified): 1920x1080 30 fps · video 4,227 kb/s + audio 128 kb/s (budget) · 98.0 MB of 100 MB`.
+pub(crate) fn fit_line(f: &rmedia_core::fit::plan::FitPlan) -> String {
+    use rmedia_core::fit::plan::Mode;
+    use rmedia_core::upscale::estimate::human_bytes;
+    let verified = if f.target.verified { "" } else { " (unverified)" };
+    let fps = f.fps_f64();
+    let fps = if (fps - fps.round()).abs() < 1e-6 { format!("{fps:.0}") } else { format!("{fps:.2}") };
+    let (w, h) = f.size;
+    let body = match f.mode {
+        Mode::Budget => {
+            let audio = f
+                .audio_kbps
+                .map_or_else(|| ", no audio".to_owned(), |a| format!(" + audio {} kb/s", thousands(a)));
+            format!(
+                "{w}x{h} {fps} fps · video {} kb/s{audio} (budget) · {} of {}",
+                thousands(f.video_kbps),
+                human_bytes(f.predicted_bytes),
+                human_bytes(f.cap)
+            )
+        }
+        Mode::Quality => {
+            let audio =
+                f.audio_kbps.map_or_else(|| ", no audio".to_owned(), |a| format!(" + {} kb/s", thousands(a)));
+            format!(
+                "{w}x{h} {fps} fps quality · crf {} ≤ {} kb/s{audio} · ≤ {} of {} (a {:.0} s range)",
+                f.crf.unwrap_or(f.target.quality.crf),
+                thousands(f.video_kbps),
+                human_bytes(f.predicted_bytes),
+                human_bytes(f.cap),
+                f.len
+            )
+        }
+    };
+    format!("fit {}{verified}: {body}", f.target.id)
+}
+
+/// `4227` → `4,227`.
+fn thousands(n: u32) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// `smart: head 0.680 s (17 fr) re-encoded · copy 16.000 s (400 fr) · … · 92% copied`, or

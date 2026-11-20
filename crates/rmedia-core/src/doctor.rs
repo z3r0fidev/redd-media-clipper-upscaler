@@ -142,6 +142,50 @@ pub struct DoctorReport {
     pub gif: GifReport,
     /// Smart cut (feature 004): whether `--mode smart` can cut here. Never changes `ok`.
     pub smart: SmartReport,
+    /// Fit (feature 005): whether `--fit` can run here, the video targets and the target files
+    /// that could not be used. Never changes `ok`.
+    pub fit: FitReport,
+}
+
+/// The doctor report's `fit` block (feature 005, contracts/cli.md › doctor).
+#[derive(Debug, Clone, Default, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct FitReport {
+    /// libx264 and the AAC encoder are present (HDR sources also need zscale and tonemap).
+    pub available: bool,
+    /// What is missing, when unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub reason: Option<String>,
+    /// The video target ids, built-in and user.
+    pub targets: Vec<String>,
+    /// User target files that could not be used.
+    pub problems: Vec<FitProblem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct FitProblem {
+    pub file: String,
+    pub message: String,
+}
+
+impl FitReport {
+    pub fn of(caps: &Caps) -> FitReport {
+        let lacking: Vec<&str> =
+            ["libx264", "aac"].into_iter().filter(|e| !caps.encoders.contains(*e)).collect();
+        let reg = &caps.video_targets;
+        FitReport {
+            available: lacking.is_empty(),
+            reason: (!lacking.is_empty()).then(|| format!("the ffmpeg build lacks {}", lacking.join(", "))),
+            targets: reg.ids().into_iter().map(str::to_owned).collect(),
+            problems: reg
+                .problems()
+                .iter()
+                .map(|p| FitProblem { file: crate::pathser::lossy(&p.file), message: p.message.clone() })
+                .collect(),
+        }
+    }
 }
 
 /// The doctor report's `smart` block (feature 004, contracts/cli.md › doctor).
@@ -194,6 +238,7 @@ pub async fn run(opts: &LocateOptions, settings: &Settings) -> (DoctorReport, Op
         preset_problems: Vec::new(),
         gif: GifReport::default(),
         smart: SmartReport::default(),
+        fit: FitReport::default(),
     };
     let tools = match tools::locate(opts).await {
         Ok(t) => t,
@@ -255,6 +300,7 @@ pub async fn run(opts: &LocateOptions, settings: &Settings) -> (DoctorReport, Op
     let targets = crate::gif::target::GifTargetRegistry::load(crate::settings::config_dir().as_deref());
     report.gif = GifReport::of(&caps, &targets);
     report.smart = SmartReport::of(&caps);
+    report.fit = FitReport::of(&caps);
     report.ok = true;
     (report, Some((tools, caps)))
 }

@@ -655,7 +655,12 @@ impl Planner<'_> {
             let what = if l.setting == "size" { "size" } else { "audio bitrate (kb/s)" };
             notice(
                 IssueCode::FitLowered,
-                format!("{what} lowered {} → {} to fit {}", l.from, l.to, target.id),
+                format!(
+                    "{what} lowered {} → {} to fit {}",
+                    setting_text(&l.from),
+                    setting_text(&l.to),
+                    target.id
+                ),
                 None,
             );
         }
@@ -1098,4 +1103,12 @@ pub(super) fn new_run_id() -> String {
     );
     h.write_u32(std::process::id());
     format!("{:016x}", h.finish())
+}
+
+/// A lowered setting for a message: `[1920, 1080]` → `1920x1080`, a number as is.
+fn setting_text(v: &serde_json::Value) -> String {
+    match v.as_array().map(Vec::as_slice) {
+        Some([w, h]) => format!("{w}x{h}"),
+        _ => v.to_string(),
+    }
 }

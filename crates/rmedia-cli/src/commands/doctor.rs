@@ -82,6 +82,17 @@ pub async fn run(cli: &Cli, args: &DoctorArgs) -> u8 {
                 crate::render::clean(reason.as_deref().unwrap_or("unknown"))
             ),
         }
+        if report.fit.available {
+            println!("video targets: {} ({})", report.fit.targets.len(), report.fit.targets.join(", "));
+        } else {
+            println!(
+                "fit: unavailable — {}",
+                crate::render::clean(report.fit.reason.as_deref().unwrap_or("unknown"))
+            );
+        }
+        for p in &report.fit.problems {
+            eprintln!("problem:  video target file {} ignored: {}", p.file, crate::render::clean(&p.message));
+        }
         for p in &report.problems {
             eprintln!("problem:  {p}");
         }

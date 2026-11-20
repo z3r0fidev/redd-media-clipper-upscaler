@@ -84,11 +84,14 @@ pub enum Command {
 #[derive(Debug, Args)]
 pub struct ClipArgs {
     /// Input video files and/or folders (folders are scanned for videos).
-    #[arg(value_name = "INPUT", required_unless_present = "inputs_from")]
+    #[arg(value_name = "INPUT", required_unless_present_any = ["inputs_from", "list_fit_targets"])]
     pub inputs: Vec<PathBuf>,
     /// Read more inputs from a file (one path per line), or "-" for stdin.
     #[arg(long, value_name = "FILE")]
     pub inputs_from: Option<String>,
+    /// List the video targets for --fit and exit; with --json, as JSON.
+    #[arg(long)]
+    pub list_fit_targets: bool,
     #[command(flatten)]
     pub scan: ScanFlags,
     /// Clip start: 90, 1:30, 00:01:30.500, 1m30s …
@@ -97,7 +100,7 @@ pub struct ClipArgs {
         long,
         value_name = "TIME",
         allow_hyphen_values = true,
-        required_unless_present = "list"
+        required_unless_present_any = ["list", "list_fit_targets"]
     )]
     pub start: Option<String>,
     /// Clip list file: one clip per line, "START END|+DURATION [NAME]" (applied to every input).

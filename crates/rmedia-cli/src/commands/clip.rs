@@ -16,6 +16,9 @@ use crate::{Cli, ClipArgs, CommonArgs, exit};
 
 pub async fn run(cli: &Cli, args: &ClipArgs) -> u8 {
     let out = Output::new(args.common.json, cli.quiet, cli.verbose);
+    if args.list_fit_targets {
+        return list_fit_targets(&out);
+    }
 
     // Parse clips first: input errors never need the engine.
     let clips = match &args.list {
@@ -198,4 +201,64 @@ pub fn options(c: &CommonArgs, mode: rmedia_core::request::Mode, multi_source: b
 
 pub fn absolute(p: &Path) -> PathBuf {
     std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf())
+}
+
+/// `--list-fit-targets [--json]`: the built-in and user video targets, plus any user target
+/// files that could not be used (contracts/cli.md).
+fn list_fit_targets(out: &Output) -> u8 {
+    use rmedia_core::fit::target::VideoTargetRegistry;
+    use rmedia_core::preset::PresetSource;
+    use rmedia_core::upscale::estimate::human_bytes;
+    use serde_json::json;
+    let reg = VideoTargetRegistry::load(rmedia_core::settings::config_dir().as_deref());
+    if out.json {
+        let targets: Vec<_> = reg
+            .list()
+            .map(|(t, src)| {
+                let mut v = serde_json::to_value(t).expect("a target serialises");
+                match src {
+                    PresetSource::Builtin => v["source"] = json!("builtin"),
+                    PresetSource::User(f) => {
+                        v["source"] = json!("user");
+                        v["file"] = json!(rmedia_core::pathser::lossy(f));
+                    }
+                }
+                v
+            })
+            .collect();
+        let problems: Vec<_> = reg
+            .problems()
+            .iter()
+            .map(|p| json!({"file": rmedia_core::pathser::lossy(&p.file), "message": p.message}))
+            .collect();
+        render::print_json(
+            &json!({"schema": 1, "type": "fit_targets", "targets": targets, "problems": problems}),
+        );
+    } else {
+        for (t, src) in reg.list() {
+            let secs = t.max_duration.round() as u64;
+            let verified = if t.verified { "verified" } else { "unverified" };
+            let source = match src {
+                PresetSource::Builtin => "built-in".to_owned(),
+                PresetSource::User(f) => format!("user ({})", f.display()),
+            };
+            println!(
+                "{:<14} {:<20} {} · {:02}:{:02} · {} px · {verified}   {source}",
+                t.id,
+                render::clean(&t.name),
+                human_bytes(t.max_bytes),
+                secs / 60,
+                secs % 60,
+                t.long_side
+            );
+        }
+        for p in reg.problems() {
+            eprintln!(
+                "warning: video target file {} ignored: {}",
+                p.file.display(),
+                render::clean(&p.message)
+            );
+        }
+    }
+    exit::OK
 }

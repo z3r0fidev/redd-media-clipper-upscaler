@@ -33,10 +33,14 @@ changes meaning, and without `--fit` every command behaves as before (FR-022).
 ### Dry run (`--dry-run`), one line per fit job
 
 ```text
-fit reddit-video (unverified): 1920x1080 30 fps · video 4,227 kb/s + audio 128 kb/s (budget) · 98.0 MB of 100 MB
-fit reddit-video (unverified): 1280x720 quality · crf 20 ≤ 3,318 kb/s + 128 kb/s · ≤ 43.1 MB of 1 GB (a 100 s range)
-fit sub-50mb: size lowered 1920x1080 → 1440x810 (budget below the minimum bitrate)
+fit reddit-video (unverified): 1920x1080 30 fps · video 2,380 kb/s + audio 128 kb/s (budget) · 7.8 MB of 8.0 MB
+fit reddit-video (unverified): 1920x1080 30 fps quality · crf 20 ≤ 7,465 kb/s + 128 kb/s · ≤ 25.6 MB of 1.07 GB (a 25 s range)
+fit reddit-video (unverified): 1440x810 30 fps · video 1,440 kb/s + audio 128 kb/s (budget) · 4.9 MB of 5.0 MB
+warning: size lowered 1920x1080 → 1440x810 to fit reddit-video
 ```
+
+Sizes use decimal units, as everywhere in rmedia: the built-in 1 GiB cap prints as 1.07 GB. A
+lowered setting or a trim is a notice line (`warning:`) under the job.
 
 A refusal prints the issue instead, after where it came from (`--json` gives the code and
 `detail`):
@@ -67,14 +71,16 @@ error: command line: 600 s cannot fit 8.0 MB even at 854x480 (needs at least 33.
 ## `rmedia clip --list-fit-targets`
 
 ```text
-reddit-video   Reddit video post   1 GB · 15:00 · 1920 px · unverified   built-in
-sub-50mb       r/example rule      50 MB · 05:00 · 1920 px · unverified   user (/home/u/.config/rmedia/video-targets/sub-50mb.json)
+reddit-video   Reddit video post    1.07 GB · 15:00 · 1920 px · unverified   built-in
+sub-50mb       r/example rule       50.0 MB · 05:00 · 1920 px · unverified   user (/home/u/.config/rmedia/video-targets/sub-50mb.json)
 ```
 
-With `--json`: `{"schema":1,"targets":[{...VideoTarget, "source":"builtin"|"user", "file":...}]}`.
+With `--json`: `{"schema":1,"type":"fit_targets","targets":[{...VideoTarget, "source":"builtin"|"user", "file":...}],"problems":[{file, message}]}`
+(`file` only for user targets). Unusable files are also warned about on stderr.
 
 ## `rmedia doctor`
 
 Adds the line `video targets: 2 (reddit-video, sub-50mb)`, and one line per problem file. The
-JSON gains `"fit": {"targets": [ids], "problems": [{file, message}]}` (additive). Problems
+JSON gains `"fit": {"available", "reason"?, "targets": [ids], "problems": [{file, message}]}`
+(additive); without libx264 or aac the line is `fit: unavailable — …` instead. Problems
 never change `status` or the exit code.

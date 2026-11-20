@@ -278,22 +278,22 @@ JSON. `--list-fit-targets` and `doctor` report the targets.
 
 ### Tests for User Story 3 (write first)
 
-- [ ] T030 [P] [US3] `cli-tests/fit.rs`:
+- [X] T030 [P] [US3] `cli-tests/fit.rs`:
   - `--dry-run` prints the contracts/cli.md line for budget mode, quality mode and a lowered
     size, and writes nothing;
-  - `--dry-run --json` has `fit` exactly as contracts/json-output.md (schema-checked with
-    `jsonschema` as for GIF);
+  - `--dry-run --json` has `fit` exactly as contracts/json-output.md (the exact key set; the
+    repo has no `jsonschema` setup);
   - `predicted_bytes`, compared with a real run, is within SC-006's 15% (measured: within 5%).
-- [ ] T031 [P] [US3] `cli-tests/fit.rs`: `clip --list-fit-targets` (text and `--json`), with a
+- [X] T031 [P] [US3] `cli-tests/fit.rs`: `clip --list-fit-targets` (text and `--json`), with a
   user target and a broken file; `doctor --json` has `fit.targets` and `fit.problems`, and its
   `status` is unchanged.
 
 ### Implementation for User Story 3
 
-- [ ] T032 [US3] `core/plan/model.rs`: add the `PlannedJob` `fit` JSON block (`FitPlan::to_json`).
+- [X] T032 [US3] `core/plan/model.rs`: add the `PlannedJob` `fit` JSON block (`FitPlan::to_json`).
   `cli/render.rs` prints the dry-run line, the `verified` flag, and the lowered and trimmed
   notes.
-- [ ] T033 [US3] `cli/main.rs` and `cli/commands/clip.rs`: `--list-fit-targets`. `core/doctor.rs`
+- [X] T033 [US3] `cli/main.rs` and `cli/commands/clip.rs`: `--list-fit-targets`. `core/doctor.rs`
   gets a `fit` block and the text line. Make T030–T031 pass.
 
 ---

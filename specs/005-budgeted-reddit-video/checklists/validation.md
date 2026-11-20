@@ -55,3 +55,16 @@ Fixed on the way:
 - A fit without libx264 (or aac, with audio) is `ENGINE_MISSING` at plan time (Principle VI).
 - The TypeScript bindings for the 005 types were regenerated (US1 had not).
 - contracts/cli.md's refusal example now shows the real text format (origin, then message).
+
+## US3 (T030–T033), 2026-11-19
+
+| Check | Test | Result |
+|---|---|---|
+| FR-014, the dry-run line for budget mode, quality mode and a lowered size; nothing written | `cli-tests/fit.rs` `the_dry_run_shows_the_fit_and_its_prediction_holds` | pass |
+| `--dry-run --json` `fit` block: exactly the contract's 15 keys | same (key set, no `jsonschema` in the repo) | pass |
+| SC-006, prediction within 15% of the real size | same (`FitBusy` 2–27 s, 8 MB, budget mode) | pass |
+| FR-004, `clip --list-fit-targets` text and `--json`, a user target, a broken file reported | `fit_targets_are_listed_and_reported_by_doctor` | pass |
+| `doctor --json` `fit.targets`/`fit.problems`; a broken file leaves `ok` and the exit code alone | same | pass |
+
+Changed on the way: `FIT_LOWERED` messages print sizes as `1920x1080` (they printed JSON arrays);
+contracts/cli.md's examples now show the real output (decimal units: 1 GiB is 1.07 GB).
