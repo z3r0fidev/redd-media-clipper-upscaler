@@ -252,6 +252,16 @@ pub struct PresetProblem {
     pub message: String,
 }
 
+impl crate::data_files::DataFile for Preset {
+    const KIND: &'static str = "preset";
+    fn parse(text: &str) -> Result<Preset, String> {
+        Preset::from_json(text)
+    }
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
 /// Built-in presets plus the user's, in a stable order: built-ins first (in their shipped order,
 /// replaced in place by a user override), then user-only presets by id.
 #[derive(Debug, Clone)]
@@ -274,32 +284,7 @@ impl PresetRegistry {
     pub fn load(config_dir: Option<&Path>) -> PresetRegistry {
         let mut reg = PresetRegistry::builtin();
         let Some(dir) = config_dir.map(|d| d.join("presets")) else { return reg };
-        let Ok(entries) = std::fs::read_dir(&dir) else { return reg };
-        let mut files: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")))
-            .collect();
-        files.sort();
-        let mut user: Vec<(Preset, PresetSource)> = Vec::new();
-        for file in files {
-            let parsed = read_preset_file(&file).and_then(|t| Preset::from_json(&t));
-            match parsed {
-                Ok(p) if user.iter().any(|(u, _)| u.id == p.id) => reg.problems.push(PresetProblem {
-                    file,
-                    message: format!("another user preset already uses the id {:?}", p.id),
-                }),
-                Ok(p) => user.push((p, PresetSource::User(file))),
-                Err(message) => reg.problems.push(PresetProblem { file, message }),
-            }
-        }
-        user.sort_by(|a, b| a.0.id.cmp(&b.0.id));
-        for (p, src) in user {
-            match reg.presets.iter_mut().find(|(b, _)| b.id == p.id) {
-                Some(slot) => *slot = (p, src),
-                None => reg.presets.push((p, src)),
-            }
-        }
+        reg.presets = crate::data_files::load(reg.presets, &dir, &mut reg.problems);
         reg
     }
 
@@ -453,6 +438,24 @@ mod tests {
             .collect();
         assert_eq!(bad, ["c-broken.json", "d-dup.json"]);
         assert!(matches!(reg.list().next().unwrap().1, PresetSource::User(_)));
+    }
+
+    /// Device presets share the target folders' loader: at most 64 files, the first by name.
+    #[test]
+    fn at_most_64_preset_files_are_read() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("presets");
+        std::fs::create_dir(&dir).unwrap();
+        for i in 0..70 {
+            let mut p: serde_json::Value = serde_json::from_str(BUILTIN[0]).unwrap();
+            p["id"] = format!("user-{i:02}").into();
+            std::fs::write(dir.join(format!("{i:02}.json")), p.to_string()).unwrap();
+        }
+        let reg = PresetRegistry::load(Some(d.path()));
+        assert_eq!(reg.ids().len(), 7 + 64);
+        assert_eq!(reg.ids().last(), Some(&"user-63"));
+        let msgs: Vec<&str> = reg.problems().iter().map(|p| p.message.as_str()).collect();
+        assert_eq!(msgs, ["6 files ignored: at most 64 preset files are read"]);
     }
 
     #[cfg(unix)]

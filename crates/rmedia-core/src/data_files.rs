@@ -2,9 +2,11 @@
 //! then `<config>/<dir>/*.json`, capped and validated, problems collected, never fatal.
 //!
 //! User files are untrusted: they are read with the device-preset protections (regular files
-//! only, at most 64 KiB), at most [`MAX_USER_FILES`] of them, and the type's own validation runs
-//! on every one.
+//! only, at most 64 KiB), at most [`MAX_USER_FILES`] of them (the first by name), never one whose
+//! name has control or text-direction characters, and the type's own validation runs on every
+//! one. Device presets (002), GIF targets (003) and video targets (005) all load through here.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::preset::{PresetProblem, PresetSource, read_preset_file};
@@ -30,25 +32,53 @@ pub(crate) fn load<T: DataFile>(
     problems: &mut Vec<PresetProblem>,
 ) -> Vec<(T, PresetSource)> {
     let Ok(entries) = std::fs::read_dir(dir) else { return items };
-    // A folder with a huge number of files is not listed in full.
-    let mut files: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")))
-        .take(MAX_USER_FILES * 4)
-        .collect();
-    files.sort();
-    if files.len() > MAX_USER_FILES {
+    // The first files by name, whatever order the folder lists them in: the whole listing is
+    // walked, but only the first MAX_USER_FILES names are kept.
+    let mut files: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut total = 0usize;
+    let mut unsafe_names = Vec::new();
+    let mut unsafe_count = 0usize;
+    for path in entries.flatten().map(|e| e.path()) {
+        if !path.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")) {
+            continue;
+        }
+        // A name with control or text-direction characters could rewrite a terminal line or
+        // disguise itself when printed: it is not read, and only its cleaned name is shown.
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        if name.chars().any(crate::gif::target::unsafe_char) {
+            unsafe_count += 1;
+            if unsafe_names.len() < 3 {
+                unsafe_names.push(shown(&name));
+            }
+            continue;
+        }
+        total += 1;
+        files.insert(path);
+        if files.len() > MAX_USER_FILES {
+            files.pop_last();
+        }
+    }
+    if total > MAX_USER_FILES {
         problems.push(PresetProblem {
             file: dir.to_path_buf(),
             message: format!(
-                "{}{} files ignored: at most {MAX_USER_FILES} {} files are read",
-                files.len() - MAX_USER_FILES,
-                if files.len() == MAX_USER_FILES * 4 { " or more" } else { "" },
+                "{} files ignored: at most {MAX_USER_FILES} {} files are read",
+                total - MAX_USER_FILES,
                 T::KIND
             ),
         });
-        files.truncate(MAX_USER_FILES);
+    }
+    if unsafe_count > 0 {
+        problems.push(PresetProblem {
+            file: dir.to_path_buf(),
+            message: format!(
+                "{unsafe_count} file{} ignored: {} control or text-direction characters ({}{})",
+                if unsafe_count == 1 { "" } else { "s" },
+                if unsafe_count == 1 { "its name has" } else { "their names have" },
+                unsafe_names.join(", "),
+                if unsafe_count > unsafe_names.len() { ", …" } else { "" }
+            ),
+        });
     }
     let mut user: Vec<(T, PresetSource)> = Vec::new();
     for file in files {
@@ -163,6 +193,42 @@ mod tests {
         assert_eq!(items.len(), MAX_USER_FILES);
         assert_eq!(problems.len(), 1);
         assert_eq!(problems[0].message, "6 files ignored: at most 64 test item files are read");
+    }
+
+    /// Which files are read does not depend on the folder's listing order: always the first 64
+    /// by name, however many files there are.
+    #[test]
+    fn the_first_64_by_name_are_read_however_many_there_are() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in (0..300).rev() {
+            write(dir.path(), &format!("{i:03}.json"), &format!(r#"{{"id":"u{i:03}","n":1}}"#));
+        }
+        let mut problems = Vec::new();
+        let items = load::<Item>(Vec::new(), dir.path(), &mut problems);
+        let want: Vec<String> = (0..64).map(|i| format!("u{i:03}")).collect();
+        assert_eq!(items.iter().map(|(i, _)| i.id.clone()).collect::<Vec<_>>(), want);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].message, "236 files ignored: at most 64 test item files are read");
+    }
+
+    /// A file whose name has control or text-direction characters is not read, and its name is
+    /// shown with those characters replaced (the problem names the folder, not the file).
+    #[cfg(unix)]
+    #[test]
+    fn files_with_unsafe_names_are_skipped_and_never_printed_raw() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "ok.json", r#"{"id":"ok","n":1}"#);
+        write(dir.path(), "a\u{202e}nosj.json", r#"{"id":"a","n":1}"#);
+        write(dir.path(), "b\u{1b}[2J.json", r#"{"id":"b","n":1}"#);
+        let mut problems = Vec::new();
+        let items = load::<Item>(Vec::new(), dir.path(), &mut problems);
+        assert_eq!(ids(&items), [("ok", 1, true)]);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert_eq!(problems[0].file, dir.path());
+        assert_eq!(
+            problems[0].message,
+            "2 files ignored: their names have control or text-direction characters (a?nosj.json, b?[2J.json)"
+        );
     }
 
     #[cfg(unix)]

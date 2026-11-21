@@ -297,6 +297,11 @@ match13.mp4,12:00,end,,,accurate,
 - A header row is **required**. Column names are case-insensitive and may come in any order.
   Unknown and duplicate columns are errors. `input` and `start` are required columns.
 - Lines starting with `#` are comments, including above the header. Fields are trimmed.
+- **Formula guard** (0.5.0). rmedia writes a cell that starts with `=`, `+`, `-` or `@` with a
+  leading `'` (`'-take 2`), so a spreadsheet shows it as text instead of running it. When reading,
+  one leading `'` is dropped if the next character is `=`, `+`, `-`, `@` or `'`, so exported
+  files read back unchanged. A hand-written cell that starts with `'` and anything else is read
+  as it is.
 
 | Column | Required | Meaning |
 |---|---|---|
@@ -370,7 +375,8 @@ Invalid files are listed by `rmedia gif --list-targets` and ignored. Fields: `sc
 Added in 0.5.0 (feature 005; contract `specs/005-budgeted-reddit-video/contracts/video-target.md`).
 A video target sets the size cap, length limit and quality settings for `--fit`. User targets
 live in `<config>/video-targets/*.json` ([Configuration › File locations](../administration/configuration.md#file-locations)):
-at most 64 files of at most 64 KiB each are read. An unusable file is reported by
+at most 64 files of at most 64 KiB each are read, the first 64 by file name; a file whose name has
+control or text-direction characters is not read and is reported. An unusable file is reported by
 `rmedia doctor`, `rmedia clip --list-fit-targets` and the desktop app's **Settings › Targets**,
 and ignored; the other targets stay usable. When two user files have the same id, the first by
 file name wins and the second is reported. A user file with a built-in id replaces the built-in
@@ -441,7 +447,9 @@ the template creates sub-folders.
 
 Added in 0.2.0 (unreleased). `rmedia upscale` reads user presets from `*.json` files in the `presets`
 folder of the config directory ([Configuration](../administration/configuration.md#file-locations)).
-A user preset with the same `id` as a built-in replaces it. A file that fails validation is
+A user preset with the same `id` as a built-in replaces it. As for target files, at most 64 files
+of at most 64 KiB each are read (since 0.5.0), the first 64 by name, and a file whose name has
+control or text-direction characters is skipped. A file that fails validation is
 skipped and reported (`warning: preset file … ignored: …`, and `problems` in
 `--list-presets --json`). The format is the JSON Schema in
 `specs/002-mobile-upscale/contracts/preset.schema.json` (schema version 1). Required keys:

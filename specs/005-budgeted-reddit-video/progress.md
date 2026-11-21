@@ -25,8 +25,7 @@ awk '/^## Phase/{p=$0} /^- \[[ X]\] T[0-9]+/{t[p]++; if($0~/^- \[X\]/)d[p]++} EN
 Scope: `core/fit/` (`mod.rs`, `plan.rs`, `target.rs`), `core/exec/fit.rs`, the planner's fit
 code, `plan/ffargs.rs` (`fit_args`, `fit_tail`, the upscale and AI pass args), `plan/model.rs`,
 the CLI's fit flags and rendering, and the desktop's `ops/fit.rs`. This pass was a self-review;
-004's final pass also ran the senior-code-reviewer and security-auditor agents, which are
-offered for 005 too.
+the agent passes follow in the next section.
 
 ### Code review
 
@@ -48,7 +47,7 @@ feature).
 
 | Check | Result |
 |---|---|
-| User target files read capped | `data_files::load`: regular files only, ≤ 64 KiB, ≤ 64 files (the listing itself stops at 256), duplicates reported |
+| User target files read capped | `data_files::load`: regular files only, ≤ 64 KiB, ≤ 64 files (at review time the listing stopped at 256; since the agent review, the first 64 by name), duplicates reported |
 | Every target field validated | `VideoTarget::validate`: id `[a-z0-9-]{1,40}`, caps 64 KiB–4 GiB, durations, sizes, fps, CRF, bpp and audio ranges; problem text sanitised and cut to 300 characters |
 | Overrides | `parse_size` within 4 GiB; an override may only lower a limit (exit 2 on the CLI, exit 3 in a manifest) |
 | Pass files | `-passlogfile fit`, a fixed relative name; every pass (and the AI pipeline) runs with the job's scratch folder as working directory; the folder is journaled and removed |
@@ -57,10 +56,32 @@ feature).
 
 No high or medium security findings.
 
+## Agent reviews (2026-11-20)
+
+The senior-code-reviewer and security-auditor agents reviewed `092171f..c7fbb54` (read-only).
+No high findings. Each finding was checked against the code before it was fixed.
+
+| # | From | Severity | Finding | Status |
+|---|---|---|---|---|
+| A1 | code | medium | A trimmed clip could last longer than the length limit: the limit was not a whole number of frames, and the last frame ended past it (29.97 fps, a 10 s limit gave 10.010 s; a range exactly at the limit did the same). The size was measured, the length was not. | fixed: the limit is whole output frames (`plan_fit`: 299 frames, 9.977 s); the cut ends 1 ms early so a frame at the end is not kept. Tests `plan.rs` `the_length_limit_is_whole_frames`, `fit_us2.rs` `a_length_limit_holds_at_a_fractional_frame_rate` (new fixture `FitNtsc`); T024's check no longer allows a frame over |
+| A2 | code | medium | A plan trimmed or lowered to fit sits at the target's least bitrate (`min_bpp`), so its first retry fell below it and the job failed `FIT_FAILED` without retrying. | fixed: a retry may go down to 90% of the least bitrate (`RETRY_FLOOR`); further down is a runaway overshoot and still fails. Tests `exec/fit.rs` `a_plan_at_the_least_bitrate_may_still_retry`; `fit_retry.rs`'s early-stop test now plans 5% above the minimum |
+| A3 | security | low | A user target with `long_side` 4294967295 overflowed `long_side * 9 / 16` before its range check was read: debug builds panicked while loading targets (release builds wrapped and still refused the file). | fixed: computed in `u64`. Test: the case in `every_rule_refuses_its_bad_value_with_a_reason` |
+| A4 | code | low | A picture too small for 1 kb/s planned `-b:v 0k`. | fixed: at least 1 kb/s. Test in `the_length_limit_is_whole_frames` |
+| A5 | code | low | `--fit-max-size 1` read "cannot fit 0 kB". | fixed: sizes below 1 kB read in bytes (`human_bytes`). Test `sizes_below_a_kilobyte_are_bytes` |
+| A6 | code | low | The surround warning said the extra channels were "dropped"; they are mixed down (`-ac 2`). | fixed: "mixed down to stereo" |
+| A7 | security | info | A user target file's name is shown unfiltered (its problem text is filtered). The user names their own files. | fixed: a file whose name has control or text-direction characters is not read; the problem names the folder and shows the cleaned name. Test `data_files` `files_with_unsafe_names_are_skipped_and_never_printed_raw` |
+| A8 | security | info | CSV exports do not neutralise cells starting `= + - @`. The fit columns hold only ids and numbers; the path columns predate 005. | fixed: such cells are written with a leading `'`, which the reader drops again (round trip kept). Test `manifest_csv` `formula_cells_are_guarded_and_round_trip` |
+| A9 | security | info | With more than 256 files in the folder, which 64 are read depends on the listing order; the rest are reported. | fixed: the whole listing is walked and the first 64 names kept. Test `the_first_64_by_name_are_read_however_many_there_are`. Device presets (002), which had no file cap, now load through the same code (`at_most_64_preset_files_are_read`) |
+
+Checked and fine by both: the planning order and its math, never committing over the cap, the
+retry bound, cancellation and scratch cleanup, `-threads 1` in every pass, argv-only spawning
+with no user text in options or filters, target file reading (`O_NOFOLLOW`, size and count
+caps, every field validated), overrides that may only lower, and the desktop's `fit_plan`
+(opened paths only, plans without encoding).
+
 ## Open
 
 - All 47 tasks are done. Version 0.5.0 is set; `docs/releases/0.5.0.md` is a draft until the tag.
 - SC-008 is an owner check: a real Reddit upload with sound of a `reddit-video` output and a
   `reddit-916` output (`docs/operations/fit-owner-checks.md`); the result sets `verified` in
   `reddit-video.json`. Then tag `v0.5.0`.
-- Optional: the senior-code-reviewer and security-auditor agent passes, as 004's T059 had.

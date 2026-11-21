@@ -337,7 +337,10 @@ security and code-review lows, then 005.
     cap in research R1; the size is measured before commit, with at most 3 retries). Tasks on
     2026-11-19: [tasks](../specs/005-budgeted-reddit-video/tasks.md), T001–T047 (MVP: T001–T022).
     Built 2026-11-19 to 2026-11-20: US1–US5 (T001–T043); docs (T044); reviews (T046: two
-    mediums and two lows fixed, no security finding). Low left: a trimmed clip keeps the default
+    mediums and two lows fixed, no security finding); agent reviews 2026-11-20 (two mediums,
+    a trim's last frame past the length limit and no retry at the least bitrate, and four
+    lows fixed, and its three info items: CSV formula guard, unsafe file names, the first 64
+    files by name, device presets capped too; `progress.md`). Low left: a trimmed clip keeps the default
     name of the range that was asked for, as GIF trims do; naming it after the output range
     would change names that 003 already writes.
 24. Later candidates (no number yet): a desktop crop-path editor for smart reframe

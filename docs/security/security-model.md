@@ -121,6 +121,16 @@ only.
   rmedia logs no credentials or tokens.
 - Discovery never descends into rmedia's own output folders on `clip` re-runs, and refuses `-o`
   equal to a scanned folder (`commands/scan.rs`).
+- **User data folders** (`<config>/presets`, `gif-targets`, `video-targets`) share one loader
+  (`data_files::load`, 0.5.0): regular files only (no symlinks, `O_NOFOLLOW`), at most 64 KiB
+  each, and at most 64 files, always the first 64 by name (the whole listing is walked, only 64
+  names are kept; the rest are reported). A file whose name has control or text-direction
+  characters is not read; the problem names the folder and shows the name with those
+  characters replaced, so no file name can rewrite a terminal line or disguise itself.
+  Device presets were not capped before 0.5.0.
+- **CSV export** (`manifest_csv::write`, 0.5.0): a cell that starts with `=`, `+`, `-` or `@` is
+  written with a leading `'`, so a spreadsheet shows it as text instead of running it as a
+  formula. The reader drops that `'` again, so exported manifests read back unchanged.
 
 ### Desktop Page Containment (T5)
 
@@ -208,7 +218,7 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
   without a budget), or the output folder's free space less 64 MiB split across the job's copies
   (then `DISK_FULL`), and the verify stage refuses a committed file above the limit.
 - **User targets** (`<config>/gif-targets/*.json`) are read like presets: regular files only,
-  at most 64 KiB each and 64 files, names without control characters, `soft ≤ hard ≤ 1 GiB`;
+  at most 64 KiB each and 64 files, file names and text without control characters, `soft ≤ hard ≤ 1 GiB`;
   only the `id` (`^[a-z0-9-]+$`) reaches a file name. `--budget`/`--hard-limit` use checked
   arithmetic.
 - **Desktop.** The page never sets an engine path: `set_settings` ignores `gifsicle_path` and
@@ -226,7 +236,8 @@ Requirements R8 #1–#12 came from the security-auditor review (2026-10-06). Imp
 
 - **User targets** (`<config>/video-targets/*.json`) are untrusted and read through the same
   loader as GIF targets (`data_files`): regular files only, at most 64 KiB each, at most 64
-  files (more are reported, not read), duplicate ids reported. Every field is range-checked in
+  files (the first by name; more are reported, not read), no file names with control or
+  text-direction characters, duplicate ids reported. Every field is range-checked in
   code (`VideoTarget::validate`): `id` 1–40 characters `[a-z0-9-]`, `max_bytes` 64 KiB–4 GiB,
   `max_duration` ≤ 4 h, `long_side` 256–3840, `max_fps` 1–120, CRF 0–51, bits per pixel in
   (0, 1], audio 32–320 kbit/s. Problem messages quote file content only after control

@@ -136,7 +136,7 @@ pub fn parse(path: &Path, text: &str, cli: &Options) -> Result<BatchRequest, Vec
             }
         };
         let line = record.position().map_or(0, |p| line_at(text, p.byte()));
-        let get = |c: Option<usize>| c.and_then(|i| record.get(i)).filter(|v| !v.is_empty());
+        let get = |c: Option<usize>| c.and_then(|i| record.get(i)).map(unguard).filter(|v| !v.is_empty());
         let mut row_issues = Vec::new();
         let input = match get(Some(c_input)) {
             Some(i) => normalize(&resolve(&base, Path::new(i))),
@@ -537,6 +537,26 @@ fn issue(file: &Path, line: usize, message: String) -> Issue {
     }
 }
 
+/// The characters that make a spreadsheet run a cell as a formula (CSV injection).
+const FORMULA: [char; 4] = ['=', '+', '-', '@'];
+
+/// Whether `s` starts with a `'` that [`guard`] added: one followed by a formula character or
+/// another `'`.
+fn guarded(s: &str) -> bool {
+    s.strip_prefix('\'').is_some_and(|r| r.starts_with(FORMULA) || r.starts_with('\''))
+}
+
+/// A cell for export: one a spreadsheet would run as a formula gets a leading `'`, the usual
+/// guard; so does one that already reads as guarded, so [`unguard`] restores every value.
+fn guard(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.starts_with(FORMULA) || guarded(s) { format!("'{s}").into() } else { s.into() }
+}
+
+/// A cell as read: [`guard`]'s `'` dropped.
+fn unguard(s: &str) -> &str {
+    if guarded(s) { &s[1..] } else { s }
+}
+
 /// Drops `.` components so `a.mp4` and `./a.mp4` group as the same source.
 fn normalize(p: &Path) -> PathBuf {
     p.components().filter(|c| !matches!(c, std::path::Component::CurDir)).collect()
@@ -624,7 +644,7 @@ pub fn write(req: &BatchRequest) -> String {
             if fits {
                 row.extend(fit_row(o.fit.as_ref()));
             }
-            let _ = w.write_record(&row);
+            let _ = w.write_record(row.iter().map(|c| guard(c).into_owned()));
         }
     }
     String::from_utf8(w.into_inner().unwrap_or_default()).unwrap_or_default()
@@ -906,6 +926,38 @@ mod tests {
                 assert_eq!(x.overrides.output_dir, y.overrides.output_dir);
             }
         }
+    }
+
+    /// Cells a spreadsheet would run as a formula (`=`, `+`, `-`, `@`) are written with a
+    /// leading `'`, which the reader drops again: every value round-trips, and a hand-written
+    /// cell that starts with `'` and something else is read as it is.
+    #[test]
+    fn formula_cells_are_guarded_and_round_trip() {
+        let names = ["=HYPERLINK(\"x\")", "+1", "-take", "@sum", "'=x", "''", "'plain", "'", "a=b"];
+        let mut text = "input,start,end,name,output\n".to_owned();
+        for (i, n) in names.iter().enumerate() {
+            let quoted = format!("\"{}\"", n.replace('"', "\"\""));
+            text += &format!("/v/{i}.mp4,0,1,{quoted},=out\n");
+        }
+        // Read as written by hand: `'=x` is the escape of `=x`, the others are literal.
+        let req = parse(Path::new("/m/j.csv"), &text, &Options::default()).unwrap();
+        let read: Vec<_> = req.sources.iter().map(|s| s.clips[0].name.clone().unwrap()).collect();
+        assert_eq!(read, ["=HYPERLINK(\"x\")", "+1", "-take", "@sum", "=x", "'", "'plain", "'", "a=b"]);
+        let out = write(&req);
+        for cell in ["'=HYPERLINK", "'+1", "'-take", "'@sum", "'=x"] {
+            assert!(out.contains(cell), "{cell} not guarded in {out}");
+        }
+        for line in out.lines().skip(1) {
+            for cell in line.split(',') {
+                let c = cell.trim_start_matches('"');
+                assert!(!c.starts_with(['=', '+', '-', '@']), "unguarded cell {cell:?} in {line}");
+            }
+        }
+        let again = parse(Path::new("/m/j.csv"), &out, &Options::default()).unwrap();
+        let back: Vec<_> = again.sources.iter().map(|s| s.clips[0].name.clone().unwrap()).collect();
+        assert_eq!(back, read);
+        let dirs: Vec<_> = again.sources.iter().map(|s| s.clips[0].overrides.output_dir.clone()).collect();
+        assert!(dirs.iter().all(|d| d.as_ref().is_some_and(|d| d.ends_with("=out"))), "{dirs:?}");
     }
 
     fn fit_of(req: &BatchRequest, v: usize, c: usize) -> Option<crate::fit::FitOptions> {
