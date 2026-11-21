@@ -143,8 +143,12 @@ pub fn human_bytes(b: u64) -> String {
         format!("{:.2} GB", b / 1e9)
     } else if b >= 1e6 {
         format!("{:.1} MB", b / 1e6)
-    } else {
+    } else if b >= 1e3 {
         format!("{:.0} kB", b / 1e3)
+    } else if b == 1.0 {
+        "1 byte".into()
+    } else {
+        format!("{b} bytes")
     }
 }
 
@@ -152,6 +156,14 @@ pub fn human_bytes(b: u64) -> String {
 mod tests {
     use super::*;
     use crate::preset::PresetRegistry;
+
+    /// A cap below 1 kB (`--fit-max-size 1`) reads as bytes, not "0 kB".
+    #[test]
+    fn sizes_below_a_kilobyte_are_bytes() {
+        assert_eq!(human_bytes(1), "1 byte");
+        assert_eq!(human_bytes(999), "999 bytes");
+        assert_eq!(human_bytes(1_000), "1 kB");
+    }
 
     fn preset(id: &str) -> Preset {
         PresetRegistry::builtin().get(id).unwrap().clone()

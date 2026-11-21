@@ -107,6 +107,9 @@ pub enum Fixture {
     FitShort,
     /// 3840x2160 @ 30 fps, 2 s, testsrc2 (no noise) with stereo AAC: fitted down to 1920.
     FitUhd,
+    /// 640x360 @ 30000/1001 fps (29.97), 12 s, testsrc2 with stereo AAC: a length limit is not a
+    /// whole number of frames.
+    FitNtsc,
 }
 
 impl Fixture {
@@ -159,6 +162,7 @@ impl Fixture {
             Fixture::FitSurround => "fit-surround.mp4",
             Fixture::FitShort => "fit-short.mp4",
             Fixture::FitUhd => "fit-uhd.mp4",
+            Fixture::FitNtsc => "fit-ntsc.mp4",
         }
     }
 
@@ -194,6 +198,29 @@ impl Fixture {
                 "ultrafast",
                 "-crf",
                 "23",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-shortest",
+                "-f",
+                "mp4",
+            ],
+            Fixture::FitNtsc => vec![
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x360:rate=30000/1001:duration=12",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=12",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
                 "-pix_fmt",
                 "yuv420p",
                 "-c:a",

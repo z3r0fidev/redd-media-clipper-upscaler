@@ -88,15 +88,16 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     v
 }
 
-/// A retry that would fall below the target's minimum bitrate fails at once (2 MB over 6 s at
-/// 1080p: the third attempt would need less than 1,866 kb/s).
+/// A retry that would fall well below the target's minimum bitrate (under 90% of it) fails at
+/// once (1.6 MB over 6 s at 1080p plans about 5% above the 1,866 kb/s minimum; the third
+/// attempt, two −11% steps down, would need less than 1,680 kb/s).
 #[tokio::test(flavor = "multi_thread")]
 async fn a_retry_below_the_minimum_bitrate_fails_early() {
     let _serial = SERIAL.lock().await;
     if !rmedia_testkit::require_engine(&["libx264", "aac"]) {
         return;
     }
-    let (summary, _, out, _) = run(4, Some(2_000_000)).await;
+    let (summary, _, out, _) = run(4, Some(1_600_000)).await;
     let JobOutcome::Failed { error } = &summary.jobs[0].outcome else {
         panic!("{:?}", summary.jobs[0].outcome)
     };

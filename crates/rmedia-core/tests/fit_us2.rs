@@ -176,7 +176,7 @@ async fn trims_and_sizes_are_what_was_planned() {
     let (file, actual, f) = run(&src, 2.0, 27.0, trim, out.path()).await;
     assert!(f.trimmed, "{f:?}");
     assert!((actual.start.as_secs_f64() - 2.0).abs() <= frame, "{actual:?}");
-    assert!((video_secs(&file) - 10.0).abs() <= frame + 1e-3, "{}", video_secs(&file));
+    assert!(video_secs(&file) <= 10.0 + 1e-6 && video_secs(&file) >= 10.0 - frame, "{}", video_secs(&file));
     assert!(f.bytes <= 50_000_000);
 
     let (file, _, f) =
@@ -194,6 +194,35 @@ async fn trims_and_sizes_are_what_was_planned() {
     let (file, _, _) = run(&fixture(Fixture::FitUhd), 0.0, 2.0, FitOptions::default(), out.path()).await;
     assert_eq!(size_of(&file), (1920, 1080));
     assert!(decode_errors(&file).is_empty());
+}
+
+/// The output, its container included, never lasts longer than the length limit, even when the
+/// limit is not a whole number of frames (29.97 fps: 10 s is 299.7 frames, so 299 frames).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_length_limit_holds_at_a_fractional_frame_rate() {
+    if !engine_ok() {
+        return;
+    }
+    let out = tempfile::tempdir().unwrap();
+    let src = fixture(Fixture::FitNtsc);
+    let frame = 1001.0 / 30000.0;
+    let format_secs = |p: &Path| -> f64 {
+        probe_json(p)["format"]["duration"].as_str().and_then(|s| s.parse().ok()).expect("a duration")
+    };
+    // Trimmed to the limit, and a range exactly at the limit (not trimmed).
+    for (end, trimmed) in [(11.5, true), (11.0, false)] {
+        let fit = FitOptions { allow_trim: true, ..target("short") };
+        let p = plan_fit(&src, 1.0, end, fit.clone(), out.path()).await;
+        let f = planned(&p);
+        assert!(f.len <= 10.0 && f.len > 10.0 - frame, "{}", f.len);
+        assert_eq!(f.trimmed_from.is_some(), trimmed, "{f:?}");
+        let (file, actual, _) = run(&src, 1.0, end, fit, out.path()).await;
+        let (v, all) = (video_secs(&file), format_secs(&file));
+        assert!(v <= 10.0 && all <= 10.0, "{end}: video {v}, container {all}");
+        assert!(v > 10.0 - frame - 1e-3, "{end}: {v}");
+        assert!((actual.start.as_secs_f64() - 1.0).abs() <= frame, "{actual:?}");
+        std::fs::remove_file(&file).unwrap();
+    }
 }
 
 /// T025: HDR, variable and high frame rates, surround audio, and audio-only sources.

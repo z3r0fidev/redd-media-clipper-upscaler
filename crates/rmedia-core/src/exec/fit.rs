@@ -84,7 +84,7 @@ pub(super) async fn encode(
         let next = retry_kbps(fit, video_kbps, bytes);
         // Out of retries, or the next try would fall below the target's least acceptable
         // bitrate (x264's two-pass also refuses very low rates): fail, keeping nothing.
-        if attempts.len() > MAX_RETRIES || f64::from(next) < min_kbps(fit) {
+        if attempts.len() > MAX_RETRIES || !may_retry(fit, next) {
             remove(&temp).await;
             return Err(Error::FitFailed { cap: fit.cap, attempts });
         }
@@ -106,6 +106,16 @@ pub(super) async fn encode(
 fn min_kbps(fit: &FitPlan) -> f64 {
     let fps = f64::from(fit.fps.0) / f64::from(fit.fps.1);
     fit.target.quality.min_bpp * f64::from(fit.size.0) * f64::from(fit.size.1) * fps / 1000.0
+}
+
+/// How far below the target's least bitrate a retry may go: a plan trimmed or lowered to fit
+/// sits at that bitrate, and a small overshoot must still be corrected (research R2) rather than
+/// fail at once. A retry further down means a runaway overshoot: the job fails.
+const RETRY_FLOOR: f64 = 0.9;
+
+/// Whether a retry at `next` kb/s is still worth encoding.
+fn may_retry(fit: &FitPlan, next: u32) -> bool {
+    f64::from(next) >= min_kbps(fit) * RETRY_FLOOR
 }
 
 /// The lower bitrate for the next attempt (research R2): the video's share scaled by how far the
@@ -191,6 +201,20 @@ mod tests {
         let t = VideoTargetRegistry::builtin().get("reddit-video").unwrap().clone();
         let o = FitOptions { max_size: Some(20_000_000), ..FitOptions::default() };
         plan_fit(&t, &o, Source { len: 60.0, size: (1920, 1080), fps: (30, 1), has_audio: true }).unwrap()
+    }
+
+    /// A plan trimmed to fit sits at the target's least bitrate (`min_bpp`); a small overshoot
+    /// still gets its retries instead of failing at once. A runaway one does not.
+    #[test]
+    fn a_plan_at_the_least_bitrate_may_still_retry() {
+        let t = VideoTargetRegistry::builtin().get("reddit-video").unwrap().clone();
+        let o = FitOptions { max_size: Some(8_000_000), allow_trim: true, ..FitOptions::default() };
+        let p = plan_fit(&t, &o, Source { len: 600.0, size: (1920, 1080), fps: (30, 1), has_audio: true })
+            .unwrap();
+        assert!(p.trimmed_from.is_some() && f64::from(p.video_kbps) < min_kbps(&p) + 1.0, "{p:?}");
+        let next = retry_kbps(&p, p.video_kbps, p.cap + p.cap / 50);
+        assert!(may_retry(&p, next), "{} → {next}", p.video_kbps);
+        assert!(!may_retry(&p, p.video_kbps / 2));
     }
 
     /// Research R2's retry formula: scaled by the overshoot, never the same or higher.

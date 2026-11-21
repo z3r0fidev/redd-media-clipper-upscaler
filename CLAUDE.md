@@ -29,7 +29,7 @@ for Reddit (003). Spec-driven via Spec Kit.
   prediction (`fit_plan`), queue and run labels, Settings › Targets, Xvfb check). Every fit
   encode runs on one thread so outputs repeat exactly (R13 revised). Phase 8 done 2026-11-20: docs
   (T044), quickstart end to end (T045), self-review (T046, `progress.md`: two mediums and two lows
-  fixed), release prep (T047: version 0.5.0, `docs/releases/0.5.0.md` draft, owner runbook
+  fixed; agent reviews 2026-11-20: two mediums and four lows fixed), release prep (T047: version 0.5.0, `docs/releases/0.5.0.md` draft, owner runbook
   `docs/operations/fit-owner-checks.md`). Left: the owner's SC-008 Reddit upload, then tag `v0.5.0`.
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,

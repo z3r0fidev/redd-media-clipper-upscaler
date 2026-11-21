@@ -655,8 +655,9 @@ The clip is saved in the usual `clips` folder as an `.mp4`. The source is never 
 - **When it cannot fit even then**, rmedia refuses the clip and says the smallest size that would
   work. `--fit-allow-trim` keeps the part that fits instead.
 - **A range longer than the limit** is refused (`the range (20:00) is longer than reddit-video
-  allows (15:00)`), or with `--fit-allow-trim` cut to the limit. A trimmed clip keeps the name of
-  the range you asked for.
+  allows (15:00)`), or with `--fit-allow-trim` cut to the limit. The limit counts whole frames,
+  so the file never plays longer than it (at 29.97 fps a 10 s limit keeps 9.977 s). A trimmed
+  clip keeps the name of the range you asked for.
 
 The result line shows how much of the cap was used, and any setting that was lowered:
 

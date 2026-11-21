@@ -633,6 +633,7 @@ impl Planner<'_> {
             fps: fps.unwrap_or((30, 1)),
             has_audio: audio.is_some(),
         };
+        let requested_len = src.len;
         let mut plan = match plan_fit(target, opts, src) {
             Ok(p) => p,
             Err(r) => {
@@ -663,7 +664,7 @@ impl Planner<'_> {
         };
         if let Some(c) = audio.and_then(|a| a.channels).filter(|c| *c > 2) {
             plan.downmix = true;
-            warnings.push(format!("the {c}-channel audio is mixed down to stereo (extra channels dropped)"));
+            warnings.push(format!("the {c}-channel audio is mixed down to stereo"));
         }
         // An upscale's graph already converts HDR to SDR.
         if v.is_hdr() && upscaled.is_none() {
@@ -705,16 +706,21 @@ impl Planner<'_> {
                 None,
             );
         }
-        if let Some(from) = plan.trimmed_from {
+        if plan.len < requested_len - 1e-9 {
+            // A shorter range: trimmed, or the length limit in whole frames. The cut ends 1 ms
+            // early so a frame that starts exactly at the end is not kept (rounding).
             let d = Ts::from_secs_f64(plan.len);
+            let cut_d = Ts::from_secs_f64(plan.len - 0.001);
             cut.requested.end = cut.requested.start + d;
             match &mut cut.trim {
-                Some(t) => t.end = Some(t.start + d),
-                None => cut.duration = Some(d),
+                Some(t) => t.end = Some(t.start + cut_d),
+                None => cut.duration = Some(cut_d),
             }
             if let Some((_, tolerance)) = cut.verify_video {
                 cut.verify_video = Some((d, tolerance));
             }
+        }
+        if let Some(from) = plan.trimmed_from {
             notice(
                 IssueCode::FitTrimmed,
                 format!(

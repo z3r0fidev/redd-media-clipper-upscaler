@@ -349,8 +349,11 @@ How the size is chosen (research R1–R4):
   is lowered toward its floor (64 kb/s). If that is still not enough, the range is refused
   (`BUDGET_UNREACHABLE`, with the smallest cap that would work) or, with `--fit-allow-trim`,
   trimmed to the longest start that fits.
+- The length limit counts whole output frames: a range is cut so its last frame ends within the
+  limit (at 29.97 fps a 10 s limit keeps 299 frames, 9.977 s), less than a frame shorter than
+  asked when it is at the limit.
 - Every output is measured before it is committed. One that is over the cap is encoded again
-  with a lower bitrate, up to 3 times; after that the job fails (`FIT_FAILED`, exit 1) and
+  with a lower bitrate, up to 3 times (never below 90% of the target's least bitrate); after that the job fails (`FIT_FAILED`, exit 1) and
   nothing is written.
 - The size is never enlarged and the frame rate never raised. HDR sources are tone-mapped to SDR.
 - Every fit encode runs on one encoder thread, so the same input always gives the same bytes.

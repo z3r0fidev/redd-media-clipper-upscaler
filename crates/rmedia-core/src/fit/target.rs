@@ -114,7 +114,8 @@ impl VideoTarget {
                 "long_side must be even, within 256 and 3840",
             ),
             (
-                self.floor_short_side >= 144 && self.floor_short_side < self.long_side * 9 / 16,
+                self.floor_short_side >= 144
+                    && u64::from(self.floor_short_side) < u64::from(self.long_side) * 9 / 16,
                 "floor_short_side must be at least 144 and below the short side of long_side at 16:9",
             ),
             ((1..=120).contains(&self.max_fps), "max_fps must be within 1 and 120"),
@@ -249,7 +250,7 @@ mod tests {
     #[test]
     fn every_rule_refuses_its_bad_value_with_a_reason() {
         type Edit = fn(&mut serde_json::Value);
-        let cases: [(Edit, &str); 20] = [
+        let cases: [(Edit, &str); 21] = [
             (|j| j["schema"] = 2.into(), "schema"),
             (|j| j["id"] = "Bad Id".into(), "id must"),
             (|j| j["id"] = "x".repeat(41).into(), "id must"),
@@ -262,6 +263,7 @@ mod tests {
             (|j| j["max_duration"] = 20_000.into(), "max_duration"),
             (|j| j["long_side"] = 1921.into(), "long_side"),
             (|j| j["long_side"] = 100.into(), "long_side"),
+            (|j| j["long_side"] = u32::MAX.into(), "long_side"),
             (|j| j["floor_short_side"] = 1080.into(), "floor_short_side"),
             (|j| j["max_fps"] = 0.into(), "max_fps"),
             (|j| j["quality"]["crf"] = 52.into(), "crf"),

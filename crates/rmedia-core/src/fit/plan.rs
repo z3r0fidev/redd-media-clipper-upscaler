@@ -231,7 +231,14 @@ pub fn limits(target: &VideoTarget, opts: &FitOptions) -> Result<(u64, f64), Str
 pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<FitPlan, Refusal> {
     // 1. The effective limits (an override may only lower them).
     let (cap, max_length) = limits(target, opts).map_err(Refusal::AboveTarget)?;
-    // 2. The length limit.
+    // 2. Size (never enlarged) and frame rate.
+    let start = fit_long_side(src.size, target.long_side);
+    let fps = cap_fps(src.fps, target.max_fps);
+    let fps_f = f64::from(fps.0) / f64::from(fps.1);
+    // 3. The length limit, in whole output frames: a frame that starts before the limit lasts
+    // past it (at 29.97 fps, 10 s holds 299 frames, 9.977 s; 300 would last 10.010 s).
+    let frames = (max_length * fps_f + 1e-6).floor();
+    let longest = frames / fps_f;
     let mut len = src.len;
     let mut trimmed_from = None;
     if len > max_length + 1e-6 {
@@ -239,12 +246,11 @@ pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<
             return Err(Refusal::TooLong { len, max_length });
         }
         trimmed_from = Some(len);
-        len = max_length;
+        len = longest;
+    } else if len * fps_f > frames + 1e-6 {
+        // Within the limit, but its last frame would end past it: less than a frame shorter.
+        len = longest;
     }
-    // 3. Size (never enlarged) and frame rate.
-    let start = fit_long_side(src.size, target.long_side);
-    let fps = cap_fps(src.fps, target.max_fps);
-    let fps_f = f64::from(fps.0) / f64::from(fps.1);
     let floor_short = target.floor_short_side.min(start.0.min(start.1));
     let kbps = |size: (u32, u32), bpp: f64| bpp * f64::from(size.0) * f64::from(size.1) * fps_f / 1000.0;
     let usable = cap as f64 * (1.0 - MARGIN);
@@ -256,7 +262,7 @@ pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<
     // ceiling: a capped CRF can exceed `rate × length` by up to the buffer).
     let ceiling = kbps(start, target.quality.max_bpp);
     if budget(len, audio) * len >= ceiling * (len + VBV_SECS) {
-        let video_kbps = ceiling.round() as u32;
+        let video_kbps = (ceiling.round() as u32).max(1);
         return Ok(FitPlan {
             target: target.clone(),
             cap,
@@ -326,7 +332,7 @@ pub fn plan_fit(target: &VideoTarget, opts: &FitOptions, src: Source) -> Result<
         trimmed_from.get_or_insert(len);
         len = fits;
     }
-    let video_kbps = budget(len, audio).floor() as u32;
+    let video_kbps = (budget(len, audio).floor() as u32).max(1);
     Ok(FitPlan {
         target: target.clone(),
         cap,
@@ -399,6 +405,29 @@ mod tests {
 
     fn opts(max_size: Option<u64>) -> FitOptions {
         FitOptions { max_size, ..FitOptions::default() }
+    }
+
+    /// The length limit is whole frames: at 29.97 fps a 10 s limit is 299 frames (9.977 s), since
+    /// 300 frames would last 10.010 s. A range at the limit loses less than a frame and is not
+    /// a trim; a longer one is trimmed to 299 frames.
+    #[test]
+    fn the_length_limit_is_whole_frames() {
+        let ntsc = |len| Source { fps: (30000, 1001), ..src(len, (640, 360)) };
+        let ten = FitOptions { max_length: Some(Ts::from_secs_f64(10.0)), allow_trim: true, ..opts(None) };
+        let frames = 299.0 * 1001.0 / 30000.0;
+        let at = plan_fit(&reddit(), &ten, ntsc(10.0)).unwrap();
+        assert!((at.len - frames).abs() < 1e-9 && at.trimmed_from.is_none(), "{at:?}");
+        let over = plan_fit(&reddit(), &ten, ntsc(12.0)).unwrap();
+        assert!((over.len - frames).abs() < 1e-9 && over.trimmed_from == Some(12.0), "{over:?}");
+        // Within a frame of the limit but whole frames: unchanged.
+        let under = plan_fit(&reddit(), &ten, ntsc(9.97)).unwrap();
+        assert_eq!(under.len, 9.97);
+        // A picture too small for 1 kb/s still gets a real bitrate.
+        let tiny = plan_fit(&reddit(), &opts(None), Source { fps: (30, 1), ..src(5.0, (2, 2)) }).unwrap();
+        assert!(tiny.video_kbps >= 1, "{tiny:?}");
+        // At 30 fps the limit is exact.
+        let exact = plan_fit(&reddit(), &ten, src(10.0, (640, 360))).unwrap();
+        assert_eq!(exact.len, 10.0);
     }
 
     /// Research R3: a generous cap is not filled.
