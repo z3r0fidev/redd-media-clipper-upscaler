@@ -36,7 +36,7 @@ pub(crate) fn load<T: DataFile>(
     // walked, but only the first MAX_USER_FILES names are kept.
     let mut files: BTreeSet<PathBuf> = BTreeSet::new();
     let mut total = 0usize;
-    let mut unsafe_names = Vec::new();
+    let mut unsafe_names: BTreeSet<String> = BTreeSet::new();
     let mut unsafe_count = 0usize;
     for path in entries.flatten().map(|e| e.path()) {
         if !path.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")) {
@@ -46,9 +46,11 @@ pub(crate) fn load<T: DataFile>(
         // disguise itself when printed: it is not read, and only its cleaned name is shown.
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         if name.chars().any(crate::gif::target::unsafe_char) {
+            // The first three by name are shown, again whatever the listing order.
             unsafe_count += 1;
-            if unsafe_names.len() < 3 {
-                unsafe_names.push(shown(&name));
+            unsafe_names.insert(name);
+            if unsafe_names.len() > 3 {
+                unsafe_names.pop_last();
             }
             continue;
         }
@@ -75,7 +77,7 @@ pub(crate) fn load<T: DataFile>(
                 "{unsafe_count} file{} ignored: {} control or text-direction characters ({}{})",
                 if unsafe_count == 1 { "" } else { "s" },
                 if unsafe_count == 1 { "its name has" } else { "their names have" },
-                unsafe_names.join(", "),
+                unsafe_names.iter().map(|n| shown(n)).collect::<Vec<_>>().join(", "),
                 if unsafe_count > unsafe_names.len() { ", …" } else { "" }
             ),
         });
@@ -212,14 +214,17 @@ mod tests {
     }
 
     /// A file whose name has control or text-direction characters is not read, and its name is
-    /// shown with those characters replaced (the problem names the folder, not the file).
+    /// shown with those characters replaced (the problem names the folder, not the file). The
+    /// first three names are shown, by name, whatever the listing order.
     #[cfg(unix)]
     #[test]
     fn files_with_unsafe_names_are_skipped_and_never_printed_raw() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "ok.json", r#"{"id":"ok","n":1}"#);
-        write(dir.path(), "a\u{202e}nosj.json", r#"{"id":"a","n":1}"#);
+        write(dir.path(), "d\u{200f}.json", r#"{"id":"d","n":1}"#);
+        write(dir.path(), "c\u{7}.json", r#"{"id":"c","n":1}"#);
         write(dir.path(), "b\u{1b}[2J.json", r#"{"id":"b","n":1}"#);
+        write(dir.path(), "a\u{202e}nosj.json", r#"{"id":"a","n":1}"#);
         let mut problems = Vec::new();
         let items = load::<Item>(Vec::new(), dir.path(), &mut problems);
         assert_eq!(ids(&items), [("ok", 1, true)]);
@@ -227,7 +232,7 @@ mod tests {
         assert_eq!(problems[0].file, dir.path());
         assert_eq!(
             problems[0].message,
-            "2 files ignored: their names have control or text-direction characters (a?nosj.json, b?[2J.json)"
+            "4 files ignored: their names have control or text-direction characters (a?nosj.json, b?[2J.json, c?.json, …)"
         );
     }
 
