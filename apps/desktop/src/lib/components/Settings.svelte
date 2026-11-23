@@ -145,7 +145,7 @@
           </span>
         {/each}
         {#each g.target_problems as p, i (i)}<p class="small bad">{p}</p>{/each}
-        <p class="small">Reddit's size limits in the targets are estimates (unverified); check Reddit's Help Center.</p>
+        <p class="small">Reddit post GIFs have a 100 MB limit (confirmed by a real upload). Targets marked <em>limits unverified</em> are estimates; check Reddit's Help Center.</p>
       {/if}
     </fieldset>
     <fieldset>

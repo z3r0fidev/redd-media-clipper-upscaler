@@ -589,13 +589,17 @@ A target sets the size budget and the starting look. List them with `rmedia gif 
 
 | Target | Aim / limit | For |
 |---|---|---|
-| `reddit-post` (default) | 8 MB / 20 MB | GIFs in posts |
+| `reddit-post` (default) | 8 MB / 100 MB | GIFs in posts |
 | `reddit-comment` | 3 MB / 8 MB | GIFs in comments |
 | `max-quality` | no budget | The best picture; uses gifski when it is installed |
 | `flat-ui` | no budget | Screen recordings, text and UI (64 colours, no dither) |
 
-> **Unverified:** Reddit's limits above are estimates. Check Reddit's Help Center before relying
-> on them, and set your own with `--budget` and `--hard-limit`.
+The 100 MB limit for post GIFs was confirmed by a real Reddit upload (2026-11-23). The 8 MB aim
+keeps GIFs quick to load in the feed; raise it with `--budget` if you want a larger file.
+
+> **Unverified:** `reddit-comment`'s limits are estimates; no source states Reddit's comment GIF
+> limit. Check Reddit's Help Center before relying on them, and set your own with `--budget` and
+> `--hard-limit`.
 
 ### Fit a Size
 

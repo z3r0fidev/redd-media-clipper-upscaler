@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "id": "reddit-post",
-  "version": 1,
+  "version": 2,
   "name": "Reddit post",
-  "description": "Feed GIF for a Reddit post (limits unverified)",
+  "description": "Feed GIF for a Reddit post (100 MB limit, confirmed by upload)",
   "budget": {
     "soft": 8000000,
-    "hard": 20000000
+    "hard": 100000000
   },
-  "verified": false,
+  "verified": true,
   "width": {
     "landscape": 720,
     "portrait": 480

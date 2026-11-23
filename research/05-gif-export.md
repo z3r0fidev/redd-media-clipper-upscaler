@@ -4,6 +4,7 @@ Researched 2026-10-06. Legend: [V] verified this session (URL given), [L] verifi
 
 ## 0. Method caveats (read first)
 - **Update 2026-11-19:** the Reddit limits as of 2026-11-13 (1 GB / 15 min video, 20 MB images and GIFs, 4000 × 4000 px) are in `research/10-reddit-limits-2026-11-13.md`; they replace the [U-3P] figures below where they overlap.
+- **Update 2026-11-23:** the owner's real uploads found a 100 MB hard limit for post GIFs, which confirms the 100 MB row below (not the 20 MB claim). `reddit-post` is now 8 MB soft / 100 MB hard, verified.
 - Reddit's own Help Center (support.reddithelp.com) returns HTTP 403 (Cloudflare challenge) to curl/WebFetch, and web.archive.org is blocked here. So NO Reddit limit below is confirmed from a Reddit primary source. All Reddit figures come from third-party guides and are marked [U-3P]. Before shipping, a human should open the Reddit Help article "What are the image and video file size and format requirements" in a browser and confirm.
 - Local experiments used synthetic sources (lavfi testsrc2 / mandelbrot), so absolute sizes are NOT representative of real footage; only syntax validity and relative trends matter. gifski and gifsicle are not installed locally, so their numbers are from published sources only.
 

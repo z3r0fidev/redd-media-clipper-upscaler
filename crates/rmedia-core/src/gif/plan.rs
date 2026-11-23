@@ -783,11 +783,11 @@ mod tests {
         let p = ok(&GifOptions::default());
         let g = &p.gif;
         assert_eq!((g.start.width, g.start.height, g.start.rate), (720, 405, (15, 1)));
-        assert_eq!(g.budget.map(|b| (b.soft, b.hard)), Some((8_000_000, 20_000_000)));
+        assert_eq!(g.budget.map(|b| (b.soft, b.hard)), Some((8_000_000, 100_000_000)));
         assert_eq!((g.engine, g.frames, g.len), (EngineUsed::Builtin, 60, 4.0));
         assert_eq!(g.estimate.from, EstimateFrom::Pending);
         assert_eq!(g.start.lossy, 0, "no gifsicle, so no lossy pass");
-        assert_eq!(rough_bytes(g), 20_000_000, "the hard budget before any sample");
+        assert_eq!(rough_bytes(g), 100_000_000, "the hard budget before any sample");
         let none = ok(&GifOptions { budget: None, ..GifOptions::default() });
         assert_eq!(rough_bytes(&none.gif), 720 * 405 * 60 / 4, "a quarter byte per pixel per frame");
     }

@@ -392,8 +392,10 @@ mod tests {
         let reg = GifTargetRegistry::builtin();
         assert_eq!(reg.ids(), ["reddit-post", "reddit-comment", "max-quality", "flat-ui"]);
         let post = reg.get(DEFAULT_TARGET).unwrap();
-        assert_eq!(post.budget, Some(Budget { soft: 8_000_000, hard: 20_000_000 }));
-        assert!(!post.verified, "Reddit limits ship unverified (FR-007)");
+        // The 100 MB post GIF limit was confirmed by the owner's Reddit upload (FR-007).
+        assert_eq!(post.budget, Some(Budget { soft: 8_000_000, hard: 100_000_000 }));
+        assert!(post.verified, "the owner's upload confirmed Reddit's post GIF limit");
+        assert_eq!(post.version, 2);
         assert_eq!((post.width.landscape, post.width.portrait, post.floor_width), (720, 480, Some(320)));
         assert_eq!(
             (post.fps, post.floor_fps, post.colours, post.dither),
@@ -402,6 +404,7 @@ mod tests {
         assert_eq!((post.lossy, post.engine), (Some(10), TargetEngine::Builtin));
         let comment = reg.get("reddit-comment").unwrap();
         assert_eq!(comment.budget, Some(Budget { soft: 3_000_000, hard: 8_000_000 }));
+        assert!(!comment.verified, "no source states a comment limit yet");
         assert_eq!((comment.width.landscape, comment.fps, comment.colours), (480, 12, 128));
         let best = reg.get("max-quality").unwrap();
         assert_eq!(
@@ -431,7 +434,7 @@ mod tests {
             let err = GifTarget::from_json(&j.to_string()).unwrap_err();
             assert!(err.contains(needle), "{err} (wanted {needle})");
         };
-        bad(&|j| j["budget"]["soft"] = 30_000_000.into(), "soft ≤ hard");
+        bad(&|j| j["budget"]["soft"] = 200_000_000.into(), "soft ≤ hard");
         bad(&|j| j["budget"]["hard"] = (MAX_BUDGET + 1).into(), "soft ≤ hard");
         bad(&|j| j["floor_width"] = 800.into(), "floor_width");
         bad(&|j| j["floor_fps"] = 20.into(), "floor_fps");

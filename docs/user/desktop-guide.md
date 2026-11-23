@@ -405,7 +405,7 @@ folder next to the video and plays in the **Result** card, with its size, width 
 
 | Setting | Choices | Default |
 |---|---|---|
-| **Target** | **Reddit post** (8 MB aim, 20 MB limit), **Reddit comment** (3 MB / 8 MB), **Max quality** (no size budget), **Flat / text / UI** (screen recordings; no size budget), plus your own target files | Reddit post |
+| **Target** | **Reddit post** (8 MB aim, 100 MB limit), **Reddit comment** (3 MB / 8 MB), **Max quality** (no size budget), **Flat / text / UI** (screen recordings; no size budget), plus your own target files | Reddit post |
 | **Format** | **GIF**, **Reddit MP4 (recommended for posts)**: a silent looping video, much smaller | GIF |
 | **Shape** | **As filmed**, **9:16**, **4:5**, **1:1** | As filmed |
 | **Framing** | **Follow faces**, **Centre**, **Show all** (only when the shape is not As filmed) | Follow faces |

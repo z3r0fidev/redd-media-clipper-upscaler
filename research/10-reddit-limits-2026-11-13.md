@@ -10,8 +10,13 @@ WebFetch get a 403). It's a third-party summary that says it checked Reddit's do
 replaces the [U-3P] guide figures in `research/05-gif-export.md` §1 where the two overlap. Reddit
 Help itself is still not read directly (it 403s here too).
 
-Status key: **[V-1113]** = stated on the page above as of 2026-11-13. **[U]** = still not stated by
-any source we have.
+Status key: **[V-1113]** = stated on the page above as of 2026-11-13. **[O-1123]** = found by the
+owner's real Reddit uploads, reported 2026-11-23. **[U]** = still not stated by any source we have.
+
+**Update 2026-11-23:** the owner's upload tests found that Reddit's hard limit for GIFs is 100 MB,
+not the 20 MB image cap the page gives for "images (incl. GIF)". This matches the 100 MB
+(i.redd.it animated GIF) figure in `research/05-gif-export.md` §1. The `reddit-post` target's hard
+cap is now 100 MB and the target is `verified`.
 
 ## Organic posts (what rmedia targets)
 
@@ -26,7 +31,8 @@ any source we have.
 | Video: aspect ratio | any; 16:9 displays best | [V-1113] |
 | Video: looping | "GIF-style looping also available" | [V-1113] |
 | Video: frame rate, bitrate, min duration | not stated for organic posts | [U] |
-| Image (incl. GIF): max file size | 20 MB | [V-1113] |
+| Image: max file size | 20 MB | [V-1113] |
+| GIF (post): max file size | **100 MB** (not 20 MB) | [O-1123] |
 | Image: max dimensions | 4000 × 4000 px | [V-1113] |
 | Image: formats | JPG, PNG, GIF | [V-1113] |
 | Image: aspect ratio | any; 1.91:1 recommended for the feed | [V-1113] |
@@ -49,10 +55,11 @@ any source we have.
 
 ## What this means for rmedia
 
-- **GIF targets (003).** `reddit-post` (8 MB soft, 20 MB hard) matches the 20 MB image cap. No
-  change to the numbers. `reddit-comment` (3 MB soft, 8 MB hard) is still [U]: no source states a
-  comment limit. The targets keep `verified: false` until Reddit Help itself is read or the
-  owner's real upload passes (roadmap item 3). A third-party summary isn't enough to change the
+- **GIF targets (003).** *Superseded 2026-11-23:* `reddit-post` is now 8 MB soft, 100 MB hard and
+  `verified` (owner upload, [O-1123]). Before that it was 8 MB soft, 20 MB hard, matching the image
+  cap above. `reddit-comment` (3 MB soft, 8 MB hard) is still [U]: no source states a
+  comment limit. It keeps `verified: false` until Reddit Help itself is read or a real comment
+  upload passes (roadmap item 3). A third-party summary isn't enough to change the
   flag (003 FR-007).
 - **Budgeted Reddit video (005).** The hard caps are 1 GB and 15 min, MP4 (or MOV), H.264, with
   audio allowed. 1080p is the recommended size. Organic posts state no frame-rate or bitrate limit.
@@ -67,5 +74,5 @@ any source we have.
 
 - Open Reddit Help "What are the image and video file size and format requirements" in a
   browser and compare it with the table above.
-- Real uploads: a 005 video near the 1 GB / 15 min caps (or a smaller one with audio), a post GIF
-  and a comment GIF.
+- Real uploads: a 005 video near the 1 GB / 15 min caps (or a smaller one with audio) and a
+  comment GIF. (Post GIF: done 2026-11-23, 100 MB limit.)

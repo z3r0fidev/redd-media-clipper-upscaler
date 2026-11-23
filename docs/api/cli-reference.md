@@ -673,7 +673,7 @@ and `{source}_{index:03}_{name-or-range}_{target}.{ext}` when `-s/-e/-d` select 
 
 | Flag | Values | Default | Notes |
 |---|---|---|---|
-| `--target ID` | an id from `--list-targets` | `reddit-post` | Built in: `reddit-post` (8 MB aim, 20 MB limit), `reddit-comment` (3 MB / 8 MB), `max-quality` (gifski when found), `flat-ui`. Reddit's limits are **unverified** estimates; check Reddit's Help Center. Unknown id: exit 3 (`TARGET_UNKNOWN`) |
+| `--target ID` | an id from `--list-targets` | `reddit-post` | Built in: `reddit-post` (8 MB aim, 100 MB limit, Reddit's post GIF limit confirmed by a real upload on 2026-11-23), `reddit-comment` (3 MB / 8 MB, **unverified** estimates; check Reddit's Help Center), `max-quality` (gifski when found), `flat-ui`. Unknown id: exit 3 (`TARGET_UNKNOWN`) |
 | `--format` | `gif`, `mp4` | `gif` | `mp4` is a silent, fast-start H.264 loop at the source's rate, by default at most the target's `mp4.max_fps` (60 for `reddit-post` and `max-quality`, 30 for `reddit-comment` and `flat-ui`), usually 5× or more smaller |
 | `--width N` | 64 to 1920 | the target's | Never above the source's (a GIF is never enlarged; a note says so) |
 | `--fps N` | 1 to 50 (GIF), 1 to 60 (MP4) | the target's | GIF delays are whole centiseconds: 10, 20, 25 and 50 fps are exact, others average out (a `TIMING_APPROXIMATE` note) |

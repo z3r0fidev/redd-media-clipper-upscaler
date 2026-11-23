@@ -16,7 +16,9 @@ for Reddit (003). Spec-driven via Spec Kit.
   2026-11-15 from tag build run 43573283485, unsigned) and **004 Smart cut** (`specs/004-smart-cut/`,
   59/59, 0.4.0, tag v0.4.0 on 092171f; GitHub release v0.4.0 published 2026-11-18 from tag build run
   44075993817, unsigned, after the owner checks on every platform passed). rmedia is AGPL-3.0-or-later; releases bundle gifski.
-  Owner checks left: Reddit's limits and a real upload, the 002 two-phone test and +3 VMAF.
+  Owner checks left: the 005 video upload (SC-008), a comment GIF upload, the 002 two-phone test and
+  +3 VMAF. Reddit post GIFs: 100 MB hard limit from the owner's uploads (2026-11-23); `reddit-post`
+  is 8 MB soft / 100 MB hard, verified (version 2).
   Pending list and review findings: `docs/roadmap.md`.
 - Next feature: **005 budgeted Reddit video** (specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
   limits as of 2026-11-13 in `research/10`; planned 2026-11-19: `--fit TARGET`, two-pass x264 with

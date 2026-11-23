@@ -188,7 +188,7 @@ abridged (`argv`, `pipeline` omitted):
 ```json
 {"id":1,"kind":"gif","status":"planned","requested":{"start":0.0,"end":6.0},
  "notices":[{"code":"TIMING_APPROXIMATE","message":"15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)"}],
- "gif":{"target":"reddit-post","target_verified":false,"format":"gif","engine":"builtin",
+ "gif":{"target":"reddit-post","target_verified":true,"format":"gif","engine":"builtin",
    "engine_reason":"target engine: builtin","optimiser":"gifsicle 1.98","loop":"forever",
    "budget":{"soft":1000000,"hard":1000000},"floors":{"width":320,"fps":10},"allow_trim":false,
    "settings":{"width":720,"height":405,"fps":15.0,"timing":{"exact":false,"avg_cs":6.67},
@@ -516,8 +516,8 @@ cap that fits the range.
 ## `rmedia gif --list-targets --json`
 
 ```json
-{"schema":1,"type":"targets","targets":[{"id":"reddit-post","name":"Reddit post","verified":false,
-  "budget":{"soft":8000000,"hard":20000000},"width":{"landscape":720,"portrait":480},"fps":15,
+{"schema":1,"type":"targets","targets":[{"id":"reddit-post","name":"Reddit post","verified":true,
+  "budget":{"soft":8000000,"hard":100000000},"width":{"landscape":720,"portrait":480},"fps":15,
   "…":"…","source":"builtin"}],"problems":[]}
 ```
 

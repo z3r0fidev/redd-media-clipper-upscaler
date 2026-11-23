@@ -4,7 +4,7 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-11-14.
+Last updated: 2026-11-23.
 
 ## Status at a Glance
 
@@ -14,7 +14,7 @@ Last updated: 2026-11-14.
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
 | 004 Smart cut | Done: 59 of 59 tasks (T059's reviews: no high, the three mediums fixed; `specs/004-smart-cut/`, 2026-11-16); 0.4.0, tag `v0.4.0` on `092171f`, released 2026-11-18 ([v0.4.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.4.0)) | Hybrid frame-exact clip mode, see Pending item 22 |
-| 005 Budgeted Reddit video | In progress: T001–T046 of 47 done (2026-11-20; `specs/005-budgeted-reddit-video/progress.md`); release prep (T047) next, then 0.5.0 | `--fit TARGET` on `clip`, `upscale` and `batch`, manifest `fit`, desktop **Video target**: an MP4 with audio never over the cap, see Pending item 23 |
+| 005 Budgeted Reddit video | Done: 47 of 47 tasks (2026-11-20; agent reviews fixed; `specs/005-budgeted-reddit-video/progress.md`); version 0.5.0 set, tag `v0.5.0` after the owner's SC-008 video upload | `--fit TARGET` on `clip`, `upscale` and `batch`, manifest `fit`, desktop **Video target**: an MP4 with audio never over the cap, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -223,8 +223,11 @@ security and code-review lows, then 005.
 3. Reddit: confirm the current limits in its Help Center and do a real upload (post GIF, comment
    GIF, `reddit-916` and `reddit-feed-45` outputs). Limits as of 2026-11-13 recorded on
    2026-11-19 in `research/10-reddit-limits-2026-11-13.md` (from allplatforms.io, which cites
-   Reddit Help): video 1 GB / 15 min, MP4 or MOV, H.264; images and GIFs 20 MB, 4000 × 4000 px.
-   Comment GIF limits are still unstated. Left: read Reddit Help itself, and the real uploads.
+   Reddit Help): video 1 GB / 15 min, MP4 or MOV, H.264; images 20 MB, 4000 × 4000 px. **Post
+   GIFs: 100 MB hard limit, from the owner's real uploads (2026-11-23)**; `reddit-post`'s hard cap
+   went 20 MB → 100 MB and the target is `verified` (version 2). Comment GIF limits are still
+   unstated (`reddit-comment` stays 3/8 MB, unverified). Left: read Reddit Help itself, a comment
+   GIF upload, and the 005 video upload.
    For 005, the upload check is [fit-owner-checks.md](operations/fit-owner-checks.md) (SC-008);
    passing it sets `verified` in `reddit-video.json`.
 4. 002 owner checks: two-phone gallery test (SC-001) and +3 VMAF on real footage (SC-002).
@@ -342,7 +345,10 @@ security and code-review lows, then 005.
     lows fixed, and its three info items: CSV formula guard, unsafe file names, the first 64
     files by name, device presets capped too; `progress.md`). Low left: a trimmed clip keeps the default
     name of the range that was asked for, as GIF trims do; naming it after the output range
-    would change names that 003 already writes.
+    would change names that 003 already writes. Left: the owner's SC-008 video upload
+    ([fit-owner-checks.md](operations/fit-owner-checks.md)), then `verified` in
+    `reddit-video.json` and the tag `v0.5.0`. 2026-11-23: the owner's GIF uploads set
+    `reddit-post`'s hard limit to 100 MB (item 3); it ships in 0.5.0.
 24. Later candidates (no number yet): a desktop crop-path editor for smart reframe
     (`research/08`); audio-only export with loudness normalisation; frame and timecode input and
     chapter or EDL import.

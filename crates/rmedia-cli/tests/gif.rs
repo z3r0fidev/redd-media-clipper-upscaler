@@ -64,11 +64,11 @@ fn a_sampled_json_dry_run_has_the_gif_block_and_writes_nothing() {
     assert_eq!(job["kind"], "gif");
     assert!(Path::new(job["output"].as_str().unwrap()).ends_with("gifs/land_reddit-post.gif"), "{job}");
     let g = &job["gif"];
-    assert_eq!((g["target"].as_str(), g["target_verified"].as_bool()), (Some("reddit-post"), Some(false)));
+    assert_eq!((g["target"].as_str(), g["target_verified"].as_bool()), (Some("reddit-post"), Some(true)));
     assert_eq!((g["format"].as_str(), g["engine"].as_str()), (Some("gif"), Some("builtin")));
     assert_eq!((g["settings"]["width"].as_u64(), g["settings"]["height"].as_u64()), (Some(720), Some(405)));
     assert_eq!(g["settings"]["timing"]["exact"], false);
-    assert_eq!(g["budget"]["hard"], 20_000_000);
+    assert_eq!(g["budget"]["hard"], 100_000_000);
     // reddit-post has a budget: the estimate is the search's prediction (it fits at once).
     assert_eq!(g["estimate"]["from"], "search");
     assert_eq!(g["estimate"]["lowered"], serde_json::json!([]), "{g}");
@@ -98,9 +98,9 @@ fn no_sample_leaves_the_estimate_pending_and_the_human_dry_run_says_so() {
     insta::assert_snapshot!(text, @r"
     #1   would write: <dir>/gifs/land_reddit-post.gif
          from <dir>/land.mp4  00:00:00.000 → 00:00:06.000  [gif]
-         target reddit-post (Reddit post, limits unverified), gif, engine builtin (target engine: builtin)
+         target reddit-post (Reddit post), gif, engine builtin (target engine: builtin)
          720x405, 15 fps (≈ 6.67 cs, approximate), 256 colours, dither bayer:4
-         budget 8.0 MB soft / 20.0 MB hard
+         budget 8.0 MB soft / 100.0 MB hard
          estimate pending (not sampled)
          warning: 15 fps is shown as 6–7 cs frame delays (≈ 15.0 fps)
     1 job(s) planned, 0 would be skipped. Nothing was written (dry run).
@@ -117,7 +117,13 @@ fn list_targets_human_and_json() {
     for id in ["reddit-post", "reddit-comment", "max-quality", "flat-ui"] {
         assert!(text.lines().any(|l| l.starts_with(id)), "{id} missing:\n{text}");
     }
-    assert!(text.lines().any(|l| l.starts_with("reddit-post") && l.contains("unverified")), "{text}");
+    let line = |id: &str| text.lines().find(|l| l.starts_with(id)).unwrap_or_default().to_owned();
+    let post = line("reddit-post ");
+    assert!(
+        post.contains("100.0 MB") && post.ends_with("verified") && !post.contains("unverified"),
+        "{text}"
+    );
+    assert!(line("reddit-comment").contains("unverified"), "{text}");
 
     let o = rmedia(d.path()).args(["gif", "--list-targets", "--json"]).output().unwrap();
     let doc = json(&o);

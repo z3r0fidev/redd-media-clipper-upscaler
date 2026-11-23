@@ -53,7 +53,7 @@ async fn a_manifest_of_two_videos_and_three_clips() {
             (g.gif.target.id.clone(), b.soft, b.hard)
         })
         .collect();
-    assert_eq!(budgets[0], ("reddit-post".into(), 8_000_000, 20_000_000));
+    assert_eq!(budgets[0], ("reddit-post".into(), 8_000_000, 100_000_000));
     assert_eq!(budgets[1], ("reddit-comment".into(), 3_000_000, 8_000_000));
     assert_eq!(budgets[3].1, 100_000, "the clip's own budget");
 
