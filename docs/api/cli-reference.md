@@ -322,9 +322,10 @@ its five commands ([JSON Output › Smart cut](json-output.md#smart-cut)).
 
 Added in 0.5.0 (feature 005). `--fit TARGET` makes each output an MP4 with audio that is never
 larger than the target's size cap and never longer than its length limit. The built-in target
-is `reddit-video` (Reddit's limits as of 2026-11-13: 1 GiB, 15:00, 1920 px, up to 60 fps; marked
-*unverified* until the owner upload check confirms them). User targets live in the
-`video-targets` folder ([File Formats › Video target files](file-formats.md#video-target-files-video-targetsjson)).
+is `reddit-video` (Reddit's limits: 1 GiB, 15:00, 1920 px, up to 60 fps; verified by a real
+upload on 2026-11-23). Reddit doesn't allow video posts in 18+ (NSFW, adult) or private
+communities, so a `reddit-video` output is for other communities and profiles. User targets live
+in the `video-targets` folder ([File Formats › Video target files](file-formats.md#video-target-files-video-targetsjson)).
 
 | Flag | Meaning |
 |---|---|
@@ -369,13 +370,13 @@ Rules:
 
 ```text
 $ rmedia clip --list-fit-targets
-reddit-video   Reddit video post    1.07 GB · 15:00 · 1920 px · unverified   built-in
+reddit-video   Reddit video post    1.07 GB · 15:00 · 1920 px · verified   built-in
 sub-50mb       r/example rule       50.0 MB · 05:00 · 1920 px · unverified   user (/home/me/.config/rmedia/video-targets/sub-50mb.json)
 
 $ rmedia clip talk.mp4 --start 0 --end 25 --fit reddit-video --dry-run
 #1   would write: /work/clips/talk_001_00-00-00.000_00-00-25.000.mp4
      from /work/talk.mp4  00:00:00.000 → 00:00:25.000  [accurate]
-     fit reddit-video (unverified): 1920x1080 30 fps quality · crf 20 ≤ 7,465 kb/s + 128 kb/s · ≤ 25.6 MB of 1.07 GB (a 25 s range)
+     fit reddit-video: 1920x1080 30 fps quality · crf 20 ≤ 7,465 kb/s + 128 kb/s · ≤ 25.6 MB of 1.07 GB (a 25 s range)
 
 $ rmedia clip talk.mp4 --start 0 --end 25 --fit reddit-video --fit-max-size 5MB
 warning: talk_001_00-00-00.000_00-00-25.000.mp4: size lowered 1920x1080 → 1440x810 to fit reddit-video

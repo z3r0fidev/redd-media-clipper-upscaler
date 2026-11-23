@@ -195,7 +195,7 @@ fn the_dry_run_shows_the_fit_and_its_prediction_holds() {
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     let text = stdout(&o);
     assert!(
-        text.contains("fit reddit-video (unverified): 1920x1080 30 fps · video ")
+        text.contains("fit reddit-video: 1920x1080 30 fps · video ")
             && text.contains(" kb/s + audio 128 kb/s (budget) · ")
             && text.contains(" of 8.0 MB"),
         "{text}"
@@ -297,7 +297,7 @@ fn fit_targets_are_listed_and_reported_by_doctor() {
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     let text = stdout(&o);
     assert!(
-        text.contains("reddit-video") && text.contains("15:00 · 1920 px · unverified   built-in"),
+        text.contains("reddit-video") && text.contains("15:00 · 1920 px · verified   built-in"),
         "{text}"
     );
     assert!(text.contains("sub-50mb") && text.contains("05:00") && text.contains("user ("), "{text}");

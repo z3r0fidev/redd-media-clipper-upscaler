@@ -14,6 +14,10 @@ the maintainer sets `"verified": true` in `crates/rmedia-core/src/fit/builtin/re
 (roadmap item 3) when parts 2 and 3 pass and Reddit's Help Center still states 1 GB and 15
 minutes.
 
+**Result (2026-11-23): passed.** The owner reported `reddit-video` verified and Reddit's limits as
+1 GB and 15 minutes; `verified` is `true` (version 2). Results:
+[fit-owner-checks-results.md](fit-owner-checks-results.md).
+
 Part 3 posts test videos. Use a test subreddit or your own profile, and delete the posts
 afterwards if you like.
 

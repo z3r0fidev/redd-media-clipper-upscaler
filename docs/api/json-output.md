@@ -281,7 +281,7 @@ folder, which holds the two-pass log). Real dry run, abridged (`argv` and `pipel
  "warnings":["size lowered 1920x1080 → 1440x810 to fit reddit-video"],
  "notices":[{"code":"FIT_LOWERED","message":"size lowered 1920x1080 → 1440x810 to fit reddit-video"}],
  "cwd":"/work/clips/.talk_001_00-00-00.000_00-00-25.000.rmedia-91deed3094f2fff2-1.d",
- "fit":{"target":"reddit-video","target_verified":false,"cap":5000000,"max_length":900.0,
+ "fit":{"target":"reddit-video","target_verified":true,"cap":5000000,"max_length":900.0,
    "len":25.0,"trimmed_from":null,"mode":"budget","size":[1440,810],"fps":30.0,
    "video_kbps":1440,"crf":null,"audio_kbps":128,"predicted_bytes":4900000,
    "lowered":[{"setting":"size","from":[1920,1080],"to":[1440,810]}],"passes":2}}
@@ -309,7 +309,7 @@ and `problems` (`[{file, message}]`, the files that could not be used):
 
 ```json
 {"schema":1,"type":"fit_targets","targets":[{"id":"reddit-video","name":"Reddit video post",
-  "verified":false,"max_bytes":1073741824,"max_duration":900.0,"long_side":1920,"…":"…",
+  "verified":true,"max_bytes":1073741824,"max_duration":900.0,"long_side":1920,"…":"…",
   "source":"builtin"}],
  "problems":[{"file":"/home/me/.config/rmedia/video-targets/broken.json",
    "message":"EOF while parsing an object at line 2 column 0"}]}

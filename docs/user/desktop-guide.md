@@ -453,7 +453,8 @@ larger than the target's size cap and never longer than its length limit. The ch
    ```
 
    It also lists anything rmedia had to lower, such as the picture size, and shows the
-   **limits unverified** badge while Reddit's limits are not confirmed.
+   **limits unverified** badge for a target whose limits are not confirmed (the built-in
+   **Reddit video post** is verified).
 3. Select **Add clip**.
 
 **Custom limits…** adds a **Maximum size** field (for example `50MB`) and a **Maximum length**

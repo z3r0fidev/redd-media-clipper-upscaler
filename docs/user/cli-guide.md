@@ -674,9 +674,13 @@ warning: talk_001_00-00-00.000_00-00-25.000.mp4: size lowered 1920x1080 → 1440
 ### Choose a target
 
 `rmedia clip --list-fit-targets` lists the targets. The built-in `reddit-video` uses Reddit's
-limits as of 2026-11-13 (1 GB, 15 minutes); they are marked *unverified* until checked with a
-real upload. For a stricter rule, such as a subreddit's size or length limit, either lower the
-limits for one run (`--fit-max-size 50MB --fit-max-length 5:00`) or save a target file in the
+limits (1 GB, 15 minutes), verified with a real upload on 2026-11-23.
+
+> **Note:** Reddit doesn't allow video posts in 18+ (NSFW, adult) or private communities. Post a
+> `reddit-video` output to other communities or your profile.
+
+For a stricter rule, such as a subreddit's size or length limit, either lower the limits for one
+run (`--fit-max-size 50MB --fit-max-length 5:00`) or save a target file in the
 `video-targets` folder of your settings folder ([File Formats › Video target
 files](../api/file-formats.md#video-target-files-video-targetsjson)), then use `--fit <its id>`.
 

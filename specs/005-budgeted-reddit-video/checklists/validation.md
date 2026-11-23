@@ -140,7 +140,7 @@ with `RMEDIA_CONFIG_DIR`/`STATE`/`CACHE` isolated. Script: the commands in `quic
 | SC-005 | 3:00 with `--fit-max-length 1:00`; 4:00 at 1 MB | pass: exit 3 `RANGE_TOO_LONG` `{len 180, max_length 60}`, nothing written; exit 3 `BUDGET_UNREACHABLE` `{min_cap 13,252,898}` |
 | SC-006 | real ÷ predicted within 15% | pass: 1.005 (the quickstart's old 0.85–1.0 band was stricter than the spec; corrected) |
 | SC-007 | desktop `fit` = CLI `fit` | pass (bridge test, US5) |
-| SC-008 | real Reddit upload | owner check: `docs/operations/fit-owner-checks.md` |
+| SC-008 | real Reddit upload | **pass** (owner, 2026-11-23): `reddit-video` verified; Reddit's limits 1 GB, 15 minutes; video posts are not allowed in 18+/NSFW/adult or private communities (`docs/operations/fit-owner-checks-results.md`) |
 
 Also: the 1:00 trim of 0:00–4:00 is 60.000000 s (`FIT_TRIMMED`, quality mode, 57.4 MB); 3:00 at
 15 MB lowers 1920x1080 → 854x480 (525 kb/s, 14.7 MB predicted); 0:20 under 1 GB is quality mode

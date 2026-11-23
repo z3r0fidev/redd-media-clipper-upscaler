@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "id": "reddit-video",
-  "version": 1,
+  "version": 2,
   "name": "Reddit video post",
-  "description": "Reddit's video post limits as of 2026-11-13 (unverified)",
-  "verified": false,
+  "description": "Reddit video posts: 1 GB, 15 min (verified 2026-11-23; not in 18+, NSFW or private communities)",
+  "verified": true,
   "max_bytes": 1073741824,
   "max_duration": 900,
   "long_side": 1920,

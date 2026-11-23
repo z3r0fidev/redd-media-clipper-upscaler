@@ -82,6 +82,6 @@ caps, every field validated), overrides that may only lower, and the desktop's `
 ## Open
 
 - All 47 tasks are done. Version 0.5.0 is set; `docs/releases/0.5.0.md` is a draft until the tag.
-- SC-008 is an owner check: a real Reddit upload with sound of a `reddit-video` output and a
-  `reddit-916` output (`docs/operations/fit-owner-checks.md`); the result sets `verified` in
-  `reddit-video.json`. Then tag `v0.5.0`.
+- SC-008 passed 2026-11-23 (owner): `reddit-video` is verified (version 2); Reddit's limits are
+  1 GB and 15 minutes, and video posts are not allowed in 18+/NSFW/adult or private communities.
+  Next: tag `v0.5.0` and publish the release.

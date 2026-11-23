@@ -234,13 +234,15 @@ mod tests {
         serde_json::from_str(BUILTIN[0]).unwrap()
     }
 
-    /// The built-in carries research/10's limits, unverified (FR-001, FR-003).
+    /// The built-in carries research/10's limits (FR-001), verified by the owner's Reddit upload
+    /// on 2026-11-23 (FR-003, SC-008).
     #[test]
     fn the_built_in_has_reddits_limits_as_of_2026_11_13() {
         let reg = VideoTargetRegistry::builtin();
         assert_eq!(reg.ids(), [DEFAULT_TARGET]);
         let t = reg.get("reddit-video").unwrap();
-        assert!(!t.verified);
+        assert!(t.verified, "the owner's upload confirmed 1 GB and 15 minutes");
+        assert_eq!(t.version, 2);
         assert_eq!((t.max_bytes, t.max_duration, t.long_side, t.max_fps), (1 << 30, 900.0, 1920, 60));
         assert_eq!((t.floor_short_side, t.audio), (480, Audio { kbps: 128, floor_kbps: 64 }));
         assert_eq!(t.quality, Quality { crf: 20, max_bpp: 0.12, min_bpp: 0.03 });

@@ -16,8 +16,9 @@ for Reddit (003). Spec-driven via Spec Kit.
   2026-11-15 from tag build run 43573283485, unsigned) and **004 Smart cut** (`specs/004-smart-cut/`,
   59/59, 0.4.0, tag v0.4.0 on 092171f; GitHub release v0.4.0 published 2026-11-18 from tag build run
   44075993817, unsigned, after the owner checks on every platform passed). rmedia is AGPL-3.0-or-later; releases bundle gifski.
-  Owner checks left: the 005 video upload (SC-008), a comment GIF upload, the 002 two-phone test and
-  +3 VMAF. Reddit post GIFs: 100 MB hard limit from the owner's uploads (2026-11-23); `reddit-post`
+  Owner checks left: a comment GIF upload, the 002 two-phone test and +3 VMAF. The 005 video
+  upload (SC-008) passed 2026-11-23: `reddit-video` verified (1 GB, 15 min; no video in 18+ or
+  private communities). Reddit post GIFs: 100 MB hard limit from the owner's uploads (2026-11-23); `reddit-post`
   is 8 MB soft / 100 MB hard, verified (version 2).
   Pending list and review findings: `docs/roadmap.md`.
 - Next feature: **005 budgeted Reddit video** (specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
@@ -32,7 +33,7 @@ for Reddit (003). Spec-driven via Spec Kit.
   encode runs on one thread so outputs repeat exactly (R13 revised). Phase 8 done 2026-11-20: docs
   (T044), quickstart end to end (T045), self-review (T046, `progress.md`: two mediums and two lows
   fixed; agent reviews 2026-11-20: two mediums and four lows fixed), release prep (T047: version 0.5.0, `docs/releases/0.5.0.md` draft, owner runbook
-  `docs/operations/fit-owner-checks.md`). Left: the owner's SC-008 Reddit upload, then tag `v0.5.0`.
+  `docs/operations/fit-owner-checks.md`). SC-008 passed 2026-11-23; next: tag `v0.5.0` and publish.
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and

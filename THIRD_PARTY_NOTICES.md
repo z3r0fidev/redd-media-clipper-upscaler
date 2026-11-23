@@ -17772,7 +17772,7 @@ the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### form_urlencoded 1.2.2
+### form_urlencoded 1.2.3
 
 License: MIT OR Apache-2.0
 
@@ -61052,7 +61052,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### url 2.5.8
+### url 2.5.9
 
 License: MIT OR Apache-2.0
 

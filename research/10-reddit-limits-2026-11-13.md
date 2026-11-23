@@ -16,14 +16,17 @@ owner's real Reddit uploads, reported 2026-11-23. **[U]** = still not stated by 
 **Update 2026-11-23:** the owner's upload tests found that Reddit's hard limit for GIFs is 100 MB,
 not the 20 MB image cap the page gives for "images (incl. GIF)". This matches the 100 MB
 (i.redd.it animated GIF) figure in `research/05-gif-export.md` §1. The `reddit-post` target's hard
-cap is now 100 MB and the target is `verified`.
+cap is now 100 MB and the target is `verified`. The same day the owner reported `reddit-video`
+verified (1 GB, 15 minutes) and that video posts aren't allowed in 18+ (NSFW, adult) or private
+communities; `reddit-video` is `verified`.
 
 ## Organic posts (what rmedia targets)
 
 | Limit | Value | Status |
 |---|---|---|
-| Video: max file size | 1 GB | [V-1113] |
-| Video: max duration | 15 min (30 min with Reddit Premium) | [V-1113] |
+| Video: max file size | 1 GB | [V-1113], [O-1123] |
+| Video: max duration | 15 min (30 min with Reddit Premium) | [V-1113], [O-1123] (15 min) |
+| Video: where allowed | not in 18+ (NSFW, adult) or private communities | [O-1123] |
 | Video: containers | MP4, MOV | [V-1113] |
 | Video: codec | H.264 | [V-1113] |
 | Video: audio | optional, supported | [V-1113] |
@@ -74,5 +77,4 @@ cap is now 100 MB and the target is `verified`.
 
 - Open Reddit Help "What are the image and video file size and format requirements" in a
   browser and compare it with the table above.
-- Real uploads: a 005 video near the 1 GB / 15 min caps (or a smaller one with audio) and a
-  comment GIF. (Post GIF: done 2026-11-23, 100 MB limit.)
+- Real uploads: a comment GIF. (Post GIF and the 005 video: done 2026-11-23.)
