@@ -4,7 +4,7 @@ rmedia cuts clips from videos on Linux and Windows, from the `rmedia` command li
 app. `rmedia upscale` (feature 002, 0.2.0) makes videos
 phone-ready, and `rmedia gif` (feature 003, 0.3.0, tag `v0.3.0`) makes GIFs and silent MP4 loops
 that fit Reddit. Smart cut (`--mode smart`, feature 004, 0.4.0, tag `v0.4.0`) makes frame-exact
-clips that copy most of the video, and `--fit` (feature 005, 0.5.0) makes Reddit-ready MP4s with
+clips that copy most of the video, and `--fit` (feature 005, 0.5.0, tag `v0.5.0`) makes Reddit-ready MP4s with
 sound that never exceed a size cap; see the [Roadmap](roadmap.md). Start with the page for your role.
 
 ## Users
@@ -53,6 +53,7 @@ sound that never exceed a size cap; see the [Roadmap](roadmap.md). Start with th
 | [Release notes 0.1.0](releases/0.1.0.md) | What feature 001 delivers; known issues |
 | [Release notes 0.2.0](releases/0.2.0.md) | Phone upscaling (CPU, GPU and AI tiers), smart reframe, `clip --upscale`, manifests and the desktop upscale view |
 | [Release notes 0.3.0](releases/0.3.0.md) | GIF export for Reddit: `rmedia gif`, size budgets, the Reddit MP4, gifsicle and gifski, `clip --gif`, the desktop GIF view |
+| [Release notes 0.5.0](releases/0.5.0.md) | Budgeted Reddit video: `--fit TARGET`, video targets as data, never over the cap, manifests and the desktop Video target picker |
 | [Release notes 0.4.0](releases/0.4.0.md) | Smart cut: `--mode smart`, fallbacks with reasons, strict mode, manifests, and the desktop Smart mode with keyframe markers |
 
 Specifications, plans and contracts live in [`specs/`](../specs/); research notes are in

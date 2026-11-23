@@ -21,7 +21,7 @@ for Reddit (003). Spec-driven via Spec Kit.
   private communities). Reddit post GIFs: 100 MB hard limit from the owner's uploads (2026-11-23); `reddit-post`
   is 8 MB soft / 100 MB hard, verified (version 2).
   Pending list and review findings: `docs/roadmap.md`.
-- Next feature: **005 budgeted Reddit video** (specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
+- **005 budgeted Reddit video** (released as 0.5.0 on 2026-11-23; specified 2026-11-19: `specs/005-budgeted-reddit-video/spec.md`;
   limits as of 2026-11-13 in `research/10`; planned 2026-11-19: `--fit TARGET`, two-pass x264 with
   a VBV ceiling, measured before commit (research R1); tasks 2026-11-19: T001–T047, MVP = US1 (T001–T022)).
 - 005 progress: T001–T047 done (47/47) (Phases 1–2, US1, the MVP: `rmedia clip --fit` works, under the cap,
@@ -33,7 +33,7 @@ for Reddit (003). Spec-driven via Spec Kit.
   encode runs on one thread so outputs repeat exactly (R13 revised). Phase 8 done 2026-11-20: docs
   (T044), quickstart end to end (T045), self-review (T046, `progress.md`: two mediums and two lows
   fixed; agent reviews 2026-11-20: two mediums and four lows fixed), release prep (T047: version 0.5.0, `docs/releases/0.5.0.md` draft, owner runbook
-  `docs/operations/fit-owner-checks.md`). SC-008 passed 2026-11-23; next: tag `v0.5.0` and publish.
+  `docs/operations/fit-owner-checks.md`). SC-008 passed 2026-11-23. Released as v0.5.0 on 2026-11-23 (tag on 1171a0f; GitHub release from tag build run 45143644104, unsigned).
 - 004 progress: T001–T059 done (59/59) (Phases 1–2, US1, the MVP: `rmedia clip --mode smart` works,
   verified and cancellable, and US2: every risky source falls back with a reason,
   `--no-smart-fallback` makes it an error, and US3: the dry run shows the parts, shares and

@@ -81,7 +81,6 @@ caps, every field validated), overrides that may only lower, and the desktop's `
 
 ## Open
 
-- All 47 tasks are done. Version 0.5.0 is set; `docs/releases/0.5.0.md` is a draft until the tag.
+- All 47 tasks are done. Released 2026-11-23 as v0.5.0 (tag on `1171a0f`, run 45143644104; `docs/releases/0.5.0.md`).
 - SC-008 passed 2026-11-23 (owner): `reddit-video` is verified (version 2); Reddit's limits are
   1 GB and 15 minutes, and video posts are not allowed in 18+/NSFW/adult or private communities.
-  Next: tag `v0.5.0` and publish the release.

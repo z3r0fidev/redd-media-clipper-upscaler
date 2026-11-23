@@ -14,7 +14,7 @@ Last updated: 2026-11-23.
 | 002 Mobile upscaling and smart reframe | Complete (112/112 tasks); version 0.2.0, tagged `v0.2.0` (`b6385a1`) | `rmedia upscale` (CPU, GPU and AI tiers, smart reframe), `clip --upscale`, manifest upscaling in `batch`, `doctor` tiers and `--recheck`, desktop "Upscale for phone" view |
 | 003 GIF export for Reddit | Complete (80/80 tasks, 2026-10-26); version 0.3.0, tagged `v0.3.0` (`b96bfdd`, 2026-11-14) | `rmedia gif` (targets, size budget, Reddit MP4, gifsicle/gifski), `clip --gif`, `batch --gif`, manifest `gif` blocks, desktop "GIF for Reddit" view ([0.3.0 notes](releases/0.3.0.md)) |
 | 004 Smart cut | Done: 59 of 59 tasks (T059's reviews: no high, the three mediums fixed; `specs/004-smart-cut/`, 2026-11-16); 0.4.0, tag `v0.4.0` on `092171f`, released 2026-11-18 ([v0.4.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.4.0)) | Hybrid frame-exact clip mode, see Pending item 22 |
-| 005 Budgeted Reddit video | Done: 47 of 47 tasks (2026-11-20; agent reviews fixed; `specs/005-budgeted-reddit-video/progress.md`); SC-008 passed 2026-11-23; version 0.5.0, tag `v0.5.0` | `--fit TARGET` on `clip`, `upscale` and `batch`, manifest `fit`, desktop **Video target**: an MP4 with audio never over the cap, see Pending item 23 |
+| 005 Budgeted Reddit video | Done: 47 of 47 tasks (2026-11-20; agent reviews fixed; `specs/005-budgeted-reddit-video/progress.md`); SC-008 passed 2026-11-23; 0.5.0, tag `v0.5.0` on `1171a0f`, released 2026-11-23 ([v0.5.0](https://github.com/z3r0fidev/redd-media-clipper-upscaler/releases/tag/v0.5.0)) | `--fit TARGET` on `clip`, `upscale` and `batch`, manifest `fit`, desktop **Video target**: an MP4 with audio never over the cap, see Pending item 23 |
 
 ## Feature 002: Mobile Upscaling and Smart Reframe
 
@@ -347,8 +347,8 @@ security and code-review lows, then 005.
     files by name, device presets capped too; `progress.md`). Low left: a trimmed clip keeps the default
     name of the range that was asked for, as GIF trims do; naming it after the output range
     would change names that 003 already writes. SC-008 passed 2026-11-23
-    ([results](operations/fit-owner-checks-results.md)); `reddit-video` is verified. Left: the
-    tag `v0.5.0` and the release. 2026-11-23: the owner's GIF uploads set
+    ([results](operations/fit-owner-checks-results.md)); `reddit-video` is verified. Released
+    2026-11-23 as 0.5.0 (tag `v0.5.0` on `1171a0f`, [notes](releases/0.5.0.md)). 2026-11-23: the owner's GIF uploads set
     `reddit-post`'s hard limit to 100 MB (item 3); it ships in 0.5.0.
 24. Later candidates (no number yet): a desktop crop-path editor for smart reframe
     (`research/08`); audio-only export with loudness normalisation; frame and timecode input and
