@@ -96,16 +96,27 @@ export RMEDIA_FFMPEG=$PWD/binaries/rmedia-ffmpeg-x86_64-unknown-linux-gnu \
 
 ### Desktop app
 
-The Tauri build requires all three sidecars in `binaries/`: the engine and the staged CLI.
+Even `tauri dev` checks that every file the bundle lists exists. It needs six sidecars in
+`binaries/` (`rmedia-ffmpeg`, `rmedia-ffprobe`, `rmedia-gifsicle` and `rmedia-gifski` from
+`fetch-tools`; `rmedia` and the AI worker `rmedia-sr` from `stage-cli`), each named
+`<name>-<triple>`, plus the models in `models/`. `stage-cli` builds `rmedia-sr`, which links the
+prebuilt ncnn from `fetch-ncnn`.
 
 ```bash
-cargo xtask fetch-tools
-cargo xtask stage-cli               # builds the release CLI into binaries/rmedia-<triple>
+cargo xtask fetch-tools             # engine + GIF engines into binaries/
+cargo xtask fetch-ncnn              # prebuilt ncnn into third_party/ (needed by rmedia-sr)
+cargo xtask fetch-models            # models/ (bundled as resources)
+cargo xtask stage-cli               # builds rmedia and rmedia-sr into binaries/
 cd apps/desktop
-npm ci
+npm ci                              # before any npx tauri command
 npx tauri dev                       # Vite dev server on http://localhost:1420
 npx tauri dev -- -- /path/video.mp4 # open files on startup
 ```
+
+`binaries/`, `models/` and `third_party/` are git-ignored, so `git pull` doesn't update them.
+After pulling, run `cargo xtask fetch-tools` (the pins may have changed), `cargo xtask stage-cli`
+(the staged CLI is a copy, not a link to your build) and `npm ci` again. The fetch commands
+reuse files that are already present and verified, and `stage-cli` rebuilds only what changed.
 
 Release packages:
 

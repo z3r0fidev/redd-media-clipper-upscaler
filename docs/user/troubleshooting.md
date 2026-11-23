@@ -24,6 +24,7 @@ clip in the run panel.
 * [Folders and scanning](#folders-and-scanning)
 * [Installation](#installation)
 * [Fit a Reddit video](#fit-a-reddit-video)
+* [Building from source](#building-from-source)
 
 ---
 
@@ -1146,6 +1147,54 @@ files](../api/file-formats.md#video-target-files-video-targetsjson)), then check
 An override can only lower a target's limits (exit 2). For a larger cap or a longer limit, make
 a user target with those values. "--fit-max-size needs --fit" means a `--fit-*` flag was given
 without `--fit`, and "--fit cannot be combined with --gif" that both were.
+
+## Building From Source
+
+These messages come from the build tools, not from rmedia. The full steps are in the
+[Development Guide](../developer/development-guide.md#desktop-app).
+
+### "npm error could not determine executable to run" (`npx tauri dev`)
+
+#### Cause
+
+The desktop app's npm packages, including the Tauri CLI, are not installed in `apps/desktop`.
+This happens on a fresh clone, or when `npx tauri` runs before `npm ci`.
+
+#### Resolution
+
+```bash
+cd apps/desktop
+npm ci
+npx tauri dev
+```
+
+### "resource path `../../../binaries/rmedia-<triple>` doesn't exist"
+
+The same message can name `rmedia-sr`, `rmedia-ffmpeg`, `rmedia-gifski` or another sidecar, or a
+file in `models/`.
+
+#### Cause
+
+Tauri checks that every bundled program and resource exists, even for `tauri dev`. The engine
+and GIF engines come from `cargo xtask fetch-tools`, `rmedia` and `rmedia-sr` from
+`cargo xtask stage-cli`, and the models from `cargo xtask fetch-models`. These folders are not
+in git, so a clone or a `git pull` doesn't create or update them.
+
+#### Resolution
+
+From the repository root:
+
+```bash
+cargo xtask fetch-tools
+cargo xtask fetch-ncnn      # if third_party/ncnn/<triple> is missing (rmedia-sr needs it)
+cargo xtask fetch-models
+cargo xtask stage-cli
+```
+
+Then run `npx tauri dev` again from `apps/desktop`. After each `git pull`, run `fetch-tools` and
+`stage-cli` again so the sidecars match the code.
+
+---
 
 ## Still Stuck?
 
