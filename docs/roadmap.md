@@ -4,7 +4,7 @@ This page is the single list of what is done, what is next and what is planned. 
 (`README.md`, `CLAUDE.md`, `specs/002-mobile-upscale/progress.md`) must agree with it. Task IDs
 refer to `specs/002-mobile-upscale/tasks.md`, which is the source of truth for 002 progress.
 
-Last updated: 2026-11-23.
+Last updated: 2026-11-24.
 
 ## Status at a Glance
 
@@ -228,7 +228,9 @@ security and code-review lows, then 005.
    went 20 MB → 100 MB and the target is `verified` (version 2). Comment GIF limits are still
    unstated (`reddit-comment` stays 3/8 MB, unverified). The 005 video upload passed too
    (2026-11-23): `reddit-video` is verified; Reddit doesn't allow video posts in 18+ or private
-   communities. Left: read Reddit Help itself, and a comment GIF upload.
+   communities. Left: read Reddit Help itself, a comment GIF upload, and whether Reddit's "1 GB"
+   means 10^9 bytes: `reddit-video` allows 1 GiB (1,073,741,824 bytes), and no upload between the
+   two was tested; if it does, lower `max_bytes` to 1000000000.
    For 005, the upload check is [fit-owner-checks.md](operations/fit-owner-checks.md) (SC-008);
    passing it sets `verified` in `reddit-video.json`.
 4. 002 owner checks: two-phone gallery test (SC-001) and +3 VMAF on real footage (SC-002).
@@ -401,6 +403,11 @@ security and code-review lows, then 005.
 - [x] Dependabot notices automation (2026-11-13): `dependabot-notices.yml` regenerates
   `THIRD_PARTY_NOTICES.md` on Dependabot's PRs and starts CI; TypeScript 7 is ignored until
   svelte-check supports it.
+- [x] Release `v0.5.0` (005) on 2026-11-23: tag on `1171a0f`, build 45143644104, every package's
+  checksum and attestation verified, GitHub release published (unsigned;
+  [notes](releases/0.5.0.md)). The same day `cookie` 0.18.3 (RUSTSEC-2026-0594, via Tauri,
+  `74798f4`) went in after the tag; rmedia uses no private cookies, so the 0.5.0 packages are
+  not affected.
 - [ ] Windows code signing with Azure Artifact Signing (US organisation, decided 2026-10-27):
   account and identity validation by the owner, then a signing step in `release.yml`.
 - [ ] Manual desktop QA on Windows hardware (Windows paths and Job Object handling are unverified;
